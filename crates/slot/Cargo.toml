@@ -1,0 +1,31 @@
+[package]
+name = "slot"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["host"]
+host = ["dep:winit", "dep:cpal", "dep:gilrs", "slot-gfx/host"]
+device = ["slot-gfx/device"]
+
+[dependencies]
+# default-features = false or `host` unifies on for every build: the feature comes in through
+# this line whatever the features above ask for, and the device build compiles glutin and
+# winit it can never use. The `host` and `device` features above are what turn the backend
+# on, and they are mutually exclusive.
+slot-gfx = { path = "../slot-gfx", default-features = false }
+slot-input = { path = "../slot-input" }
+slot-power = { path = "../slot-power" }
+slot-retro = { path = "../slot-retro" }
+slot-store = { path = "../slot-store" }
+slot-ui = { path = "../slot-ui" }
+winit = { workspace = true, optional = true }
+cpal = { workspace = true, optional = true }
+gilrs = { workspace = true, optional = true }
+libloading = { workspace = true }
+lz4_flex = { workspace = true }
+png = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

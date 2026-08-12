@@ -1,0 +1,236 @@
+version: '3'
+
+vars:
+  CORE: vendor/mgba_libretro.dylib
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Debug build of the whole workspace
+    cmds:
+      - cargo build --workspace
+
+  release:
+    desc: Release build of the slot binary
+    cmds:
+      - cargo build --release -p slot
+
+  test:
+    desc: Run the whole test suite
+    cmds:
+      - cargo test --workspace
+
+  test:one:
+    desc: Run tests matching FILTER, eg task test:one FILTER=gesture
+    requires:
+      vars: [FILTER]
+    cmds:
+      - cargo test --workspace {{.FILTER}}
+
+  fmt:
+    desc: Format the workspace
+    cmds:
+      - cargo fmt --all
+
+  fmt:check:
+    desc: Fail if anything is unformatted
+    cmds:
+      - cargo fmt --all -- --check
+
+  lint:
+    desc: Clippy over all targets with warnings denied
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+
+  lint:device:
+    desc: Clippy the device build, which the host lint never compiles
+    cmds:
+      # No --all-targets: the tests exercise the host backends and the device build has none.
+      - cargo clippy -p slot --no-default-features --features device -- -D warnings
+
+  check:
+    desc: Everything a CI run would do
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: lint:device
+      - task: test
+
+  core:
+    desc: Fetch mgba_libretro from the libretro buildbot
+    status:
+      - test -f {{.CORE}}
+    cmds:
+      - |
+        set -euo pipefail
+        case "$(uname -m)" in
+          arm64)  arch=arm64 ;;
+          x86_64) arch=x86_64 ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p vendor
+        curl -fsSL -o vendor/mgba.zip \
+          "https://buildbot.libretro.com/nightly/apple/osx/${arch}/latest/mgba_libretro.dylib.zip"
+        unzip -o -q vendor/mgba.zip -d vendor
+        rm -f vendor/mgba.zip
+        file {{.CORE}} | grep -q Mach-O
+        echo "fetched {{.CORE}}"
+
+  core:update:
+    desc: Re-fetch the core even if one is already vendored
+    cmds:
+      - rm -f {{.CORE}}
+      - task: core
+
+  icons:
+    desc: Re-fetch the nerd font symbols used by the HUD
+    vars:
+      ASSETS: crates/slot-ui/assets
+      TTF: SymbolsNerdFontMono-Regular.ttf
+    cmds:
+      - |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        curl -fsSL -o "$tmp/symbols.zip" \
+          "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/NerdFontsSymbolsOnly.zip"
+        unzip -o -q "$tmp/symbols.zip" '{{.TTF}}' LICENSE -d "$tmp"
+        mv "$tmp/{{.TTF}}" "{{.ASSETS}}/{{.TTF}}"
+        mv "$tmp/LICENSE" "{{.ASSETS}}/{{.TTF}}.LICENSE.txt"
+        echo "fetched {{.ASSETS}}/{{.TTF}}"
+
+  sdcard:
+    desc: Create an empty content root, ROOT defaults to ./sdcard
+    deps: [build]
+    vars:
+      ROOT: '{{.ROOT | default "./sdcard"}}'
+    cmds:
+      - ./target/debug/slot --init-root {{.ROOT}}
+      - 'echo "content root ready at {{.ROOT}}: roms in Games, labels in Labels, gba_bios.bin in BIOS, pngs in Wallpapers, palette in System/theme.txt"'
+
+  run:
+    desc: Run slot. against SLOT_ROOT, defaults to ./sdcard
+    deps: [core]
+    env:
+      SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+    cmds:
+      # Release, always. Measured on this machine, a debug build spends 8.43 ms of a
+      # 16.67 ms frame inside one rewind snapshot; release spends 0.08 ms. Debug does not
+      # hold 60 fps, so running it only produces bug reports about stutter.
+      - cargo run --release -p slot
+
+  run:debug:
+    desc: Run an unoptimised build, for a debugger. Will not hold 60 fps.
+    deps: [core]
+    env:
+      SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+    cmds:
+      - cargo run -p slot
+
+  dist:
+    desc: Build the copy-to-SD2 tree, OUT defaults to ./dist
+    deps: [core, release]
+    vars:
+      OUT: '{{.OUT | default "dist"}}'
+    cmds:
+      - rm -rf {{.OUT}}
+      - ./target/release/slot --init-root {{.OUT}}
+      - cp target/release/slot {{.OUT}}/System/slot
+      - cp {{.CORE}} {{.OUT}}/System/
+      - 'echo "dist ready at {{.OUT}}, copy its contents to SD2"'
+
+  core:device:
+    desc: Fetch the aarch64 linux mgba core for the device bundle
+    status:
+      - test -f vendor/mgba_libretro.so
+    cmds:
+      - |
+        set -euo pipefail
+        mkdir -p vendor
+        curl -fsSL -o vendor/mgba-linux.zip \
+          "https://buildbot.libretro.com/nightly/linux/aarch64/latest/mgba_libretro.so.zip"
+        unzip -o -q vendor/mgba-linux.zip -d vendor
+        rm -f vendor/mgba-linux.zip
+        file vendor/mgba_libretro.so | grep -q aarch64
+        echo "fetched vendor/mgba_libretro.so"
+
+  build:device:
+    desc: Build for the H700 in an arm64 container
+    cmds:
+      # OrbStack runs arm64 natively, so this is a native build in a container rather than a
+      # cross compile. Bullseye is glibc 2.31 on purpose: older is forward compatible, and
+      # BaseOS is 2.35. Building against 2.35 and running on anything older would not be.
+      - |
+        docker run --rm -v "$PWD":/src -w /src rust:1-bullseye \
+          cargo build --release --target-dir /src/target-device \
+            -p slot --no-default-features --features device
+      - file target-device/release/slot | grep -q aarch64
+      - 'echo "built target-device/release/slot"'
+
+  dist:device:
+    desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
+    deps: [core:device, build:device]
+    vars:
+      OUT: '{{.OUT | default "dist-device"}}'
+    cmds:
+      - rm -rf {{.OUT}}
+      - ./target/debug/slot --init-root {{.OUT}} || cargo run -q -p slot -- --init-root {{.OUT}}
+      - cp target-device/release/slot {{.OUT}}/System/slot
+      - cp vendor/mgba_libretro.so {{.OUT}}/System/
+      # Verified against BaseOS source: inittab respawns /sbin/nextui-session, which waits
+      # for /dev/mali0 and then `exec /bin/sh` on exactly this path, with SD=/mnt/sdcard.
+      # Run with sh, so the shebang is decorative and the executable bit is optional.
+      # Never put MinUI.zip or a .pakz on the card: either makes nextui-session run NextUI's
+      # installer first, and it would overwrite this pak.
+      - mkdir -p '{{.OUT}}/.system/h700/paks/MinUI.pak'
+      - |
+        cat > '{{.OUT}}/.system/h700/paks/MinUI.pak/launch.sh' <<'SH'
+        #!/bin/sh
+        # BaseOS execs this and expects it never to return.
+        cd "$(dirname "$0")/../../../.." || exit 1
+        export SLOT_ROOT="$PWD"
+        # There is no console on this device. Without this, everything slot says about the
+        # hardware it found — the audio device it opened or could not, the input nodes, the
+        # backlight — is written to a terminal that is not there. Truncated per boot rather
+        # than appended, so the card never grows a log without end.
+        exec ./System/slot > slot.log 2>&1
+        SH
+      - chmod +x '{{.OUT}}/.system/h700/paks/MinUI.pak/launch.sh'
+      - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
+
+  deploy:device:
+    desc: Build and push onto a device over adb, then restart it. SD defaults to /mnt/sdcard
+    deps: [core:device, build:device]
+    vars:
+      SD: '{{.SD | default "/mnt/sdcard"}}'
+    cmds:
+      - adb wait-for-device
+      # Onto the card the device is already running from, rather than a tree to copy by hand.
+      # The binary is replaced under the running process, which is why the reboot below is
+      # part of the task and not left to be remembered.
+      - adb push target-device/release/slot '{{.SD}}/System/slot'
+      - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
+      - adb shell 'chmod +x {{.SD}}/System/slot && sync'
+      - adb reboot
+      - adb wait-for-device
+      - 'echo "deployed to {{.SD}}, device rebooting"'
+
+  log:device:
+    desc: Read slot's log back off a connected device
+    vars:
+      SD: '{{.SD | default "/mnt/sdcard"}}'
+    cmds:
+      # The device has no console: launch.sh redirects here, and this is the only account of
+      # what hardware slot found. `SLOT_TRACE=1` in launch.sh adds the frame and audio lines.
+      - adb shell 'cat {{.SD}}/slot.log'
+
+  clean:
+    desc: Remove build output and dist
+    cmds:
+      - cargo clean
+      - rm -rf dist dist-device target-device

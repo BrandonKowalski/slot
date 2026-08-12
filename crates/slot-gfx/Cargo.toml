@@ -1,0 +1,25 @@
+[package]
+name = "slot-gfx"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["host"]
+# A desktop window, via winit and glutin. The device has neither: it draws on a framebuffer
+# with EGL loaded at runtime, so these must not be compiled in for it. Their system
+# dependencies are also most of what makes a device build hard.
+host = ["dep:glutin", "dep:glutin-winit", "dep:winit", "dep:raw-window-handle"]
+device = []
+# Handle-by-index constructors that bypass the compositor, for tests that need to name a
+# texture without a live GL context. Left out of every consumer's `[dependencies]` so a
+# forged `TexId` can never reach the device build and silently alias a real texture.
+test-support = []
+
+[dependencies]
+gl = { workspace = true }
+libloading = { workspace = true }
+glutin = { workspace = true, optional = true }
+glutin-winit = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+winit = { workspace = true, optional = true }

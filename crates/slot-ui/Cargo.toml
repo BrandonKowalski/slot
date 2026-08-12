@@ -1,0 +1,20 @@
+[package]
+name = "slot-ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fontdue = { workspace = true }
+png = { workspace = true }
+resvg = { workspace = true }
+usvg = { workspace = true }
+# Only the draw list and the texture ids are wanted here, never a window. Taking the default
+# would turn `host` on for every build that touches the ui, the device's included.
+slot-gfx = { path = "../slot-gfx", default-features = false }
+slot-power = { path = "../slot-power" }
+slot-store = { path = "../slot-store" }
+
+[dev-dependencies]
+slot-gfx = { path = "../slot-gfx", features = ["test-support"] }
+tempfile.workspace = true
