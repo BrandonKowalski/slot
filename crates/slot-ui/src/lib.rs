@@ -1,5 +1,6 @@
 mod art;
 mod backdrop;
+mod barcode;
 mod battery;
 mod cart;
 mod clock;
@@ -18,6 +19,7 @@ pub mod text;
 mod toast;
 
 pub use backdrop::{draw_backdrop, wallpaper_face};
+pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
 pub use cart::{
     cart_face, cart_shadow, clean_label, label_colour, label_panel, label_text, CartFace, CART_H,
