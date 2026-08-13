@@ -9,11 +9,12 @@ use slot_power::{Platform, Power, SleepDepth};
 use slot_store::format_stamp;
 use slot_ui::{
     cart_face, cart_shadow, hhmm, hint_face, icon_face, photo_face, set_clock_hint_face,
-    title_face, toast_face, wallpaper_face, word_face, Icon, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX,
-    HUD_INK, LEGEND,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, MenuItem, StickerFields,
+    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, Phase};
+use crate::build_info::Build;
 use crate::session::Session;
 use crate::wallpaper;
 
@@ -37,6 +38,18 @@ pub struct Frontend {
     undo_tex: Option<TexId>,
     switcher: Switcher,
     clocks: Clocks,
+    menu: MenuFaces,
+}
+
+/// The menu's rows and the label behind its second entry. The rows are fixed type and are
+/// built once; the label carries the gauge, so it is rebuilt when the reading moves.
+#[derive(Default)]
+struct MenuFaces {
+    rows: Vec<TexId>,
+    sticker: Option<TexId>,
+    /// What the label was last built for. `None` is a board with no gauge, which is a
+    /// different thing from not having built one yet — `sticker` says that.
+    battery: Option<u8>,
 }
 
 /// The clock screen's two faces and the shelf's one, with what each was last built for. The
@@ -78,6 +91,7 @@ impl Frontend {
             undo_tex: None,
             switcher: Switcher::default(),
             clocks: Clocks::default(),
+            menu: MenuFaces::default(),
         }
     }
 
@@ -160,6 +174,7 @@ impl Frontend {
             compositor.upload_game(&frame);
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
+        sync_menu(self.session.app_mut(), compositor, &mut self.menu);
         sync_switcher(
             self.session.app_mut(),
             compositor,
@@ -300,6 +315,42 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
             app.set_battery_percent_face(id, w);
         }
     }
+}
+
+/// The menu's rows and the about label, both built only once the screen that wants them is
+/// up: the label is a 660 by 228 rasterisation and most sessions never open it.
+fn sync_menu(app: &mut App, compositor: &mut Compositor, state: &mut MenuFaces) {
+    if app.menu_mut().is_some() {
+        if state.rows.is_empty() {
+            state.rows = MenuItem::ALL
+                .iter()
+                .map(|item| {
+                    let face = word_face(item.label());
+                    compositor.create_texture(face.w, face.h, &face.rgba)
+                })
+                .collect();
+        }
+        let rows = state.rows.clone();
+        if let Some(menu) = app.menu_mut() {
+            menu.set_faces(rows);
+        }
+    }
+    if !matches!(app.phase(), Phase::About) {
+        return;
+    }
+    let battery = app.battery().map(|b| b.percent);
+    if state.sticker.is_some() && state.battery == battery {
+        return;
+    }
+    state.battery = battery;
+    let build = Build::current();
+    let face = sticker_face(&StickerFields {
+        battery,
+        serial: &build.serial(),
+        dirty_digit: build.dirty_digit(),
+    });
+    let id = upload(compositor, &mut state.sticker, face);
+    app.set_sticker_face(id);
 }
 
 /// Into the slot's own texture if it has one, so the pool stops growing after the first
