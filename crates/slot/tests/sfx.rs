@@ -38,9 +38,9 @@ fn the_insert_starts_inside_the_travel() {
     );
 }
 
-/// Played as recorded. Anything done to it beyond starting it at the right moment has so far
-/// only ever made it worse: a stretched scrape buzzed at the grain rate, and an envelope over
-/// the withdraw buried it under its own click.
+/// Played as recorded: started at the right moment and otherwise left alone. Stretching,
+/// enveloping and joining are all things this deliberately does not do, and this is what says
+/// so — a clip that came back different twice, or panned, has had something done to it.
 #[test]
 fn the_clips_are_the_recording_and_nothing_else() {
     for s in [Sfx::Insert, Sfx::Eject] {
@@ -55,8 +55,8 @@ fn the_clips_are_the_recording_and_nothing_else() {
     }
 }
 
-/// Each direction has its own take. The eject was the insert's click for a while, which is
-/// why pulling a cart out sounded like the front half of putting one in.
+/// Each direction is its own take. One clip serving both, or the same take cut twice, is a
+/// cart that sounds the same going out as it does going in.
 #[test]
 fn the_two_directions_are_different_clips() {
     let ins = Sfx::Insert.render(48_000);
@@ -72,7 +72,7 @@ fn the_two_directions_are_different_clips() {
     );
 }
 
-/// The clips are generated, and a generator has no reason to land on zero at either end. A
+/// A window cut out of a longer recording has no reason to land on zero at either end, and a
 /// clip that starts or stops partway through its noise floor is a click on every insert.
 #[test]
 fn neither_clip_starts_or_ends_on_a_step() {
