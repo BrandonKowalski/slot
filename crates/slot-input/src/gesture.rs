@@ -18,7 +18,7 @@ pub const FF_DOUBLE_TAP_MS: Millis = 250;
 pub const MUTE_CHORD_MS: Millis = 200;
 /// Well short of the PMIC's own six second cutoff (`pmu_powkey_off_time` in the device
 /// tree), so slot always gets to power off gracefully before the hardware cuts the rails.
-pub const POWER_HOLD_MS: Millis = 2000;
+pub const POWER_HOLD_MS: Millis = 1000;
 
 /// How long a volume key is held before the level starts running, and how fast it runs after
 /// that. The press itself is the first step; this is the wait before the second, long enough

@@ -6,7 +6,7 @@ use std::time::Duration;
 use common::{app_playing_in, boot, panel, tmp_root_with_carts, StubSnapshot};
 use slot::app::Phase;
 use slot_gfx::Draw;
-use slot_input::Action;
+use slot_input::{Action, Btn};
 use slot_store::{read_slot_state, write_slot_state, SlotState, StateRing};
 
 #[test]
@@ -162,4 +162,73 @@ fn a_power_off_draws_a_shutdown_screen_over_everything() {
         1,
         "nothing of the previous phase survives the shutdown screen"
     );
+}
+
+/// A held POWER offers a choice rather than committing to one. Everything reachable from
+/// here costs the user something — an instant resume, a three second boot, or a shutdown —
+/// so the button raises the question and A answers it.
+#[test]
+fn a_hold_opens_the_menu_and_commits_nothing() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+    assert_eq!(a.power_menu(), Some(0), "the menu opens on Standby");
+    assert!(!a.powering_off() && !a.suspending() && !a.restarting());
+    assert!(
+        StateRing::new(d.path(), "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_some(),
+        "durable before the menu is even read: the user may hold on to the PMIC's own cutoff"
+    );
+}
+
+#[test]
+fn the_menu_moves_and_stops_at_both_ends() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+    a.apply(Action::GbaDown(Btn::Up));
+    assert_eq!(a.power_menu(), Some(0), "it does not wrap off the top");
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::Down));
+    assert_eq!(a.power_menu(), Some(2), "nor off the bottom");
+}
+
+#[test]
+fn b_leaves_the_menu_without_doing_anything() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+    a.apply(Action::GbaDown(Btn::B));
+    assert_eq!(a.power_menu(), None);
+    assert!(!a.powering_off() && !a.suspending() && !a.restarting());
+    assert!(
+        matches!(a.phase(), Phase::Playing { .. }),
+        "back to the game"
+    );
+}
+
+#[test]
+fn each_row_commits_to_its_own_outcome() {
+    for (down, want) in [(0, "standby"), (1, "restart"), (2, "off")] {
+        let d = tmp_root_with_carts(&["Emerald"]);
+        let mut a = app_playing_in(d.path(), "Emerald");
+        a.apply(Action::PowerHold);
+        for _ in 0..down {
+            a.apply(Action::GbaDown(Btn::Down));
+        }
+        a.apply(Action::GbaDown(Btn::A));
+        assert_eq!(
+            a.power_menu(),
+            None,
+            "{want}: the menu closes on the choice"
+        );
+        match want {
+            "standby" => assert!(a.suspending() && !a.powering_off() && !a.restarting()),
+            "restart" => assert!(a.restarting() && !a.powering_off() && !a.suspending()),
+            _ => assert!(a.powering_off() && !a.suspending() && !a.restarting()),
+        }
+    }
 }

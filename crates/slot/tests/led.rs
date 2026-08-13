@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use common::{
     app_playing_in, app_playing_with_charge, app_playing_with_led, led_code, tmp_root_with_carts,
 };
-use slot_input::Action;
+use slot_input::{Action, Btn};
 use slot_power::LedState;
 
 /// The final whole-branch review found that deleting `power.set_led(state)` from the fast
@@ -134,7 +134,18 @@ fn power_off_leaves_the_led_off_rather_than_lit_through_shutdown() {
         led_code(LedState::Off),
         "the rig should start lit, or this test proves nothing"
     );
+    // The hold only raises the menu, and a menu the user may still cancel is not a shutdown:
+    // darkening the case light there would report a state the device is not in.
     a.apply(Action::PowerHold);
+    assert_ne!(
+        led.load(Ordering::Relaxed),
+        led_code(LedState::Off),
+        "the menu is a question, not a shutdown"
+    );
+
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::A));
     assert_eq!(
         led.load(Ordering::Relaxed),
         led_code(LedState::Off),

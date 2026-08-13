@@ -76,6 +76,10 @@ impl Platform for SimPlatform {
         self.wake.take().unwrap_or(WakeReason::Timeout)
     }
 
+    fn restart(&mut self) -> ! {
+        std::process::exit(0)
+    }
+
     fn poweroff(&mut self) -> ! {
         std::process::exit(0)
     }

@@ -1,7 +1,7 @@
 use slot_input::RawEvent::{Down, Up};
 use slot_input::{
-    Action::*, Btn, Btn::*, Gestures, RawEvent, MENU_HOLD_MS, SELECT_CHORD_MS, SELECT_TAP_MS,
-    VOLUME_REPEAT_DELAY_MS, VOLUME_REPEAT_MS,
+    Action::*, Btn, Btn::*, Gestures, RawEvent, MENU_HOLD_MS, POWER_HOLD_MS, SELECT_CHORD_MS,
+    SELECT_TAP_MS, VOLUME_REPEAT_DELAY_MS, VOLUME_REPEAT_MS,
 };
 
 #[test]
@@ -120,11 +120,11 @@ fn power_flushes_on_the_press_and_locks_on_the_release() {
 /// The hold arms while the button is still down and the release commits, so the shutdown
 /// screen is on the panel for as long as the user holds rather than flashing past.
 #[test]
-fn power_held_past_two_seconds_arms_and_the_release_powers_off() {
+fn power_held_past_the_threshold_raises_the_menu_and_the_release_does_nothing() {
     let mut g = Gestures::new();
     g.feed(Down(Btn::Power), 0);
-    assert!(g.tick(1999).is_empty());
-    assert_eq!(g.tick(2000), vec![PowerHold]);
+    assert!(g.tick(POWER_HOLD_MS - 1).is_empty());
+    assert_eq!(g.tick(POWER_HOLD_MS), vec![PowerHold]);
     assert!(g.tick(4000).is_empty(), "the hold fires once, not per tick");
     assert_eq!(g.feed(Up(Btn::Power), 4500), vec![PowerOff]);
 }
@@ -134,8 +134,8 @@ fn power_held_past_two_seconds_arms_and_the_release_powers_off() {
 fn a_press_just_short_of_the_threshold_is_a_lock() {
     let mut g = Gestures::new();
     g.feed(Down(Btn::Power), 0);
-    assert!(g.tick(1999).is_empty());
-    assert_eq!(g.feed(Up(Btn::Power), 1999), vec![PowerTap]);
+    assert!(g.tick(POWER_HOLD_MS - 1).is_empty());
+    assert_eq!(g.feed(Up(Btn::Power), POWER_HOLD_MS - 1), vec![PowerTap]);
 }
 
 #[test]

@@ -387,6 +387,10 @@ impl Platform for StubPlatform {
         WakeReason::Timeout
     }
 
+    fn restart(&mut self) -> ! {
+        panic!("the stub platform never powers off")
+    }
+
     fn poweroff(&mut self) -> ! {
         panic!("the stub platform never powers off")
     }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use common::{app_playing_in, app_playing_with, tmp_root_with_carts};
 use slot::app::Phase;
 use slot::persist::Snapshot;
-use slot_input::Action;
+use slot_input::{Action, Btn};
 use slot_power::{Battery, Charge, LedState};
 use slot_store::{read_slot_state, StateRing};
 
@@ -70,33 +70,35 @@ fn a_power_tap_dozes_and_a_second_one_wakes() {
     assert!(matches!(a.phase(), Phase::Playing { .. }));
 }
 
-/// A held button powers off through the OS, not the PMIC. The hardware cut at six seconds
+/// The flush lands when the menu opens, not when a choice is made. The user may hold on
+/// past the PMIC's own six second cutoff, which takes the rails away whatever the software
+/// wanted — so the state has to be durable before they are given anything to read.
+///
+/// Powering off from the menu goes through the OS rather than that hardware cut: the cut
 /// syncs nothing and unloads nothing, and on this board a shutdown that leaves the GPU
 /// module loaded hangs the machine with the rails up.
-///
-/// In two steps, so the screen the hold raises is on the panel for as long as the button is
-/// held rather than flashing past on the way to a black one.
 #[test]
-fn a_power_hold_arms_and_the_release_powers_off() {
+fn opening_the_menu_flushes_and_the_choice_powers_off() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
 
     a.apply(Action::PowerHold);
     assert!(
         !a.powering_off(),
-        "the hold arms the shutdown, it does not start it"
+        "the hold asks the question, it does not answer it"
     );
-    assert!(!a.suspending(), "and it is not a sleep either");
     assert!(
         StateRing::new(d.path(), "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
-        "the state is durable before the button is even released"
+        "durable before the user has read a single row"
     );
 
-    a.apply(Action::PowerOff);
-    assert!(a.powering_off(), "the release starts the shutdown");
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::A));
+    assert!(a.powering_off(), "Power Off is the third row");
     assert_eq!(
         read_slot_state(d.path()).cart,
         Some("Emerald".into()),
@@ -104,13 +106,16 @@ fn a_power_hold_arms_and_the_release_powers_off() {
     );
 }
 
-/// A release the hold never preceded is a lock, not a shutdown.
+/// The release stopped meaning anything once the hold started raising a menu: the choice is
+/// the commitment, and it is made with A.
 #[test]
-fn a_stray_release_does_not_power_off() {
+fn a_release_after_the_hold_does_nothing_on_its_own() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
     a.apply(Action::PowerOff);
     assert!(!a.powering_off());
+    assert_eq!(a.power_menu(), Some(0), "and leaves the menu up");
 }
 
 /// The doze timeout is the one that sleeps: an idle device the user walked away from is

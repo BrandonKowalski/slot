@@ -10,6 +10,7 @@ mod hud;
 mod icon;
 mod plate;
 mod polaroids;
+mod power_menu;
 mod refusal;
 mod shelf;
 mod shell;
@@ -36,6 +37,7 @@ pub use plate::{
     UndoFace, CAP_GAP, HINT_GAP, HINT_H, TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
+pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
 pub use refusal::Refusal;
 pub use shelf::Shelf;
 pub use shell::{

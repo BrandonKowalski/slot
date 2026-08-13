@@ -468,6 +468,13 @@ impl Platform for DevicePlatform {
         }
     }
 
+    fn restart(&mut self) -> ! {
+        let _ = Command::new("sync").status();
+        let _ = Command::new("reboot").status();
+        std::thread::sleep(Duration::from_secs(10));
+        std::process::exit(0)
+    }
+
     fn poweroff(&mut self) -> ! {
         let _ = Command::new("sync").status();
         let _ = Command::new("poweroff").status();

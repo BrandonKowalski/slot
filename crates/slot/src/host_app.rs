@@ -60,7 +60,17 @@ impl ApplicationHandler for Slot {
                 self.frontend.advance(&mut self.input);
                 // The simulated platform ends the process outright.
                 if self.frontend.suspending() {
+                    // The menu was cleared by the choice, but the panel is still holding the
+                    // frame drawn before the press was read. Push the dark one now, or it is
+                    // the menu that sits on screen through the sleep and into the wake.
+                    self.frontend.render(compositor, surface.window_size());
+                    let _ = surface.swap();
                     self.frontend.suspend();
+                }
+                if self.frontend.restarting() {
+                    self.frontend.render(compositor, surface.window_size());
+                    let _ = surface.swap();
+                    self.frontend.restart();
                 }
                 if self.frontend.powering_off() {
                     // The same last frame the device draws, so the host shows what the

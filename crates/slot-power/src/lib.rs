@@ -75,6 +75,10 @@ pub trait Platform: Send {
     fn set_led(&mut self, state: LedState);
     fn sleep(&mut self, depth: SleepDepth, timeout: Duration) -> WakeReason;
     fn poweroff(&mut self) -> !;
+    /// The same teardown as a power off — busybox init runs its shutdown actions for a
+    /// reboot too — so the GPU module is unloaded either way, which is the thing that stops
+    /// this hardware hanging with the rails up.
+    fn restart(&mut self) -> !;
     /// The content root: the card's mount point on the device, `SLOT_ROOT` on the host.
     fn root(&self) -> &Path;
     /// Seconds since the epoch, from the RTC on device and the system clock on the host.

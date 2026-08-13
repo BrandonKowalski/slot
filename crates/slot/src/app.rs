@@ -8,8 +8,8 @@ use slot_store::{
     Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    draw_backdrop, draw_footer, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Polaroids,
-    Refusal, Shelf, SlotChrome, TexId, Toast,
+    draw_backdrop, draw_footer, draw_sticker, ClockPicker, Draw, FfState, Hud, HudKind, Icon,
+    Millis, Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast,
 };
 
 use crate::audio::Sfx;
@@ -83,6 +83,12 @@ const PLAY_HOLD_MS: Millis = 500;
 /// How long input is ignored after a resume. Long enough to cover the press that woke the
 /// kernel arriving in userspace, short enough that a deliberate second press still lands.
 const WAKE_SWALLOW_MS: Millis = 600;
+
+/// How far apart the menu's rows sit, and what marks the one in hand. The pitch clears the
+/// 40 px face with a little air; the bar is drawn to the face's own width, padding included,
+/// so it wraps the words rather than the panel.
+const POWER_MENU_PITCH: f32 = 44.0;
+const POWER_MENU_HIGHLIGHT: [f32; 4] = [1.0, 1.0, 1.0, 0.18];
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
@@ -162,12 +168,18 @@ pub struct App {
     /// say so. `None` for an eject the user asked for: nothing was refused.
     refused_from: Option<f32>,
     alert_face: Option<TexId>,
-    /// The shutdown line, with the size it was rastered at so it can be centred without
-    /// asking the compositor anything.
-    shutdown_face: Option<(TexId, u32, u32)>,
-    /// Armed by the hold, committed by the release. The screen is drawn for both, so it is
-    /// on the panel while the button is still down.
-    shutting_down: bool,
+    /// What the shutdown says, one per `PowerChoice::ALL` in that order and rastered at the
+    /// menu's own size. "Powering down" under a restart was the screen contradicting the row
+    /// the user had just chosen.
+    shutdown_faces: Vec<(TexId, u32, u32)>,
+    /// Open when a held POWER raised the menu, holding the highlighted row. An overlay
+    /// rather than a phase, so cancelling returns to whatever was underneath without the
+    /// phase having to be remembered anywhere.
+    power_menu: Option<usize>,
+    /// One per `PowerChoice::ALL`, in that order, with the size each was rastered at.
+    power_menu_faces: Vec<(TexId, u32, u32)>,
+    /// Set when the menu's Restart is chosen. The binary acts on it, like `powering_off`.
+    restarting: bool,
     /// `None` outside the binary, where there is no content root and nothing persists.
     root: Option<PathBuf>,
     state: SlotState,
@@ -257,8 +269,10 @@ impl App {
             refusal: None,
             refused_from: None,
             alert_face: None,
-            shutdown_face: None,
-            shutting_down: false,
+            shutdown_faces: Vec::new(),
+            power_menu: None,
+            power_menu_faces: Vec::new(),
+            restarting: false,
             root: None,
             state: SlotState::default(),
             vol_before: Vec::new(),
@@ -501,6 +515,67 @@ impl App {
         self.suspending
     }
 
+    /// Set by the menu's Restart. Goes through the same shutdown as a power off — busybox
+    /// init runs rcK for a reboot too — so the GPU module is unloaded either way.
+    pub fn restarting(&self) -> bool {
+        self.restarting
+    }
+
+    pub fn restart(&mut self) {
+        if let Some(power) = &mut self.power {
+            power.restart();
+        }
+    }
+
+    pub fn power_menu(&self) -> Option<usize> {
+        self.power_menu
+    }
+
+    pub fn set_power_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.power_menu_faces = faces;
+    }
+
+    /// Black, three rows, and a bar behind the one in hand. The highlight is a rect rather
+    /// than a second face per row: the labels are rastered once at boot and never again,
+    /// and a device about to lose its GPU is not the place to be uploading textures.
+    fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
+        out.push(Draw::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: OUT_W as f32,
+            h: OUT_H as f32,
+            colour: [0.0, 0.0, 0.0, 1.0],
+        });
+        let rows = self.power_menu_faces.len();
+        if rows == 0 {
+            return;
+        }
+        let pitch = POWER_MENU_PITCH;
+        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
+        for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
+            let y = top + pitch * row as f32;
+            if row == index {
+                // Sized to the face, which is already the ink plus its own padding, so the
+                // bar hugs the words and changes width as the selection moves.
+                out.push(Draw::Rect {
+                    x: ((OUT_W - w) / 2) as f32,
+                    y,
+                    w: w as f32,
+                    h: pitch,
+                    colour: POWER_MENU_HIGHLIGHT,
+                });
+            }
+            out.push(Draw::Tex {
+                x: ((OUT_W - w) / 2) as f32,
+                y: y + (pitch - h as f32) / 2.0,
+                w: w as f32,
+                h: h as f32,
+                tex,
+                alpha: 1.0,
+            });
+        }
+    }
+
     /// Does not return until the device wakes. Everything durable was written on the edge
     /// that set the flag, so a battery that runs out here loses nothing.
     pub fn suspend(&mut self) {
@@ -531,6 +606,16 @@ impl App {
     /// take them; while the game is playing they are the game's and the app sees only the
     /// gestures that are never the game's.
     pub fn apply(&mut self, action: Action) {
+        // Ahead of everything, including the device's own keys: the menu is a decision the
+        // user is in the middle of making, and a volume press underneath it would be one
+        // more thing happening while they read.
+        if self.power_menu.is_some() {
+            match action {
+                Action::LidClose => return self.doze(),
+                Action::LidOpen => return self.wake(),
+                _ => return self.power_menu_input(action),
+            }
+        }
         // The lid, the light and the sound belong to the device rather than to whatever is
         // on screen, so they are taken before the phase gets a look at the action.
         match action {
@@ -543,8 +628,10 @@ impl App {
                 }
                 return self.power_press();
             }
-            Action::PowerHold => return self.arm_power_off(),
-            Action::PowerOff => return self.commit_power_off(),
+            Action::PowerHold => return self.open_power_menu(),
+            // The release no longer means anything once the menu is what a hold raises:
+            // the choice is the commitment, and it is made with A.
+            Action::PowerOff => return,
             _ => {}
         }
         // Ahead of the levels too. A screen with no way back is not one to be adjusting the
@@ -1014,7 +1101,11 @@ impl App {
         // rcK takes about five seconds on this hardware — it stops the frontend and unloads
         // the GPU module before the kernel is allowed to halt — and five seconds of black
         // panel after holding the button is indistinguishable from a device that has hung.
-        if self.shutting_down || self.powering_off {
+        if let Some(index) = self.power_menu {
+            self.draw_power_menu(index, out);
+            return;
+        }
+        if self.powering_off || self.restarting {
             out.push(Draw::Rect {
                 x: 0.0,
                 y: 0.0,
@@ -1022,7 +1113,13 @@ impl App {
                 h: OUT_H as f32,
                 colour: [0.0, 0.0, 0.0, 1.0],
             });
-            if let Some((tex, w, h)) = self.shutdown_face {
+            // The row the user picked is the row the screen repeats back.
+            let which = if self.restarting {
+                PowerChoice::Restart
+            } else {
+                PowerChoice::PowerOff
+            };
+            if let Some((tex, w, h)) = self.shutdown_faces.get(which.index()).copied() {
                 out.push(Draw::Tex {
                     x: ((OUT_W - w) / 2) as f32,
                     y: ((OUT_H - h) / 2) as f32,
@@ -1057,7 +1154,11 @@ impl App {
                 );
             }
             Phase::About => {
-                slot_ui::draw_sticker(self.sticker_face, out);
+                // The same ground the shelf stands on, scrim and all. The label is a dark
+                // object and the scrim is what a dark object needs to read over a
+                // photograph — it is there for the carts for exactly the same reason.
+                draw_backdrop(self.wallpaper, out);
+                draw_sticker(self.sticker_face, out);
                 return;
             }
             // The shelf recedes behind the cart on the way in; on the way out the live
@@ -1187,8 +1288,8 @@ impl App {
         self.alert_face = Some(face);
     }
 
-    pub fn set_shutdown_face(&mut self, face: TexId, w: u32, h: u32) {
-        self.shutdown_face = Some((face, w, h));
+    pub fn set_shutdown_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.shutdown_faces = faces;
     }
 
     fn on_shelf(&self) -> bool {
@@ -1350,22 +1451,48 @@ impl App {
     ///
     /// Not an eject: the cart stays in the slot so the next boot resumes it. The flush is
     /// a no-op after a doze, which has already written the same file.
-    /// The hold threshold, with the button still down. Puts the shutdown on screen without
-    /// starting it, so the user sees what is about to happen while they are still holding —
-    /// and so a screen that would otherwise flash past unread is held for as long as they
-    /// care to look at it.
-    fn arm_power_off(&mut self) {
-        self.flush_resume();
-        self.shutting_down = true;
-        self.set_led(LedState::Off);
-    }
-
-    /// The release. `rcK` starts here.
-    fn commit_power_off(&mut self) {
-        if !self.shutting_down {
+    /// The hold threshold raises the menu and nothing else. Every outcome from here is one
+    /// the user chose rather than one the button committed them to, which is what makes the
+    /// hold safe to discover by accident.
+    fn open_power_menu(&mut self) {
+        if self.power_menu.is_some() {
             return;
         }
-        self.begin_power_off();
+        // Durable before the menu is even on screen: from here the user may hold on to the
+        // PMIC's own six second cutoff, which takes the rails away whatever we wanted.
+        self.flush_resume();
+        self.power_menu = Some(0);
+    }
+
+    /// Up and down move, A commits, B leaves. Nothing times out: a menu that closed itself
+    /// would do it exactly when the user looked away to think.
+    fn power_menu_input(&mut self, action: Action) {
+        let Some(index) = self.power_menu else {
+            return;
+        };
+        let last = PowerChoice::ALL.len() - 1;
+        match action {
+            Action::GbaDown(Btn::Up) => self.power_menu = Some(index.saturating_sub(1)),
+            Action::GbaDown(Btn::Down) => self.power_menu = Some((index + 1).min(last)),
+            Action::GbaDown(Btn::B) => self.power_menu = None,
+            Action::GbaDown(Btn::A) => {
+                self.power_menu = None;
+                match PowerChoice::ALL[index] {
+                    // Darken first: the frame the binary pushes before it sleeps is then the
+                    // dark one rather than the menu, and `suspend` has a Doze to wake out of.
+                    PowerChoice::Standby => {
+                        self.doze();
+                        self.begin_suspend();
+                    }
+                    PowerChoice::Restart => {
+                        self.restarting = true;
+                        self.set_led(LedState::Off);
+                    }
+                    PowerChoice::PowerOff => self.begin_power_off(),
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Both paths to shutdown — a held button and an idle doze timing out — funnel through

@@ -68,6 +68,10 @@ impl Power {
         self.platform.poweroff()
     }
 
+    pub fn restart(&mut self) -> ! {
+        self.platform.restart()
+    }
+
     pub fn now(&self) -> i64 {
         self.platform.now()
     }

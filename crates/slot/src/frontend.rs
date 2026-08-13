@@ -8,9 +8,9 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power, SleepDepth};
 use slot_store::format_stamp;
 use slot_ui::{
-    cart_face, cart_shadow, hhmm, hint_face, icon_face, photo_face, set_clock_hint_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, StickerFields, Toast,
-    ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    cart_face, cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face, set_clock_hint_face,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice,
+    StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, Phase};
@@ -122,11 +122,29 @@ impl Frontend {
         let alert = compositor.create_texture(alert.w, alert.h, &alert.rgba);
         self.session.app_mut().set_alert_face(alert);
         // Uploaded at boot like everything else: a shutdown is the one moment there is no
-        // time to rasterise anything, and the GPU is about to be taken away.
-        let down = word_face("POWERING DOWN");
-        let (dw, dh) = (down.w, down.h);
-        let down = compositor.create_texture(down.w, down.h, &down.rgba);
-        self.session.app_mut().set_shutdown_face(down, dw, dh);
+        // time to rasterise anything, and the GPU is about to be taken away. One line per
+        // choice, in `PowerChoice::ALL` order, at the menu's own size so the screen that
+        // follows a choice is set in the same voice as the row that was chosen.
+        let lines = PowerChoice::ALL
+            .iter()
+            .map(|c| {
+                let f = menu_face(match c {
+                    PowerChoice::Standby => "Standing By",
+                    PowerChoice::Restart => "Restarting",
+                    PowerChoice::PowerOff => "Powering Down",
+                });
+                (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+            })
+            .collect();
+        self.session.app_mut().set_shutdown_faces(lines);
+        let menu = PowerChoice::ALL
+            .iter()
+            .map(|c| {
+                let f = menu_face(c.text());
+                (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+            })
+            .collect();
+        self.session.app_mut().set_power_menu_faces(menu);
         let toasts = Toast::ALL
             .iter()
             .map(|t| {
@@ -217,6 +235,14 @@ impl Frontend {
 
     pub fn suspending(&self) -> bool {
         self.session.app().suspending()
+    }
+
+    pub fn restarting(&self) -> bool {
+        self.session.app().restarting()
+    }
+
+    pub fn restart(&mut self) {
+        self.session.app_mut().restart();
     }
 
     /// Blocks until the device wakes. The frame loop continues afterwards: a sleep is not

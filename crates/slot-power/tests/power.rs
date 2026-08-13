@@ -36,6 +36,10 @@ impl Platform for Panel {
         self.wake
     }
 
+    fn restart(&mut self) -> ! {
+        panic!("the panel never powers off")
+    }
+
     fn poweroff(&mut self) -> ! {
         panic!("the panel never powers off")
     }
