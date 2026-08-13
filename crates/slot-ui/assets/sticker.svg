@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 205.762 71.116">
+  <!-- The back label of a Game Boy Advance SP, traced from the article: the body with its
+       die cut, and the panel the barcode sits on. Only the two shapes — the original's type
+       and barcode are replaced by this build's own, so nothing here is baked in. -->
+  <g fill="#231f20">
+    <path d="M201.952.125H3.81C1.775.125.125,1.775.125,3.81v63.496c0,2.035,1.65,3.685,3.685,3.685h51.623c1.487,0,2.949-.39,4.238-1.131l21.259-12.22c1.934-1.112,4.126-1.697,6.357-1.697h31.188c2.231,0,4.423.585,6.357,1.697l21.259,12.22c1.289.741,2.751,1.131,4.238,1.131h51.623c2.035,0,3.685-1.65,3.685-3.685V3.81c0-2.035-1.65-3.685-3.685-3.685h0Z"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="62.133" y="3.81" width="140.315" height="35.433" rx="2.66" ry="2.66"/>
+  </g>
+</svg>

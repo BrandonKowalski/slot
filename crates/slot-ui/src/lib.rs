@@ -16,6 +16,7 @@ mod shelf;
 mod shell;
 mod silhouette;
 mod slot_chrome;
+mod sticker;
 pub mod text;
 mod toast;
 
@@ -47,5 +48,9 @@ pub use silhouette::silhouette;
 pub use slot_chrome::{
     draw_empty_slot, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
     MOUTH_H, MOUTH_W,
+};
+pub use sticker::{
+    draw_sticker, head_rows, sticker_face, sticker_lines, StickerFields, CREDITS, DC, ORIGIN,
+    STICKER_H, STICKER_W,
 };
 pub use toast::{toast_box, toast_face, toast_rect, Toast};
