@@ -8,8 +8,8 @@ use slot_store::{
     Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    draw_backdrop, draw_footer, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Polaroids,
-    Refusal, Shelf, SlotChrome, TexId, Toast,
+    draw_backdrop, draw_footer, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Menu, MenuItem,
+    Millis, Polaroids, Refusal, Shelf, SlotChrome, TexId, Toast,
 };
 
 use crate::audio::Sfx;
@@ -136,6 +136,14 @@ pub enum Phase {
     Polaroids {
         cart: String,
     },
+    /// The shelf's own menu, over the shelf. It holds its cursor, so the entry that was
+    /// selected is still selected when About closes back onto it.
+    Menu {
+        menu: Menu,
+    },
+    /// The label. A screen of its own rather than a panel, because it is one object being
+    /// looked at and there is nothing else on it.
+    About,
     Doze {
         cart: Option<String>,
     },
@@ -181,6 +189,8 @@ pub struct App {
     /// The clock screen's line of type and its one instruction. Rasterised by the binary,
     /// and gone for the rest of the session once the clock is confirmed.
     clock_faces: Option<(TexId, TexId)>,
+    /// The label, rasterised whole. Re-uploaded when the gauge moves.
+    sticker_face: Option<TexId>,
     /// One picture from `Wallpapers`, behind everything the shelf draws. `None` on a card
     /// that carries none, which is the common case.
     wallpaper: Option<TexId>,
@@ -244,6 +254,7 @@ impl App {
             legend_faces: Vec::new(),
             undo_face: None,
             clock_faces: None,
+            sticker_face: None,
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
             bolt: None,
@@ -358,6 +369,20 @@ impl App {
     pub fn picker(&self) -> Option<&ClockPicker> {
         match &self.phase {
             Phase::SetClock { picker } => Some(picker),
+            _ => None,
+        }
+    }
+
+    pub fn set_sticker_face(&mut self, face: TexId) {
+        self.sticker_face = Some(face);
+    }
+
+    /// For the binary, which owns the GL context and so is the only thing that can turn the
+    /// rows into faces. `None` off the menu, so nothing is rasterised for a screen that is
+    /// not up.
+    pub fn menu_mut(&mut self) -> Option<&mut Menu> {
+        match &mut self.phase {
+            Phase::Menu { menu } => Some(menu),
             _ => None,
         }
     }
@@ -516,7 +541,7 @@ impl App {
             Phase::Shelf => match action {
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf.hold_left(now),
                 Action::ShelfRight | Action::GbaDown(Btn::Right) => self.shelf.hold_right(now),
-                Action::AdbToggle => self.relink_adb(),
+                Action::OpenMenu => self.phase = Phase::Menu { menu: Menu::new() },
                 // A is two actions and the press cannot tell them apart yet, so the cart
                 // goes in on the release. The hold has already taken it if it got there
                 // first, and then the release is not a second press.
@@ -550,7 +575,33 @@ impl App {
                 Action::GbaDown(Btn::Y) => self.delete_selected(),
                 _ => {}
             },
+            Phase::Menu { ref mut menu } => match action {
+                Action::GbaDown(Btn::Up) => menu.up(),
+                Action::GbaDown(Btn::Down) => menu.down(),
+                Action::GbaDown(Btn::A) => self.choose_menu(),
+                // The chord closes it as well as opens it, which is how every other screen
+                // here behaves and how a menu you opened by accident gets shut.
+                Action::GbaDown(Btn::B) | Action::OpenMenu => self.phase = Phase::Shelf,
+                _ => {}
+            },
+            // Back to the menu rather than to the shelf: this screen was opened from there
+            // and closing it should land where it was opened from.
+            Phase::About if action == Action::GbaDown(Btn::B) => {
+                self.phase = Phase::Menu { menu: Menu::new() }
+            }
             _ => {}
+        }
+    }
+
+    /// Relinking leaves the menu up: it is the sort of thing that gets pressed twice, and the
+    /// cable coming back is what says it worked.
+    fn choose_menu(&mut self) {
+        let Phase::Menu { menu } = &self.phase else {
+            return;
+        };
+        match menu.selected() {
+            MenuItem::RelinkAdb => self.relink_adb(),
+            MenuItem::About => self.phase = Phase::About,
         }
     }
 
@@ -967,6 +1018,17 @@ impl App {
                     self.shelf_clock,
                     out,
                 );
+            }
+            // The shelf stays behind it, unshaken and without the footer: the menu is a thing
+            // put on top of the shelf rather than a screen that replaced it.
+            Phase::Menu { menu } => {
+                draw_backdrop(self.wallpaper, out);
+                self.shelf.draw(0.0, out);
+                menu.draw(out);
+            }
+            Phase::About => {
+                slot_ui::draw_sticker(self.sticker_face, out);
+                return;
             }
             // The shelf recedes behind the cart on the way in; on the way out the live
             // game is what darkens, and the compositor has already drawn it.

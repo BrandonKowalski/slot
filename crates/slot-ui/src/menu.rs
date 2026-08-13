@@ -50,7 +50,7 @@ impl MenuItem {
 
 /// The list and where the cursor is on it. The faces belong to the binary, which is the only
 /// thing here with a GL context; this holds the handles and decides where they go.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Menu {
     cursor: usize,
     /// In `MenuItem::ALL` order, and empty until the binary has uploaded them.

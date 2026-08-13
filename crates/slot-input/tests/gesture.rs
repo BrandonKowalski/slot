@@ -45,12 +45,24 @@ fn select_released_inside_the_window_still_reaches_the_game() {
     assert!(g.tick(1_000).is_empty());
 }
 
+/// A tap of MENU opens the shelf's menu, on the release. The other two MENU gestures are
+/// unchanged: a tap was the one press this button did not already mean something by.
 #[test]
-fn menu_single_tap_does_nothing() {
+fn menu_single_tap_opens_the_menu() {
+    let mut g = Gestures::new();
+    assert!(g.feed(Down(Menu), 0).is_empty(), "acted on the press");
+    assert_eq!(g.feed(Up(Menu), 100), vec![OpenMenu]);
+    assert!(g.tick(451).is_empty(), "fired a second time on the timer");
+}
+
+/// The hold is an eject and nothing else. A press long enough to eject is not also a tap, or
+/// letting go of one would drop a menu over the shelf the cart just came back to.
+#[test]
+fn a_menu_hold_is_not_also_a_tap() {
     let mut g = Gestures::new();
     g.feed(Down(Menu), 0);
-    g.feed(Up(Menu), 100);
-    assert!(g.tick(451).is_empty());
+    assert_eq!(g.tick(MENU_HOLD_MS), vec![Eject]);
+    assert!(g.feed(Up(Menu), MENU_HOLD_MS + 50).is_empty());
 }
 
 #[test]
@@ -272,20 +284,6 @@ fn each_press_starts_its_own_ramp() {
         "the new press repeated early"
     );
     assert_eq!(g.tick(5_000 + VOLUME_REPEAT_DELAY_MS), vec![VolumeUp]);
-}
-
-/// The one chord that is neither a level nor a save: it puts the debug link back without a
-/// power cycle, which is the only other way to get it back once it drops.
-#[test]
-fn select_and_x_asks_for_the_debug_link() {
-    let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    assert_eq!(g.feed(Down(X), 50), vec![AdbToggle]);
-    // Swallowed exactly like the other chords: X never reaches the game, and neither does
-    // the SELECT that qualified it.
-    assert!(g.tick(500).is_empty());
-    assert!(g.feed(Up(X), 60).is_empty());
-    assert!(g.feed(Up(Select), 70).is_empty());
 }
 
 /// X on its own is the game's X. A chord key is only a chord while SELECT is down.

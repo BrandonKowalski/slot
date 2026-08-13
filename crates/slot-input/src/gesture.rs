@@ -46,9 +46,9 @@ pub enum Action {
     BlueLightDown,
     VolumeUp,
     VolumeDown,
-    /// Put the debug link back. Not a setting and not a level: the device has one way in once
-    /// it drops, and that is a reboot.
-    AdbToggle,
+    /// The shelf's menu, off a tap of MENU. The button's other two gestures both need a
+    /// game under them, so on the shelf a tap of it meant nothing at all.
+    OpenMenu,
     MuteToggle,
     PowerTap,
     PowerHold,
@@ -252,8 +252,16 @@ impl Gestures {
         };
         let ejected = self.menu_eject_fired;
         self.menu_eject_fired = false;
-        self.menu_last_tap = (!ejected && now.saturating_sub(d) < MENU_TAP_MS).then_some(now);
-        Vec::new()
+        let tapped = !ejected && now.saturating_sub(d) < MENU_TAP_MS;
+        self.menu_last_tap = tapped.then_some(now);
+        // On the release rather than after the double tap window closes: waiting would put a
+        // third of a second between the press and the screen, to serve a gesture that means
+        // nothing on the shelf anyway. A second tap inside the window still opens the
+        // polaroids, and whoever gets both is on a screen where only one of them lands.
+        match tapped {
+            true => vec![Action::OpenMenu],
+            false => Vec::new(),
+        }
     }
 
     fn power_up(&mut self) -> Vec<Action> {
@@ -364,7 +372,6 @@ fn chord(b: Btn) -> Option<(u8, Action)> {
         Btn::Right => (8, Action::BlueLightUp),
         Btn::L1 => (16, Action::LoadState),
         Btn::R1 => (32, Action::SaveState),
-        Btn::X => (64, Action::AdbToggle),
         _ => return None,
     })
 }

@@ -458,10 +458,10 @@ fn eject_is_the_insert_backwards() {
     assert!(a.screen_power() < first, "the screen is not closing");
 }
 
-/// The debug link is a shelf affordance. A cable pulled mid-game is not something to be
-/// re-enumerating the port over, and X is the game's X once a cart is in.
+/// The menu is a shelf affordance. MENU means eject and polaroids once a cart is in, and a
+/// menu over a running game is a pause screen nobody asked for.
 #[test]
-fn select_and_x_relinks_adb_from_the_shelf_and_nowhere_else() {
+fn the_menu_opens_from_the_shelf_and_nowhere_else() {
     use std::sync::atomic::Ordering;
     // Two carts, or `single_cart` makes this a dedicated device: one cart is seated at boot
     // whatever the state says, and the shelf is never on screen to press the chord from.
@@ -473,18 +473,47 @@ fn select_and_x_relinks_adb_from_the_shelf_and_nowhere_else() {
         "not on the shelf: {:?}",
         s.app().phase()
     );
-    s.app_mut().apply(slot_input::Action::AdbToggle);
+    s.app_mut().apply(slot_input::Action::OpenMenu);
+    assert!(matches!(s.app().phase(), slot::app::Phase::Menu { .. }));
+
+    // B closes it back to the shelf.
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::B));
+    assert!(matches!(s.app().phase(), slot::app::Phase::Shelf));
+
+    // The first entry reaches the platform.
+    s.app_mut().apply(slot_input::Action::OpenMenu);
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::A));
     assert_eq!(
         relinks.load(Ordering::Relaxed),
         1,
-        "the shelf did not relink"
+        "the menu did not relink"
     );
 
+    // And a seated cart has no menu at all.
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::B));
     s.app_mut().apply(slot_input::Action::Insert);
-    s.app_mut().apply(slot_input::Action::AdbToggle);
-    assert_eq!(
-        relinks.load(Ordering::Relaxed),
-        1,
-        "a cart was in the slot and the port was re-enumerated anyway"
+    s.app_mut().apply(slot_input::Action::OpenMenu);
+    assert!(
+        !matches!(s.app().phase(), slot::app::Phase::Menu { .. }),
+        "a menu opened over a seated cart"
     );
+}
+
+/// About is a screen of its own, so B leaves it without leaving the menu.
+#[test]
+fn about_opens_from_the_menu_and_b_comes_back_to_it() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut s, _relinks) = common::session_with_relinks(d.path());
+    s.app_mut().apply(slot_input::Action::OpenMenu);
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::Down));
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::A));
+    assert!(matches!(s.app().phase(), slot::app::Phase::About));
+    s.app_mut()
+        .apply(slot_input::Action::GbaDown(slot_input::Btn::B));
+    assert!(matches!(s.app().phase(), slot::app::Phase::Menu { .. }));
 }
