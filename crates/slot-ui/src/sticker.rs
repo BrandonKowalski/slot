@@ -20,8 +20,10 @@ const STICKER_SVG: &str = include_str!("../assets/sticker.svg");
 /// ANBERNIC RG SP, set as outlines. Where the article puts the console's own logo.
 const WORDMARK_SVG: &str = include_str!("../assets/wordmark.svg");
 
-/// How wide the lockup sits on the label.
-const WORDMARK_W: u32 = 196;
+/// How wide the lockup sits on the label. Set by its keyline rather than by the block it sits
+/// in: the outline is what makes it that logotype, and below about this width it thins to
+/// nothing and the whole thing collapses into solid letters.
+const WORDMARK_W: u32 = 250;
 
 /// The traced outline's own aspect, so it rasterises unstretched.
 pub const STICKER_W: u32 = 660;
@@ -40,6 +42,10 @@ const PANEL_FH: f32 = 35.433 / 71.116;
 /// Stands in for the direct current symbol in the text, and is drawn rather than set. Kept as
 /// the real codepoint so the line reads correctly to anything but the rasteriser.
 pub const DC: char = '\u{2393}';
+
+/// The circled M beside the copyright, which on the article means the mark is registered. In
+/// the font as a bare M; the ring around it is drawn, the same deal as [`DC`].
+pub const MARK: char = '\u{24c2}';
 
 const MARGIN: f32 = 11.0;
 const HEAD_PX: f32 = 11.0;
@@ -68,7 +74,7 @@ pub struct StickerFields<'a> {
 /// This is what README.md credits, in the space a label has for it.
 pub const CREDITS: [&str; 10] = [
     "EMULATION BY MGBA, THROUGH",
-    "LIBRETRO. THE DEVICE BOOTS",
+    "LIBRETRO. AGS-102 IS A FORK OF",
     "BASEOS BY PVAIBHAV. TYPE IS",
     "OPEN SANS AND NERD FONTS",
     "SYMBOLS BY RYAN L MCINTYRE.",
@@ -182,6 +188,47 @@ impl Canvas {
         bar_w
     }
 
+    /// A letter inside a ring, for the circled M the article sets beside its copyright. The
+    /// glyph itself is in the font and the ring is not, so the ring is drawn around it: this
+    /// crate's faces carry the circled letters no further than U+24C2, which is the one it
+    /// needs. Returns what the pair took, ring included.
+    fn ringed(&mut self, x: f32, y: f32, ch: char, px: f32, c: [u8; 3]) -> f32 {
+        // U+24B6 up is the circled capitals in order, so the letter to set inside falls out of
+        // the codepoint. The call site names the character it means and this finds the glyph
+        // that exists — asking the font for the circled one directly draws nothing at all.
+        let letter = char::from_u32('A' as u32 + (ch as u32 - 0x24b6)).unwrap_or(ch);
+        // The letter sits smaller than the type around it, the way an inset mark does.
+        let inner = px * 0.72;
+        let s = letter.to_string();
+        let lw = self.print_measure(&s, inner);
+        let r = (px * 0.52).max(lw / 2.0 + px * 0.16);
+        // The cap band of the surrounding line, so the ring centres on the type rather than
+        // on the box the type was laid out in.
+        let cy = y + px * 0.685;
+        let cx = x + r;
+        let t = (px / 9.0).round().max(1.0);
+        // Drawn as a filled disc minus a smaller one, which at this size is steadier than
+        // walking a circle and rounding each step.
+        let ri = r - t;
+        let n = r.ceil() as i32;
+        for dy in -n..=n {
+            for dx in -n..=n {
+                let d = ((dx * dx + dy * dy) as f32).sqrt();
+                if d <= r && d > ri {
+                    self.set((cx + dx as f32) as u32, (cy + dy as f32) as u32, c, 255);
+                }
+            }
+        }
+        self.print(
+            cx - lw / 2.0,
+            cy - px * 0.685 + (px - inner) / 2.0,
+            &s,
+            inner,
+            c,
+        );
+        r * 2.0
+    }
+
     /// Rasterised artwork composited at a position, over whatever is already there.
     fn blit(&mut self, x: u32, y: u32, src: &[u8], sw: u32, sh: u32) {
         for row in 0..sh {
@@ -251,6 +298,14 @@ impl Canvas {
             }
         }
         y + px * 1.35
+    }
+
+    /// `print`, for a run being set beside something rather than above it: the same drawing,
+    /// answering where the next thing starts across rather than down.
+    fn print_at(&mut self, x: f32, y: f32, s: &str, px: f32, c: [u8; 3]) -> f32 {
+        let w = self.print_measure(s, px);
+        self.print(x, y, s, px, c);
+        x + w
     }
 }
 
@@ -360,10 +415,24 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
         );
         ry += mh as f32 + 4.0;
     }
-    for line in ["(C) 2026   (M) 2026 KOWALSKI", "SEE README."] {
-        let lw = c.print_measure(line, SMALL_PX);
-        ry = c.print(right_edge - lw - 10.0, ry, line, SMALL_PX, WHITE);
-    }
+    // The copyright, with the circled M the article carries beside it. The line is measured
+    // whole before anything is drawn: it hangs off the right edge, and the ring is not a glyph
+    // whose width the layout can be asked for.
+    // The gaps are held here rather than as spaces in the strings: the layout trims a run's
+    // own leading and trailing space, so a space either side of the ring measures as nothing
+    // and the mark lands hard against the year.
+    let (before, after) = ("\u{a9} 2026", "2026 KOWALSKI");
+    let ring_w = SMALL_PX * 1.04;
+    let gap = SMALL_PX * 0.5;
+    let total =
+        c.print_measure(before, SMALL_PX) + ring_w + c.print_measure(after, SMALL_PX) + gap * 2.0;
+    let mut cx = right_edge - total - 10.0;
+    cx = c.print_at(cx, ry, before, SMALL_PX, WHITE) + gap;
+    cx += c.ringed(cx, ry, MARK, SMALL_PX, WHITE) + gap;
+    ry = c.print(cx, ry, after, SMALL_PX, WHITE);
+
+    let lw = c.print_measure("SEE README.", SMALL_PX);
+    c.print(right_edge - lw - 10.0, ry, "SEE README.", SMALL_PX, WHITE);
 
     UndoFace {
         rgba: c.px,
