@@ -43,10 +43,6 @@ const PANEL_FH: f32 = 35.433 / 71.116;
 /// the real codepoint so the line reads correctly to anything but the rasteriser.
 pub const DC: char = '\u{2393}';
 
-/// The circled M beside the copyright, which on the article means the mark is registered. In
-/// the font as a bare M; the ring around it is drawn, the same deal as [`DC`].
-pub const MARK: char = '\u{24c2}';
-
 const MARGIN: f32 = 11.0;
 const HEAD_PX: f32 = 11.0;
 const BODY_PX: f32 = 8.5;
@@ -81,13 +77,22 @@ pub const CREDITS: [&str; 10] = [
     "THE PANEL MASK IS DERIVED",
     "FROM GIGAHERZ'S LCD3X. THE",
     "SOUNDS ARE MY CHILDHOOD",
-    "GAMEBOY. MADE WITH",
-    "CLAUDE CODE.",
+    "GAMEBOY. I WASTED WATER",
+    "WITH CLAUDE CODE.",
 ];
 
 /// The article's own origin row, kept word for word. It is the one place the joke is funnier
 /// left alone than rewritten.
 pub const ORIGIN: [&str; 2] = ["S/LOT-USA", "MADE IN ITHACA"];
+
+/// The bottom right block, under the lockup. The copyright sign is a real glyph here; the
+/// article's circled M beside it is not, and is not true of this anyway.
+pub const COPYRIGHT: &str = "\u{a9} 2026 KOWALSKI";
+
+/// Where it actually is. The barcode was measured for this first and cannot hold it — the
+/// bars come to 498px in a 450px panel — so the address is set as type and the bars name the
+/// build instead.
+pub const HOME: &str = "GITHUB.COM/BRANDONKOWALSKI/SLOT";
 
 /// The three headline rows: what the plate says about this unit. Only the gauge moves.
 pub fn head_rows(f: &StickerFields) -> [String; 3] {
@@ -113,6 +118,8 @@ pub fn sticker_lines(f: &StickerFields) -> Vec<String> {
     out.extend(CREDITS.iter().map(|s| s.to_string()));
     out.extend(ORIGIN.iter().map(|s| s.to_string()));
     out.push(format!("{} {}", f.serial, f.dirty_digit));
+    out.push(COPYRIGHT.to_string());
+    out.push(HOME.to_string());
     out
 }
 
@@ -188,47 +195,6 @@ impl Canvas {
         bar_w
     }
 
-    /// A letter inside a ring, for the circled M the article sets beside its copyright. The
-    /// glyph itself is in the font and the ring is not, so the ring is drawn around it: this
-    /// crate's faces carry the circled letters no further than U+24C2, which is the one it
-    /// needs. Returns what the pair took, ring included.
-    fn ringed(&mut self, x: f32, y: f32, ch: char, px: f32, c: [u8; 3]) -> f32 {
-        // U+24B6 up is the circled capitals in order, so the letter to set inside falls out of
-        // the codepoint. The call site names the character it means and this finds the glyph
-        // that exists — asking the font for the circled one directly draws nothing at all.
-        let letter = char::from_u32('A' as u32 + (ch as u32 - 0x24b6)).unwrap_or(ch);
-        // The letter sits smaller than the type around it, the way an inset mark does.
-        let inner = px * 0.72;
-        let s = letter.to_string();
-        let lw = self.print_measure(&s, inner);
-        let r = (px * 0.52).max(lw / 2.0 + px * 0.16);
-        // The cap band of the surrounding line, so the ring centres on the type rather than
-        // on the box the type was laid out in.
-        let cy = y + px * 0.685;
-        let cx = x + r;
-        let t = (px / 9.0).round().max(1.0);
-        // Drawn as a filled disc minus a smaller one, which at this size is steadier than
-        // walking a circle and rounding each step.
-        let ri = r - t;
-        let n = r.ceil() as i32;
-        for dy in -n..=n {
-            for dx in -n..=n {
-                let d = ((dx * dx + dy * dy) as f32).sqrt();
-                if d <= r && d > ri {
-                    self.set((cx + dx as f32) as u32, (cy + dy as f32) as u32, c, 255);
-                }
-            }
-        }
-        self.print(
-            cx - lw / 2.0,
-            cy - px * 0.685 + (px - inner) / 2.0,
-            &s,
-            inner,
-            c,
-        );
-        r * 2.0
-    }
-
     /// Rasterised artwork composited at a position, over whatever is already there.
     fn blit(&mut self, x: u32, y: u32, src: &[u8], sw: u32, sh: u32) {
         for row in 0..sh {
@@ -298,14 +264,6 @@ impl Canvas {
             }
         }
         y + px * 1.35
-    }
-
-    /// `print`, for a run being set beside something rather than above it: the same drawing,
-    /// answering where the next thing starts across rather than down.
-    fn print_at(&mut self, x: f32, y: f32, s: &str, px: f32, c: [u8; 3]) -> f32 {
-        let w = self.print_measure(s, px);
-        self.print(x, y, s, px, c);
-        x + w
     }
 }
 
@@ -415,24 +373,13 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
         );
         ry += mh as f32 + 4.0;
     }
-    // The copyright, with the circled M the article carries beside it. The line is measured
-    // whole before anything is drawn: it hangs off the right edge, and the ring is not a glyph
-    // whose width the layout can be asked for.
-    // The gaps are held here rather than as spaces in the strings: the layout trims a run's
-    // own leading and trailing space, so a space either side of the ring measures as nothing
-    // and the mark lands hard against the year.
-    let (before, after) = ("\u{a9} 2026", "2026 KOWALSKI");
-    let ring_w = SMALL_PX * 1.04;
-    let gap = SMALL_PX * 0.5;
-    let total =
-        c.print_measure(before, SMALL_PX) + ring_w + c.print_measure(after, SMALL_PX) + gap * 2.0;
-    let mut cx = right_edge - total - 10.0;
-    cx = c.print_at(cx, ry, before, SMALL_PX, WHITE) + gap;
-    cx += c.ringed(cx, ry, MARK, SMALL_PX, WHITE) + gap;
-    ry = c.print(cx, ry, after, SMALL_PX, WHITE);
-
-    let lw = c.print_measure("SEE README.", SMALL_PX);
-    c.print(right_edge - lw - 10.0, ry, "SEE README.", SMALL_PX, WHITE);
+    // The copyright and where the thing actually is. The article's second mark was the
+    // circled M, which says a trademark is registered; this one is not, so the line is the
+    // copyright alone and the address goes under it.
+    for line in [COPYRIGHT, HOME] {
+        let lw = c.print_measure(line, SMALL_PX);
+        ry = c.print(right_edge - lw - 10.0, ry, line, SMALL_PX, WHITE);
+    }
 
     UndoFace {
         rgba: c.px,

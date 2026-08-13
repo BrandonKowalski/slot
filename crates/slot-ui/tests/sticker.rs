@@ -77,3 +77,12 @@ fn every_line_is_already_upper_case() {
         assert_eq!(line, line.to_uppercase(), "{line}");
     }
 }
+
+/// The address is the one thing on here that tells somebody holding the device where the
+/// thing came from. It was the barcode's job first and the bars would not hold it, so it is
+/// set as type and has to actually be present.
+#[test]
+fn the_label_says_where_the_repo_is() {
+    let all = sticker_lines(&fields()).join("\n");
+    assert!(all.contains("GITHUB.COM/BRANDONKOWALSKI/SLOT"), "{all}");
+}
