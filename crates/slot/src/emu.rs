@@ -21,10 +21,13 @@ const PRESENT: Duration = Duration::from_nanos(16_666_667);
 /// Core frames per present while fast forwarding. There is no ramp and no adaptive cap: the
 /// core is stepped this many times and the deadline below absorbs whatever that costs.
 ///
-/// A step count the hardware cannot serve does not run slower than one it can — it stops
-/// presenting at 60 Hz instead. On an H700 at 4 the worker measured 100.5% of one core on
-/// LeafGreen, which is the deadline already being missed every pass.
-pub const FAST_STEPS: u32 = 8;
+/// Four, because an H700 cannot serve more. Eight was measured on hardware and pegged the
+/// worker at the same 100.5% of one core that four does — a thread already at 100% does the
+/// same work per second either way, so the extra steps bought no speed at all. What they cost
+/// was presents: the deadline sleep was never reached, so the picture fell from 60 Hz to
+/// around 30 at the same ~4x. A step count the hardware cannot serve does not run faster, it
+/// runs choppier.
+pub const FAST_STEPS: u32 = 4;
 
 /// Snapshot every other frame, so rewinding at one pop per present runs back at 2x. Every
 /// frame would double the serialize cost for playback nobody watches at real time anyway.
