@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
-use slot::emu::{CoreState, EmuHandle, Speed};
+use slot::emu::{CoreState, EmuHandle, Speed, FAST_STEPS};
 use slot::persist::Snapshot;
 use slot_retro::MockCore;
 
@@ -161,9 +161,11 @@ fn a_worker_that_stops_while_muted_leaves_the_sink_audible() {
     assert!(!sink.muted(), "the sink stayed muted after the cart left");
 }
 
-/// Four core frames per present, which is the only fast forward speed there is.
+/// `FAST_STEPS` core frames per present, which is the only fast forward speed there is. Read
+/// from the constant rather than repeated here: a step count that moves and a test that does
+/// not would leave the test passing on the old number.
 #[test]
-fn fast_forward_runs_four_core_frames_per_present() {
+fn fast_forward_runs_fast_steps_core_frames_per_present() {
     let emu = spawn();
     let from = frame_count(&emu);
     std::thread::sleep(Duration::from_millis(300));
@@ -174,9 +176,10 @@ fn fast_forward_runs_four_core_frames_per_present() {
     std::thread::sleep(Duration::from_millis(300));
     let fast = frame_count(&emu) - from;
 
+    let n = normal as u32;
     assert!(
-        fast >= normal * 3 && fast <= normal * 5,
-        "{fast} frames fast against {normal} normal is not 4x"
+        fast as u32 >= n * (FAST_STEPS - 1) && fast as u32 <= n * (FAST_STEPS + 1),
+        "{fast} frames fast against {normal} normal is not {FAST_STEPS}x"
     );
 }
 

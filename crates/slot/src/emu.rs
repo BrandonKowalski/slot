@@ -18,8 +18,13 @@ use crate::rewind::{Rewind, REWIND_BYTES};
 /// 0.456% the GBA runs slow lands entirely on audio rate control.
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
-/// Fast forward is exactly 4x. There is no ramp and no adaptive cap.
-const FAST_STEPS: u32 = 4;
+/// Core frames per present while fast forwarding. There is no ramp and no adaptive cap: the
+/// core is stepped this many times and the deadline below absorbs whatever that costs.
+///
+/// A step count the hardware cannot serve does not run slower than one it can — it stops
+/// presenting at 60 Hz instead. On an H700 at 4 the worker measured 100.5% of one core on
+/// LeafGreen, which is the deadline already being missed every pass.
+pub const FAST_STEPS: u32 = 8;
 
 /// Snapshot every other frame, so rewinding at one pop per present runs back at 2x. Every
 /// frame would double the serialize cost for playback nobody watches at real time anyway.
@@ -408,8 +413,9 @@ impl Worker {
                 self.publish(core.video_xrgb8888());
 
                 let audio = core.take_audio();
-                // Fast forward drops the core's audio outright. Resampling 4x playback down
-                // to real time would be pitch shifted noise nobody wants to hear.
+                // Fast forward drops the core's audio outright. Resampling accelerated
+                // playback down to real time would be pitch shifted noise nobody wants to
+                // hear.
                 if speed == Speed::Normal {
                     since_snapshot += 1;
                     if since_snapshot >= SNAPSHOT_EVERY {
