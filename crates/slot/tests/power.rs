@@ -133,16 +133,54 @@ fn the_backlight_follows_brightness_from_boot() {
     assert_eq!(step.load(Ordering::Relaxed), 4);
 }
 
+/// The menu covers whatever was on screen rather than tinting it. It is a decision about the
+/// device, not something happening inside the game, and a half-visible cart behind it reads
+/// as the game still being in charge.
+///
+/// Drawn in the case's own materials — the plate is housing, the keyline is edge, the row in
+/// hand is recess — so a screen that only appears for a couple of seconds still belongs to
+/// the same object as the shelf and the slot.
+#[test]
+fn the_menu_covers_the_screen_in_the_case_materials() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+
+    let mut out = Vec::new();
+    a.draw(&mut out);
+
+    match out.first() {
+        Some(Draw::Rect { w, h, colour, .. }) => {
+            assert_eq!(
+                *colour,
+                slot_ui::opening(),
+                "the ground is the case's opening"
+            );
+            assert!(*w > 0.0 && *h > 0.0, "and it covers the panel");
+        }
+        other => panic!("the menu drew {other:?} rather than a ground"),
+    }
+    // Only the ground is reachable here: the plate is sized from the uploaded row faces, and
+    // a unit test has no compositor to upload them with. What this does prove is that the
+    // menu replaces the screen rather than sitting over a game still being drawn.
+    assert_eq!(
+        out.len(),
+        1,
+        "nothing of the previous phase survives the menu"
+    );
+}
+
 /// rcK stops the frontend and unloads the GPU module before the kernel is allowed to halt,
 /// which takes about five seconds on this hardware. A panel that simply goes black for five
 /// seconds is one the user reads as hung — this device has already been opened once over
-/// exactly that confusion — so the shutdown says so, ahead of every phase and over whatever
-/// was on screen.
+/// exactly that confusion — so the shutdown says so, over whatever was on screen.
 #[test]
 fn a_power_off_draws_a_shutdown_screen_over_everything() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::PowerHold);
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::A));
 
     let mut out = Vec::new();
     a.draw(&mut out);

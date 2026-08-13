@@ -89,7 +89,9 @@ const PLAY_HOLD_MS: Millis = 500;
 const SHUTDOWN_SHOW_MS: Millis = 250;
 
 const POWER_MENU_PITCH: f32 = 44.0;
-const POWER_MENU_HIGHLIGHT: [f32; 4] = [1.0, 1.0, 1.0, 0.18];
+/// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
+/// stay separate things rather than one continuous block when the selection moves.
+const POWER_MENU_BAR_INSET: f32 = 4.0;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
@@ -1249,13 +1251,24 @@ impl App {
     /// Black, the rows, and a bar behind the one in hand. The highlight is a rect rather than
     /// a second face per row: the labels are rastered once at boot and never again, and a
     /// device about to lose its GPU is not the place to be uploading textures.
+    /// Type on the case's own ground, with the row in hand marked by a bar the width of its
+    /// own words. No plate behind it: the menu is three words and a choice, and a box around
+    /// them was furniture the screen did not need.
+    ///
+    /// The bar is `edge` — the lightest thing in the theme — because it has to read at a
+    /// glance on a device someone is about to switch off. `recess` was tried first and is the
+    /// right idea and the wrong value: it and `housing` are adjacent dark greys by design,
+    /// which is correct for a slot you look into and far too quiet for a selection.
+    ///
+    /// A rect rather than a second face per row: the labels are rastered once at boot and
+    /// never again, and a device about to lose its GPU is not the place to upload textures.
     fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
         out.push(Draw::Rect {
             x: 0.0,
             y: 0.0,
             w: OUT_W as f32,
             h: OUT_H as f32,
-            colour: [0.0, 0.0, 0.0, 1.0],
+            colour: slot_ui::opening(),
         });
         let rows = self.power_menu_faces.len();
         if rows == 0 {
@@ -1265,19 +1278,18 @@ impl App {
         let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
         for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
             let y = top + pitch * row as f32;
+            let x = ((OUT_W as f32 - w as f32) / 2.0).round();
             if row == index {
-                // Sized to the face, which is already the ink plus its own padding, so the
-                // bar hugs the words and changes width as the selection moves.
                 out.push(Draw::Rect {
-                    x: ((OUT_W - w) / 2) as f32,
-                    y,
+                    x,
+                    y: y + POWER_MENU_BAR_INSET,
                     w: w as f32,
-                    h: pitch,
-                    colour: POWER_MENU_HIGHLIGHT,
+                    h: pitch - 2.0 * POWER_MENU_BAR_INSET,
+                    colour: slot_ui::edge(),
                 });
             }
             out.push(Draw::Tex {
-                x: ((OUT_W - w) / 2) as f32,
+                x,
                 y: y + (pitch - h as f32) / 2.0,
                 w: w as f32,
                 h: h as f32,
