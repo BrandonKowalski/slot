@@ -40,9 +40,10 @@ fn a_build_with_no_git_still_has_a_serial() {
         ..sample()
     };
     assert!(!unknown.serial().is_empty());
-    // Not encodable, which the label has to handle by drawing no bars rather than refusing to
-    // draw the screen.
-    assert!(slot_ui::code39(&format!("*{}*", unknown.serial())).is_none());
+    // And still scans. The alphabet carries the letters and the hyphen, so the fallback name
+    // goes through the same payload as a real hash rather than leaving the panel blank.
+    let payload = format!("*SLOT-{}-{}*", unknown.serial(), unknown.dirty_digit());
+    assert!(slot_ui::code39(&payload).is_some());
 }
 
 /// Whatever this build's environment gave it, it is populated rather than empty.

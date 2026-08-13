@@ -17,6 +17,12 @@ use crate::text;
 /// drawing rather than a layout, and hand-fitting rectangles to it never quite landed.
 const STICKER_SVG: &str = include_str!("../assets/sticker.svg");
 
+/// ANBERNIC RG SP, set as outlines. Where the article puts the console's own logo.
+const WORDMARK_SVG: &str = include_str!("../assets/wordmark.svg");
+
+/// How wide the lockup sits on the label.
+const WORDMARK_W: u32 = 196;
+
 /// The traced outline's own aspect, so it rasterises unstretched.
 pub const STICKER_W: u32 = 660;
 pub const STICKER_H: u32 = 228;
@@ -39,7 +45,6 @@ const MARGIN: f32 = 11.0;
 const HEAD_PX: f32 = 11.0;
 const BODY_PX: f32 = 8.5;
 const SERIAL_PX: f32 = 26.0;
-const WORD_PX: f32 = 30.0;
 const SMALL_PX: f32 = 9.0;
 
 /// Everything the label says that is not fixed for the life of the binary.
@@ -70,13 +75,13 @@ pub const CREDITS: [&str; 10] = [
     "THE PANEL MASK IS DERIVED",
     "FROM GIGAHERZ'S LCD3X. THE",
     "SOUNDS ARE MY CHILDHOOD",
-    "GAMEBOY. PUT TOGETHER BY",
-    "CLAUDE OPUS.",
+    "GAMEBOY. MADE WITH",
+    "CLAUDE CODE.",
 ];
 
 /// The article's own origin row, kept word for word. It is the one place the joke is funnier
 /// left alone than rewritten.
-pub const ORIGIN: [&str; 2] = ["C/AGT-USA", "MADE IN CHINA"];
+pub const ORIGIN: [&str; 2] = ["S/LOT-USA", "MADE IN ITHACA"];
 
 /// The three headline rows: what the plate says about this unit. Only the gauge moves.
 pub fn head_rows(f: &StickerFields) -> [String; 3] {
@@ -114,7 +119,7 @@ struct Canvas {
 impl Canvas {
     /// The traced outline, rasterised. Everything else is set on top of it.
     fn shape(w: u32, h: u32) -> Canvas {
-        let px = render_svg(w, h).unwrap_or_else(|| vec![0; (w * h * 4) as usize]);
+        let px = render_svg(STICKER_SVG, w, h).unwrap_or_else(|| vec![0; (w * h * 4) as usize]);
         Canvas { px, w, h }
     }
 
@@ -153,22 +158,52 @@ impl Canvas {
     /// font in this crate carries U+2393 and a missing glyph rasterises to nothing — a rating
     /// line that quietly loses its middle.
     fn dc(&mut self, x: f32, y: f32, px: f32, c: [u8; 3]) -> f32 {
-        let bar_w = px * 0.62;
-        let t = (px / 9.0).max(1.0);
-        let bar_y = y + px * 0.52;
+        let bar_w = px * 0.78;
+        let t = (px / 8.0).round().max(1.0);
+        // The two halves need daylight between them or they read as one thick smudge at this
+        // size — which is exactly what a mark this small fails at first.
+        let gap = (t * 2.0).max(3.0);
+        // Centred on the cap band of the digits either side, which sits from 0.35 to 1.02 of
+        // the size below the box top. Hung any lower and the dashes land on the baseline,
+        // where the mark stops reading as a symbol and starts reading as an ellipsis.
+        let bar_y = (y + px * 0.685 - (t * 2.0 + gap) / 2.0).round();
         self.rect(x as u32, bar_y as u32, bar_w as u32, t as u32, c);
         let dash = bar_w / 5.0;
         for n in 0..3 {
             let dx = x + n as f32 * dash * 2.0;
             self.rect(
                 dx as u32,
-                (bar_y + t * 2.4) as u32,
-                dash as u32,
+                (bar_y + t + gap) as u32,
+                dash.ceil() as u32,
                 t as u32,
                 c,
             );
         }
         bar_w
+    }
+
+    /// Rasterised artwork composited at a position, over whatever is already there.
+    fn blit(&mut self, x: u32, y: u32, src: &[u8], sw: u32, sh: u32) {
+        for row in 0..sh {
+            for col in 0..sw {
+                let s = ((row * sw + col) * 4) as usize;
+                let a = src[s + 3] as u32;
+                if a == 0 {
+                    continue;
+                }
+                let (dx, dy) = (x + col, y + row);
+                if dx >= self.w || dy >= self.h {
+                    continue;
+                }
+                let d = ((dy * self.w + dx) * 4) as usize;
+                for k in 0..3 {
+                    let under = self.px[d + k] as u32;
+                    self.px[d + k] =
+                        ((src[s + k] as u32 * 255 + under * (255 - a)) / 255).min(255) as u8;
+                }
+                self.px[d + 3] = 255;
+            }
+        }
     }
 
     /// A hollow rectangle, for the boxed digit.
@@ -238,8 +273,10 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
             if let Some((before, after)) = line.split_once(DC) {
                 let bw = c.print_measure(before, HEAD_PX);
                 c.print(left, y, before, HEAD_PX, WHITE);
-                let dw = c.dc(left + bw + 1.0, y, HEAD_PX, WHITE);
-                y = c.print(left + bw + dw + 3.0, y, after, HEAD_PX, WHITE);
+                // Space either side, as a character would have. Without it the mark collides
+                // with the digits and the row reads as damage rather than a rating.
+                let dw = c.dc(left + bw + 4.0, y, HEAD_PX, WHITE);
+                y = c.print(left + bw + dw + 8.0, y, after, HEAD_PX, WHITE);
                 continue;
             }
         }
@@ -259,17 +296,24 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
     // The barcode, over the white panel, with a quiet zone either side.
     let bars_y = panel_y + 14;
     let bars_h = 62;
-    let scale = 2.0f32;
-    let run = code39(&format!("*{}*", f.serial));
-    if let Some(run) = run {
-        let narrow = (CODE39_NARROW * scale) as u32;
-        let wide = (CODE39_WIDE * scale) as u32;
+    // Model, unit and the dirty marker: a scan says everything the label does about which
+    // build this is, the way a product barcode carries model and serial together.
+    let payload = format!("SLOT-{}-{}", f.serial, f.dirty_digit);
+    if let Some(run) = code39(&format!("*{payload}*")) {
+        // The widest bars that still fit the panel with its quiet zones. Computed rather than
+        // constant: a longer payload otherwise runs off the panel with no complaint, and bars
+        // too fine to read are not a barcode.
+        let syms = run.len() as f32 / 9.0;
+        let per_sym = 3.0 * CODE39_WIDE + 7.0 * CODE39_NARROW;
+        let scale = ((panel_w as f32 - 12.0) / (syms * per_sym + 20.0 * CODE39_NARROW)).min(2.0);
+        let narrow = ((CODE39_NARROW * scale).round() as u32).max(1);
+        let wide = ((CODE39_WIDE * scale).round() as u32).max(narrow * 2);
         let total: u32 = run
             .iter()
             .map(|w| if *w { wide } else { narrow })
             .sum::<u32>()
             + (run.len() as u32 / 9) * narrow;
-        let mut x = panel_x + (panel_w - total) / 2;
+        let mut x = panel_x + panel_w.saturating_sub(total) / 2;
         for chunk in run.chunks_exact(9) {
             for (n, is_wide) in chunk.iter().enumerate() {
                 let ew = if *is_wide { wide } else { narrow };
@@ -303,11 +347,19 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
     );
 
     // The bottom right block, where the console's own name and the copyright are.
-    let mut ry = panel_y as f32 + panel_h as f32 + 12.0;
-    let word_w = c.print_measure("slot.", WORD_PX);
+    let mut ry = panel_y as f32 + panel_h as f32 + 10.0;
     let right_edge = (panel_x + panel_w) as f32;
-    ry = c.print(right_edge - word_w - 10.0, ry, "slot.", WORD_PX, WHITE);
-    ry += 2.0;
+    if let Some(mark) = wordmark(WORDMARK_W) {
+        let (mw, mh) = mark.1;
+        c.blit(
+            (right_edge - mw as f32 - 10.0) as u32,
+            ry as u32,
+            &mark.0,
+            mw,
+            mh,
+        );
+        ry += mh as f32 + 4.0;
+    }
     for line in ["(C) 2026   (M) 2026 KOWALSKI", "SEE README."] {
         let lw = c.print_measure(line, SMALL_PX);
         ry = c.print(right_edge - lw - 10.0, ry, line, SMALL_PX, WHITE);
@@ -324,14 +376,23 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
 /// which is the same thing straight through wherever alpha is 0 or 255 — and this artwork has
 /// no partial coverage except on its own antialiased edges, where premultiplied is what the
 /// compositor wants anyway.
-fn render_svg(w: u32, h: u32) -> Option<Vec<u8>> {
-    let tree = usvg::Tree::from_str(STICKER_SVG, &usvg::Options::default()).ok()?;
+fn render_svg(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
+    let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).ok()?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
     let size = tree.size();
     let scale =
         resvg::tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
     resvg::render(&tree, scale, &mut pixmap.as_mut());
     Some(pixmap.data().to_vec())
+}
+
+/// The lockup at a given width, and the size it came back. `None` where the artwork will not
+/// parse, which draws no logo rather than no label.
+fn wordmark(w: u32) -> Option<(Vec<u8>, (u32, u32))> {
+    let tree = usvg::Tree::from_str(WORDMARK_SVG, &usvg::Options::default()).ok()?;
+    let size = tree.size();
+    let h = (w as f32 * size.height() / size.width()).round() as u32;
+    Some((render_svg(WORDMARK_SVG, w, h)?, (w, h)))
 }
 
 /// Centred on screen, at its own size. The label is an object being looked at rather than a

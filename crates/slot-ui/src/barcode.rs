@@ -1,6 +1,5 @@
-//! Code 39, so the label's barcode is a barcode rather than a picture of one. Only the
-//! characters a hex hash needs, plus the sentinel: an alphabet this small is the whole reason
-//! the table fits here.
+//! Code 39, so the label's barcode is a barcode rather than a picture of one. The whole
+//! alphabet: digits, letters, and the handful of symbols a bare URL needs.
 //!
 //! Every symbol is nine elements — five bars and four spaces — of which exactly three are
 //! wide. Code 39 has 44 symbols and two shapes for them: two wide bars with one wide space
@@ -8,6 +7,11 @@
 //! (4-choose-3, four of them). The four are `$ / + %`, which leaves the digits, the letters
 //! and the `*` sentinel in the forty — the sentinel is shaped like a data character, which is
 //! the one thing about this symbology that reads as though it should not be true.
+//!
+//! The table is derived rather than transcribed. Each group of ten runs the same sequence of
+//! bar pairs and differs only in which space is wide, which the seventeen rows checked against
+//! a reader confirm exactly. The four no-wide-bar symbols were settled the same way: render
+//! each candidate, ask `zbarimg` what it says, keep the one that answers `/`.
 
 /// Element widths in draw units. Code 39 wants the wide element between two and three times
 /// the narrow one; 2.5 sits in the middle of what readers accept.
@@ -39,6 +43,33 @@ fn pattern(c: char) -> Option<[bool; 9]> {
         'D' => [0, 0, 0, 0, 1, 1, 0, 0, 1],
         'E' => [1, 0, 0, 0, 1, 1, 0, 0, 0],
         'F' => [0, 0, 1, 0, 1, 1, 0, 0, 0],
+        'G' => [0, 0, 0, 0, 0, 1, 1, 0, 1],
+        'H' => [1, 0, 0, 0, 0, 1, 1, 0, 0],
+        'I' => [0, 0, 1, 0, 0, 1, 1, 0, 0],
+        'J' => [0, 0, 0, 0, 1, 1, 1, 0, 0],
+        'K' => [1, 0, 0, 0, 0, 0, 0, 1, 1],
+        'L' => [0, 0, 1, 0, 0, 0, 0, 1, 1],
+        'M' => [1, 0, 1, 0, 0, 0, 0, 1, 0],
+        'N' => [0, 0, 0, 0, 1, 0, 0, 1, 1],
+        'O' => [1, 0, 0, 0, 1, 0, 0, 1, 0],
+        'P' => [0, 0, 1, 0, 1, 0, 0, 1, 0],
+        'Q' => [0, 0, 0, 0, 0, 0, 1, 1, 1],
+        'R' => [1, 0, 0, 0, 0, 0, 1, 1, 0],
+        'S' => [0, 0, 1, 0, 0, 0, 1, 1, 0],
+        'T' => [0, 0, 0, 0, 1, 0, 1, 1, 0],
+        'U' => [1, 1, 0, 0, 0, 0, 0, 0, 1],
+        'V' => [0, 1, 1, 0, 0, 0, 0, 0, 1],
+        'W' => [1, 1, 1, 0, 0, 0, 0, 0, 0],
+        'X' => [0, 1, 0, 0, 1, 0, 0, 0, 1],
+        'Y' => [1, 1, 0, 0, 1, 0, 0, 0, 0],
+        'Z' => [0, 1, 1, 0, 1, 0, 0, 0, 0],
+        '-' => [0, 1, 0, 0, 0, 0, 1, 0, 1],
+        '.' => [1, 1, 0, 0, 0, 0, 1, 0, 0],
+        ' ' => [0, 1, 1, 0, 0, 0, 1, 0, 0],
+        '$' => [0, 1, 0, 1, 0, 1, 0, 0, 0],
+        '/' => [0, 1, 0, 1, 0, 0, 0, 1, 0],
+        '+' => [0, 1, 0, 0, 0, 1, 0, 1, 0],
+        '%' => [0, 0, 0, 1, 0, 1, 0, 1, 0],
         '*' => [0, 1, 0, 0, 1, 0, 1, 0, 0],
         _ => return None,
     };

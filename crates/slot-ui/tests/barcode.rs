@@ -32,11 +32,22 @@ fn the_wide_elements_fall_where_the_symbology_says() {
     }
 }
 
+/// The whole alphabet, so a bare URL encodes: letters, digits, and the symbols a host and a
+/// path need.
 #[test]
-fn a_character_outside_the_alphabet_is_refused_rather_than_dropped() {
+fn the_alphabet_covers_a_bare_url() {
+    assert!(code39("*GITHUB.COM/BRANDONKOWALSKI/SLOT*").is_some());
+    assert!(code39("*SLOT.KOWALSKI.IO*").is_some());
     assert!(
-        code39("*9E11A10 DIRTY*").is_none(),
-        "the space is not encodable"
+        code39("*A B-C.D$E/F+G%H*").is_some(),
+        "the symbols are all in"
     );
-    assert!(code39("*ghijk*").is_none());
+}
+
+/// What it still cannot do, which is why no scheme and no case-sensitive path can go in one
+/// of these: Code 39 has no lower case and no colon at all.
+#[test]
+fn lower_case_and_a_colon_are_refused_rather_than_dropped() {
+    assert!(code39("*https*").is_none(), "there is no lower case");
+    assert!(code39("*HTTPS://X*").is_none(), "there is no colon");
 }
