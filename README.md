@@ -14,7 +14,7 @@ On the carousel, `L` and `R` browse and `A` plays.
 
 A short tap of `A` will resume the last save state. Holding `A` will start the game fresh.
 
-`MENU` opens a small menu, which puts the debug link back and holds the about screen.
+`MENU` opens the about screen.
 
 In game:
 

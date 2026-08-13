@@ -114,9 +114,9 @@ fn a_level_set_while_shut_waits_for_the_open() {
 
 #[test]
 fn sleep_carries_the_configured_depth_and_returns_the_wake() {
-    let (mut p, _, slept) = power(SleepDepth::Freeze, WakeReason::LidOpen);
+    let (mut p, _, slept) = power(SleepDepth::Mem, WakeReason::LidOpen);
     assert_eq!(p.sleep(), WakeReason::LidOpen);
-    assert_eq!(slept.load(Ordering::Relaxed), SleepDepth::Freeze as u8);
+    assert_eq!(slept.load(Ordering::Relaxed), SleepDepth::Mem as u8);
 }
 
 /// A wake left latched would end the next doze the instant it started.

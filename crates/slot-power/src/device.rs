@@ -23,6 +23,10 @@ const FF_RUMBLE: u16 = 0x50;
 /// alignment is counted, which is where the size in the middle of this comes from.
 const EVIOCSFF: c_ulong = 0x4030_4580;
 
+/// The OS's suspend door. It darkens the power light, applies the platform's Super Standby
+/// bit and restores the light on resume, none of which a frontend should have to know.
+const AGS_SUSPEND: &str = "/usr/sbin/ags-suspend";
+
 /// What `setbl` takes. The class publishes its own range in `max_brightness`; the display
 /// driver's debugfs door has no such file and is eight bit.
 const DISPDBG_MAX: u32 = 255;
@@ -441,13 +445,20 @@ impl Platform for DevicePlatform {
         }
     }
 
-    /// The write returns when the kernel resumes, which is why the depth is a value rather
-    /// than a branch above this. Nothing here can tell what woke it: the lid and the power
-    /// button both arrive as input events afterwards.
+    /// Returns when the kernel resumes, which is why the depth is a value rather than a
+    /// branch above this. Nothing here can tell what woke it: the lid and the power button
+    /// both arrive as input events afterwards.
     fn sleep(&mut self, depth: SleepDepth, timeout: Duration) -> WakeReason {
         match depth {
-            SleepDepth::Freeze => {
-                let _ = fs::write(self.sysfs.join("power/state"), "freeze\n");
+            // The OS owns everything that has to be true before the CPUs stop: the power
+            // light goes dark, the platform's Super Standby bit is applied, and the light
+            // is restored on the far side. One door, so that no caller can forget a step —
+            // and writing `mem` here directly would skip all of it. Falls back to the raw
+            // write where the helper is absent, which is any host that is not this OS.
+            SleepDepth::Mem => {
+                if Command::new(AGS_SUSPEND).status().is_err() {
+                    let _ = fs::write(self.sysfs.join("power/state"), "mem\n");
+                }
                 WakeReason::Power
             }
             SleepDepth::Doze => {

@@ -59,7 +59,14 @@ impl ApplicationHandler for Slot {
                 surface.request_redraw();
                 self.frontend.advance(&mut self.input);
                 // The simulated platform ends the process outright.
+                if self.frontend.suspending() {
+                    self.frontend.suspend();
+                }
                 if self.frontend.powering_off() {
+                    // The same last frame the device draws, so the host shows what the
+                    // handheld shows rather than blanking straight to an exit.
+                    self.frontend.render(compositor, surface.window_size());
+                    let _ = surface.swap();
                     self.frontend.poweroff();
                     events.exit();
                 }

@@ -8,8 +8,8 @@ use slot_store::{
     Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    draw_backdrop, draw_footer, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Menu, MenuItem,
-    Millis, Polaroids, Refusal, Shelf, SlotChrome, TexId, Toast,
+    draw_backdrop, draw_footer, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Polaroids,
+    Refusal, Shelf, SlotChrome, TexId, Toast,
 };
 
 use crate::audio::Sfx;
@@ -80,6 +80,10 @@ pub const UNDO_GRACE_MS: Millis = 30_000;
 /// device is still listening.
 const PLAY_HOLD_MS: Millis = 500;
 
+/// How long input is ignored after a resume. Long enough to cover the press that woke the
+/// kernel arriving in userspace, short enough that a deliberate second press still lands.
+const WAKE_SWALLOW_MS: Millis = 600;
+
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
 /// short way to come back and the symbol has to fit inside it either way. It is gone before
@@ -136,11 +140,6 @@ pub enum Phase {
     Polaroids {
         cart: String,
     },
-    /// The shelf's own menu, over the shelf. It holds its cursor, so the entry that was
-    /// selected is still selected when About closes back onto it.
-    Menu {
-        menu: Menu,
-    },
     /// The label. A screen of its own rather than a panel, because it is one object being
     /// looked at and there is nothing else on it.
     About,
@@ -163,6 +162,9 @@ pub struct App {
     /// say so. `None` for an eject the user asked for: nothing was refused.
     refused_from: Option<f32>,
     alert_face: Option<TexId>,
+    /// The shutdown line, with the size it was rastered at so it can be centred without
+    /// asking the compositor anything.
+    shutdown_face: Option<(TexId, u32, u32)>,
     /// `None` outside the binary, where there is no content root and nothing persists.
     root: Option<PathBuf>,
     state: SlotState,
@@ -233,6 +235,14 @@ pub struct App {
     /// of each one having to grow its own copy of it.
     last_led: Option<LedState>,
     powering_off: bool,
+    /// Set by the doze timeout and by a held power button. The binary acts on it, because
+    /// the sleep does not return until the kernel resumes and nothing above here may block.
+    suspending: bool,
+    /// Input is ignored until this instant after a resume. The press that wakes the kernel
+    /// is delivered to userspace as well, and without this the device dozes again the
+    /// moment it comes back — which is the two-presses-to-wake the hardware appears to
+    /// need, and is ours rather than the PMIC's.
+    swallow_power_until: Millis,
 }
 
 impl App {
@@ -244,6 +254,7 @@ impl App {
             refusal: None,
             refused_from: None,
             alert_face: None,
+            shutdown_face: None,
             root: None,
             state: SlotState::default(),
             vol_before: Vec::new(),
@@ -271,6 +282,8 @@ impl App {
             battery: None,
             last_led: None,
             powering_off: false,
+            suspending: false,
+            swallow_power_until: 0,
         }
     }
 
@@ -377,16 +390,6 @@ impl App {
         self.sticker_face = Some(face);
     }
 
-    /// For the binary, which owns the GL context and so is the only thing that can turn the
-    /// rows into faces. `None` off the menu, so nothing is rasterised for a screen that is
-    /// not up.
-    pub fn menu_mut(&mut self) -> Option<&mut Menu> {
-        match &mut self.phase {
-            Phase::Menu { menu } => Some(menu),
-            _ => None,
-        }
-    }
-
     pub fn set_clock_faces(&mut self, line: TexId, hint: TexId) {
         self.clock_faces = Some((line, hint));
     }
@@ -487,6 +490,26 @@ impl App {
         self.powering_off
     }
 
+    /// Set by the doze timeout and by a held power button. The binary is what acts on it:
+    /// `suspend` blocks until the kernel resumes, and the frame loop is the only place that
+    /// can afford to stop.
+    pub fn suspending(&self) -> bool {
+        self.suspending
+    }
+
+    /// Does not return until the device wakes. Everything durable was written on the edge
+    /// that set the flag, so a battery that runs out here loses nothing.
+    pub fn suspend(&mut self) {
+        self.suspending = false;
+        if let Some(power) = &mut self.power {
+            power.sleep();
+        }
+        self.swallow_power_until = self.now() + WAKE_SWALLOW_MS;
+        self.wake();
+        // The light comes back on the next one-second tick, which recomputes it from the
+        // gauge rather than guessing here what it should be.
+    }
+
     /// The cached reading. `None` until the first slow tick, and on any device with no gauge.
     pub fn battery(&self) -> Option<Battery> {
         self.battery
@@ -509,8 +532,13 @@ impl App {
         match action {
             Action::LidClose => return self.doze(),
             Action::LidOpen => return self.wake(),
-            Action::PowerTap => return self.power_press(),
-            Action::PowerHold => return self.power_off(),
+            Action::PowerTap => {
+                if self.now() < self.swallow_power_until {
+                    return;
+                }
+                return self.power_press();
+            }
+            Action::PowerHold => return self.power_hold(),
             _ => {}
         }
         // Ahead of the levels too. A screen with no way back is not one to be adjusting the
@@ -541,7 +569,7 @@ impl App {
             Phase::Shelf => match action {
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf.hold_left(now),
                 Action::ShelfRight | Action::GbaDown(Btn::Right) => self.shelf.hold_right(now),
-                Action::OpenMenu => self.phase = Phase::Menu { menu: Menu::new() },
+                Action::OpenAbout => self.phase = Phase::About,
                 // A is two actions and the press cannot tell them apart yet, so the cart
                 // goes in on the release. The hold has already taken it if it got there
                 // first, and then the release is not a second press.
@@ -575,33 +603,12 @@ impl App {
                 Action::GbaDown(Btn::Y) => self.delete_selected(),
                 _ => {}
             },
-            Phase::Menu { ref mut menu } => match action {
-                Action::GbaDown(Btn::Up) => menu.up(),
-                Action::GbaDown(Btn::Down) => menu.down(),
-                Action::GbaDown(Btn::A) => self.choose_menu(),
-                // The chord closes it as well as opens it, which is how every other screen
-                // here behaves and how a menu you opened by accident gets shut.
-                Action::GbaDown(Btn::B) | Action::OpenMenu => self.phase = Phase::Shelf,
-                _ => {}
-            },
-            // Back to the menu rather than to the shelf: this screen was opened from there
-            // and closing it should land where it was opened from.
-            Phase::About if action == Action::GbaDown(Btn::B) => {
-                self.phase = Phase::Menu { menu: Menu::new() }
+            // MENU closes it as well as opening it, so the button that got you here gets you
+            // back without having to know that B also works.
+            Phase::About if action == Action::GbaDown(Btn::B) || action == Action::OpenAbout => {
+                self.phase = Phase::Shelf
             }
             _ => {}
-        }
-    }
-
-    /// Relinking leaves the menu up: it is the sort of thing that gets pressed twice, and the
-    /// cable coming back is what says it worked.
-    fn choose_menu(&mut self) {
-        let Phase::Menu { menu } = &self.phase else {
-            return;
-        };
-        match menu.selected() {
-            MenuItem::RelinkAdb => self.relink_adb(),
-            MenuItem::About => self.phase = Phase::About,
         }
     }
 
@@ -997,6 +1004,30 @@ impl App {
     }
 
     pub fn draw(&self, out: &mut Vec<Draw>) {
+        // Ahead of every phase, because a shutdown is not a screen the user navigated to.
+        // rcK takes about five seconds on this hardware — it stops the frontend and unloads
+        // the GPU module before the kernel is allowed to halt — and five seconds of black
+        // panel after holding the button is indistinguishable from a device that has hung.
+        if self.powering_off {
+            out.push(Draw::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: OUT_W as f32,
+                h: OUT_H as f32,
+                colour: [0.0, 0.0, 0.0, 1.0],
+            });
+            if let Some((tex, w, h)) = self.shutdown_face {
+                out.push(Draw::Tex {
+                    x: ((OUT_W - w) / 2) as f32,
+                    y: ((OUT_H - h) / 2) as f32,
+                    w: w as f32,
+                    h: h as f32,
+                    tex,
+                    alpha: 1.0,
+                });
+            }
+            return;
+        }
         match &self.phase {
             // Nothing else is on screen and nothing goes over it, the HUD included: the
             // levels are unreachable here and there is no game to say anything about.
@@ -1018,13 +1049,6 @@ impl App {
                     self.shelf_clock,
                     out,
                 );
-            }
-            // The shelf stays behind it, unshaken and without the footer: the menu is a thing
-            // put on top of the shelf rather than a screen that replaced it.
-            Phase::Menu { menu } => {
-                draw_backdrop(self.wallpaper, out);
-                self.shelf.draw(0.0, out);
-                menu.draw(out);
             }
             Phase::About => {
                 slot_ui::draw_sticker(self.sticker_face, out);
@@ -1157,18 +1181,8 @@ impl App {
         self.alert_face = Some(face);
     }
 
-    /// Only from the shelf, where there is no cart to interrupt if the port takes a moment.
-    /// What says it worked is the cable coming back, so the log is the only thing said about
-    /// it here — and it says which of the two outcomes it was, because a controller the base
-    /// system put in host role cannot be talked back and is still a reboot.
-    fn relink_adb(&mut self) {
-        let Some(power) = &mut self.power else {
-            return;
-        };
-        match power.relink_adb() {
-            true => eprintln!("slot: adb relinked"),
-            false => eprintln!("slot: adb: no gadget to relink"),
-        }
+    pub fn set_shutdown_face(&mut self, face: TexId, w: u32, h: u32) {
+        self.shutdown_face = Some((face, w, h));
     }
 
     fn on_shelf(&self) -> bool {
@@ -1300,13 +1314,17 @@ impl App {
         }
     }
 
-    /// The timeout is a graceful power off, which is not an eject: `slot.state` still names
-    /// the cart, and the resume that lid close wrote is already on the card.
+    /// The timeout suspends rather than powers off, and is not an eject: `slot.state` still
+    /// names the cart, and the resume that lid close wrote is already on the card.
+    ///
+    /// It powered off until hardware said otherwise. Measured on an RG SP: suspend-to-RAM
+    /// costs under 45 mA against 400-700 mA for a doze that keeps running, and it comes
+    /// back into the game rather than through a three-second boot.
     pub fn on_doze_timeout(&mut self) {
         if !matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
-        self.begin_power_off();
+        self.begin_suspend();
     }
 
     /// The lid's twin, and the only one of the two the device is certain to see. A tap
@@ -1318,9 +1336,15 @@ impl App {
         }
     }
 
+    /// A held button powers off, through the OS rather than the PMIC. The PMIC's own
+    /// six-second hold cuts the rails in hardware with no sync, no unmount and no driver
+    /// teardown; the software path unloads the GPU module first, which is the difference
+    /// between a machine that stops and one that hangs with the rails up draining the
+    /// battery. Six seconds remains the emergency underneath, and needs no help from here.
+    ///
     /// Not an eject: the cart stays in the slot so the next boot resumes it. The flush is
     /// a no-op after a doze, which has already written the same file.
-    fn power_off(&mut self) {
+    fn power_hold(&mut self) {
         self.flush_resume();
         self.begin_power_off();
     }
@@ -1334,6 +1358,14 @@ impl App {
         self.set_led(LedState::Off);
     }
 
+    /// The sleep twin of `begin_power_off`. On this OS `ags-suspend` darkens the light too,
+    /// and doing it here as well is harmless — but a host that is not this OS has no such
+    /// helper, and a lit panel light on a sleeping machine is a lie either way.
+    fn begin_suspend(&mut self) {
+        self.suspending = true;
+        self.set_led(LedState::Off);
+    }
+
     /// The gauge, polled from `timers` and injected by the tests. Only a charge state the
     /// device positively asserted suppresses the cutoff: unknown and discharging both power
     /// off at the threshold, which is what the frontend did before it could read one.
@@ -1344,7 +1376,10 @@ impl App {
         if matches!(b.charge, Charge::Charging | Charge::Full) {
             return;
         }
-        self.power_off();
+        // A real power off, not a sleep. This is the one shutdown the user did not ask for,
+        // and suspending a cell this empty only spends what is left of it more slowly.
+        self.flush_resume();
+        self.begin_power_off();
     }
 
     fn doze_expired(&self) -> bool {

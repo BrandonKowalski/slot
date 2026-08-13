@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use common::{app_playing_in, boot, panel, tmp_root_with_carts, StubSnapshot};
 use slot::app::Phase;
+use slot_gfx::Draw;
 use slot_input::Action;
 use slot_store::{read_slot_state, write_slot_state, SlotState, StateRing};
 
@@ -82,9 +83,11 @@ fn lid_close_over_the_switcher_wakes_into_the_game() {
     );
 }
 
-/// A dozing app is still ticking, which is the only clock the timeout has.
+/// A dozing app is still ticking, which is the only clock the timeout has. It sleeps rather
+/// than powers off: a doze keeps the machine at full speed behind a dark panel, and
+/// suspend-to-RAM costs under 45 mA against 400-700 mA for that.
 #[test]
-fn a_doze_that_outlasts_the_timeout_powers_off_by_itself() {
+fn a_doze_that_outlasts_the_timeout_sleeps_by_itself() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.set_power(panel(d.path(), Duration::from_secs(2)).0);
@@ -92,11 +95,12 @@ fn a_doze_that_outlasts_the_timeout_powers_off_by_itself() {
     for _ in 0..100 {
         a.update(1.0 / 60.0);
     }
-    assert!(!a.powering_off(), "1.6 s is short of the 2 s timeout");
+    assert!(!a.suspending(), "1.6 s is short of the 2 s timeout");
     for _ in 0..40 {
         a.update(1.0 / 60.0);
     }
-    assert!(a.powering_off());
+    assert!(a.suspending());
+    assert!(!a.powering_off(), "the timeout never powers off");
 }
 
 #[test]
@@ -128,4 +132,34 @@ fn the_backlight_follows_brightness_from_boot() {
     assert_eq!(step.load(Ordering::Relaxed), 3);
     a.apply(Action::BrightnessUp);
     assert_eq!(step.load(Ordering::Relaxed), 4);
+}
+
+/// rcK stops the frontend and unloads the GPU module before the kernel is allowed to halt,
+/// which takes about five seconds on this hardware. A panel that simply goes black for five
+/// seconds is one the user reads as hung — this device has already been opened once over
+/// exactly that confusion — so the shutdown says so, ahead of every phase and over whatever
+/// was on screen.
+#[test]
+fn a_power_off_draws_a_shutdown_screen_over_everything() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+
+    let mut out = Vec::new();
+    a.draw(&mut out);
+
+    match out.first() {
+        Some(Draw::Rect { w, h, colour, .. }) => {
+            assert_eq!(*colour, [0.0, 0.0, 0.0, 1.0], "the shutdown is black");
+            assert!(*w > 0.0 && *h > 0.0, "and covers the panel");
+        }
+        other => panic!("the shutdown drew {other:?} rather than a panel of black"),
+    }
+    // One draw, not two: the line itself is a texture uploaded by the binary at boot, and a
+    // unit test has no compositor to upload it with. The screen is still correct without it.
+    assert_eq!(
+        out.len(),
+        1,
+        "nothing of the previous phase survives the shutdown screen"
+    );
 }

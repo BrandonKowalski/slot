@@ -46,9 +46,9 @@ pub enum Action {
     BlueLightDown,
     VolumeUp,
     VolumeDown,
-    /// The shelf's menu, off a tap of MENU. The button's other two gestures both need a
+    /// The about screen, off a tap of MENU. The button's other two gestures both need a
     /// game under them, so on the shelf a tap of it meant nothing at all.
-    OpenMenu,
+    OpenAbout,
     MuteToggle,
     PowerTap,
     PowerHold,
@@ -259,7 +259,7 @@ impl Gestures {
         // nothing on the shelf anyway. A second tap inside the window still opens the
         // polaroids, and whoever gets both is on a screen where only one of them lands.
         match tapped {
-            true => vec![Action::OpenMenu],
+            true => vec![Action::OpenAbout],
             false => Vec::new(),
         }
     }

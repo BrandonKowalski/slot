@@ -45,18 +45,18 @@ fn select_released_inside_the_window_still_reaches_the_game() {
     assert!(g.tick(1_000).is_empty());
 }
 
-/// A tap of MENU opens the shelf's menu, on the release. The other two MENU gestures are
+/// A tap of MENU opens the about screen, on the release. The other two MENU gestures are
 /// unchanged: a tap was the one press this button did not already mean something by.
 #[test]
-fn menu_single_tap_opens_the_menu() {
+fn menu_single_tap_opens_the_about_screen() {
     let mut g = Gestures::new();
     assert!(g.feed(Down(Menu), 0).is_empty(), "acted on the press");
-    assert_eq!(g.feed(Up(Menu), 100), vec![OpenMenu]);
+    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
     assert!(g.tick(451).is_empty(), "fired a second time on the timer");
 }
 
 /// The hold is an eject and nothing else. A press long enough to eject is not also a tap, or
-/// letting go of one would drop a menu over the shelf the cart just came back to.
+/// letting go of one would drop the about screen over the shelf the cart just came back to.
 #[test]
 fn a_menu_hold_is_not_also_a_tap() {
     let mut g = Gestures::new();

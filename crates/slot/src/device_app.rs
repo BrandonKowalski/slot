@@ -45,7 +45,16 @@ pub fn run() {
             return;
         }
         frontend.advance(&mut input);
+        if frontend.suspending() {
+            frontend.suspend();
+        }
         if frontend.powering_off() {
+            // One more frame, so the shutdown line is on the panel before rcK starts. The
+            // teardown stops the frontend and unloads the GPU module before the kernel is
+            // allowed to halt, which takes about five seconds — and a device that just goes
+            // black for five seconds is one the user assumes has hung.
+            frontend.render(&mut compositor, surface.window_size());
+            let _ = surface.swap();
             frontend.poweroff();
             return;
         }

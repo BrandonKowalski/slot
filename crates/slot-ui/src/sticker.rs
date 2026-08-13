@@ -87,12 +87,9 @@ pub const ORIGIN: [&str; 2] = ["S/LOT-USA", "MADE IN ITHACA"];
 
 /// The bottom right block, under the lockup. The copyright sign is a real glyph here; the
 /// article's circled M beside it is not, and is not true of this anyway.
-pub const COPYRIGHT: &str = "\u{a9} 2026 KOWALSKI";
+pub const COPYRIGHT: &str = "\u{a9} 2026 BRANDON T. KOWALSKI";
 
-/// Where it actually is. The barcode was measured for this first and cannot hold it — the
-/// bars come to 498px in a 450px panel — so the address is set as type and the bars name the
-/// build instead.
-pub const HOME: &str = "GITHUB.COM/BRANDONKOWALSKI/SLOT";
+pub const HOME: &str = "SEE README.";
 
 /// The three headline rows: what the plate says about this unit. Only the gauge moves.
 pub fn head_rows(f: &StickerFields) -> [String; 3] {

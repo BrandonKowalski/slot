@@ -8,7 +8,6 @@ mod draw;
 mod footer;
 mod hud;
 mod icon;
-mod menu;
 mod plate;
 mod polaroids;
 mod refusal;
@@ -32,7 +31,6 @@ pub use draw::{Draw, TexId, OUT_H, OUT_W};
 pub use footer::{draw_footer, Printed};
 pub use hud::{ff_badge, FfState, Hud, HudKind, Millis, HUD_ICON_PX, HUD_INK, HUD_MS, PLATE_H};
 pub use icon::{icon_box, icon_face, Icon};
-pub use menu::{Menu, MenuItem};
 pub use plate::{
     cap_width, hint_face, hint_quad, hint_row, hint_width, title_face, word_face, word_width, Hint,
     UndoFace, CAP_GAP, HINT_GAP, HINT_H, TITLE_H, TITLE_W,

@@ -11,13 +11,14 @@ pub use sim::SimPlatform;
 use std::path::Path;
 use std::time::Duration;
 
-/// The only difference is whether the sleep path additionally writes `freeze` to
-/// `/sys/power/state` before waiting. Which one the lid uses is a bring-up number, not a
-/// design decision, so it stays a value rather than a branch in the code.
+/// How far down a sleep goes. Which one the lid uses was a bring-up question and hardware
+/// has now answered it: `Mem` is suspend-to-RAM and measured under 45 mA on an RG SP,
+/// against 141 mA without the platform's Super Standby bit and 400-700 mA awake. `Doze`
+/// only darkens and waits, and exists for hosts that cannot suspend at all.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum SleepDepth {
     Doze,
-    Freeze,
+    Mem,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

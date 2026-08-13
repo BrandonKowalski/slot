@@ -9,8 +9,8 @@ use slot_power::{Platform, Power, SleepDepth};
 use slot_store::format_stamp;
 use slot_ui::{
     cart_face, cart_shadow, hhmm, hint_face, icon_face, photo_face, set_clock_hint_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, MenuItem, StickerFields,
-    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, StickerFields, Toast,
+    ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, Phase};
@@ -38,17 +38,16 @@ pub struct Frontend {
     undo_tex: Option<TexId>,
     switcher: Switcher,
     clocks: Clocks,
-    menu: MenuFaces,
+    about: AboutFace,
 }
 
-/// The menu's rows and the label behind its second entry. The rows are fixed type and are
-/// built once; the label carries the gauge, so it is rebuilt when the reading moves.
+/// The about label, and what it was last built for. The gauge is the only thing on it that
+/// moves, so the reading is what decides whether it is rebuilt.
 #[derive(Default)]
-struct MenuFaces {
-    rows: Vec<TexId>,
-    sticker: Option<TexId>,
-    /// What the label was last built for. `None` is a board with no gauge, which is a
-    /// different thing from not having built one yet — `sticker` says that.
+struct AboutFace {
+    tex: Option<TexId>,
+    /// `None` is a board with no gauge, which is a different thing from not having built one
+    /// yet — `tex` says that.
     battery: Option<u8>,
 }
 
@@ -80,7 +79,7 @@ impl Frontend {
         let mut session = Session::boot(platform.root().to_path_buf());
         session
             .app_mut()
-            .set_power(Power::new(platform, SleepDepth::Doze, DOZE_TIMEOUT));
+            .set_power(Power::new(platform, SleepDepth::Mem, DOZE_TIMEOUT));
         Frontend {
             session,
             start: now,
@@ -91,7 +90,7 @@ impl Frontend {
             undo_tex: None,
             switcher: Switcher::default(),
             clocks: Clocks::default(),
-            menu: MenuFaces::default(),
+            about: AboutFace::default(),
         }
     }
 
@@ -122,6 +121,12 @@ impl Frontend {
         let alert = icon_face(Icon::Alert, ALERT_PX, ALERT_INK);
         let alert = compositor.create_texture(alert.w, alert.h, &alert.rgba);
         self.session.app_mut().set_alert_face(alert);
+        // Uploaded at boot like everything else: a shutdown is the one moment there is no
+        // time to rasterise anything, and the GPU is about to be taken away.
+        let down = word_face("POWERING DOWN");
+        let (dw, dh) = (down.w, down.h);
+        let down = compositor.create_texture(down.w, down.h, &down.rgba);
+        self.session.app_mut().set_shutdown_face(down, dw, dh);
         let toasts = Toast::ALL
             .iter()
             .map(|t| {
@@ -174,7 +179,7 @@ impl Frontend {
             compositor.upload_game(&frame);
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
-        sync_menu(self.session.app_mut(), compositor, &mut self.menu);
+        sync_about(self.session.app_mut(), compositor, &mut self.about);
         sync_switcher(
             self.session.app_mut(),
             compositor,
@@ -208,6 +213,16 @@ impl Frontend {
 
     pub fn powering_off(&self) -> bool {
         self.session.app().powering_off()
+    }
+
+    pub fn suspending(&self) -> bool {
+        self.session.app().suspending()
+    }
+
+    /// Blocks until the device wakes. The frame loop continues afterwards: a sleep is not
+    /// an exit.
+    pub fn suspend(&mut self) {
+        self.session.app_mut().suspend();
     }
 
     /// The state was flushed on the edge that set `powering_off`, so there is nothing left to
@@ -317,29 +332,14 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
     }
 }
 
-/// The menu's rows and the about label, both built only once the screen that wants them is
-/// up: the label is a 660 by 228 rasterisation and most sessions never open it.
-fn sync_menu(app: &mut App, compositor: &mut Compositor, state: &mut MenuFaces) {
-    if app.menu_mut().is_some() {
-        if state.rows.is_empty() {
-            state.rows = MenuItem::ALL
-                .iter()
-                .map(|item| {
-                    let face = word_face(item.label());
-                    compositor.create_texture(face.w, face.h, &face.rgba)
-                })
-                .collect();
-        }
-        let rows = state.rows.clone();
-        if let Some(menu) = app.menu_mut() {
-            menu.set_faces(rows);
-        }
-    }
+/// Built only once the screen is up: it is a 660 by 228 rasterisation and most sessions never
+/// open it.
+fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace) {
     if !matches!(app.phase(), Phase::About) {
         return;
     }
     let battery = app.battery().map(|b| b.percent);
-    if state.sticker.is_some() && state.battery == battery {
+    if state.tex.is_some() && state.battery == battery {
         return;
     }
     state.battery = battery;
@@ -349,7 +349,7 @@ fn sync_menu(app: &mut App, compositor: &mut Compositor, state: &mut MenuFaces) 
         serial: &build.serial(),
         dirty_digit: build.dirty_digit(),
     });
-    let id = upload(compositor, &mut state.sticker, face);
+    let id = upload(compositor, &mut state.tex, face);
     app.set_sticker_face(id);
 }
 

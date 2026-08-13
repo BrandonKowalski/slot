@@ -70,12 +70,19 @@ fn a_power_tap_dozes_and_a_second_one_wakes() {
     assert!(matches!(a.phase(), Phase::Playing { .. }));
 }
 
+/// A held button powers off through the OS, not the PMIC. The hardware cut at six seconds
+/// syncs nothing and unloads nothing, and on this board a shutdown that leaves the GPU
+/// module loaded hangs the machine with the rails up.
 #[test]
 fn a_power_hold_powers_off_with_the_cart_still_seated() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::PowerHold);
-    assert!(a.powering_off());
+    assert!(
+        a.powering_off(),
+        "a held button asks for a graceful power off"
+    );
+    assert!(!a.suspending(), "and not for a sleep");
     assert!(StateRing::new(d.path(), "Emerald")
         .read_resume()
         .unwrap()
@@ -85,6 +92,20 @@ fn a_power_hold_powers_off_with_the_cart_still_seated() {
         Some("Emerald".into()),
         "power off is not an eject"
     );
+}
+
+/// The doze timeout is the one that sleeps: an idle device the user walked away from is
+/// still theirs to come back to, and suspend costs under 45 mA against 400-700 mA for a
+/// doze that keeps the machine running behind a dark panel.
+#[test]
+fn an_idle_doze_times_out_into_a_sleep() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerTap);
+    assert!(matches!(a.phase(), Phase::Doze { .. }));
+    a.on_doze_timeout();
+    assert!(a.suspending(), "the timeout asks for a sleep");
+    assert!(!a.powering_off(), "and never for a power off");
 }
 
 /// A gauge one point above the threshold is a warning, not a cutoff.

@@ -342,20 +342,6 @@ pub fn session_with_platform(root: &Path) -> (Session, Motor) {
     (session, motor)
 }
 
-/// The same rig, with the handle that counts how often the debug link was asked for.
-pub fn session_with_relinks(root: &Path) -> (Session, Arc<AtomicUsize>) {
-    clocked(root);
-    let platform = SimPlatform::at(root.to_path_buf());
-    let relinks = platform.relinks();
-    let mut session = Session::boot(root.to_path_buf());
-    session.app_mut().set_power(Power::new(
-        Box::new(platform),
-        SleepDepth::Doze,
-        Duration::from_secs(300),
-    ));
-    (session, relinks)
-}
-
 /// Booted onto the clock screen with a platform whose clock can be read back.
 pub fn app_booting_with_clock(root: &Path) -> (App, Clock) {
     app_booting_at(root, 0)
