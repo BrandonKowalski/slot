@@ -24,5 +24,4 @@ SOFTWARE.
 
 The fonts in crates/slot-ui/assets keep their own licences, which ship beside
 them: Open Sans under the SIL Open Font License, and the Nerd Fonts symbols
-under MIT. Bundling them is what those licences are for; the font files
-themselves stay under their own terms rather than this one.
+under MIT.

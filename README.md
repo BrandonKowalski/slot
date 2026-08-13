@@ -18,18 +18,18 @@ A short tap of `A` will resume the last save state. Holding `A` will start the g
 
 In game:
 
-| Input                      | Action                                                                                           |
-|----------------------------|--------------------------------------------------------------------------------------------------|
-| Hold `MENU`                | Save state, eject cart, back to the carousel                                                     |
-| Double tap `MENU`          | Save state switcher, select which one to load or delete, undo last save / load within 30 seconds |
-| `SELECT` + `R1`            | Save state                                                                                       |
-| `SELECT` + `L1`            | Load the newest state                                                                            |
-| `SELECT` + `Up / Down`     | Brightness                                                                                       |
-| `SELECT` + `Left / Right`  | Blue light                                                                                       |
-| `L2`                       | Rewind while held                                                                                |
-| `R2`                       | Fast forward while held, double tap to toggle on                                                 |
-| `VOL+` and `VOL-`          | Change the volume                                                                                |
-| `VOL+` and `VOL-` together | Mute, remembering the level                                                                      |
+| Input                     | Action                                                                                           |
+|---------------------------|--------------------------------------------------------------------------------------------------|
+| Hold `MENU`               | Save state, eject cart, back to the carousel                                                     |
+| Double tap `MENU`         | Save state switcher, select which one to load or delete, undo last save / load within 30 seconds |
+| `SELECT` + `R1`           | Save state                                                                                       |
+| `SELECT` + `L1`           | Load the newest state                                                                            |
+| `SELECT` + `Up / Down`    | Brightness                                                                                       |
+| `SELECT` + `Left / Right` | Blue light                                                                                       |
+| `L2`                      | Rewind while held                                                                                |
+| `R2`                      | Fast forward while held, double tap to toggle on                                                 |
+| `VOL+` / `VOL-`           | Change the volume                                                                                |
+| `VOL+` and `VOL-` | Mute, remembering the level                                                                      |
 
 Closing the lid sleeps, and sleeping long enough powers off. Both cases create a save state. 
 
