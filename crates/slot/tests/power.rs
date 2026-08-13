@@ -83,11 +83,11 @@ fn lid_close_over_the_switcher_wakes_into_the_game() {
     );
 }
 
-/// A dozing app is still ticking, which is the only clock the timeout has. It sleeps rather
-/// than powers off: a doze keeps the machine at full speed behind a dark panel, and
-/// suspend-to-RAM costs under 45 mA against 400-700 mA for that.
+/// A dozing app is still ticking, which is the only clock the timeout has — and still
+/// drawing 400-700 mA behind the dark panel, which is why the timeout ends in a real power
+/// off rather than a sleep this board could never wake itself from.
 #[test]
-fn a_doze_that_outlasts_the_timeout_sleeps_by_itself() {
+fn a_doze_that_outlasts_the_timeout_powers_off_by_itself() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.set_power(panel(d.path(), Duration::from_secs(2)).0);
@@ -95,12 +95,11 @@ fn a_doze_that_outlasts_the_timeout_sleeps_by_itself() {
     for _ in 0..100 {
         a.update(1.0 / 60.0);
     }
-    assert!(!a.suspending(), "1.6 s is short of the 2 s timeout");
+    assert!(!a.powering_off(), "1.6 s is short of the 2 s timeout");
     for _ in 0..40 {
         a.update(1.0 / 60.0);
     }
-    assert!(a.suspending());
-    assert!(!a.powering_off(), "the timeout never powers off");
+    assert!(a.powering_off());
 }
 
 #[test]
@@ -172,8 +171,8 @@ fn a_hold_opens_the_menu_and_commits_nothing() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::PowerHold);
-    assert_eq!(a.power_menu(), Some(0), "the menu opens on Standby");
-    assert!(!a.powering_off() && !a.suspending() && !a.restarting());
+    assert_eq!(a.power_menu(), Some(0), "the menu opens on Restart");
+    assert!(!a.powering_off() && !a.restarting());
     assert!(
         StateRing::new(d.path(), "Emerald")
             .read_resume()
@@ -192,8 +191,7 @@ fn the_menu_moves_and_stops_at_both_ends() {
     assert_eq!(a.power_menu(), Some(0), "it does not wrap off the top");
     a.apply(Action::GbaDown(Btn::Down));
     a.apply(Action::GbaDown(Btn::Down));
-    a.apply(Action::GbaDown(Btn::Down));
-    assert_eq!(a.power_menu(), Some(2), "nor off the bottom");
+    assert_eq!(a.power_menu(), Some(1), "nor off the bottom");
 }
 
 #[test]
@@ -203,7 +201,7 @@ fn b_leaves_the_menu_without_doing_anything() {
     a.apply(Action::PowerHold);
     a.apply(Action::GbaDown(Btn::B));
     assert_eq!(a.power_menu(), None);
-    assert!(!a.powering_off() && !a.suspending() && !a.restarting());
+    assert!(!a.powering_off() && !a.restarting());
     assert!(
         matches!(a.phase(), Phase::Playing { .. }),
         "back to the game"
@@ -212,7 +210,7 @@ fn b_leaves_the_menu_without_doing_anything() {
 
 #[test]
 fn each_row_commits_to_its_own_outcome() {
-    for (down, want) in [(0, "standby"), (1, "restart"), (2, "off")] {
+    for (down, want) in [(0, "restart"), (1, "off")] {
         let d = tmp_root_with_carts(&["Emerald"]);
         let mut a = app_playing_in(d.path(), "Emerald");
         a.apply(Action::PowerHold);
@@ -226,9 +224,40 @@ fn each_row_commits_to_its_own_outcome() {
             "{want}: the menu closes on the choice"
         );
         match want {
-            "standby" => assert!(a.suspending() && !a.powering_off() && !a.restarting()),
-            "restart" => assert!(a.restarting() && !a.powering_off() && !a.suspending()),
-            _ => assert!(a.powering_off() && !a.suspending() && !a.restarting()),
+            "restart" => assert!(a.restarting() && !a.powering_off()),
+            _ => assert!(a.powering_off() && !a.restarting()),
         }
     }
+}
+
+/// The decision and the moment the machine may stop are different things. Rendering the
+/// shutdown screen out of band — an extra draw and swap between the choice and `poweroff` —
+/// hung the device on a GPU that was about to be torn down: slot never reached `poweroff` at
+/// all, init was never signalled, and it took the PMIC held down to recover. So the ordinary
+/// loop draws the screen and the binary waits for it.
+#[test]
+fn the_shutdown_screen_is_up_before_the_machine_may_stop() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerHold);
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::A));
+
+    assert!(a.powering_off(), "the choice decides immediately");
+    assert!(
+        !a.ready_to_power_off(),
+        "but the binary may not act until the screen has been presented"
+    );
+
+    let mut out = Vec::new();
+    a.draw(&mut out);
+    assert!(
+        matches!(out.first(), Some(Draw::Rect { colour, .. }) if *colour == [0.0, 0.0, 0.0, 1.0]),
+        "and the screen is what the loop is drawing in the meantime"
+    );
+
+    // Absolute, not a delta: `tick_ms` takes the later of the two, so a small number is a
+    // no-op against whatever clock the harness already left behind.
+    a.tick_ms(600_000);
+    assert!(a.ready_to_power_off(), "then it may stop");
 }

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use slot_gfx::{Compositor, Draw, TexId, OUT_H, OUT_W};
 use slot_input::{InputSource, Millis};
-use slot_power::{Platform, Power, SleepDepth};
+use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
     cart_face, cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face, set_clock_hint_face,
@@ -18,8 +18,15 @@ use crate::build_info::Build;
 use crate::session::Session;
 use crate::wallpaper;
 
-/// A placeholder. Spec section 9 settles the real one against drain numbers on hardware.
-const DOZE_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long a dark panel waits before the machine actually stops. The dark is immediate —
+/// the lid or the button kills the backlight on the edge — but the device is still running
+/// flat out behind it at 400-700 mA, so this is the window in which the user might come
+/// straight back, not a power saving.
+///
+/// Three minutes, and then the device powers off rather than sleeping. It cannot wake itself
+/// from a sleep — the RTC alarm never fires on this board — so a standby would be a leak with
+/// no end, and a power off is the honest version of putting it down.
+const DOZE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Amber. The only warning colour in the tree, and the reason it is not the HUD's ink: a
 /// refusal that looks like a volume glyph is a refusal nobody reads as one.
@@ -79,7 +86,7 @@ impl Frontend {
         let mut session = Session::boot(platform.root().to_path_buf());
         session
             .app_mut()
-            .set_power(Power::new(platform, SleepDepth::Mem, DOZE_TIMEOUT));
+            .set_power(Power::new(platform, DOZE_TIMEOUT));
         Frontend {
             session,
             start: now,
@@ -129,7 +136,6 @@ impl Frontend {
             .iter()
             .map(|c| {
                 let f = menu_face(match c {
-                    PowerChoice::Standby => "Standing By",
                     PowerChoice::Restart => "Restarting",
                     PowerChoice::PowerOff => "Powering Down",
                 });
@@ -230,25 +236,15 @@ impl Frontend {
     }
 
     pub fn powering_off(&self) -> bool {
-        self.session.app().powering_off()
-    }
-
-    pub fn suspending(&self) -> bool {
-        self.session.app().suspending()
+        self.session.app().ready_to_power_off()
     }
 
     pub fn restarting(&self) -> bool {
-        self.session.app().restarting()
+        self.session.app().ready_to_restart()
     }
 
     pub fn restart(&mut self) {
         self.session.app_mut().restart();
-    }
-
-    /// Blocks until the device wakes. The frame loop continues afterwards: a sleep is not
-    /// an exit.
-    pub fn suspend(&mut self) {
-        self.session.app_mut().suspend();
     }
 
     /// The state was flushed on the edge that set `powering_off`, so there is nothing left to

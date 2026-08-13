@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{Battery, Charge, LedState, LidPolicy, Platform, SleepDepth, WakeReason};
+use crate::{Battery, Charge, LedState, LidPolicy, Platform};
 
 /// The lid policy and the panel it acts on, which have to be one object because the policy
 /// takes no arguments. `depth` and `timeout` are constructor values: spec section 9 defers
@@ -11,17 +11,15 @@ pub struct Power {
     /// every step that passed through here is the only way to know.
     level: u8,
     closed: bool,
-    depth: SleepDepth,
     timeout: Duration,
 }
 
 impl Power {
-    pub fn new(platform: Box<dyn Platform>, depth: SleepDepth, timeout: Duration) -> Self {
+    pub fn new(platform: Box<dyn Platform>, timeout: Duration) -> Self {
         Power {
             platform,
             level: 0,
             closed: false,
-            depth,
             timeout,
         }
     }
@@ -60,10 +58,6 @@ impl Power {
         self.platform.relink_adb()
     }
 
-    pub fn sleep(&mut self) -> WakeReason {
-        self.platform.sleep(self.depth, self.timeout)
-    }
-
     pub fn poweroff(&mut self) -> ! {
         self.platform.poweroff()
     }
@@ -95,10 +89,6 @@ impl LidPolicy for Power {
     fn on_open(&mut self) {
         self.closed = false;
         self.platform.set_backlight(self.level);
-    }
-
-    fn depth(&self) -> SleepDepth {
-        self.depth
     }
 
     fn timeout(&self) -> Duration {

@@ -1,14 +1,13 @@
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::{Battery, Charge, LedState, Motor, Platform, SleepDepth, WakeReason};
+use crate::{Battery, Charge, LedState, Motor, Platform};
 
 /// The host stands in for every part of the device the power path touches, so the whole of
 /// it runs from the keyboard with no hardware present.
 pub struct SimPlatform {
     root: PathBuf,
     /// Posted by the simulated hall sensor or power button, taken by the next `sleep`.
-    wake: Option<WakeReason>,
     /// What `set_clock` moved the clock by. The device writes the hardware clock; a
     /// frontend that reset the developer's machine to 2003 would be a bug with a bug report.
     offset: i64,
@@ -25,15 +24,10 @@ impl SimPlatform {
     pub fn at(root: PathBuf) -> Self {
         SimPlatform {
             root,
-            wake: None,
             offset: 0,
             motor: Motor::default(),
             relinks: std::sync::Arc::default(),
         }
-    }
-
-    pub fn post_wake(&mut self, reason: WakeReason) {
-        self.wake = Some(reason);
     }
 
     pub fn relinks(&self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
@@ -72,10 +66,6 @@ impl Platform for SimPlatform {
 
     /// Suspends nothing. The event loop is what feeds the simulated hall sensor, so
     /// blocking here would shut out the very event that ends the wait.
-    fn sleep(&mut self, _depth: SleepDepth, _timeout: Duration) -> WakeReason {
-        self.wake.take().unwrap_or(WakeReason::Timeout)
-    }
-
     fn restart(&mut self) -> ! {
         std::process::exit(0)
     }

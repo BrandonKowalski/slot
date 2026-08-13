@@ -11,23 +11,6 @@ pub use sim::SimPlatform;
 use std::path::Path;
 use std::time::Duration;
 
-/// How far down a sleep goes. Which one the lid uses was a bring-up question and hardware
-/// has now answered it: `Mem` is suspend-to-RAM and measured under 45 mA on an RG SP,
-/// against 141 mA without the platform's Super Standby bit and 400-700 mA awake. `Doze`
-/// only darkens and waits, and exists for hosts that cannot suspend at all.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum SleepDepth {
-    Doze,
-    Mem,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum WakeReason {
-    LidOpen,
-    Power,
-    Timeout,
-}
-
 /// What the kernel's `status` attribute said, decoded. `Unknown` is a first-class answer
 /// rather than an error: on this PMIC `current_now` already reads empty, so a standard
 /// `power_supply` attribute being present is no promise that it is populated. Every
@@ -73,7 +56,6 @@ pub trait Platform: Send {
     /// Best effort. A device with no LED node is a device that does not have one, which is
     /// not a failure.
     fn set_led(&mut self, state: LedState);
-    fn sleep(&mut self, depth: SleepDepth, timeout: Duration) -> WakeReason;
     fn poweroff(&mut self) -> !;
     /// The same teardown as a power off — busybox init runs its shutdown actions for a
     /// reboot too — so the GPU module is unloaded either way, which is the thing that stops
@@ -99,9 +81,13 @@ pub trait Platform: Send {
 }
 
 /// Lid close and lid wake are one code path, parameterised.
+///
+/// There is no sleep here any more. This board can suspend, and does it well — under 45 mA —
+/// but it cannot wake itself: the RTC alarm arms, reads back, and never fires, measured on a
+/// fully awake machine as well as a suspended one. A standby nothing can end is a slow leak
+/// wearing a better name, so the lid and the button run a timer and then power off properly.
 pub trait LidPolicy {
     fn on_close(&mut self);
     fn on_open(&mut self);
-    fn depth(&self) -> SleepDepth;
     fn timeout(&self) -> Duration;
 }

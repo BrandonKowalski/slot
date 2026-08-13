@@ -96,9 +96,8 @@ fn opening_the_menu_flushes_and_the_choice_powers_off() {
     );
 
     a.apply(Action::GbaDown(Btn::Down));
-    a.apply(Action::GbaDown(Btn::Down));
     a.apply(Action::GbaDown(Btn::A));
-    assert!(a.powering_off(), "Power Off is the third row");
+    assert!(a.powering_off(), "Power Off is the second row");
     assert_eq!(
         read_slot_state(d.path()).cart,
         Some("Emerald".into()),
@@ -118,18 +117,24 @@ fn a_release_after_the_hold_does_nothing_on_its_own() {
     assert_eq!(a.power_menu(), Some(0), "and leaves the menu up");
 }
 
-/// The doze timeout is the one that sleeps: an idle device the user walked away from is
-/// still theirs to come back to, and suspend costs under 45 mA against 400-700 mA for a
-/// doze that keeps the machine running behind a dark panel.
+/// A dark panel is a grace period, not a state: the machine is still running flat out behind
+/// it at 400-700 mA. When it runs out the device stops for real, because the one thing it
+/// cannot do is wake itself back up from a sleep.
 #[test]
-fn an_idle_doze_times_out_into_a_sleep() {
+fn an_idle_doze_times_out_into_a_power_off() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::PowerTap);
     assert!(matches!(a.phase(), Phase::Doze { .. }));
     a.on_doze_timeout();
-    assert!(a.suspending(), "the timeout asks for a sleep");
-    assert!(!a.powering_off(), "and never for a power off");
+    assert!(a.powering_off(), "the timeout powers off");
+    assert!(
+        StateRing::new(d.path(), "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_some(),
+        "and the tap that started the doze already made it durable"
+    );
 }
 
 /// A gauge one point above the threshold is a warning, not a cutoff.

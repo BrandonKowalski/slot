@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::{Battery, Charge, LedState, Platform, SleepDepth, WakeReason};
+use crate::{Battery, Charge, LedState, Platform};
 
 /// The top step. Levels are 0 to 9 everywhere above the trait; what that spans in the
 /// kernel's own units is whatever `max_brightness` says, which is 255 on some panels and
@@ -22,10 +22,6 @@ const FF_RUMBLE: u16 = 0x50;
 /// `_IOW('E', 0x80, struct ff_effect)`. The struct is 48 bytes once the union's eight byte
 /// alignment is counted, which is where the size in the middle of this comes from.
 const EVIOCSFF: c_ulong = 0x4030_4580;
-
-/// The OS's suspend door. It darkens the power light, applies the platform's Super Standby
-/// bit and restores the light on resume, none of which a frontend should have to know.
-const AGS_SUSPEND: &str = "/usr/sbin/ags-suspend";
 
 /// What `setbl` takes. The class publishes its own range in `max_brightness`; the display
 /// driver's debugfs door has no such file and is eight bit.
@@ -127,6 +123,32 @@ impl DevicePlatform {
             motor,
             led,
         }
+    }
+
+    /// A line on the card, opened and closed per call, so a shutdown that hangs leaves a
+    /// record of how far it got. Deliberately not buffered and not batched: the whole point
+    /// is to survive a machine that stops responding a moment later, and the last thing
+    /// written is the thing worth knowing.
+    ///
+    /// Appends rather than truncates, unlike slot.log, because the interesting case spans
+    /// the boot that follows.
+    fn breadcrumb(&self, line: &str) {
+        use std::io::Write;
+        if let Ok(mut f) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.root.join("ags-shutdown-trace.log"))
+        {
+            let _ = writeln!(f, "{} {line}", self.now());
+            let _ = f.sync_all();
+        }
+    }
+
+    /// Proof the trace works at all. Without it, an empty trace after a hung shutdown is two
+    /// different findings wearing the same face: the shutdown path never ran, or the writing
+    /// never worked.
+    pub fn trace_boot(&self) {
+        self.breadcrumb("boot: platform up, trace working");
     }
 
     /// One line for the log. Everything below this reads as "the device does not have one"
@@ -445,39 +467,21 @@ impl Platform for DevicePlatform {
         }
     }
 
-    /// Returns when the kernel resumes, which is why the depth is a value rather than a
-    /// branch above this. Nothing here can tell what woke it: the lid and the power button
-    /// both arrive as input events afterwards.
-    fn sleep(&mut self, depth: SleepDepth, timeout: Duration) -> WakeReason {
-        match depth {
-            // The OS owns everything that has to be true before the CPUs stop: the power
-            // light goes dark, the platform's Super Standby bit is applied, and the light
-            // is restored on the far side. One door, so that no caller can forget a step —
-            // and writing `mem` here directly would skip all of it. Falls back to the raw
-            // write where the helper is absent, which is any host that is not this OS.
-            SleepDepth::Mem => {
-                if Command::new(AGS_SUSPEND).status().is_err() {
-                    let _ = fs::write(self.sysfs.join("power/state"), "mem\n");
-                }
-                WakeReason::Power
-            }
-            SleepDepth::Doze => {
-                std::thread::sleep(timeout);
-                WakeReason::Timeout
-            }
-        }
-    }
-
     fn restart(&mut self) -> ! {
+        self.breadcrumb("restart: reached slot, about to sync");
         let _ = Command::new("sync").status();
+        self.breadcrumb("restart: sync returned, about to signal init");
         let _ = Command::new("reboot").status();
         std::thread::sleep(Duration::from_secs(10));
         std::process::exit(0)
     }
 
     fn poweroff(&mut self) -> ! {
+        self.breadcrumb("poweroff: reached slot, about to sync");
         let _ = Command::new("sync").status();
+        self.breadcrumb("poweroff: sync returned, about to signal init");
         let _ = Command::new("poweroff").status();
+        self.breadcrumb("poweroff: signalled init, waiting for it to take the machine down");
         // The card is already flushed, so the worst case is a frontend BaseOS respawns
         // rather than a device that hangs on a button that did nothing.
         std::thread::sleep(Duration::from_secs(10));

@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use slot_input::{InputSource, Millis, RawEvent};
+use slot_input::{Btn, InputSource, Millis, RawEvent};
 
 use super::evdev::{
     decode, device_name, pick_devices, to_raw, Ev, Hat, EVENT_BYTES, EV_ABS, EV_SYN,
@@ -13,12 +13,28 @@ use super::trace;
 
 const DEV: &str = "/dev/input";
 const SYS: &str = "/sys/class/input";
+/// Where the power supplies live, which is where this board keeps its lid.
+const PSY: &str = "/sys/class/power_supply";
+
+/// How often the lid is read. It is not an input device on this hardware — no node
+/// advertises `SW_LID`, and the hall sensor is a write-only-ish attribute on the PMIC — so
+/// the only way to see it is to look. Reading that attribute costs an i2c transaction to the
+/// PMIC, so it is looked at a few times a second rather than every frame; a lid is a hinge,
+/// and nobody can perceive 150 ms of it.
+const LID_POLL_MS: Millis = 150;
 
 /// Every node worth reading, each on a thread parked in `read`. Polling them instead would
 /// mean picking a period and wearing the latency of it, and the kernel already knows the
 /// moment a button moved.
 pub struct DeviceInput {
     pending: Arc<Mutex<Vec<RawEvent>>>,
+    /// The PMIC attribute the hall sensor reports through, if this board has one. `None` on
+    /// a board that does not, which is not a failure: it is a device without a lid.
+    hall: Option<PathBuf>,
+    /// What the lid was last seen doing. `None` until the first read, so the first look
+    /// always reports — a device that booted with the lid shut should know it.
+    lid_shut: Option<bool>,
+    next_lid_poll: Millis,
 }
 
 impl DeviceInput {
@@ -53,7 +69,12 @@ impl DeviceInput {
                 eprintln!("slot: input {name}: {e}");
             }
         }
-        DeviceInput { pending }
+        DeviceInput {
+            pending,
+            hall: find_hall(Path::new(PSY)),
+            lid_shut: None,
+            next_lid_poll: 0,
+        }
     }
 }
 
@@ -154,8 +175,56 @@ impl Trace {
     }
 }
 
-impl InputSource for DeviceInput {
-    fn poll(&mut self, _now: Millis) -> Vec<RawEvent> {
-        std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()))
+impl DeviceInput {
+    /// `1` is open and `0` is shut, measured on an RG SP by watching the value while working
+    /// the hinge. `None` where the attribute is missing or will not parse, which leaves the
+    /// lid where it was rather than inventing an edge.
+    fn read_lid(&self) -> Option<bool> {
+        let raw = std::fs::read_to_string(self.hall.as_ref()?).ok()?;
+        match raw.trim() {
+            "0" => Some(true),
+            "1" => Some(false),
+            _ => None,
+        }
     }
+}
+
+impl InputSource for DeviceInput {
+    fn poll(&mut self, now: Millis) -> Vec<RawEvent> {
+        let mut out = std::mem::take(&mut *self.pending.lock().unwrap_or_else(|e| e.into_inner()));
+        if self.hall.is_some() && now >= self.next_lid_poll {
+            self.next_lid_poll = now + LID_POLL_MS;
+            if let Some(shut) = self.read_lid() {
+                if self.lid_shut != Some(shut) {
+                    self.lid_shut = Some(shut);
+                    // The same events an `SW_LID` node would have produced, so everything
+                    // above this is unaware that this board reports its hinge through the
+                    // power supply.
+                    out.push(if shut {
+                        RawEvent::Down(Btn::Lid)
+                    } else {
+                        RawEvent::Up(Btn::Lid)
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+/// The hall sensor is not an input device here: no node advertises `SW_LID`, and the hinge
+/// is reported by the PMIC's battery node as `hallkey`. Found by looking rather than
+/// hardcoded, so a board that names it differently reads as a device without a lid instead
+/// of one whose lid never moves.
+fn find_hall(psy: &Path) -> Option<PathBuf> {
+    let mut supplies: Vec<PathBuf> = std::fs::read_dir(psy)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .collect();
+    supplies.sort();
+    supplies
+        .into_iter()
+        .map(|d| d.join("hallkey"))
+        .find(|p| p.is_file())
 }

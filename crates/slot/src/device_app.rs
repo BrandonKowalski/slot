@@ -34,6 +34,7 @@ pub fn run() {
     };
     let platform = DevicePlatform::new(root.clone());
     eprintln!("slot: {}", platform.report());
+    platform.trace_boot();
     let mut frontend = Frontend::boot(Box::new(platform));
     frontend.upload_faces(&mut compositor);
     let mut input = DeviceInput::open(&root);
@@ -45,26 +46,10 @@ pub fn run() {
             return;
         }
         frontend.advance(&mut input);
-        if frontend.suspending() {
-            // The menu was cleared by the choice, but the panel is still holding the
-            // frame drawn before the press was read. Push the dark one now, or it is
-            // the menu that sits on screen through the sleep and into the wake.
-            frontend.render(&mut compositor, surface.window_size());
-            let _ = surface.swap();
-            frontend.suspend();
-        }
         if frontend.restarting() {
-            frontend.render(&mut compositor, surface.window_size());
-            let _ = surface.swap();
             frontend.restart();
         }
         if frontend.powering_off() {
-            // One more frame, so the shutdown line is on the panel before rcK starts. The
-            // teardown stops the frontend and unloads the GPU module before the kernel is
-            // allowed to halt, which takes about five seconds — and a device that just goes
-            // black for five seconds is one the user assumes has hung.
-            frontend.render(&mut compositor, surface.window_size());
-            let _ = surface.swap();
             frontend.poweroff();
             return;
         }

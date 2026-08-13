@@ -1,30 +1,24 @@
 use crate::plate::UndoFace;
 use crate::text;
 
-/// What a held POWER offers. Three states rather than two, because a device you develop on
-/// wants a restart that is not "off, then find the button again", and because a menu of two
-/// reads as a confirmation dialog rather than a choice.
+/// What a held POWER offers. Restart, because a device you develop on wants one that is not
+/// "off, then find the button again" — and off, which is the only other thing this hardware
+/// can honestly do.
 ///
-/// `Standby` is deliberately not called Sleep, and not called Hibernate. The kernel here
-/// offers only `freeze` and `mem` — `/sys/power/state` has no `disk`, so hibernation is not
-/// available on this SoC at all — and what this does is suspend-to-RAM: memory held powered,
-/// instant resume, measured under 45 mA against 400-700 mA awake. Standby is what the
-/// hardware calls it too: the PMIC bit that makes it cheap is Super Standby.
+/// There is no Standby. The board suspends well, under 45 mA, but it cannot wake itself: the
+/// RTC alarm arms, reads back, and never fires — measured on a fully awake machine as well as
+/// a suspended one, and unrelated to Super Standby, which was the first two things I blamed.
+/// A standby nothing can end is a slow leak with a nicer name, so the lid and the button run
+/// a timer and then power off properly instead.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PowerChoice {
-    Standby,
     Restart,
     PowerOff,
 }
 
 impl PowerChoice {
-    /// Standby first: it is the one that costs nothing to pick by mistake, and the one a
-    /// user reaching for the power button most often means.
-    pub const ALL: [PowerChoice; 3] = [
-        PowerChoice::Standby,
-        PowerChoice::Restart,
-        PowerChoice::PowerOff,
-    ];
+    /// Restart first: it is the one that costs nothing to pick by mistake.
+    pub const ALL: [PowerChoice; 2] = [PowerChoice::Restart, PowerChoice::PowerOff];
 
     /// Position in `ALL`, which is the order the faces are uploaded in.
     pub fn index(self) -> usize {
@@ -33,7 +27,6 @@ impl PowerChoice {
 
     pub fn text(self) -> &'static str {
         match self {
-            PowerChoice::Standby => "Standby",
             PowerChoice::Restart => "Restart",
             PowerChoice::PowerOff => "Power Off",
         }
@@ -53,7 +46,7 @@ pub const MENU_PAD: u32 = 18;
 const MENU_INK: [u8; 3] = [0xf6, 0xf4, 0xef];
 
 /// Sized to its own text rather than to a fixed box, so a caller can put a bar behind it
-/// that fits the words. A fixed width would make the bar the same size under "Standby" and
+/// that fits the words. A fixed width would make the bar the same size under "Restart" and
 /// "Power Off", which is the thing that looks wrong when the selection moves.
 pub fn menu_face(label: &str) -> UndoFace {
     let Some(font) = text::label_font() else {

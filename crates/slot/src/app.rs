@@ -80,10 +80,14 @@ pub const UNDO_GRACE_MS: Millis = 30_000;
 /// device is still listening.
 const PLAY_HOLD_MS: Millis = 500;
 
-
 /// How far apart the menu's rows sit, and what marks the one in hand. The pitch clears the
 /// 40 px face with a little air; the bar is drawn to the face's own width, padding included,
 /// so it wraps the words rather than the panel.
+/// How long the shutdown screen is on the panel before the machine is allowed to stop. Only
+/// needs to outlast a couple of frames — it exists so the ordinary loop presents the screen,
+/// rather than the binary rendering one out of band on a GPU that is about to go away.
+const SHUTDOWN_SHOW_MS: Millis = 250;
+
 const POWER_MENU_PITCH: f32 = 44.0;
 const POWER_MENU_HIGHLIGHT: [f32; 4] = [1.0, 1.0, 1.0, 0.18];
 
@@ -177,6 +181,13 @@ pub struct App {
     power_menu_faces: Vec<(TexId, u32, u32)>,
     /// Set when the menu's Restart is chosen. The binary acts on it, like `powering_off`.
     restarting: bool,
+    /// When the binary is allowed to act. The screen is drawn from the instant the choice is
+    /// made, but the shutdown itself waits a few frames so the ordinary loop has drawn and
+    /// presented it. Rendering out of band instead — one extra draw and swap between the
+    /// choice and `poweroff` — hung the device: the swap can block on a GPU about to be torn
+    /// down, and slot then never reached `poweroff` at all, leaving a machine that needed
+    /// the PMIC held to recover.
+    act_at: Millis,
     /// `None` outside the binary, where there is no content root and nothing persists.
     root: Option<PathBuf>,
     state: SlotState,
@@ -262,6 +273,7 @@ impl App {
             power_menu: None,
             power_menu_faces: Vec::new(),
             restarting: false,
+            act_at: 0,
             root: None,
             state: SlotState::default(),
             vol_before: Vec::new(),
@@ -491,8 +503,45 @@ impl App {
 
     /// Set by the doze timeout and by a graceful power off. The binary is what acts on it:
     /// everything durable has already been written by the time it is true.
+    ///
     pub fn powering_off(&self) -> bool {
         self.powering_off
+    }
+
+    /// What the binary waits for. The decision is made the instant the choice is, but the
+    /// machine is not allowed to stop until the ordinary loop has drawn and presented the
+    /// shutdown screen. Rendering out of band instead — one extra draw and swap between the
+    /// choice and `poweroff` — hung the device: the swap can block on a GPU about to be torn
+    /// down, and slot then never reached `poweroff` at all.
+    pub fn ready_to_power_off(&self) -> bool {
+        self.powering_off && self.now() >= self.act_at
+    }
+
+    pub fn ready_to_restart(&self) -> bool {
+        self.restarting && self.now() >= self.act_at
+    }
+
+    /// Whether the shutdown screen is what should be on the panel. True from the instant the
+    /// choice is made, which is earlier than `powering_off`.
+    pub fn shutting_down(&self) -> bool {
+        self.powering_off || self.restarting
+    }
+
+    /// Set by the menu's Restart. Goes through the same shutdown as a power off — busybox
+    /// init runs rcK for a reboot too — so the GPU module is unloaded either way, which is
+    /// what stops this hardware hanging with the rails up.
+    pub fn restarting(&self) -> bool {
+        self.restarting
+    }
+
+    pub fn restart(&mut self) {
+        if let Some(power) = &mut self.power {
+            power.restart();
+        }
+    }
+
+    pub fn power_menu(&self) -> Option<usize> {
+        self.power_menu
     }
 
     /// The cached reading. `None` until the first slow tick, and on any device with no gauge.
@@ -1006,7 +1055,7 @@ impl App {
             self.draw_power_menu(index, out);
             return;
         }
-        if self.powering_off || self.restarting {
+        if self.shutting_down() {
             out.push(Draw::Rect {
                 x: 0.0,
                 y: 0.0,
@@ -1191,6 +1240,51 @@ impl App {
 
     pub fn set_shutdown_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
         self.shutdown_faces = faces;
+    }
+
+    pub fn set_power_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.power_menu_faces = faces;
+    }
+
+    /// Black, the rows, and a bar behind the one in hand. The highlight is a rect rather than
+    /// a second face per row: the labels are rastered once at boot and never again, and a
+    /// device about to lose its GPU is not the place to be uploading textures.
+    fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
+        out.push(Draw::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: OUT_W as f32,
+            h: OUT_H as f32,
+            colour: [0.0, 0.0, 0.0, 1.0],
+        });
+        let rows = self.power_menu_faces.len();
+        if rows == 0 {
+            return;
+        }
+        let pitch = POWER_MENU_PITCH;
+        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
+        for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
+            let y = top + pitch * row as f32;
+            if row == index {
+                // Sized to the face, which is already the ink plus its own padding, so the
+                // bar hugs the words and changes width as the selection moves.
+                out.push(Draw::Rect {
+                    x: ((OUT_W - w) / 2) as f32,
+                    y,
+                    w: w as f32,
+                    h: pitch,
+                    colour: POWER_MENU_HIGHLIGHT,
+                });
+            }
+            out.push(Draw::Tex {
+                x: ((OUT_W - w) / 2) as f32,
+                y: y + (pitch - h as f32) / 2.0,
+                w: w as f32,
+                h: h as f32,
+                tex,
+                alpha: 1.0,
+            });
+        }
     }
 
     fn on_shelf(&self) -> bool {
@@ -1383,6 +1477,7 @@ impl App {
                 match PowerChoice::ALL[index] {
                     PowerChoice::Restart => {
                         self.restarting = true;
+                        self.act_at = self.now() + SHUTDOWN_SHOW_MS;
                         self.set_led(LedState::Off);
                     }
                     PowerChoice::PowerOff => self.begin_power_off(),
@@ -1398,9 +1493,9 @@ impl App {
     /// light on it for as long as `poweroff` takes to actually cut power.
     fn begin_power_off(&mut self) {
         self.powering_off = true;
+        self.act_at = self.now() + SHUTDOWN_SHOW_MS;
         self.set_led(LedState::Off);
     }
-
 
     /// The gauge, polled from `timers` and injected by the tests. Only a charge state the
     /// device positively asserted suppresses the cutoff: unknown and discharging both power

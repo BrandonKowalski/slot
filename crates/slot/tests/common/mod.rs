@@ -8,9 +8,7 @@ use std::time::Duration;
 use slot::app::App;
 use slot::persist::Snapshot;
 use slot::session::Session;
-use slot_power::{
-    Battery, Charge, LedState, Motor, Platform, Power, SimPlatform, SleepDepth, WakeReason,
-};
+use slot_power::{Battery, Charge, LedState, Motor, Platform, Power, SimPlatform};
 use slot_retro::{ButtonMask, MockCore, RetroCore};
 use slot_store::{write_slot_state, SlotState};
 use tempfile::TempDir;
@@ -317,7 +315,7 @@ fn rig_with_led(
         led_writes: led_writes.clone(),
     };
     (
-        Power::new(Box::new(platform), SleepDepth::Doze, timeout),
+        Power::new(Box::new(platform), timeout),
         backlight,
         clock,
         charge,
@@ -334,11 +332,9 @@ pub fn session_with_platform(root: &Path) -> (Session, Motor) {
     let platform = SimPlatform::at(root.to_path_buf());
     let motor = platform.motor();
     let mut session = Session::boot(root.to_path_buf());
-    session.app_mut().set_power(Power::new(
-        Box::new(platform),
-        SleepDepth::Doze,
-        Duration::from_secs(300),
-    ));
+    session
+        .app_mut()
+        .set_power(Power::new(Box::new(platform), Duration::from_secs(300)));
     (session, motor)
 }
 
@@ -381,10 +377,6 @@ impl Platform for StubPlatform {
     fn set_led(&mut self, state: LedState) {
         self.led.store(led_code(state), Ordering::Relaxed);
         self.led_writes.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn sleep(&mut self, _depth: SleepDepth, _timeout: Duration) -> WakeReason {
-        WakeReason::Timeout
     }
 
     fn restart(&mut self) -> ! {
