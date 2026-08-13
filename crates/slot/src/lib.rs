@@ -1,5 +1,6 @@
 pub mod app;
 pub mod audio;
+pub mod build_info;
 pub mod core;
 pub mod drc;
 pub mod emu;
