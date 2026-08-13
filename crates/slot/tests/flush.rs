@@ -73,25 +73,44 @@ fn a_power_tap_dozes_and_a_second_one_wakes() {
 /// A held button powers off through the OS, not the PMIC. The hardware cut at six seconds
 /// syncs nothing and unloads nothing, and on this board a shutdown that leaves the GPU
 /// module loaded hangs the machine with the rails up.
+///
+/// In two steps, so the screen the hold raises is on the panel for as long as the button is
+/// held rather than flashing past on the way to a black one.
 #[test]
-fn a_power_hold_powers_off_with_the_cart_still_seated() {
+fn a_power_hold_arms_and_the_release_powers_off() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
+
     a.apply(Action::PowerHold);
     assert!(
-        a.powering_off(),
-        "a held button asks for a graceful power off"
+        !a.powering_off(),
+        "the hold arms the shutdown, it does not start it"
     );
-    assert!(!a.suspending(), "and not for a sleep");
-    assert!(StateRing::new(d.path(), "Emerald")
-        .read_resume()
-        .unwrap()
-        .is_some());
+    assert!(!a.suspending(), "and it is not a sleep either");
+    assert!(
+        StateRing::new(d.path(), "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_some(),
+        "the state is durable before the button is even released"
+    );
+
+    a.apply(Action::PowerOff);
+    assert!(a.powering_off(), "the release starts the shutdown");
     assert_eq!(
         read_slot_state(d.path()).cart,
         Some("Emerald".into()),
         "power off is not an eject"
     );
+}
+
+/// A release the hold never preceded is a lock, not a shutdown.
+#[test]
+fn a_stray_release_does_not_power_off() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::PowerOff);
+    assert!(!a.powering_off());
 }
 
 /// The doze timeout is the one that sleeps: an idle device the user walked away from is

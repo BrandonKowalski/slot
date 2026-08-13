@@ -165,6 +165,9 @@ pub struct App {
     /// The shutdown line, with the size it was rastered at so it can be centred without
     /// asking the compositor anything.
     shutdown_face: Option<(TexId, u32, u32)>,
+    /// Armed by the hold, committed by the release. The screen is drawn for both, so it is
+    /// on the panel while the button is still down.
+    shutting_down: bool,
     /// `None` outside the binary, where there is no content root and nothing persists.
     root: Option<PathBuf>,
     state: SlotState,
@@ -255,6 +258,7 @@ impl App {
             refused_from: None,
             alert_face: None,
             shutdown_face: None,
+            shutting_down: false,
             root: None,
             state: SlotState::default(),
             vol_before: Vec::new(),
@@ -532,13 +536,15 @@ impl App {
         match action {
             Action::LidClose => return self.doze(),
             Action::LidOpen => return self.wake(),
+            Action::PowerPress => return self.flush_resume(),
             Action::PowerTap => {
                 if self.now() < self.swallow_power_until {
                     return;
                 }
                 return self.power_press();
             }
-            Action::PowerHold => return self.power_hold(),
+            Action::PowerHold => return self.arm_power_off(),
+            Action::PowerOff => return self.commit_power_off(),
             _ => {}
         }
         // Ahead of the levels too. A screen with no way back is not one to be adjusting the
@@ -1008,7 +1014,7 @@ impl App {
         // rcK takes about five seconds on this hardware — it stops the frontend and unloads
         // the GPU module before the kernel is allowed to halt — and five seconds of black
         // panel after holding the button is indistinguishable from a device that has hung.
-        if self.powering_off {
+        if self.shutting_down || self.powering_off {
             out.push(Draw::Rect {
                 x: 0.0,
                 y: 0.0,
@@ -1344,8 +1350,21 @@ impl App {
     ///
     /// Not an eject: the cart stays in the slot so the next boot resumes it. The flush is
     /// a no-op after a doze, which has already written the same file.
-    fn power_hold(&mut self) {
+    /// The hold threshold, with the button still down. Puts the shutdown on screen without
+    /// starting it, so the user sees what is about to happen while they are still holding —
+    /// and so a screen that would otherwise flash past unread is held for as long as they
+    /// care to look at it.
+    fn arm_power_off(&mut self) {
         self.flush_resume();
+        self.shutting_down = true;
+        self.set_led(LedState::Off);
+    }
+
+    /// The release. `rcK` starts here.
+    fn commit_power_off(&mut self) {
+        if !self.shutting_down {
+            return;
+        }
         self.begin_power_off();
     }
 

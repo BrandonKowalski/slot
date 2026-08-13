@@ -107,22 +107,35 @@ fn r2_double_tap_latches_and_single_press_clears() {
     assert_eq!(g.feed(Up(R2), 5050), vec![FfStop]);
 }
 
-/// The flush hangs off this action, and a button that is being held is a cutoff there may
-/// be no release to see.
+/// The flush hangs off the press, because a button being held may be cut by the PMIC before
+/// there is any release to see. The lock waits for the release, so that a press on its way
+/// to becoming a hold does not darken the panel on the way through.
 #[test]
-fn power_acts_on_the_press_edge_not_the_release() {
+fn power_flushes_on_the_press_and_locks_on_the_release() {
     let mut g = Gestures::new();
-    assert_eq!(g.feed(Down(Btn::Power), 0), vec![PowerTap]);
-    assert!(g.feed(Up(Btn::Power), 80).is_empty());
+    assert_eq!(g.feed(Down(Btn::Power), 0), vec![PowerPress]);
+    assert_eq!(g.feed(Up(Btn::Power), 80), vec![PowerTap]);
 }
 
+/// The hold arms while the button is still down and the release commits, so the shutdown
+/// screen is on the panel for as long as the user holds rather than flashing past.
 #[test]
-fn power_held_past_two_seconds_powers_off() {
+fn power_held_past_two_seconds_arms_and_the_release_powers_off() {
     let mut g = Gestures::new();
     g.feed(Down(Btn::Power), 0);
     assert!(g.tick(1999).is_empty());
     assert_eq!(g.tick(2000), vec![PowerHold]);
-    assert!(g.feed(Up(Btn::Power), 2500).is_empty());
+    assert!(g.tick(4000).is_empty(), "the hold fires once, not per tick");
+    assert_eq!(g.feed(Up(Btn::Power), 4500), vec![PowerOff]);
+}
+
+/// And a release that never reached the threshold is a lock, never a shutdown.
+#[test]
+fn a_press_just_short_of_the_threshold_is_a_lock() {
+    let mut g = Gestures::new();
+    g.feed(Down(Btn::Power), 0);
+    assert!(g.tick(1999).is_empty());
+    assert_eq!(g.feed(Up(Btn::Power), 1999), vec![PowerTap]);
 }
 
 #[test]

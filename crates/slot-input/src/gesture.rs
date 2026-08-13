@@ -16,7 +16,8 @@ pub const FF_DOUBLE_TAP_MS: Millis = 250;
 /// because neither key is deferred waiting for it: the pair is recognised behind the presses
 /// it is made of, not in front of them.
 pub const MUTE_CHORD_MS: Millis = 200;
-/// Well short of the PMIC's own eight second cutoff, so slot always powers off gracefully.
+/// Well short of the PMIC's own six second cutoff (`pmu_powkey_off_time` in the device
+/// tree), so slot always gets to power off gracefully before the hardware cuts the rails.
 pub const POWER_HOLD_MS: Millis = 2000;
 
 /// How long a volume key is held before the level starts running, and how fast it runs after
@@ -50,8 +51,19 @@ pub enum Action {
     /// game under them, so on the shelf a tap of it meant nothing at all.
     OpenAbout,
     MuteToggle,
+    /// The press itself. Nothing visible hangs off it — it exists so the save state is
+    /// flushed before a hold can reach the PMIC's own cutoff, which takes the rails away
+    /// whatever the software wanted.
+    PowerPress,
+    /// A short press, delivered on release. Locking on the release rather than the press is
+    /// what lets a press become a hold without dozing on the way through.
     PowerTap,
+    /// The hold threshold, while the button is still down. Arms the shutdown and puts it on
+    /// screen; it is `PowerOff` that commits.
     PowerHold,
+    /// Released after a hold. The graceful shutdown starts here, so the screen `PowerHold`
+    /// raised is on the panel for as long as the button is held.
+    PowerOff,
     LidClose,
     LidOpen,
 }
@@ -175,12 +187,13 @@ impl Gestures {
                 Vec::new()
             }
             Btn::Menu => self.menu_down(now),
-            // On the press rather than on the release: the flush hangs off this action and
-            // a POWER that is being held may be cut before there is a release to see.
+            // The flush hangs off the press, because a POWER that is being held may be cut
+            // by the PMIC before there is any release to see. Everything the user can
+            // observe waits for the release.
             Btn::Power => {
                 self.power_down_at = Some(now);
                 self.power_hold_fired = false;
-                vec![Action::PowerTap]
+                vec![Action::PowerPress]
             }
             Btn::Lid => vec![Action::LidClose],
             Btn::VolUp | Btn::VolDown => self.volume_press(b, now),
@@ -264,10 +277,18 @@ impl Gestures {
         }
     }
 
+    /// Which of the two the release means depends on whether the hold already fired. A
+    /// press that never reached the threshold is a lock; one that did is a shutdown the
+    /// user has been watching the screen for.
     fn power_up(&mut self) -> Vec<Action> {
+        let held = self.power_hold_fired;
         self.power_down_at = None;
         self.power_hold_fired = false;
-        Vec::new()
+        vec![if held {
+            Action::PowerOff
+        } else {
+            Action::PowerTap
+        }]
     }
 
     /// The press always lands. Volume is held for repeat, so putting a chord window in front
