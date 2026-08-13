@@ -2,7 +2,7 @@
 
 A bespoke, GBA-only frontend for the Anbernic RG SP.
 
-Your games are shown as cartridges on a carousel. Pick one, and it is inserted into the slot with a nostalgic scrape and clunk.
+Pick a cartridge from the carousel, and it is inserted into the slot with a nostalgic scrape and clunk.
 
 A save state is captured when you power off the device. When you reboot, the game left in the slot will resume immediately.
 
@@ -32,10 +32,6 @@ In game:
 Closing the lid sleeps, and sleeping long enough powers off. Both cases create a save state. 
 
 On the next boot, slot goes straight back into the game.
-
-On macOS: arrows, Z and X for A and B, C and V for X and Y, A and S for L1 and R1, Q and W
-for L2 and R2, Enter for START, right shift for SELECT, Tab for MENU, minus and equals for
-volume, Escape for power, and L for the lid.
 
 ## SD Card Layout
 
@@ -82,51 +78,19 @@ and the button it mapped to, or `unmapped`. There is no console on the device, s
 a pad that reports codes the table does not know is found. Add it to `launch.sh` on the card,
 press every button in a known order, and read the card back.
 
-## Layout
-
-```
-crates/
-  slot-gfx     GL context, textures, FBO, LCD3x and grade pass
-  slot-retro   libretro host, RetroCore trait, mGBA and mock
-  slot-input   raw events to semantic events, gesture machines, pure
-  slot-store   library scan, slot state, state ring, theme, atomic writes
-  slot-power   lid policy, power edges, backlight, battery
-  slot-ui      shelf, slot chrome, cartridges, polaroids, HUD, draw lists
-  slot         the binary and the state machine
-```
-
-`crates/slot-sfxcut` sits outside that list. It is a tool, not part of the device build:
-nothing depends on it, and it exists to write the two cartridge noises into
-`crates/slot/assets`, which are committed.
-
-Nothing platform specific lives outside four traits: `Surface`, `InputSource`, `AudioSink`
-and `Platform`. Everything above them compiles for both targets.
-
 ## Credits
 
-The cartridge sounds are a recording of the real thing, made for this and owned outright.
-`crates/slot-sfxcut` cuts them: it finds the transients in a recording, cuts a fixed window
-around the one you pick, and lines that window up so the contact lands exactly where
-`Sfx::lead` says it does. Run it with no options to see what is in a recording, then:
+Emulation is [mGBA](https://mgba.io) by endrift, through [libretro](https://www.libretro.com). 
 
-```
-cargo run -p slot-sfxcut -- takes.wav --insert 3.132 --eject 1.983 --wav /tmp/audition
-```
+The device boots [AGS-102](https://github.com/BrandonKowalski) a purpose made fork of [BaseOS](https://github.com/pvaibhav/BaseOS) by @pvaibhav.
 
-Emulation is [mGBA](https://mgba.io) by endrift, through
-[libretro](https://www.libretro.com). The core is fetched at build time and is not vendored
-here.
-
-The device boots [BaseOS](https://github.com/pvaibhav/BaseOS) by pvaibhav, which brings up
-the hardware and hands over.
-
-Type is [Open Sans](https://github.com/googlefonts/opensans), under the SIL Open Font
-License, and [Nerd Fonts](https://www.nerdfonts.com) symbols by Ryan L McIntyre, under MIT.
-Both licences ship beside the fonts in `crates/slot-ui/assets`.
+Type is [Open Sans](https://github.com/googlefonts/opensans), under the SIL Open Font License, and [Nerd Fonts](https://www.nerdfonts.com) symbols by Ryan L McIntyre, under MIT.
 
 The panel mask is derived from the LCD3x shader by Gigaherz, from the libretro shader
 collection and released to the public domain. At exactly 3x it reduces to a 3 by 3 table,
 which is what ships here rather than the shader.
+
+The sounds are a recording of me shoving a cartridge into my childhood GBA.
 
 ## AI Disclosure
 
