@@ -80,9 +80,6 @@ pub const UNDO_GRACE_MS: Millis = 30_000;
 /// device is still listening.
 const PLAY_HOLD_MS: Millis = 500;
 
-/// How long input is ignored after a resume. Long enough to cover the press that woke the
-/// kernel arriving in userspace, short enough that a deliberate second press still lands.
-const WAKE_SWALLOW_MS: Millis = 600;
 
 /// How far apart the menu's rows sit, and what marks the one in hand. The pitch clears the
 /// 40 px face with a little air; the bar is drawn to the face's own width, padding included,
@@ -250,14 +247,6 @@ pub struct App {
     /// of each one having to grow its own copy of it.
     last_led: Option<LedState>,
     powering_off: bool,
-    /// Set by the doze timeout and by a held power button. The binary acts on it, because
-    /// the sleep does not return until the kernel resumes and nothing above here may block.
-    suspending: bool,
-    /// Input is ignored until this instant after a resume. The press that wakes the kernel
-    /// is delivered to userspace as well, and without this the device dozes again the
-    /// moment it comes back — which is the two-presses-to-wake the hardware appears to
-    /// need, and is ours rather than the PMIC's.
-    swallow_power_until: Millis,
 }
 
 impl App {
@@ -300,8 +289,6 @@ impl App {
             battery: None,
             last_led: None,
             powering_off: false,
-            suspending: false,
-            swallow_power_until: 0,
         }
     }
 
@@ -508,87 +495,6 @@ impl App {
         self.powering_off
     }
 
-    /// Set by the doze timeout and by a held power button. The binary is what acts on it:
-    /// `suspend` blocks until the kernel resumes, and the frame loop is the only place that
-    /// can afford to stop.
-    pub fn suspending(&self) -> bool {
-        self.suspending
-    }
-
-    /// Set by the menu's Restart. Goes through the same shutdown as a power off — busybox
-    /// init runs rcK for a reboot too — so the GPU module is unloaded either way.
-    pub fn restarting(&self) -> bool {
-        self.restarting
-    }
-
-    pub fn restart(&mut self) {
-        if let Some(power) = &mut self.power {
-            power.restart();
-        }
-    }
-
-    pub fn power_menu(&self) -> Option<usize> {
-        self.power_menu
-    }
-
-    pub fn set_power_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
-        self.power_menu_faces = faces;
-    }
-
-    /// Black, three rows, and a bar behind the one in hand. The highlight is a rect rather
-    /// than a second face per row: the labels are rastered once at boot and never again,
-    /// and a device about to lose its GPU is not the place to be uploading textures.
-    fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
-        out.push(Draw::Rect {
-            x: 0.0,
-            y: 0.0,
-            w: OUT_W as f32,
-            h: OUT_H as f32,
-            colour: [0.0, 0.0, 0.0, 1.0],
-        });
-        let rows = self.power_menu_faces.len();
-        if rows == 0 {
-            return;
-        }
-        let pitch = POWER_MENU_PITCH;
-        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
-        for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
-            let y = top + pitch * row as f32;
-            if row == index {
-                // Sized to the face, which is already the ink plus its own padding, so the
-                // bar hugs the words and changes width as the selection moves.
-                out.push(Draw::Rect {
-                    x: ((OUT_W - w) / 2) as f32,
-                    y,
-                    w: w as f32,
-                    h: pitch,
-                    colour: POWER_MENU_HIGHLIGHT,
-                });
-            }
-            out.push(Draw::Tex {
-                x: ((OUT_W - w) / 2) as f32,
-                y: y + (pitch - h as f32) / 2.0,
-                w: w as f32,
-                h: h as f32,
-                tex,
-                alpha: 1.0,
-            });
-        }
-    }
-
-    /// Does not return until the device wakes. Everything durable was written on the edge
-    /// that set the flag, so a battery that runs out here loses nothing.
-    pub fn suspend(&mut self) {
-        self.suspending = false;
-        if let Some(power) = &mut self.power {
-            power.sleep();
-        }
-        self.swallow_power_until = self.now() + WAKE_SWALLOW_MS;
-        self.wake();
-        // The light comes back on the next one-second tick, which recomputes it from the
-        // gauge rather than guessing here what it should be.
-    }
-
     /// The cached reading. `None` until the first slow tick, and on any device with no gauge.
     pub fn battery(&self) -> Option<Battery> {
         self.battery
@@ -622,12 +528,7 @@ impl App {
             Action::LidClose => return self.doze(),
             Action::LidOpen => return self.wake(),
             Action::PowerPress => return self.flush_resume(),
-            Action::PowerTap => {
-                if self.now() < self.swallow_power_until {
-                    return;
-                }
-                return self.power_press();
-            }
+            Action::PowerTap => return self.power_press(),
             Action::PowerHold => return self.open_power_menu(),
             // The release no longer means anything once the menu is what a hold raises:
             // the choice is the commitment, and it is made with A.
@@ -1421,17 +1322,19 @@ impl App {
         }
     }
 
-    /// The timeout suspends rather than powers off, and is not an eject: `slot.state` still
-    /// names the cart, and the resume that lid close wrote is already on the card.
+    /// A dark panel is not a saving: the machine is still running flat out behind it at
+    /// 400-700 mA. So the dark is a grace period rather than a state, and when it runs out
+    /// the device stops for real.
     ///
-    /// It powered off until hardware said otherwise. Measured on an RG SP: suspend-to-RAM
-    /// costs under 45 mA against 400-700 mA for a doze that keeps running, and it comes
-    /// back into the game rather than through a three-second boot.
+    /// It suspends beautifully — under 45 mA — and that is not on offer, because it cannot
+    /// wake itself back up: the RTC alarm arms, reads back, and never fires. A sleep nothing
+    /// can end is a slow leak with a better name. Powering off costs the user a three second
+    /// boot, and `slot.state` still names the cart, so they come back to the same frame.
     pub fn on_doze_timeout(&mut self) {
         if !matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
-        self.begin_suspend();
+        self.begin_power_off();
     }
 
     /// The lid's twin, and the only one of the two the device is certain to see. A tap
@@ -1478,12 +1381,6 @@ impl App {
             Action::GbaDown(Btn::A) => {
                 self.power_menu = None;
                 match PowerChoice::ALL[index] {
-                    // Darken first: the frame the binary pushes before it sleeps is then the
-                    // dark one rather than the menu, and `suspend` has a Doze to wake out of.
-                    PowerChoice::Standby => {
-                        self.doze();
-                        self.begin_suspend();
-                    }
                     PowerChoice::Restart => {
                         self.restarting = true;
                         self.set_led(LedState::Off);
@@ -1504,13 +1401,6 @@ impl App {
         self.set_led(LedState::Off);
     }
 
-    /// The sleep twin of `begin_power_off`. On this OS `ags-suspend` darkens the light too,
-    /// and doing it here as well is harmless — but a host that is not this OS has no such
-    /// helper, and a lit panel light on a sleeping machine is a lie either way.
-    fn begin_suspend(&mut self) {
-        self.suspending = true;
-        self.set_led(LedState::Off);
-    }
 
     /// The gauge, polled from `timers` and injected by the tests. Only a charge state the
     /// device positively asserted suppresses the cutoff: unknown and discharging both power

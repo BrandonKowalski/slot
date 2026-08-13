@@ -409,15 +409,9 @@ fn wordmark(w: u32) -> Option<(Vec<u8>, (u32, u32))> {
 }
 
 /// Centred on screen, at its own size. The label is an object being looked at rather than a
-/// screen being laid out, so it is not stretched to fit.
+/// screen being laid out, so it is not stretched to fit — and it paints no ground of its own,
+/// so the caller decides what it sits on.
 pub fn draw_sticker(face: Option<TexId>, out: &mut Vec<Draw>) {
-    out.push(Draw::Rect {
-        x: 0.0,
-        y: 0.0,
-        w: slot_gfx::OUT_W as f32,
-        h: slot_gfx::OUT_H as f32,
-        colour: [0.04, 0.04, 0.05, 1.0],
-    });
     let Some(tex) = face else {
         return;
     };
