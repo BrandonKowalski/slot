@@ -25,7 +25,7 @@ jobs:
       core_sha: ${{ steps.package.outputs.core_sha }}
       core_date: ${{ steps.package.outputs.core_date }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The image already carries curl, file and unzip, which the fetch and the arch check
       # need. zip is the only thing missing.
@@ -66,7 +66,7 @@ jobs:
             echo "core_date=$(date -u +%Y-%m-%d)"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.package.outputs.zip }}
           path: ${{ steps.package.outputs.zip }}
@@ -83,7 +83,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.zip }}
 
@@ -105,5 +105,7 @@ jobs:
 
           mGBA core sha256 \`${CORE_SHA}\`
           NOTES
-          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+          # --repo because this job never checks out: gh works out where to publish from the
+          # git remote otherwise, and there is no repository here to ask.
+          gh release create "$GITHUB_REF_NAME" "$ZIP" --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" --notes-file notes.md
