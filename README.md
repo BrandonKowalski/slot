@@ -59,7 +59,7 @@ edge    #4d4d57
 ## Installing on your RG SP
 
 1. Download the latest [AGS-102](https://github.com/BrandonKowalski/AGS-102) `.img` release.
-2. Use Raspberry PI Imager, RUFUS, et. al. to write the `.img` `to an SD Card.
+2. Use Raspberry PI Imager, RUFUS, et. al. to write the `.img` to an SD Card.
 3. Insert this SD Card into Slot 1 of your RG SP. This is the one on the side of the device next to the volume buttons.
 4. Download the latest slot release from this repo.
 5. Unzip the download
