@@ -23,9 +23,9 @@ In game:
 | Hold `MENU`               | Save state, eject cart, back to the carousel                                                     |
 | Double tap `MENU`         | Save state switcher, select which one to load or delete, undo last save / load within 30 seconds |
 | `SELECT` + `R1`           | Save state                                                                                       |
-| `SELECT` + `L1`           | Load the newest state                                                                            |
-| `SELECT` + `Up / Down`    | Brightness                                                                                       |
-| `SELECT` + `Left / Right` | Blue light                                                                                       |
+| `SELECT` + `L1`           | Load the most recent save state                                                                  |
+| `SELECT` + `Up / Down`    | Adjust Brightness                                                                                |
+| `SELECT` + `Left / Right` | Adjust Blue light                                                                                |
 | `L2`                      | Rewind while held                                                                                |
 | `R2`                      | Fast forward while held, double tap to toggle on                                                 |
 | `VOL+` / `VOL-`           | Change the volume                                                                                |
@@ -56,29 +56,26 @@ opening #050508
 edge    #4d4d57
 ```
 
-## Building
+## Installing on your RG SP
 
-Needs [Task](https://taskfile.dev). `task` on its own lists everything.
+1. Download the latest [AGS-102](https://github.com/BrandonKowalski/AGS-102) `.img` release.
+2. Use Raspberry PI Imager, RUFUS, et. al. to write the `.img` `to an SD Card.
+3. Insert this SD Card into Slot 1 of your RG SP. This is the one on the side of the device next to the volume buttons.
+4. Download the latest slot release from this repo.
+5. Unzip the download
+6. Copy all the contents of the zip to a second SD Card
+7. Add Games, Saves, BIOS (if you like the boot animation), etc.
+8. Insert this SD Card into Slot 2. This is on the side where the power and reset buttons live.
 
-```
-task run              # release build against ./sdcard
-task sdcard           # make an empty card layout
-task test             # the whole workspace
-task check            # fmt, lint and test
-task dist             # tree to copy onto the card
-task dist:device      # the same for aarch64, built in a container
-task deploy:device    # build and push onto a device over adb, then restart it
-task log:device       # read slot's log back off it
-```
+## Updating
+I doubt I am gonna work on this more and add to it but in case I do here is how you update.
 
-`SLOT_NO_CORE=1` starts no emulator, which leaves the slot on screen so the insert can be
-watched at full length. `SLOT_TRACE=1` prints frame and audio diagnostics.
+1. Power off your RG SP.
+2. Eject SD Card 2.
+3. Connect to your computer.
+4. Replace the `System` folder with the `System` folder contained in the update zip.
+5. Done.
 
-`SLOT_TRACE_INPUT=1` writes `input-trace.log` to the root of the card: every event node the
-device has and whether it was opened, then a line per button edge with the code it arrived as
-and the button it mapped to, or `unmapped`. There is no console on the device, so this is how
-a pad that reports codes the table does not know is found. Add it to `launch.sh` on the card,
-press every button in a known order, and read the card back.
 
 ## Credits
 
