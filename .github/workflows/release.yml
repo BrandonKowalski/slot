@@ -1,0 +1,109 @@
+name: release
+
+# A tag cuts the release. Running it by hand builds the same tree and leaves it as an
+# artifact instead, so the pipeline can be exercised without spending a version number.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: card tree
+    # Native arm64, so the image below is the build box rather than an emulator. Free on
+    # public repositories, which this is.
+    runs-on: ubuntu-24.04-arm
+    # The same image the taskfile reaches for off target, so a released binary is linked
+    # against the same glibc 2.31 as one built at a desk. Being inside it already is what
+    # makes `task dist:device` skip its docker call.
+    container: rust:1-bullseye
+    outputs:
+      zip: ${{ steps.package.outputs.zip }}
+      core_sha: ${{ steps.package.outputs.core_sha }}
+      core_date: ${{ steps.package.outputs.core_date }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image already carries curl, file and unzip, which the fetch and the arch check
+      # need. zip is the only thing missing.
+      - name: Install zip and Task
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends zip
+          curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
+
+      # Named for the tag, so what comes out of the archive says which version it is rather
+      # than landing seven unlabelled folders wherever it was opened.
+      - name: Build the tree
+        run: task dist:device OUT="slot-${GITHUB_REF_NAME}"
+
+      # Before anything is published, not after. A tree built by the wrong toolchain is a
+      # download that bootloops a device, and it costs one exec to know.
+      - name: Check what is about to ship
+        run: |
+          set -eu
+          out="slot-${GITHUB_REF_NAME}"
+          file "$out/System/slot" | grep -q aarch64
+          file "$out/System/mgba_libretro.so" | grep -q aarch64
+          test -x "$out/System/slot"
+
+      - name: Package
+        id: package
+        run: |
+          set -eu
+          out="slot-${GITHUB_REF_NAME}"
+          zip="$out-h700.zip"
+          zip -qry "$zip" "$out"
+          {
+            echo "zip=$zip"
+            # Recorded rather than pinned: the core is whatever the buildbot was serving as
+            # latest when this ran, and a release should be able to say which one that was.
+            echo "core_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
+            echo "core_date=$(date -u +%Y-%m-%d)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.zip }}
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
+
+  publish:
+    name: release
+    needs: build
+    # Skipped on a manual run, which leaves the artifact above and nothing else.
+    if: startsWith(github.ref, 'refs/tags/')
+    # Not the arm runner and not a container: this job only moves a file, and gh is already
+    # on the stock image.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.zip }}
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ needs.build.outputs.zip }}
+          CORE_SHA: ${{ needs.build.outputs.core_sha }}
+          CORE_DATE: ${{ needs.build.outputs.core_date }}
+        run: |
+          set -eu
+          cat > notes.md <<NOTES
+          Unzip and copy the contents of \`slot-${GITHUB_REF_NAME}/\` onto SD2.
+
+          | | |
+          |---|---|
+          | \`System/slot\` | aarch64, built against glibc 2.31 |
+          | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE} |
+
+          mGBA core sha256 \`${CORE_SHA}\`
+          NOTES
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md

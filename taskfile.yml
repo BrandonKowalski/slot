@@ -159,15 +159,35 @@ tasks:
         file vendor/mgba_libretro.so | grep -q aarch64
         echo "fetched vendor/mgba_libretro.so"
 
-  build:device:
-    desc: Build for the H700 in an arm64 container
+  device:sh:
+    desc: Run CMD on the box the device build wants, fetching one if this is not it
+    internal: true
+    requires:
+      vars: [CMD]
     cmds:
-      # OrbStack runs arm64 natively, so this is a native build in a container rather than a
-      # cross compile. Bullseye is glibc 2.31 on purpose: older is forward compatible, and
-      # BaseOS is 2.35. Building against 2.35 and running on anything older would not be.
       - |
-        docker run --rm -v "$PWD":/src -w /src rust:1-bullseye \
-          cargo build --release --target-dir /src/target-device \
+        set -eu
+        # Already standing on the target means the container would only be in the way, and in
+        # CI there is no docker to reach for anyway: the job is already running in this image.
+        #
+        # Bullseye is glibc 2.31 on purpose: older is forward compatible, and BaseOS is 2.35.
+        # Building against 2.35 and running on anything older would not be. Off target,
+        # OrbStack runs arm64 natively, so that is still a native build in a container rather
+        # than a cross compile.
+        if [ "$(uname -s)-$(uname -m)" = "Linux-aarch64" ]; then
+          sh -c '{{.CMD}}'
+        else
+          docker run --rm -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
+        fi
+
+  build:device:
+    desc: Build for the H700, in an arm64 container unless this is already one
+    cmds:
+      # Relative paths only: they have to mean the same thing from the repo root and from /src.
+      - task: device:sh
+        vars:
+          CMD: >-
+            cargo build --release --target-dir target-device
             -p slot --no-default-features --features device
       - file target-device/release/slot | grep -q aarch64
       - 'echo "built target-device/release/slot"'
@@ -179,28 +199,15 @@ tasks:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
       - rm -rf {{.OUT}}
-      - ./target/debug/slot --init-root {{.OUT}} || cargo run -q -p slot -- --init-root {{.OUT}}
+      # Scaffolded by the device binary rather than a host build: `--init-root` returns before
+      # anything hardware shaped is opened, so the aarch64 binary can make its own folders.
+      # That leaves the tree needing no host toolchain at all — no X11, no ALSA, no udev —
+      # which is what lets a CI runner build this without a desktop's worth of headers.
+      - task: device:sh
+        vars:
+          CMD: ./target-device/release/slot --init-root {{.OUT}}
       - cp target-device/release/slot {{.OUT}}/System/slot
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
-      # Verified against BaseOS source: inittab respawns /sbin/nextui-session, which waits
-      # for /dev/mali0 and then `exec /bin/sh` on exactly this path, with SD=/mnt/sdcard.
-      # Run with sh, so the shebang is decorative and the executable bit is optional.
-      # Never put MinUI.zip or a .pakz on the card: either makes nextui-session run NextUI's
-      # installer first, and it would overwrite this pak.
-      - mkdir -p '{{.OUT}}/.system/h700/paks/MinUI.pak'
-      - |
-        cat > '{{.OUT}}/.system/h700/paks/MinUI.pak/launch.sh' <<'SH'
-        #!/bin/sh
-        # BaseOS execs this and expects it never to return.
-        cd "$(dirname "$0")/../../../.." || exit 1
-        export SLOT_ROOT="$PWD"
-        # There is no console on this device. Without this, everything slot says about the
-        # hardware it found — the audio device it opened or could not, the input nodes, the
-        # backlight — is written to a terminal that is not there. Truncated per boot rather
-        # than appended, so the card never grows a log without end.
-        exec ./System/slot > slot.log 2>&1
-        SH
-      - chmod +x '{{.OUT}}/.system/h700/paks/MinUI.pak/launch.sh'
       - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
 
   deploy:device:
