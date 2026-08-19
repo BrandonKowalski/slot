@@ -27,7 +27,7 @@
    viewport at every width (measured), and the guide's pinned device needs a root
    that has not been turned into a scroll container: Safari drops position:sticky
    when it has. */
-html{-webkit-text-size-adjust:100%;scroll-snap-type:y mandatory}
+html{-webkit-text-size-adjust:100%}
 body{
   margin:0;
   background:var(--page);
@@ -63,7 +63,6 @@ code{
   display:flex;
   align-items:center;
   justify-content:center;
-  scroll-snap-align:center;
   gap:clamp(40px,7vw,92px);
 }
 .hero-copy{flex:0 1 auto;min-width:0}
@@ -295,15 +294,10 @@ kbd{
 
 /* ---------------------------------------------------------------- faq --- */
 
-.faq{
-  scroll-snap-align:center;
-  min-height:100vh;
-  min-height:100dvh;
-  display:flex;
-  align-items:center;
-  padding:56px 0;
-}
-.faq>.wrap{width:100%}
+/* Sized by its own questions. It was a centred 100dvh snap target, which on a phone
+   made it 1133px of content centred in an 844px window: both ends permanently cropped
+   and no way to scroll to them. */
+.faq{padding:clamp(64px,11vh,124px) 0}
 .faq h2{font-size:clamp(26px,3.2vw,34px);margin-bottom:30px}
 .faq dl{margin:0}
 .faq .qa{margin:0 0 26px;max-width:64ch}
@@ -312,18 +306,12 @@ kbd{
 .faq dd{margin:0;font-size:19px;line-height:1.7;color:var(--muted)}
 
 footer{
-  scroll-snap-align:center;
-  min-height:100vh;
-  min-height:100dvh;
-  display:flex;
-  align-items:center;
   border-top:1px solid var(--rule);
-  padding:56px 0;
+  padding:clamp(64px,11vh,124px) 0;
   font-size:20px;
   line-height:1.7;
   color:var(--muted);
 }
-footer>.wrap{width:100%}
 footer h2{font-size:26px;color:var(--ink);margin-bottom:16px}
 /* At 20px the 900px wrap runs to about 85 characters a line. */
 footer p{max-width:64ch;margin:0 0 18px}
@@ -422,10 +410,11 @@ footer a{color:var(--ink)}
 .guide-stage .device.is-shut .dv-lid{transform:rotateX(-178deg)}
 @media (prefers-reduced-motion:reduce){.guide-stage .dv-lid{transition:none}}
 
+/* 70vh, not 100: the step only has to hold the pinned device on its clip long enough
+   to read one instruction. A full screen each made the guide 5100px of mostly nothing
+   and, while it was snapped, six separate stops to click through. */
 .step{
-  min-height:100vh;
-  min-height:100dvh;
-  scroll-snap-align:center;
+  min-height:70vh;
   display:flex;
   flex-direction:column;
   justify-content:center;
@@ -447,9 +436,17 @@ footer a{color:var(--ink)}
     z-index:3;
     background:linear-gradient(var(--page) 84%,transparent);
   }
-  /* Padded by the pinned device's height, so justify-content centres the copy in the
-     half of the screen that is actually visible. */
-  .step{padding:50vh 0 0;padding:50dvh 0 0}
+  /* The offset that clears the pinned device belongs to the column, not to each step:
+     the stage is sticky, so it is cleared once on the way in and stays cleared. Paying
+     it per step left every copy half a screen below the device it belongs to, with the
+     previous one already hidden behind the stage — a void for most of each step.
+     The tail keeps the device pinned until the last step has been read. */
+  .guide-steps{padding:50vh 0 26vh;padding:50dvh 0 26dvh}
+  /* A step is its own copy plus the gap to the next one. No min-height: a two-line step
+     does not reserve the screen a five-line one needs. The gap is close to the height of
+     the band below the device, so a copy is well placed for most of its scroll rather
+     than sweeping past a fixed point. */
+  .step{min-height:0;padding:0 0 clamp(130px,21dvh,190px)}
   .hero{min-height:100vh;min-height:100dvh;padding:24px}
 }
 @media (prefers-reduced-motion:reduce){.step{opacity:1}}
@@ -495,8 +492,14 @@ footer a{color:var(--ink)}
   /* --dw, never width: the walls, the lid's back and its top edge are all calc'd off
      --dw, so overriding width alone left a 270px device wearing a 210px thickness.
      The device leads on a phone; the copy reads under it. */
-  .hero-device{--dw:min(300px,66vw);align-self:center;order:-1}
+  .hero-device{--dw:min(238px,53vw);align-self:center;order:-1}
   .tagline,.hero-copy p.sub{max-width:none}
+
+  /* Set for the phone, where the 20px credits and 19px answers were running to barely
+     six words a line. */
+  .faq dt{font-size:19px}
+  .faq dd{font-size:18px}
+  footer{font-size:18px}
 }
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
