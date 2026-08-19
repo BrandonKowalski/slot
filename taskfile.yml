@@ -124,6 +124,17 @@ tasks:
       # hold 60 fps, so running it only produces bug reports about stutter.
       - cargo run --release -p slot
 
+  run:bare:
+    desc: Run with no title bar or border, for screenshots and screen capture
+    deps: [core]
+    env:
+      SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_BARE: '1'
+    cmds:
+      # Nothing on screen but the panel, so a capture needs no cropping. The window cannot
+      # be dragged or closed with the mouse while it is undecorated: quit with Cmd+Q.
+      - cargo run --release -p slot
+
   run:debug:
     desc: Run an unoptimised build, for a debugger. Will not hold 60 fps.
     deps: [core]

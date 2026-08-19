@@ -28,11 +28,24 @@ fn err<E: std::fmt::Display>(e: E) -> GfxError {
     GfxError::Context(e.to_string())
 }
 
+/// `SLOT_BARE=1` drops the title bar and the border, leaving nothing on screen but the
+/// panel. For screenshots and capture, where a macOS title bar is the only thing between
+/// a window and a picture of the device.
+///
+/// Off by default, and deliberately not the only way to run: an undecorated window
+/// cannot be dragged, resized or closed with the mouse, so it is quit with Cmd+Q.
+fn bare() -> bool {
+    std::env::var_os("SLOT_BARE").is_some_and(|v| v != "0")
+}
+
 impl HostSurface {
     pub fn new(events: &ActiveEventLoop) -> Result<Self, GfxError> {
-        let attrs = Window::default_attributes()
+        let mut attrs = Window::default_attributes()
             .with_title("slot.")
             .with_inner_size(winit::dpi::PhysicalSize::new(DEFAULT_W, DEFAULT_H));
+        if bare() {
+            attrs = attrs.with_decorations(false);
+        }
         let (window, config) = DisplayBuilder::new()
             .with_window_attributes(Some(attrs))
             .build(events, ConfigTemplateBuilder::new(), pick_config)

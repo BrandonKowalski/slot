@@ -51,14 +51,23 @@ impl Platform for SimPlatform {
     /// macOS has no panel the frontend may drive. Brightness reaches the HUD and stops.
     fn set_backlight(&mut self, _step: u8) {}
 
-    /// A laptop's own gauge is not this device's, and reporting it would let the host trip
-    /// a battery-critical flush that means nothing.
+    /// Full, and on the cable. Never the laptop's own gauge: that is not this device's, and
+    /// reporting it would let the host trip a battery-critical flush that means nothing.
+    ///
+    /// Fixed rather than absent so the gauge is on screen for captures, and fixed at *this*
+    /// reading because it is the only one that arms nothing. `BATTERY_CRITICAL` is 5 and
+    /// `BATTERY_LOW` is 20, and both are additionally gated on a charge state that is not
+    /// `Charging`, so 100 and `Charging` clears the cutoff twice over. Only the host reads
+    /// this; `DevicePlatform` still reads the real gauge out of sysfs on the RG SP.
     fn battery(&self) -> Option<Battery> {
-        None
+        Some(Battery {
+            percent: 100,
+            charge: Charge::Charging,
+        })
     }
 
     fn charge(&self) -> Charge {
-        Charge::Unknown
+        Charge::Charging
     }
 
     /// A laptop has no LED to drive.
