@@ -50,6 +50,10 @@ System/       the binary, the core, and theme.txt.
 Wallpapers/   .png, one picked at random each boot and drawn behind the shelf.
 ```
 
+Label art is drawn at 196x86, or about 2.28:1. Anything else is scaled to cover that box
+and centre cropped, so a square or portrait image loses its top and bottom. Bigger art is
+fine and comes down to size; smaller gets stretched up and shows it.
+
 `System/theme.txt` is entirely optional and controls the appearance of the slot:
 
 ```
