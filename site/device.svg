@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="device-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <!-- 1 unit = 0.1 mm, off Anbernic's own dimensioned drawing: 82 x 155.5 mm open,
+             83 mm of that the lower half. Every circle and cutout below was measured
+             from that drawing rather than recalled. -->
+        <path id="lid"  d="M60,0 H760 A60,60 0 0 1 820,60 V695 A30,30 0 0 1 790,725 H30 A30,30 0 0 1 0,695 V60 A60,60 0 0 1 60,0 Z"/>
+        <path id="deck" d="M25,725 H795 A25,25 0 0 1 820,750 V1475 A80,80 0 0 1 740,1555 H80 A80,80 0 0 1 0,1475 V750 A25,25 0 0 1 25,725 Z"/>
+
+        <linearGradient id="shellGrad" x1=".08" y1="0" x2=".92" y2="1">
+          <stop offset="0"   class="sl"/><stop offset=".22" class="sl"/>
+          <stop offset=".55" class="sb"/><stop offset="1"   class="ss"/>
+        </linearGradient>
+        <linearGradient id="deckGrad" x1=".18" y1="0" x2=".82" y2="1">
+          <stop offset="0"   class="sb"/><stop offset=".24" class="sl"/>
+          <stop offset=".58" class="sb"/><stop offset="1"   class="ss"/>
+        </linearGradient>
+        <!-- The hinge is a cylinder, so its light is a band across the middle rather than
+             a diagonal like the flat panels either side of it. -->
+        <linearGradient id="barrelGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" class="ss"/><stop offset=".22" class="sl"/>
+          <stop offset=".55" class="sb"/><stop offset="1" class="ss"/>
+        </linearGradient>
+        <!-- Metallic paint, not plastic: the ramp is deliberately not monotonic. Bright
+             catch, midtone, a dark core, then it brightens AGAIN off the bounce before
+             going dark at the far edge. That second lift is the whole tell; a plain
+             light-to-shade fade reads matte however it is tuned. -->
+        <linearGradient id="specular" x1=".08" y1="0" x2=".92" y2="1">
+          <stop offset="0"   stop-color="#fff" stop-opacity=".34"/>
+          <stop offset=".07" stop-color="#fff" stop-opacity=".20"/>
+          <stop offset=".17" stop-color="#fff" stop-opacity=".04"/>
+          <stop offset=".33" stop-color="#000" stop-opacity=".10"/>
+          <stop offset=".50" stop-color="#000" stop-opacity=".17"/>
+          <stop offset=".63" stop-color="#000" stop-opacity=".08"/>
+          <stop offset=".74" stop-color="#fff" stop-opacity=".10"/>
+          <stop offset=".83" stop-color="#fff" stop-opacity=".16"/>
+          <stop offset=".93" stop-color="#000" stop-opacity=".08"/>
+          <stop offset="1"   stop-color="#000" stop-opacity=".24"/>
+        </linearGradient>
+        <!-- The flake. Metallic paint is suspended particles, so it sparkles at a scale
+             far finer than any gradient. Kept faint; it reads as grain, not noise. -->
+        <filter id="flake" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" seed="11" stitchTiles="stitch"/>
+          <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .5 .3 .2 0 -.28"/>
+        </filter>
+        <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff" stop-opacity=".07"/>
+          <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="btnGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" class="bh"/><stop offset="1" class="bb"/>
+        </linearGradient>
+        <!-- A moulded panel is not a flat slab: every edge carries a radius that takes a
+             highlight on the light side and goes dark on the far side, and the face
+             domes slightly toward the middle. Without these two the halves are
+             rectangles no amount of drop shadow can solidify. -->
+        <clipPath id="lidClip"><path d="M60,0 H760 A60,60 0 0 1 820,60 V695 A30,30 0 0 1 790,725 H30 A30,30 0 0 1 0,695 V60 A60,60 0 0 1 60,0 Z"/></clipPath>
+        <clipPath id="deckClip"><path d="M25,725 H795 A25,25 0 0 1 820,750 V1475 A80,80 0 0 1 740,1555 H80 A80,80 0 0 1 0,1475 V750 A25,25 0 0 1 25,725 Z"/></clipPath>
+        <linearGradient id="bevel" x1=".26" y1="0" x2=".74" y2="1">
+          <stop offset="0"   stop-color="#fff" stop-opacity=".95"/>
+          <stop offset=".18" stop-color="#fff" stop-opacity=".38"/>
+          <stop offset=".45" stop-color="#fff" stop-opacity=".05"/>
+          <stop offset=".62" stop-color="#000" stop-opacity=".22"/>
+          <stop offset="1"   stop-color="#000" stop-opacity=".62"/>
+        </linearGradient>
+        <radialGradient id="dome" cx="34%" cy="24%" r="88%">
+          <stop offset="0"   stop-color="#fff" stop-opacity=".26"/>
+          <stop offset=".45" stop-color="#fff" stop-opacity=".04"/>
+          <stop offset=".78" stop-color="#000" stop-opacity=".14"/>
+          <stop offset="1"   stop-color="#000" stop-opacity=".38"/>
+        </radialGradient>
+        <!-- The drawn screen, shared by every device on the page. -->
+        <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#31313a"/>
+        <stop offset="1" stop-color="#1c1c22"/>
+        </linearGradient>
+        <linearGradient id="plastic" x1="0" y1="0" x2=".3" y2="1">
+        <stop offset="0" stop-color="#474751"/>
+        <stop offset="1" stop-color="#2b2b33"/>
+        </linearGradient>
+        <!-- 240x135, the cart's own size, with the bottom left corner taken off the way a
+        GBA cart's is. Placed by transform so the row can scale a neighbour without
+        redrawing it. -->
+        <g id="cartBody">
+        <path d="M10,0 H230 A10,10 0 0 1 240,10 V130 A5,5 0 0 1 235,135 H22 L0,113 V10 A10,10 0 0 1 10,0 Z" fill="url(#plastic)"/>
+        <path d="M10.5,.75 H229.5 A9.75,9.75 0 0 1 239.25,10.5 V130 A4.75,4.75 0 0 1 234.5,134.25 H22 L.75,113 V10.5 A9.75,9.75 0 0 1 10.5,.75 Z"
+        fill="none" stroke="#5e5e6a" stroke-width="1.5" stroke-opacity=".8"/>
+        <!-- The moulded grip. It is the band the label does not cover, and that
+        asymmetry is most of what makes the face read as a cartridge. -->
+        <g stroke="#242429" stroke-width="4" stroke-opacity=".7" stroke-linecap="round">
+        <path d="M28,8 v16 M42,8 v16 M56,8 v16 M70,8 v16 M84,8 v16 M98,8 v16 M112,8 v16
+        M126,8 v16 M140,8 v16 M154,8 v16 M168,8 v16 M182,8 v16 M196,8 v16 M210,8 v16"/>
+        </g>
+        </g>
+        <g id="screenArt">
+
+          <rect width="720" height="480" fill="url(#wall)"/>
+
+          <!-- Clock and battery, which is the whole of the status the shelf carries -->
+          <g font-family="Open Sans, sans-serif" fill="#9a9aa6">
+            <rect x="556" y="30" width="38" height="19" rx="4" fill="none" stroke="#9a9aa6" stroke-width="2.6"/>
+            <rect x="596" y="36" width="5" height="8" rx="1.5"/>
+            <rect x="559.5" y="33.5" width="24" height="12"/>
+            <text x="692" y="49" text-anchor="end" font-size="27" font-weight="600">10:24</text>
+          </g>
+
+          <!-- The row. Neighbours are 240 apart, 0.78 scale at 0.55 alpha, and their feet
+               stay on the row rather than floating up as they shrink. -->
+          <g opacity=".55">
+            <g transform="translate(26.4,202.2) scale(.78)">
+              <use href="#cartBody"/>
+              <rect x="21.6" y="30.8" width="196.8" height="85.7" rx="3" fill="#6f8f86"/>
+            </g>
+            <g transform="translate(506.4,202.2) scale(.78)">
+              <use href="#cartBody"/>
+              <rect x="21.6" y="30.8" width="196.8" height="85.7" rx="3" fill="#a8705a"/>
+            </g>
+          </g>
+
+          <!-- The selection, standing on the row with its foot at 307.5 -->
+          <g transform="translate(240,172.5)">
+            <use href="#cartBody"/>
+            <rect x="21.6" y="30.8" width="196.8" height="85.7" rx="3" fill="#cfc9bc"/>
+            <text x="120" y="86" text-anchor="middle" font-family="Open Sans, sans-serif"
+                  font-size="36" font-weight="700" letter-spacing="-1" fill="#23232a">SLOT</text>
+          </g>
+
+          <!-- The slot itself, in the bottom 58px, stacking outside in: housing, the lit
+               front edge, the bay stepped down from it, then the opening. -->
+          <rect x="0" y="422" width="720" height="58" fill="#242429"/>
+          <rect x="0" y="422" width="720" height="2" fill="#4d4d57"/>
+          <rect x="224" y="424" width="272" height="42" fill="#1a1a1d"/>
+          <rect x="233" y="429" width="254" height="9" fill="#050508"/>
+          <!-- The thumb scoop: one broad, nearly level arc across the bay's near wall, with
+               the plastic's lit edge along the cut. -->
+          <path d="M248,438 C248,461 282,466 360,466 C438,466 472,461 472,438 Z" fill="#050508"/>
+          <path d="M248,438 C248,461 282,466 360,466 C438,466 472,461 472,438"
+                fill="none" stroke="#4d4d57" stroke-width="2"/>
+        </g>
+      </defs>
+      <g id="lidArt">
+
+      <!-- ---------------------------------------------------------------- lid --- -->
+      <use href="#lid" fill="url(#shellGrad)"/>
+      <use href="#lid" fill="url(#dome)"/>
+      <g clip-path="url(#lidClip)"><rect width="820" height="725" filter="url(#flake)" opacity=".5"/></g>
+      <g clip-path="url(#lidClip)"><use href="#lid" fill="none" stroke="url(#bevel)" stroke-width="52"/></g>
+      <use href="#lid" fill="url(#specular)"/>
+      <use href="#lid" fill="none" class="rim"/>
+
+      <!-- The lens surround, a step proud of the shell -->
+      <rect x="27" y="80" width="766" height="540" rx="18" class="lens"/>
+      <rect x="29" y="82" width="762" height="536" rx="16" fill="none" class="lensEdge"/>
+      <rect x="43" y="105" width="734" height="492" rx="13" fill="none" class="lensInner"/>
+      <!-- The panel: 72.6 x 48.4 mm, which measures 1.496 on the drawing. 3:2, and so
+           exactly 3x the GBA's 240x160 with nothing left over. -->
+      <rect x="47" y="109" width="726" height="484" fill="#050508"/>
+
+      <!-- Four bumpers. Centres read off a 1 mm grid laid over the drawing, because
+           measuring them by threshold kept finding the lid's own corner curve. -->
+      <g class="bumper">
+        <circle cx="65" cy="46" r="23"/><circle cx="755" cy="46" r="23"/>
+        <circle cx="62" cy="664" r="20"/><circle cx="758" cy="664" r="20"/>
+      </g>
+      </g>
+      <g id="lidBackArt">
+       <g transform="translate(0,725) scale(1,-1)">
+        <use href="#lid" fill="url(#shellGrad)"/>
+        <use href="#lid" fill="url(#dome)"/>
+        <g clip-path="url(#lidClip)"><rect width="820" height="725" filter="url(#flake)" opacity=".5"/></g>
+        <g clip-path="url(#lidClip)"><use href="#lid" fill="none" stroke="url(#bevel)" stroke-width="52"/></g>
+        <use href="#lid" fill="none" class="rim"/>
+       </g>
+      </g>
+      <g id="deckArt">
+      <use href="#deck" fill="url(#deckGrad)"/>
+      <use href="#deck" fill="url(#dome)"/>
+      <g clip-path="url(#deckClip)"><rect y="725" width="820" height="830" filter="url(#flake)" opacity=".5"/></g>
+      <g clip-path="url(#deckClip)"><use href="#deck" fill="none" stroke="url(#bevel)" stroke-width="52"/></g>
+      <use href="#deck" fill="url(#specular)"/>
+      <use href="#deck" fill="none" class="rim"/>
+
+      <!-- Two indicator LEDs on the right edge. The upper one is power, and it is lit
+           whenever the screen beside it is, so it is drawn on rather than dark. -->
+      <rect x="770" y="899" width="50" height="17" rx="8" class="ledGlow"/>
+      <rect x="774" y="903" width="42" height="9" rx="4.5" class="ledOn"/>
+      <rect x="774" y="939" width="42" height="9" rx="4.5" class="ledOff"/>
+
+      <!-- M, the menu button, dead centre at 41.1 mm across -->
+      <circle cx="411" cy="935" r="38" class="dish"/><circle cx="411" cy="935" r="33" class="dishIn"/>
+      <circle cx="411" cy="935" r="27" fill="url(#btnGrad)"/>
+      <text x="411" y="944" class="glyph" font-size="26">M</text>
+
+      <!-- D-pad, in a 29.3 mm dish -->
+      <circle cx="204" cy="1110" r="146" class="dish"/><circle cx="204" cy="1110" r="139" class="dishIn"/>
+      <!-- 21.5 mm across, 7.6 mm arms, measured. Two rounded rects rather than one
+           stroked path: the stroke that rounded the corners also grew the cross to
+           24 mm and fattened the arms to 10 mm. -->
+      <g class="crossEdge">
+        <rect x="162" y="998" width="84" height="224" rx="19"/>
+        <rect x="92" y="1070" width="224" height="80" rx="19"/>
+      </g>
+      <g fill="url(#btnGrad)">
+        <rect x="166" y="1002" width="76" height="216" rx="16"/>
+        <rect x="96" y="1074" width="216" height="72" rx="16"/>
+      </g>
+      <circle cx="204" cy="1110" r="17" class="dimple"/>
+
+      <!-- Face buttons, same dish, X up / Y left / A right / B down -->
+      <circle cx="612" cy="1110" r="146" class="dish"/><circle cx="612" cy="1110" r="139" class="dishIn"/>
+      <g class="face">
+        <circle cx="612" cy="1026" r="40"/><text x="612" y="1036">X</text>
+        <circle cx="533" cy="1106" r="40"/><text x="533" y="1116">Y</text>
+        <circle cx="694" cy="1106" r="40"/><text x="694" y="1116">A</text>
+        <circle cx="612" cy="1188" r="40"/><text x="612" y="1198">B</text>
+      </g>
+
+      <!-- Speaker: 4 by 4 at a 3.1 mm pitch, so the grille is square, which it is -->
+      <g class="holes">
+        <circle cx="366" cy="1240" r="6"/><circle cx="397" cy="1240" r="6"/><circle cx="428" cy="1240" r="6"/><circle cx="459" cy="1240" r="6"/>
+        <circle cx="366" cy="1271" r="6"/><circle cx="397" cy="1271" r="6"/><circle cx="428" cy="1271" r="6"/><circle cx="459" cy="1271" r="6"/>
+        <circle cx="366" cy="1302" r="6"/><circle cx="397" cy="1302" r="6"/><circle cx="428" cy="1302" r="6"/><circle cx="459" cy="1302" r="6"/>
+        <circle cx="366" cy="1333" r="6"/><circle cx="397" cy="1333" r="6"/><circle cx="428" cy="1333" r="6"/><circle cx="459" cy="1333" r="6"/>
+      </g>
+
+      <!-- SELECT and START, round, named above rather than on the button -->
+      <g class="micro"><text x="357" y="1437">SELECT</text><text x="462" y="1437">START</text></g>
+      <circle cx="357" cy="1474" r="27" class="dish"/><circle cx="357" cy="1474" r="22" fill="url(#btnGrad)"/>
+      <circle cx="462" cy="1476" r="27" class="dish"/><circle cx="462" cy="1476" r="22" fill="url(#btnGrad)"/>
+
+      <!-- -------------------------------------------------------------- hinge --- -->
+      <!-- Drawn last: the barrel stands in front of the joint, full width, two long
+           segments between two short end caps. -->
+      <rect x="0" y="728" width="820" height="104" rx="19" fill="url(#barrelGrad)"/>
+      <rect x="0" y="725" width="48" height="110" rx="19" fill="url(#barrelGrad)"/>
+      <rect x="772" y="725" width="48" height="110" rx="19" fill="url(#barrelGrad)"/>
+      <g class="seam"><path d="M48,731 V829 M396,731 V829 M772,731 V829"/></g>
+      <rect x="0.75" y="728.75" width="818.5" height="102.5" rx="18.5" fill="none" class="rim"/>
+      </g>
+    </svg>

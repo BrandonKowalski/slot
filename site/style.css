@@ -1,0 +1,503 @@
+/* The palette is slot's own theme defaults, the ones System/theme.txt overrides. */
+:root{
+  --housing:#242429;
+  --recess:#1a1a1d;
+  --opening:#050508;
+  /* The page sits between opening and recess: dark enough to stay slot's, light
+     enough that a black shell still has an edge against it. */
+  --page:#1b1b21;
+  --edge:#4d4d57;
+
+  --ink:#f4f5f9;
+  --muted:#bcbdc9;
+  --rule:#3a3a46;
+
+  /* Overwritten on load by whichever colourway comes up. Silver is the fallback for a
+     page that ran with scripting off, so the device is never uncoloured. */
+  --shell-light:#e2e5e9;
+  --shell-base:#b8bcc2;
+  --shell-shade:#7e838b;
+  --btn:#c2c6cc;
+  --btn-hi:#e9ecf0;
+  --etch:rgba(0,0,0,.46);
+}
+
+*{box-sizing:border-box}
+/* No overflow-x guard here on purpose. The hero glow is sized to stay inside the
+   viewport at every width (measured), and the guide's pinned device needs a root
+   that has not been turned into a scroll container: Safari drops position:sticky
+   when it has. */
+html{-webkit-text-size-adjust:100%;scroll-snap-type:y mandatory}
+body{
+  margin:0;
+  background:var(--page);
+  color:var(--ink);
+  font:400 18px/1.68 "Open Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--ink)}
+h1,h2{line-height:1.15;letter-spacing:-.02em;margin:0}
+code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+/* A chip, the way a backtick reads in Discord. A typeface change alone was not enough
+   separation at this size. .88em because monospace sets larger than the body face at
+   the same px, and the vertical padding stays small so an inline chip cannot push into
+   the line above it. */
+code{
+  background:var(--opening);
+  border-radius:5px;
+  padding:.14em .4em;
+  font-size:.88em;
+  color:var(--ink);
+}
+
+.wrap{max-width:900px;margin:0 auto;padding:0 24px}
+
+/* ---------------------------------------------------------------- hero --- */
+
+.hero{
+  max-width:1060px;
+  margin:0 auto;
+  min-height:100vh;
+  min-height:100dvh;
+  padding:24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  scroll-snap-align:center;
+  gap:clamp(40px,7vw,92px);
+}
+.hero-copy{flex:0 1 auto;min-width:0}
+
+.wordmark{
+  font-size:clamp(56px,9vw,88px);
+  font-weight:700;
+  letter-spacing:-.045em;
+}
+.tagline{
+  font-size:clamp(19px,2.4vw,23px);
+  color:var(--ink);
+  margin:18px 0 0;
+  max-width:30ch;
+}
+.hero-copy p.sub{color:var(--muted);margin:16px 0 0;max-width:42ch}
+
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.btn{
+  display:inline-block;
+  padding:13px 22px;
+  border-radius:8px;
+  font-weight:600;
+  font-size:16px;
+  text-decoration:none;
+  background:var(--ink);
+  color:var(--opening);
+  border:1px solid var(--ink);
+  transition:transform .12s ease,background .12s ease;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+.btn.ghost:hover{border-color:var(--edge)}
+
+/* -------------------------------------------------------------- device --- */
+
+.hero-device{
+  position:relative;
+  flex:0 0 auto;
+  --dw:clamp(210px,29vw,320px);
+  /* The two halves are not the same thickness. 23.9mm shut, split one third to the
+     screen half and two thirds to the button half: 7.97mm and 15.93mm, which against
+     the 82mm width is 9.7% and 19.4%. Every face measures off these. */
+  width:var(--dw);
+  /* The stage carries the perspective; the device inside it does the turning.
+     Roughly 2.5x the device's width. At 2000px the projection is near enough
+     orthographic that the turn reads as flat artwork rather than a solid object,
+     which is the whole reason for the side faces below. */
+  perspective:750px;
+}
+/* A soft pool of light behind the shell, so a silver device is not floating on
+   black with a hard edge. */
+.hero-device::after{
+  content:'';
+  position:absolute;
+  /* Kept inside the device's own column: 8% of the widest it gets still lands
+     short of the viewport at every width the hero has a layout for. */
+  inset:-16% -8%;
+  z-index:0;
+  background:radial-gradient(58% 40% at 50% 66%,rgba(255,255,255,.09),transparent 70%);
+  pointer-events:none;
+}
+/* Defined once, off-layout, and instantiated by <use>. */
+.device-defs{position:absolute;width:0;height:0;overflow:hidden}
+
+.device{position:relative;z-index:2;transform-style:preserve-3d;
+  --depth-lid:calc(var(--dw) * .097);
+  --depth-deck:calc(var(--dw) * .194)}
+.dv-lid,.dv-deck{position:relative;transform-style:preserve-3d}
+/* The hinge axis is the centre of the barrel, 55 units below the lid's bottom edge,
+   which is 107.6% of the lid's own height. Pivoting on the edge instead leaves a shut
+   lid sitting 11mm high, hovering above the deck face it should rest on. Every pose
+   that swings the lid uses it. */
+.dv-lid{transform-origin:50% 107.6%}
+.dv-front>svg,.dv-deck>svg{display:block;width:100%;height:auto}
+
+/* Two faces, so the lid can start shut. `flat` on the front matters: it flattens the
+   screen overlays into the face, so hiding the face's backface hides them with it
+   instead of leaving a video floating in mid air while the lid is closed. */
+.dv-front,.dv-back{backface-visibility:hidden;-webkit-backface-visibility:hidden;transform-style:flat}
+/* Positioned, so the screen overlays resolve against the face and get flattened into
+   it. Without this they fall back to .dv-lid, stay in its 3D context, and go on
+   showing the carousel through the back of a shut lid. */
+.dv-front{position:relative;transform:translateZ(.6px)}
+/* translateZ is applied before the flip, so a positive value lands the face a full
+   depth BEHIND the front. At .6px it sat almost on top of it and the walls enclosed
+   nothing, which is why an opening lid read as a hollow box. */
+.dv-back{position:absolute;inset:0;transform:rotateX(180deg) translateZ(var(--depth-lid))}
+.dv-back svg{display:block;width:100%;height:100%}
+/* The lid's shadow falling on the deck. Sits a hair proud so a preserve-3d parent
+   cannot flip a coin over whether it paints above the deck art or below it. */
+.dv-ao{position:absolute;left:0;right:0;top:0;height:30%;pointer-events:none;
+  transform:translateZ(.3px);
+  background:linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,.16) 55%,rgba(0,0,0,0))}
+
+/* Straight on, both halves flat. What the documentation section wants. */
+.pose-flat,.pose-flat .dv-lid{transform:none}
+
+/* Three quarters, lid swinging open on load and settling at 16 degrees. */
+/* rotateZ is listed first so it applies to the finished 3D composite rather than
+   before it. 6.6 is measured, not guessed: the projected screen's top edge sits at
+   -6.59 degrees without it. Perspective makes the screen a trapezoid, so its left
+   edge cannot come vertical at the same time; the horizon wins, because the carousel
+   inside it is a row of carts on a shelf line. */
+.pose-hero{transform:rotateZ(13deg) rotateX(6deg) rotateY(-27deg)}
+.pose-hero .dv-lid{
+  transform:rotateX(-22deg);
+  /* `backwards` so the lid holds shut through the delay rather than sitting open and
+     then snapping closed to start. -178 rather than -180 keeps it a hair off the
+     deck's plane, which is otherwise a coin flip over which one paints on top. */
+  animation:lid-open 1.5s cubic-bezier(.3,.86,.36,1) .4s backwards;
+}
+@keyframes lid-open{from{transform:rotateX(-178deg)}to{transform:rotateX(-22deg)}}
+
+
+/* The device is 23.9mm thick shut, so each half is about 12mm: 14.6% of the 82mm
+   width. These are the faces you see once it is turned, and without them the halves
+   are two cards. Each is inset by roughly its corner radius so a square face does not
+   poke out past a rounded corner. */
+/* Each wall carries a 180 degree flip about an axis lying in its own plane. That
+   leaves it exactly where it was but turns its front face outward, which is what makes
+   backface culling do the right thing: the near wall draws, the far one is dropped.
+   Without the flip the fronts pointed inward and culling removed both. */
+.f3d{position:absolute;backface-visibility:hidden;
+  background:linear-gradient(rgba(0,0,0,.5),rgba(0,0,0,.3)),
+             linear-gradient(180deg,var(--shell-shade),var(--shell-base))}
+/* The walls run the full side now and round off at the ends instead of stopping
+   square against a rounded corner. The vertical radii are the shell's own corner
+   radii as a fraction of the wall's height: lid 60 and 30 units of 725, deck 25 and
+   80 of 830. Horizontal is 100%, so each end is an ellipse the wall's full depth. */
+.side-l,.side-r{top:0;height:100%;width:9.7%;
+  border-radius:100% 100% 100% 100% / 8.3% 8.3% 4.1% 4.1%}
+.side-l{left:0;transform-origin:0 50%;transform:rotateY(90deg) rotateX(180deg)}
+.side-r{right:0;transform-origin:100% 50%;transform:rotateY(-90deg) rotateX(180deg)}
+/* The barrel is part of the lower half, not a fitting bolted to it, so the deck's
+   side runs the whole way: rounded at the top by the barrel's own radius (55 of 830),
+   straight down the body, rounded out at the bottom corner (80 of 830). A separate
+   cap sat at the barrel's shallower depth and read as a lozenge floating in the gap
+   between the two walls. */
+.deck-l,.deck-r{top:0;height:100%;width:19.4%;
+  border-radius:100% 100% 100% 100% / 6.6% 6.6% 9.6% 9.6%}
+.dv-bottom{left:9%;width:82%;bottom:0;height:19.2%;
+  transform-origin:50% 100%;transform:rotateX(90deg) rotateY(180deg);
+  background:linear-gradient(rgba(0,0,0,.58),rgba(0,0,0,.42)),
+             linear-gradient(90deg,var(--shell-shade),var(--shell-base))}
+
+/* The lid's top edge. Half the 23.9mm closed thickness against the lid's 72.5mm
+   height is 16.5%, which is what stops a tipped lid reading as paper. */
+.dv-edge{
+  position:absolute;left:2.5%;right:2.5%;top:0;height:11%;
+  transform-origin:50% 0;
+  /* Negative: in CSS +Y is down and +Z is toward the viewer, so rotateX(90deg) swings
+     the far edge forward and the slab floats above the lid. -90 sends it back. */
+  transform:rotateX(-90deg) rotateY(180deg);
+  background:linear-gradient(var(--shell-base),var(--shell-shade));
+  border-radius:5px 5px 0 0;
+  backface-visibility:hidden;
+}
+
+/* The SVG paints a black rect at exactly these coordinates, so both overlays land on
+   black and a rounding error at the edge is black on black rather than shell colour
+   bleeding through. 726x484 at 47,109 in the lid's own 820x725 viewBox: the panel's measured 3:2. */
+.screen-box{
+  position:absolute;
+  left:5.7317%;
+  top:15.0345%;
+  width:88.5366%;
+  height:66.7586%;
+
+  border-radius:4px;
+  overflow:hidden;
+  background:var(--opening);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.device-screen-content{z-index:4;transition:opacity .6s ease}
+.device-screen-content.fade-out{opacity:0}
+.device-screen-content svg{display:block;width:100%;height:100%}
+.device-screen,.guide-screen,.hero-screen{
+  z-index:5;
+  opacity:0;
+  transition:opacity .45s ease;
+  /* `fill`, not `cover`. Both give the same picture here — the box is exactly 3:2 and
+     so are the clips — but `cover` has to derive a fit from the video's intrinsic size,
+     and any frame where that size is not yet known is a frame drawn at the wrong offset
+     which then snaps into place. `fill` stretches to the box and asks nothing about the
+     source, so there is no fit to get wrong. The cost is that a clip which is NOT 720x480
+     would distort rather than crop, which is why the size is stated in media/README.md. */
+  object-fit:fill;
+  border:0;
+  /* The element also carries width="720" height="480". Without an intrinsic size a
+     video is 300x150 until its metadata arrives, and object-fit:cover crops a 2:1
+     source into a 3:2 box quite differently from a 3:2 one — which is the frame that
+     appears wrong and then snaps into place.
+
+     translateZ(0) puts it in its own layer up front. A video inside a preserve-3d
+     chain is composited separately, and it can land before the ancestors' transform
+     has been applied to it, which shows as the picture sitting off to one side of the
+     screen for a frame. Promoting it early makes that ordering fixed. */
+  transform:translateZ(0);
+}
+
+/* -------------------------------------------------------------- content --- */
+
+h2{font-size:clamp(26px,3.4vw,34px);margin-bottom:8px}
+/* Prose caps at 68ch. The wrap stays wide so tables and code blocks still have room;
+   only the running text is measured. */
+section p,.credits p,section p{margin:0 0 18px}
+section p:last-child{margin-bottom:0}
+
+
+kbd{
+  display:inline-block;
+  padding:2px 7px;
+  font-size:14px;
+  line-height:1.5;
+  border-radius:5px;
+  background:#2b2b33;
+  border:1px solid var(--rule);
+  border-bottom-width:2px;
+  color:var(--ink);
+  white-space:nowrap;
+}
+
+
+
+
+
+
+/* ---------------------------------------------------------------- faq --- */
+
+.faq{
+  scroll-snap-align:center;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;
+  align-items:center;
+  padding:56px 0;
+}
+.faq>.wrap{width:100%}
+.faq h2{font-size:clamp(26px,3.2vw,34px);margin-bottom:30px}
+.faq dl{margin:0}
+.faq .qa{margin:0 0 26px;max-width:64ch}
+.faq .qa:last-child{margin-bottom:0}
+.faq dt{font-weight:600;font-size:20px;color:var(--ink);margin-bottom:7px}
+.faq dd{margin:0;font-size:19px;line-height:1.7;color:var(--muted)}
+
+footer{
+  scroll-snap-align:center;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;
+  align-items:center;
+  border-top:1px solid var(--rule);
+  padding:56px 0;
+  font-size:20px;
+  line-height:1.7;
+  color:var(--muted);
+}
+footer>.wrap{width:100%}
+footer h2{font-size:26px;color:var(--ink);margin-bottom:16px}
+/* At 20px the 900px wrap runs to about 85 characters a line. */
+footer p{max-width:64ch;margin:0 0 18px}
+footer a{color:var(--ink)}
+
+/* --------------------------------------------------------- device parts --- */
+
+/* The gradient stops read the colourway rather than being rewritten, so switching
+   shells is six custom properties and cannot miss one. */
+.sl{stop-color:var(--shell-light)}
+.sb{stop-color:var(--shell-base)}
+.ss{stop-color:var(--shell-shade)}
+.bh{stop-color:var(--btn-hi)}
+.bb{stop-color:var(--btn)}
+
+/* Strokes are in viewBox units, where 1 unit is 0.1 mm. */
+.rim{stroke:var(--shell-light);stroke-opacity:.8;stroke-width:3}
+.lens{fill:var(--shell-light);fill-opacity:.30;stroke:#000;stroke-opacity:.17;stroke-width:3}
+.bumper circle{fill:var(--shell-shade);fill-opacity:.22;stroke:var(--shell-light);stroke-opacity:.35;stroke-width:2}
+/* A dish is a shadow plus a lit rim, not a dark disc: on the black shell a dark disc
+   is invisible and the recess disappears with it. */
+.dish{fill:#000;fill-opacity:.10;stroke:var(--shell-light);stroke-opacity:.5;stroke-width:4}
+.dishIn{fill:none;stroke:#000;stroke-opacity:.18;stroke-width:4}
+.lensEdge{stroke:var(--shell-light);stroke-opacity:.85;stroke-width:4}
+.lensInner{stroke:#000;stroke-opacity:.35;stroke-width:5}
+.crossEdge{fill:var(--etch);opacity:.28}
+.dimple{fill:#000;fill-opacity:.15}
+.seam path{stroke:#000;stroke-opacity:.28;stroke-width:3}
+/* Power. Lit whenever the screen beside it is, so it is drawn on rather than dark. */
+.ledOn{fill:#6fd39b}
+.ledGlow{fill:#6fd39b;opacity:.22}
+.ledOff{fill:var(--etch);opacity:.5}
+.face circle{fill:url(#btnGrad);stroke:var(--etch);stroke-opacity:.32;stroke-width:3}
+.face text,.glyph{fill:var(--etch);font-family:"Open Sans",sans-serif;font-weight:600;text-anchor:middle}
+.face text{font-size:32px}
+.micro text{fill:var(--etch);font:600 20px "Open Sans",sans-serif;letter-spacing:2.5px;text-anchor:middle}
+.holes circle{fill:var(--etch);opacity:.7}
+
+/* ------------------------------------------------------------- guide --- */
+
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+/* The device is pinned and straight on while the steps run past it, so one screen
+   carries the whole guide instead of six devices scrolling by. */
+.guide{
+  max-width:1160px;
+  margin:0 auto;
+  padding:0 24px;
+  display:grid;
+  grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
+  gap:clamp(32px,6vw,80px);
+  align-items:start;
+}
+.guide-stage{
+  /* Sized off viewport HEIGHT, because the stage is 100vh and the device is nearly
+     twice as tall as it is wide — height is what runs out first. A width cap alone made
+     it shrink against the view as the screen grew: 73% of the height at 1280x800 but
+     58% at 1920x1080. 41vh holds it at about 78% everywhere. The clamp is only there to
+     stop it outgrowing its own grid column. */
+  --dw:min(41vh,clamp(280px,32vw,440px));
+  position:sticky;
+  top:0;
+  height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  perspective:750px;
+}
+.guide-stage .device{width:var(--dw)}
+
+/* The lid step shuts the device where it stands. Same hinge and the same angle the
+   hero opens from, so the two read as one mechanism. -178 rather than -180 keeps the
+   lid a hair off the deck's plane, which is otherwise a coin flip over which paints
+   on top. The screen goes with it: the front face's backface is hidden, so a shut lid
+   shows its outside rather than a video playing through the plastic. */
+.guide-stage .dv-lid,.guide-stage .device{transition:transform 1.15s cubic-bezier(.45,.05,.3,1)}
+/* Folding the lid down leaves the shut silhouette in the bottom half of a box that is
+   still full height, so it sinks out of the stage's centre. Its visible mass runs from
+   the hinge at 725 to 1560 of 1555 units, centred at about 73% — this lifts it the
+   23% that puts it back on the middle. */
+.guide-stage .device.is-shut{transform:translateY(-23%)}
+/* The display cuts, it does not dim — no transition at all on the way out. Against the
+   lid's 1.15s swing the inherited 0.6s fade left the drawn carousel half visible for most
+   of the close, which is a mock-up of a running device folding shut: the opposite of what
+   the step says. Even a short fade leaves a window for it to be caught in, so there is
+   none. `visibility` goes with it, so nothing is left for a compositor to paint through
+   the back of a shut lid. */
+.guide-stage .device.is-shut .device-screen-content{
+  transition:none;
+  visibility:hidden;
+}
+/* Set for one frame when the lid should arrive already shut rather than swing shut. */
+.guide-stage .device.no-swing,
+.guide-stage .device.no-swing .dv-lid,
+.guide-stage .device.no-swing .device-screen-content{transition:none}
+.guide-stage .device.is-shut .dv-lid{transform:rotateX(-178deg)}
+@media (prefers-reduced-motion:reduce){.guide-stage .dv-lid{transition:none}}
+
+.step{
+  min-height:100vh;
+  min-height:100dvh;
+  scroll-snap-align:center;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  /* Dimmed, not hidden: the inactive steps stay readable if the observer never
+     fires, which is what happens with scripting off. */
+  opacity:.42;
+  transition:opacity .45s ease;
+}
+.step.is-active{opacity:1}
+.step h2{font-size:clamp(25px,3.1vw,33px);margin-bottom:14px}
+.step p{max-width:44ch;margin:0}
+
+@media (max-width:880px){
+  .guide{grid-template-columns:1fr;gap:0}
+  .guide-stage{
+    --dw:min(196px,46vw);
+    height:50vh;
+    height:50dvh;
+    z-index:3;
+    background:linear-gradient(var(--page) 84%,transparent);
+  }
+  /* Padded by the pinned device's height, so justify-content centres the copy in the
+     half of the screen that is actually visible. */
+  .step{padding:50vh 0 0;padding:50dvh 0 0}
+  .hero{min-height:100vh;min-height:100dvh;padding:24px}
+}
+@media (prefers-reduced-motion:reduce){.step{opacity:1}}
+
+/* Marks where you are and jumps you there. Anchors, so they work with scripting off;
+   the active state is the only part JS owns. */
+.dots{
+  position:fixed;
+  right:clamp(6px,1.4vw,20px);
+  top:50%;
+  transform:translateY(-50%);
+  z-index:40;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.dots a{
+  display:grid;
+  place-items:center;
+  width:24px;
+  height:24px;   /* the dot is 9px; the rest is touch target */
+}
+.dots a::before{
+  content:"";
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:var(--muted);
+  opacity:.34;
+  transition:opacity .25s ease,transform .25s ease,background .25s ease;
+}
+.dots a:hover::before{opacity:.75}
+.dots a:focus-visible{outline:2px solid var(--ink);outline-offset:-2px;border-radius:4px}
+.dots a.is-on::before{opacity:1;background:var(--ink);transform:scale(1.35)}
+
+/* ------------------------------------------------------------- narrower --- */
+
+@media (max-width:880px){
+  /* Stretch, not flex-start: a column flex item at flex-start sizes to its max-content
+     width, so the copy stopped wrapping and ran off the right edge. */
+  .hero{flex-direction:column;align-items:stretch;padding:28px 24px 64px;gap:40px}
+  .hero-copy{width:100%}
+  /* --dw, never width: the walls, the lid's back and its top edge are all calc'd off
+     --dw, so overriding width alone left a 270px device wearing a 210px thickness.
+     The device leads on a phone; the copy reads under it. */
+  .hero-device{--dw:min(300px,66vw);align-self:center;order:-1}
+  .tagline,.hero-copy p.sub{max-width:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}

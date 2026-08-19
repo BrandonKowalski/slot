@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>slot.</title>
+<meta name="description" content="A bespoke, GBA-only frontend for the Anbernic RG SP.">
+<meta property="og:title" content="slot.">
+<meta property="og:description" content="A bespoke, GBA-only frontend for the Anbernic RG SP.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="dots" aria-label="Jump to section">
+  <a href="#hero" aria-label="Hero"></a>
+  <a href="#step-browse" aria-label="Browse the carousel"></a>
+  <a href="#step-insert" aria-label="Insert and play"></a>
+  <a href="#step-eject" aria-label="Eject"></a>
+  <a href="#step-states" aria-label="Save states"></a>
+  <a href="#step-rewind" aria-label="Rewind and fast forward"></a>
+  <a href="#step-sleep" aria-label="Close the lid"></a>
+  <a href="#faq" aria-label="Anticipated Questions Answered"></a>
+  <a href="#credits" aria-label="Credits"></a>
+</nav>
+
+<main class="hero" id="hero">
+  <div class="hero-copy">
+    <h1 class="wordmark">slot.</h1>
+    <p class="tagline">A bespoke, GBA-only frontend for the Anbernic RG SP.</p>
+    <div class="actions">
+      <a class="btn" href="https://github.com/BrandonKowalski/slot/releases/latest">Download</a>
+      <a class="btn ghost" href="https://github.com/BrandonKowalski/slot">GitHub Repo</a>
+    </div>
+  </div>
+
+  <div class="hero-device">
+    <!-- The RG SP, open. 360x720 of viewBox is the device; the screen is the 300x200
+         rect at 30,82 — 3:2, which is exactly 3x the GBA's 240x160 and exactly what
+         slot composites at. The two overlays above are pinned to those coordinates. -->
+    <!-- The device is defined once and instantiated by <use>, so the documentation
+         section can drop in another one without a second copy of the artwork. -->
+
+    <!-- Lid and deck are separate elements so the hinge can bend: the stage holds the
+         perspective, the device turns on Y, and the lid alone turns on X about its
+         bottom edge, which is where the hinge is. The screen overlays live inside the
+         lid, so a clip foreshortens with it rather than floating flat in front. -->
+    <div class="device pose-hero">
+      <div class="dv-lid">
+        <div class="dv-front">
+          <svg viewBox="0 0 820 725" role="img" aria-label="An Anbernic RG SP running slot.">
+            <use href="#lidArt"/>
+          </svg>
+          <div class="screen-box device-screen-content">
+            <svg viewBox="0 0 720 480" role="img" aria-label="The carousel, a cartridge selected above the slot."><use href="#screenArt"/></svg>
+          </div>
+          <video class="screen-box hero-screen" width="720" height="480" muted playsinline loop preload="metadata"></video>
+        </div>
+        <div class="dv-back" aria-hidden="true">
+          <svg viewBox="0 0 820 725" preserveAspectRatio="none"><use href="#lidBackArt"/></svg>
+        </div>
+        <span class="dv-edge" aria-hidden="true"></span>
+        <span class="f3d side-l" aria-hidden="true"></span>
+        <span class="f3d side-r" aria-hidden="true"></span>
+      </div>
+      <div class="dv-deck">
+        <svg viewBox="0 725 820 830" aria-hidden="true" focusable="false">
+          <use href="#deckArt"/>
+        </svg>
+        <span class="f3d side-l deck-l" aria-hidden="true"></span>
+        <span class="f3d side-r deck-r" aria-hidden="true"></span>
+        <span class="f3d dv-bottom" aria-hidden="true"></span>
+        <span class="dv-ao" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<section class="guide" aria-labelledby="guide-h">
+  <h2 id="guide-h" class="sr-only">User guide</h2>
+  <div class="guide-stage">
+      <div class="device pose-flat">
+        <div class="dv-lid">
+          <div class="dv-front">
+            <svg viewBox="0 0 820 725" role="img" aria-label="An Anbernic RG SP, straight on.">
+              <use href="#lidArt"/>
+            </svg>
+            <div class="screen-box device-screen-content">
+              <svg viewBox="0 0 720 480" role="img" aria-label="The carousel, a cartridge selected above the slot."><use href="#screenArt"/></svg>
+            </div>
+            <video class="screen-box guide-screen" width="720" height="480" muted playsinline preload="none"></video>
+          </div>
+          <div class="dv-back" aria-hidden="true">
+            <svg viewBox="0 0 820 725" preserveAspectRatio="none"><use href="#lidBackArt"/></svg>
+          </div>
+          <span class="dv-edge" aria-hidden="true"></span>
+          <span class="f3d side-l" aria-hidden="true"></span>
+          <span class="f3d side-r" aria-hidden="true"></span>
+        </div>
+        <div class="dv-deck">
+          <svg viewBox="0 725 820 830" aria-hidden="true" focusable="false">
+            <use href="#deckArt"/>
+          </svg>
+          <span class="f3d side-l deck-l" aria-hidden="true"></span>
+          <span class="f3d side-r deck-r" aria-hidden="true"></span>
+          <span class="f3d dv-bottom" aria-hidden="true"></span>
+          <span class="dv-ao" aria-hidden="true"></span>
+        </div>
+      </div>
+  </div>
+  <div class="guide-steps">
+      <article class="step" id="step-browse" data-clip="carousel.mp4">
+        <h2>Browse the Carousel</h2>
+        <p>Use <kbd>L</kbd> and <kbd>R</kbd> to cycle through your cartridges.</p>
+      </article>
+      <article class="step" id="step-insert" data-clip="insert.mp4">
+        <h2>Insert and Play</h2>
+        <p>A short tap of <kbd>A</kbd> loads the last save state.<br>Hold <kbd>A</kbd> instead and the game starts fresh.</p>
+      </article>
+      <article class="step" id="step-eject" data-clip="eject.mp4">
+        <h2>Ejecting a Game</h2>
+        <p>Hold <kbd>MENU</kbd> to eject the cart and land back on the carousel. A save state will be created on exit.</p>
+      </article>
+      <article class="step" id="step-states" data-clip="states.mp4">
+        <h2>Save States</h2>
+        <p><kbd>SELECT</kbd> + <kbd>R1</kbd> creates a save state.<br><kbd>SELECT</kbd> + <kbd>L1</kbd> loads the most recent.<br>Double tap <kbd>MENU</kbd> to open the save state picker.</p>
+      </article>
+      <article class="step" id="step-rewind" data-clip="rewind.mp4">
+        <h2>Fast-Forward and Rewind</h2>
+        <p>Hold <kbd>R2</kbd> to fast-forward, or double tap to toggle it.<br>Hold <kbd>L2</kbd> to go back in time.</p>
+      </article>
+      <article class="step" id="step-sleep" data-clip="rewind.mp4" data-lid="shut">
+        <h2>Lid Detection</h2>
+        <p>Closing the lid turns off the display. After three minutes, slot will create a save state and power off. The inserted game will resume with this save state on the next boot.</p>
+      </article>
+  </div>
+</section>
+
+<section class="faq" id="faq">
+  <div class="wrap">
+    <h2>Anticipated Questions Answered</h2>
+    <dl>
+      <div class="qa">
+        <dt>Will slot run anything other than GBA?</dt>
+        <dd>No.</dd>
+      </div>
+      <div class="qa">
+        <dt>This is almost perfect but needs _______. Will you add it?</dt>
+        <dd>No.</dd>
+      </div>
+      <div class="qa">
+        <dt>Does slot allow you to pair Bluetooth headphones?</dt>
+        <dd>No. Use the headphone jack.</dd>
+      </div>
+      <div class="qa">
+        <dt>Where do the games come from?</dt>
+        <dd>Your own legally obtained backups.</dd>
+      </div>
+      <div class="qa">
+        <dt>How do I add cart labels?</dt>
+        <dd>Drop a <code>.png</code> into <code>Labels/</code> named after the rom.<br> For example, <code>Metroid Fusion.gba</code> matches <code>Metroid Fusion.png</code>.</dd>
+      </div>
+      <div class="qa">
+        <dt>Is there a GBA boot animation on game start?</dt>
+        <dd>Yes! Drop <code>gba_bios.bin</code> into <code>BIOS/</code>.</dd>
+      </div>
+      <div class="qa">
+        <dt>I have another question that isn't answered here.</dt>
+        <dd>No.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<footer id="credits">
+  <div class="wrap">
+    <h2>Credits</h2>
+    <p>Emulation is <a href="https://mgba.io">mGBA</a> by endrift, through <a href="https://www.libretro.com">libretro</a>. The device boots <a href="https://github.com/BrandonKowalski/AGS-102">AGS-102</a>, a purpose made fork of <a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by @pvaibhav.</p>
+    <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L McIntyre, under MIT. The panel mask is derived from the LCD3x shader by Gigaherz, from the libretro shader collection, and was released by them to the public domain.</p>
+    <p>The sounds are a recording of me shoving a cartridge into my childhood GBA.</p>
+
+    <h2 style="margin-top:38px">AI Disclosure</h2>
+    <p>The Rust frontend was put together by Claude Opus. I reviewed everything that was produced. The RG SP SVGs on this page were also generated by Claude. This documentation is 100% free-range, meatbag prose.</p>
+    <p>The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought that something extremely focused on GBA would be kind of neat.</p>
+    <p>mGBA is the real star of the show here. This is just a wrapper around it.</p>
+    <p>Use it, don't use it, I don't care.</p>
+    <p>Figured I should share the end result of all the wasted water. ✌🏻</p>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>
