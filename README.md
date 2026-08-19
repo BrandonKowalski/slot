@@ -2,12 +2,6 @@
 
 A bespoke, GBA-only frontend for the Anbernic RG SP.
 
-Pick a cartridge from the carousel, and it is inserted into the slot with a nostalgic scrape and clunk.
-
-A save state is captured when you power off the device. When you reboot, the game left in the slot will resume immediately.
-
-The only setting exposed is a clock which you can set the first time you run slot. Everything else is managed on the SD Card.
-
 ## Controls
 
 On the carousel, `L` and `R` browse and `A` plays.
@@ -95,6 +89,6 @@ The sounds are a recording of me shoving a cartridge into my childhood GBA.
 
 This was put together by Claude Opus. I wanted a bespoke frontend for my RG SP and thought that that something extremely focused on GBA would be kind of neat.
 
-mGBA is the real star of the show here. This is provided without support and I will be disabling pull requests and issues. 
+mGBA is the real star of the show here. This is provided without support and I will selectively address filed issues and PRs. 
 
 Use it, don't use it, I don't care. Figured I should share the end result of all the wasted water.
