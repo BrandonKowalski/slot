@@ -251,8 +251,19 @@ impl Session {
         matches!(self.app.phase(), Phase::Polaroids { .. })
     }
 
+    /// Whether the game is live and in charge of the device. Not the phase alone: the power
+    /// menu and the shutdown screen are overlays rather than phases — deliberately, so
+    /// cancelling returns to whatever was underneath — and the phase stays `Playing` under
+    /// both. Reading only the phase left the core running flat out, and the motor buzzing,
+    /// behind a screen that had already replaced the game.
     fn playing(&self) -> bool {
-        matches!(self.app.phase(), Phase::Playing { .. })
+        matches!(self.app.phase(), Phase::Playing { .. }) && !self.held()
+    }
+
+    /// The screens that have taken the panel away from a cart still seated. The switcher is
+    /// not one of them: it has its own phase and `sync_speed` names it separately.
+    fn held(&self) -> bool {
+        self.app.power_menu().is_some() || self.app.shutting_down()
     }
 
     fn dozing(&self) -> bool {
@@ -279,7 +290,11 @@ impl Session {
             // Fast forward belongs to the game, so a cart still sliding in runs at its own
             // pace no matter what R2 is doing.
             emu.set_speed(
-                if self.inserting() || self.ejecting() || self.showing_polaroids() || self.dozing()
+                if self.inserting()
+                    || self.ejecting()
+                    || self.showing_polaroids()
+                    || self.dozing()
+                    || self.held()
                 {
                     Speed::Paused
                 } else if self.fast && self.playing() {

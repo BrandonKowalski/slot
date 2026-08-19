@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use common::{session_with_platform, tmp_root_with_carts, tmp_root_with_real_carts};
 use slot::app::Phase;
 use slot::session::Session;
-use slot_input::{Btn, Millis, RawEvent, MENU_HOLD_MS};
+use slot_input::{Btn, Millis, RawEvent, MENU_HOLD_MS, POWER_HOLD_MS};
 
 const FRAME_MS: Millis = 16;
 const DT: f32 = 1.0 / 60.0;
@@ -100,4 +100,37 @@ fn play(s: &mut Session, now: &mut Millis) {
         step(s, now);
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+/// The menu replaces the screen but not the phase, so a cart that was buzzing as the button
+/// went down kept buzzing while the user read a question about turning the device off — and
+/// then straight through the shutdown, since `poweroff` ends the process with `exit` and
+/// `Motor`'s own destructor never runs to put it down.
+#[test]
+fn the_power_menu_takes_the_motor_down() {
+    let d = tmp_root_with_real_carts(&["Advance Wars", "Emerald"]);
+    let (mut s, motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    s.core_rumble()
+        .expect("a seated cart has a core")
+        .set(0, STRONG, u16::MAX);
+    step(&mut s, &mut now);
+    assert_eq!(
+        motor.last(),
+        u16::MAX,
+        "the motor should be running, or this test proves nothing"
+    );
+
+    let pressed = now;
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    while now < pressed + POWER_HOLD_MS + FRAME_MS {
+        step(&mut s, &mut now);
+    }
+    assert_eq!(s.app().power_menu(), Some(0), "the menu never opened");
+    assert_eq!(
+        motor.last(),
+        0,
+        "the cart kept buzzing under the power menu"
+    );
 }

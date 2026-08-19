@@ -975,6 +975,15 @@ impl App {
     /// this is the only branch pair — `Low` and `Running` — a write ever leaves this function
     /// with; a state repeated from the previous second returns before touching the platform.
     fn set_led(&mut self, state: LedState) {
+        // A shutdown darkens the case and nothing lights it again. The fast tick recomputes
+        // `led_state` from the gauge every second and knows nothing about a shutdown in
+        // progress, so a charge tick landing inside the window between the choice and
+        // `poweroff` put the light straight back to green for the five seconds rcK takes.
+        // Guarded here rather than at that call site for the same reason the edge is: this is
+        // the one seam, and a caller cannot forget what it never has to remember.
+        if self.shutting_down() && state != LedState::Off {
+            return;
+        }
         if self.last_led == Some(state) {
             return;
         }
@@ -1504,6 +1513,15 @@ impl App {
     /// user is not watching finish. A real behaviour on a handheld: the case still has a
     /// light on it for as long as `poweroff` takes to actually cut power.
     fn begin_power_off(&mut self) {
+        // Idempotent, and that is the whole of why: `doze_expired` is a level rather than an
+        // edge and this leaves the phase on `Doze`, so `timers` calls back here every frame
+        // for as long as the lid is shut. Re-arming `act_at` each time walked the deadline
+        // ahead of the clock forever, and the device sat dark and awake until the lid opened
+        // and took the phase out of `Doze` — at which point it powered off in the user's
+        // hands, on the frame they came back to the session.
+        if self.powering_off {
+            return;
+        }
         self.powering_off = true;
         self.act_at = self.now() + SHUTDOWN_SHOW_MS;
         self.set_led(LedState::Off);

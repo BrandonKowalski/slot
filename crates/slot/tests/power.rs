@@ -1,13 +1,22 @@
 mod common;
 
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use common::{app_playing_in, boot, panel, tmp_root_with_carts, StubSnapshot};
+use common::{
+    app_playing_in, boot, panel, session_with_platform, tmp_root_with_carts,
+    tmp_root_with_real_carts, StubSnapshot,
+};
 use slot::app::Phase;
+use slot::emu::Speed;
+use slot::session::Session;
 use slot_gfx::Draw;
-use slot_input::{Action, Btn};
+use slot_input::{Action, Btn, Millis, RawEvent, POWER_HOLD_MS};
 use slot_store::{read_slot_state, write_slot_state, SlotState, StateRing};
+use slot_ui::PowerChoice;
+
+const FRAME_MS: Millis = 16;
+const DT: f32 = 1.0 / 60.0;
 
 #[test]
 fn lid_close_flushes_resume_before_dozing() {
@@ -227,9 +236,14 @@ fn the_menu_moves_and_stops_at_both_ends() {
     a.apply(Action::PowerHold);
     a.apply(Action::GbaDown(Btn::Up));
     assert_eq!(a.power_menu(), Some(0), "it does not wrap off the top");
-    a.apply(Action::GbaDown(Btn::Down));
-    a.apply(Action::GbaDown(Btn::Down));
-    assert_eq!(a.power_menu(), Some(1), "nor off the bottom");
+    for _ in 0..PowerChoice::ALL.len() + 1 {
+        a.apply(Action::GbaDown(Btn::Down));
+    }
+    assert_eq!(
+        a.power_menu(),
+        Some(PowerChoice::ALL.len() - 1),
+        "nor off the bottom"
+    );
 }
 
 #[test]
@@ -298,4 +312,122 @@ fn the_shutdown_screen_is_up_before_the_machine_may_stop() {
     // no-op against whatever clock the harness already left behind.
     a.tick_ms(600_000);
     assert!(a.ready_to_power_off(), "then it may stop");
+}
+
+/// The reported hang: close the lid, wait out the doze, and the device sits there until the
+/// lid is opened again — at which point it powers off, having thrown away the session the
+/// user just came back for.
+///
+/// `doze_expired` is a level rather than an edge, and `begin_power_off` leaves the phase on
+/// `Doze`, so `timers` re-armed the shutdown every frame and `act_at` walked ahead of the
+/// clock forever. The 250 ms the screen is meant to be up became a deadline that could never
+/// arrive.
+#[test]
+fn a_dozing_device_powers_off_by_itself_rather_than_waiting_for_the_lid() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.set_power(panel(d.path(), Duration::from_secs(2)).0);
+    a.apply(Action::LidClose);
+    for _ in 0..180 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(
+        a.powering_off(),
+        "three seconds is past the two second timeout"
+    );
+    assert!(
+        a.ready_to_power_off(),
+        "the shutdown screen has had its 250 ms and the machine is still not allowed to stop"
+    );
+}
+
+/// The menu is an overlay rather than a phase, so the phase stays `Playing` underneath it and
+/// `sync_speed` — which reads only the phase — left the core running flat out behind a screen
+/// that had replaced it. The game was still being heard while the user read a question about
+/// turning the device off. The switcher is the frontend's other overlay over a live game and
+/// it has always paused; this is the same idea, and was simply never wired.
+#[test]
+fn the_power_menu_holds_the_core_still() {
+    let d = tmp_root_with_real_carts(&["Advance Wars", "Emerald"]);
+    let (mut s, _motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    assert_eq!(
+        s.observed_speed(),
+        Some(Speed::Normal),
+        "the core should be running, or this test proves nothing"
+    );
+
+    hold_power(&mut s, &mut now);
+    assert_eq!(s.app().power_menu(), Some(0), "the menu never opened");
+    await_paused(&mut s);
+}
+
+/// The same for the screen after the choice. A device with five seconds of rcK ahead of it is
+/// not one that should still be playing the game it has already said goodbye to.
+#[test]
+fn a_committed_shutdown_holds_the_core_still() {
+    let d = tmp_root_with_real_carts(&["Advance Wars", "Emerald"]);
+    let (mut s, _motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+
+    hold_power(&mut s, &mut now);
+    s.app_mut().apply(Action::GbaDown(Btn::Down));
+    s.app_mut().apply(Action::GbaDown(Btn::A));
+    assert!(s.app().powering_off(), "Power Off is the second row");
+    s.update(DT);
+    await_paused(&mut s);
+}
+
+/// Waits for the worker to report that it read `Paused`, rather than for the frame count to
+/// sit still: a descheduled worker and a stopped one look identical from a count.
+fn await_paused(s: &mut Session) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while s.observed_speed() != Some(Speed::Paused) {
+        assert!(
+            Instant::now() < deadline,
+            "the core was still running behind the shutdown"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// POWER down, then frames until the gesture layer's own tick raises the menu.
+fn hold_power(s: &mut Session, now: &mut Millis) {
+    let pressed = *now;
+    event(s, RawEvent::Down(Btn::Power), now);
+    while *now < pressed + POWER_HOLD_MS + FRAME_MS {
+        step(s, now);
+    }
+}
+
+fn step(s: &mut Session, now: &mut Millis) {
+    *now += FRAME_MS;
+    s.feed([], *now);
+    s.update(DT);
+}
+
+fn event(s: &mut Session, ev: RawEvent, now: &mut Millis) {
+    *now += FRAME_MS;
+    s.feed([ev], *now);
+    s.update(DT);
+}
+
+/// Puts the selected cart in and waits out the load, which happens on its own thread.
+fn play(s: &mut Session, now: &mut Millis) {
+    event(s, RawEvent::Down(Btn::A), now);
+    event(s, RawEvent::Up(Btn::A), now);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(s, now);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // The worker has to have taken a turn at Normal before a test may claim it stopped.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while s.observed_speed() != Some(Speed::Normal) {
+        assert!(Instant::now() < deadline, "the core never started");
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }

@@ -7,6 +7,7 @@ use common::{
 };
 use slot_input::{Action, Btn};
 use slot_power::LedState;
+use slot_ui::PowerChoice;
 
 /// The final whole-branch review found that deleting `power.set_led(state)` from the fast
 /// tick left every one of the (then) 504 tests green: both fakes recorded nothing, and the
@@ -143,8 +144,11 @@ fn power_off_leaves_the_led_off_rather_than_lit_through_shutdown() {
         "the menu is a question, not a shutdown"
     );
 
-    a.apply(Action::GbaDown(Btn::Down));
-    a.apply(Action::GbaDown(Btn::Down));
+    // Walked to the row by its own position rather than by a count of presses: what this
+    // test is about is what Power Off does to the case light, not where Power Off sits.
+    for _ in 0..PowerChoice::PowerOff.index() {
+        a.apply(Action::GbaDown(Btn::Down));
+    }
     a.apply(Action::GbaDown(Btn::A));
     assert_eq!(
         led.load(Ordering::Relaxed),
@@ -191,5 +195,36 @@ fn the_slow_tick_actually_runs_the_power_off_policy_on_what_it_reads() {
     assert!(
         a.powering_off(),
         "the slow tick read a critical battery but never ran the power-off policy on it"
+    );
+}
+
+/// The choice is not the end of the LED's story: the fast tick recomputes `led_state` every
+/// second from the gauge, which knows nothing about a shutdown in progress. A charge tick
+/// landing inside the window between the choice and `poweroff` put the case light straight
+/// back to green, and there it stayed through the five seconds rcK takes — which is the exact
+/// thing `begin_power_off` darkens it to avoid.
+#[test]
+fn the_fast_tick_does_not_relight_the_case_through_a_shutdown() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let (mut a, charge, percent, led, _writes) = app_playing_with_led(d.path(), "Emerald");
+    charge.store(1, Ordering::Relaxed); // Discharging, so the LED is lit green beforehand
+    percent.store(50, Ordering::Relaxed);
+    a.tick_ms(2_000);
+
+    a.apply(Action::PowerHold);
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        led.load(Ordering::Relaxed),
+        led_code(LedState::Off),
+        "the choice darkens the case, or this test proves nothing"
+    );
+
+    // The next charge tick comes due while the shutdown screen is still on the panel.
+    a.tick_ms(3_000);
+    assert_eq!(
+        led.load(Ordering::Relaxed),
+        led_code(LedState::Off),
+        "the fast tick re-lit the case light on a device that is shutting down"
     );
 }
