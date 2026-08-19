@@ -4,30 +4,39 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 
 ## Controls
 
-On the carousel, `L` and `R` browse and `A` plays.
+### On the carousel
 
-A short tap of `A` will resume the last save state. Holding `A` will start the game fresh.
+| Input    | Action                     |
+|----------|----------------------------|
+| `L` `R`  | Browse the carousel        |
+| Tap `A`  | Resume the last save state |
+| Hold `A` | Start the game fresh       |
+| `MENU`   | Open the about screen      |
 
-`MENU` opens the about screen.
-
-In game:
+### In game
 
 | Input                     | Action                                                                                           |
 |---------------------------|--------------------------------------------------------------------------------------------------|
-| Hold `MENU`               | Save state, eject cart, back to the carousel                                                     |
-| Double tap `MENU`         | Save state switcher, select which one to load or delete, undo last save / load within 30 seconds |
+| Hold `MENU`               | Save state, eject the cart, back to the carousel                                                 |
+| Double tap `MENU`         | Save state switcher: pick one to load or delete, or undo the last save or load within 30 seconds |
 | `SELECT` + `R1`           | Save state                                                                                       |
 | `SELECT` + `L1`           | Load the most recent save state                                                                  |
-| `SELECT` + `Up / Down`    | Adjust Brightness                                                                                |
-| `SELECT` + `Left / Right` | Adjust Blue light                                                                                |
-| `L2`                      | Rewind while held                                                                                |
-| `R2`                      | Fast forward while held, double tap to toggle on                                                 |
-| `VOL+` / `VOL-`           | Change the volume                                                                                |
-| `VOL+` and `VOL-` | Mute, remembering the level                                                                      |
+| `SELECT` + `Up` `Down`    | Adjust brightness                                                                                |
+| `SELECT` + `Left` `Right` | Adjust blue light                                                                                |
+| Hold `L2`                 | Rewind                                                                                           |
+| Hold `R2`                 | Fast-forward                                                                                     |
+| Double tap `R2`           | Lock fast-forward on. Press again to unlock                                                      |
+| `VOL+` `VOL-`             | Change the volume                                                                                |
+| `VOL+` + `VOL-`           | Mute, remembering the level                                                                      |
 
-Closing the lid sleeps, and sleeping long enough powers off. Both cases create a save state. 
+Buttons side by side mean either one. A `+` means both together.
 
-On the next boot, slot goes straight back into the game.
+Closing the lid writes a save state and turns off the display. Open it again and you're
+back in the game. Leave it shut for three minutes and slot powers off, resuming from that
+save state on the next boot.
+
+The lid is not a sleep. The panel goes dark but the board keeps running, which is why the
+three minutes exist rather than an indefinite standby.
 
 ## SD Card Layout
 
@@ -73,22 +82,30 @@ I doubt I am gonna work on this more and add to it but in case I do here is how 
 
 ## Credits
 
-Emulation is [mGBA](https://mgba.io) by endrift, through [libretro](https://www.libretro.com). 
+Emulation is [mGBA](https://mgba.io) by endrift, through [libretro](https://www.libretro.com).
+The device boots [AGS-102](https://github.com/BrandonKowalski/AGS-102), a purpose-made fork
+of [BaseOS](https://github.com/pvaibhav/BaseOS) by @pvaibhav.
 
-The device boots [AGS-102](https://github.com/BrandonKowalski) a purpose made fork of [BaseOS](https://github.com/pvaibhav/BaseOS) by @pvaibhav.
+Type is [Open Sans](https://github.com/googlefonts/opensans), under the SIL Open Font
+License, and [Nerd Fonts](https://www.nerdfonts.com) symbols by Ryan L. McIntyre, under MIT.
 
-Type is [Open Sans](https://github.com/googlefonts/opensans), under the SIL Open Font License, and [Nerd Fonts](https://www.nerdfonts.com) symbols by Ryan L McIntyre, under MIT.
-
-The panel mask is derived from the LCD3x shader by Gigaherz, from the libretro shader
-collection and released to the public domain. At exactly 3x it reduces to a 3 by 3 table,
-which is what ships here rather than the shader.
+The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro
+shader collection. At exactly 3x it reduces to a 3 by 3 table, which is what ships here
+rather than the shader.
 
 The sounds are a recording of me shoving a cartridge into my childhood GBA.
 
 ## AI Disclosure
 
-This was put together by Claude Opus. I wanted a bespoke frontend for my RG SP and thought that that something extremely focused on GBA would be kind of neat.
+The Rust frontend was put together by Claude Opus. I reviewed everything that was
+produced. This documentation is 100% free-range, meatbag prose.
 
-mGBA is the real star of the show here. This is provided without support and I will selectively address filed issues and PRs. 
+The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought
+that something this focused on GBA would be kind of neat.
 
-Use it, don't use it, I don't care. Figured I should share the end result of all the wasted water.
+This is just a glorified wrapper around mGBA, which is the real star of the show.
+
+Provided without support. I will selectively address filed issues and PRs.
+
+Use it, don't use it, I don't care. Figured I should share the end result of all the
+wasted water.

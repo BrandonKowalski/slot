@@ -16,15 +16,17 @@
 <body>
 
 <nav class="dots" aria-label="Jump to section">
-  <a href="#hero" aria-label="Hero"></a>
-  <a href="#step-browse" aria-label="Browse the carousel"></a>
-  <a href="#step-insert" aria-label="Insert and play"></a>
-  <a href="#step-eject" aria-label="Eject"></a>
-  <a href="#step-states" aria-label="Save states"></a>
-  <a href="#step-rewind" aria-label="Rewind and fast forward"></a>
-  <a href="#step-sleep" aria-label="Close the lid"></a>
+  <a href="#hero" aria-label="Top"></a>
+  <a href="#browse" aria-label="Browse the Carousel"></a>
+  <a href="#insert" aria-label="Insert and Play"></a>
+  <a href="#eject" aria-label="Ejecting a Game"></a>
+  <a href="#save-states" aria-label="Save States"></a>
+  <a href="#fast-forward" aria-label="Fast-Forward and Rewind"></a>
+  <a href="#lid-detection" aria-label="Lid Detection"></a>
+  <a href="#controls" aria-label="Button Reference"></a>
   <a href="#faq" aria-label="Anticipated Questions Answered"></a>
   <a href="#credits" aria-label="Credits"></a>
+  <a href="#disclosure" aria-label="AI Disclosure"></a>
 </nav>
 
 <main class="hero" id="hero">
@@ -40,24 +42,22 @@
   <div class="hero-device">
     <!-- The RG SP, open. 360x720 of viewBox is the device; the screen is the 300x200
          rect at 30,82 — 3:2, which is exactly 3x the GBA's 240x160 and exactly what
-         slot composites at. The two overlays above are pinned to those coordinates. -->
+         slot composites at. The clip above is pinned to those coordinates. -->
     <!-- The device is defined once and instantiated by <use>, so the documentation
          section can drop in another one without a second copy of the artwork. -->
 
     <!-- Lid and deck are separate elements so the hinge can bend: the stage holds the
          perspective, the device turns on Y, and the lid alone turns on X about its
-         bottom edge, which is where the hinge is. The screen overlays live inside the
-         lid, so a clip foreshortens with it rather than floating flat in front. -->
+         bottom edge, which is where the hinge is. The screen lives inside the lid, so a
+         clip foreshortens with it rather than floating flat in front. -->
     <div class="device pose-hero">
       <div class="dv-lid">
         <div class="dv-front">
           <svg viewBox="0 0 820 725" role="img" aria-label="An Anbernic RG SP running slot.">
             <use href="#lidArt"/>
           </svg>
-          <div class="screen-box device-screen-content">
-            <svg viewBox="0 0 720 480" role="img" aria-label="The carousel, a cartridge selected above the slot."><use href="#screenArt"/></svg>
-          </div>
-          <video class="screen-box hero-screen" width="720" height="480" muted playsinline loop preload="metadata"></video>
+          <video class="screen-box hero-screen" width="720" height="480" muted playsinline loop
+                 preload="metadata" poster="media/main.webp"></video>
         </div>
         <div class="dv-back" aria-hidden="true">
           <svg viewBox="0 0 820 725" preserveAspectRatio="none"><use href="#lidBackArt"/></svg>
@@ -88,9 +88,8 @@
             <svg viewBox="0 0 820 725" role="img" aria-label="An Anbernic RG SP, straight on.">
               <use href="#lidArt"/>
             </svg>
-            <div class="screen-box device-screen-content">
-              <svg viewBox="0 0 720 480" role="img" aria-label="The carousel, a cartridge selected above the slot."><use href="#screenArt"/></svg>
-            </div>
+            <!-- Side by side only: this one screen carries every step. Narrow, the stage is
+                 hidden and each step shows its own panel instead. Poster set with the src. -->
             <video class="screen-box guide-screen" width="720" height="480" muted playsinline preload="none"></video>
           </div>
           <div class="dv-back" aria-hidden="true">
@@ -112,30 +111,121 @@
       </div>
   </div>
   <div class="guide-steps">
-      <article class="step" id="step-browse" data-clip="carousel.mp4">
+      <article class="step" id="browse" data-clip="carousel.mp4">
+        <div class="step-panel"><video muted playsinline loop preload="none"
+               width="720" height="480" poster="media/carousel.webp"></video></div>
         <h2>Browse the Carousel</h2>
         <p>Use <kbd>L</kbd> and <kbd>R</kbd> to cycle through your cartridges.</p>
       </article>
-      <article class="step" id="step-insert" data-clip="insert.mp4">
+      <article class="step" id="insert" data-clip="insert.mp4">
+        <div class="step-panel"><video muted playsinline loop preload="none"
+               width="720" height="480" poster="media/insert.webp"></video></div>
         <h2>Insert and Play</h2>
-        <p>A short tap of <kbd>A</kbd> loads the last save state.<br>Hold <kbd>A</kbd> instead and the game starts fresh.</p>
+        <p>Tapping <kbd>A</kbd> loads the last save state.<br>Holding <kbd>A</kbd> starts the game fresh.</p>
       </article>
-      <article class="step" id="step-eject" data-clip="eject.mp4">
+      <article class="step" id="eject" data-clip="eject.mp4">
+        <div class="step-panel"><video muted playsinline loop preload="none"
+               width="720" height="480" poster="media/eject.webp"></video></div>
         <h2>Ejecting a Game</h2>
-        <p>Hold <kbd>MENU</kbd> to eject the cart and land back on the carousel. A save state will be created on exit.</p>
+        <p>Hold <kbd>MENU</kbd> to eject the cart.<br>On exit, slot creates a save state.</p>
       </article>
-      <article class="step" id="step-states" data-clip="states.mp4">
+      <article class="step" id="save-states" data-clip="states.mp4">
+        <div class="step-panel"><video muted playsinline loop preload="none"
+               width="720" height="480" poster="media/states.webp"></video></div>
         <h2>Save States</h2>
-        <p><kbd>SELECT</kbd> + <kbd>R1</kbd> creates a save state.<br><kbd>SELECT</kbd> + <kbd>L1</kbd> loads the most recent.<br>Double tap <kbd>MENU</kbd> to open the save state picker.</p>
+        <p><kbd>SELECT</kbd> + <kbd>R1</kbd> creates a save state.<br><kbd>SELECT</kbd> + <kbd>L1</kbd> loads the most recent.<br>Double tap <kbd>MENU</kbd> to open the save state switcher.</p>
       </article>
-      <article class="step" id="step-rewind" data-clip="rewind.mp4">
+      <article class="step" id="fast-forward" data-clip="rewind.mp4">
+        <div class="step-panel"><video muted playsinline loop preload="none"
+               width="720" height="480" poster="media/rewind.webp"></video></div>
         <h2>Fast-Forward and Rewind</h2>
-        <p>Hold <kbd>R2</kbd> to fast-forward, or double tap to toggle it.<br>Hold <kbd>L2</kbd> to go back in time.</p>
+        <p>Hold <kbd>R2</kbd> to fast-forward, or double tap to lock it on.<br>Hold <kbd>L2</kbd> to go back in time.</p>
       </article>
-      <article class="step" id="step-sleep" data-clip="rewind.mp4" data-lid="shut">
+      <!-- Not id="lid": device.svg has a path by that name and app.js inlines it at the top
+     of the body, so it would win getElementById and the anchor would land on the
+     artwork rather than this step. -->
+      <article class="step" id="lid-detection" data-clip="rewind.mp4" data-lid="shut">
+        <!-- No clip: the display is off. Stacked, the panel is simply dark, which is
+             what the copy under it says happens. -->
+        <div class="step-panel" aria-hidden="true"></div>
         <h2>Lid Detection</h2>
-        <p>Closing the lid turns off the display. After three minutes, slot will create a save state and power off. The inserted game will resume with this save state on the next boot.</p>
+        <p>Closing the lid writes a save state and turns off the display. Open it again and you're back in the game. Leave it shut for three minutes and slot powers off, resuming from that save state on the next boot.</p>
       </article>
+  </div>
+</section>
+
+<section class="reference" id="controls">
+  <div class="wrap">
+    <h2>Button Reference</h2>
+
+    <h3>On the carousel</h3>
+    <dl class="keys">
+      <div class="key">
+        <dt><kbd>L</kbd> <kbd>R</kbd></dt>
+        <dd>Browse the carousel</dd>
+      </div>
+      <div class="key">
+        <dt>Tap <kbd>A</kbd></dt>
+        <dd>Resume the last save state</dd>
+      </div>
+      <div class="key">
+        <dt>Hold <kbd>A</kbd></dt>
+        <dd>Start the game fresh</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>MENU</kbd></dt>
+        <dd>Open the about screen</dd>
+      </div>
+    </dl>
+
+    <h3>In game</h3>
+    <dl class="keys">
+      <div class="key">
+        <dt>Hold <kbd>MENU</kbd></dt>
+        <dd>Save state, eject the cart, back to the carousel</dd>
+      </div>
+      <div class="key">
+        <dt>Double tap <kbd>MENU</kbd></dt>
+        <dd>Save state switcher: pick one to load or delete, or undo the last save or
+            load within 30 seconds</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>R1</kbd></dt>
+        <dd>Save state</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>L1</kbd></dt>
+        <dd>Load the most recent save state</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>Up</kbd> <kbd>Down</kbd></dt>
+        <dd>Adjust brightness</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>Left</kbd> <kbd>Right</kbd></dt>
+        <dd>Adjust blue light</dd>
+      </div>
+      <div class="key">
+        <dt>Hold <kbd>L2</kbd></dt>
+        <dd>Rewind</dd>
+      </div>
+      <div class="key">
+        <dt>Hold <kbd>R2</kbd></dt>
+        <dd>Fast-forward</dd>
+      </div>
+      <div class="key">
+        <dt>Double tap <kbd>R2</kbd></dt>
+        <dd>Lock fast-forward on. Press again to unlock.</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>VOL+</kbd> <kbd>VOL&minus;</kbd></dt>
+        <dd>Change the volume</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>VOL+</kbd> + <kbd>VOL&minus;</kbd></dt>
+        <dd>Mute, remembering the level</dd>
+      </div>
+    </dl>
   </div>
 </section>
 
@@ -161,7 +251,7 @@
       </div>
       <div class="qa">
         <dt>How do I add cart labels?</dt>
-        <dd>Drop a <code>.png</code> into <code>Labels/</code> named after the rom.<br> For example, <code>Metroid Fusion.gba</code> matches <code>Metroid Fusion.png</code>.</dd>
+        <dd>Drop a <code>.png</code> into <code>Labels/</code> with the same name as the ROM file.<br>For example, <code>Metroid Fusion.png</code> matches <code>Metroid Fusion.gba</code>.</dd>
       </div>
       <div class="qa">
         <dt>Is there a GBA boot animation on game start?</dt>
@@ -175,20 +265,29 @@
   </div>
 </section>
 
-<footer id="credits">
+<!-- Two sections, not one. Together they are ~1000px, which is taller than the screen
+     they snap into, so centring the pair put the Credits heading off the top edge. Apart
+     they are 320 and 424 and each lands centred on its own. -->
+<footer>
+  <section class="endnote" id="credits">
   <div class="wrap">
     <h2>Credits</h2>
-    <p>Emulation is <a href="https://mgba.io">mGBA</a> by endrift, through <a href="https://www.libretro.com">libretro</a>. The device boots <a href="https://github.com/BrandonKowalski/AGS-102">AGS-102</a>, a purpose made fork of <a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by @pvaibhav.</p>
-    <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L McIntyre, under MIT. The panel mask is derived from the LCD3x shader by Gigaherz, from the libretro shader collection, and was released by them to the public domain.</p>
+    <p>Emulation is <a href="https://mgba.io">mGBA</a> by endrift, through <a href="https://www.libretro.com">libretro</a>. The device boots <a href="https://github.com/BrandonKowalski/AGS-102">AGS-102</a>, a purpose-made fork of <a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by @pvaibhav.</p>
+    <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L. McIntyre, under MIT. The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro shader collection.</p>
     <p>The sounds are a recording of me shoving a cartridge into my childhood GBA.</p>
+  </div>
+  </section>
 
-    <h2 style="margin-top:38px">AI Disclosure</h2>
+  <section class="endnote" id="disclosure">
+  <div class="wrap">
+    <h2>AI Disclosure</h2>
     <p>The Rust frontend was put together by Claude Opus. I reviewed everything that was produced. The RG SP SVGs on this page were also generated by Claude. This documentation is 100% free-range, meatbag prose.</p>
-    <p>The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought that something extremely focused on GBA would be kind of neat.</p>
-    <p>mGBA is the real star of the show here. This is just a wrapper around it.</p>
+    <p>The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought that something this focused on GBA would be kind of neat.</p>
+    <p>This is just a glorified wrapper around mGBA, which is the real star of the show.</p>
     <p>Use it, don't use it, I don't care.</p>
     <p>Figured I should share the end result of all the wasted water. ✌🏻</p>
   </div>
+  </section>
 </footer>
 
 <script src="app.js" defer></script>
