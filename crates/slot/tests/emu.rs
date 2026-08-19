@@ -242,3 +242,36 @@ fn the_renderer_is_handed_whole_gba_frames() {
         std::thread::sleep(Duration::from_millis(2));
     }
 }
+
+/// Fast forward has to leave a trail behind it. Snapshotting only at normal speed put a
+/// hole in the history: the newest state was whatever was recorded before the trigger, so
+/// the first pop of a rewind collapsed the entire fast forwarded stretch in one step
+/// rather than walking back through it.
+#[test]
+fn fast_forward_still_records_rewind_history() {
+    let emu = spawn();
+    std::thread::sleep(Duration::from_millis(200));
+    let before_ff = frame_count(&emu);
+
+    emu.set_speed(Speed::Fast);
+    std::thread::sleep(Duration::from_millis(300));
+    emu.set_speed(Speed::Normal);
+    let after_ff = frame_count(&emu);
+    assert!(
+        after_ff > before_ff,
+        "fast forward did not advance the core: {before_ff} then {after_ff}"
+    );
+
+    // A brief rewind is a handful of pops. It should walk back a little way into the
+    // stretch that was run at speed, not fall off the far side of it.
+    emu.set_rewinding(true);
+    std::thread::sleep(Duration::from_millis(60));
+    emu.set_rewinding(false);
+    let rewound = frame_count(&emu);
+
+    assert!(
+        rewound > before_ff,
+        "a short rewind fell back past where the fast forward began, so nothing was \
+         recorded while it ran: {before_ff} -> {after_ff} -> {rewound}"
+    );
+}

@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use slot::app::Phase;
-use slot::rewind::Rewind;
+use slot::rewind::{Rewind, RewindThread};
 use slot::session::Session;
 use slot_input::{Btn, Millis, RawEvent};
 use slot_store::{write_slot_state, SlotState};
@@ -188,4 +188,61 @@ fn a_state_that_changed_size_drops_the_history_rather_than_corrupting_it() {
         r.pop().is_none(),
         "a state was rebuilt across a size change"
     );
+}
+
+/// The compressor moved off the emu thread. Whatever else that changed, it must not have
+/// changed what comes back out.
+#[test]
+fn the_thread_reconstructs_states_exactly_in_reverse() {
+    let r = RewindThread::spawn(4 * 1024 * 1024);
+    let states: Vec<Vec<u8>> = (0..120u32).map(synthetic_state).collect();
+    for s in &states {
+        r.push(s.clone());
+    }
+    for i in (0..120).rev() {
+        assert_eq!(r.pop().unwrap(), states[i], "mismatch rewinding to {i}");
+    }
+}
+
+/// The ordering guarantee the design leans on: a pop issued straight after a push is
+/// served after it, with no wait inserted by the caller. If the channel ever stopped being
+/// FIFO, a rewind would start from history that was missing its newest frames and this is
+/// the test that would say so.
+#[test]
+fn a_pop_sees_every_push_queued_before_it() {
+    let r = RewindThread::spawn(4 * 1024 * 1024);
+    for i in 0..40u32 {
+        r.push(synthetic_state(i));
+    }
+    // No sleep on purpose. The pop has to be the thing that waits.
+    assert_eq!(
+        r.pop().unwrap(),
+        synthetic_state(39),
+        "a pop overtook the pushes in front of it"
+    );
+    assert_eq!(r.pop().unwrap(), synthetic_state(38));
+}
+
+/// An empty ring has nothing to hand back rather than something wrong.
+#[test]
+fn the_thread_runs_dry_without_lying_about_it() {
+    let r = RewindThread::spawn(1024 * 1024);
+    assert!(r.pop().is_none(), "an untouched ring returned a state");
+    r.push(synthetic_state(1));
+    assert_eq!(r.pop().unwrap(), synthetic_state(1));
+    assert!(r.pop().is_none(), "a spent ring kept handing states back");
+}
+
+/// `fill` is read off an atomic rather than round tripped, so it is worth proving it is
+/// actually published and not left at zero.
+#[test]
+fn the_thread_publishes_its_fill() {
+    let r = RewindThread::spawn(256 * 1024);
+    for i in 0..400u32 {
+        r.push(synthetic_state(i));
+    }
+    // A pop round trips, so by the time it returns every push above has been applied and
+    // the atomic behind it has been stored.
+    let _ = r.pop();
+    assert!(r.fill() > 50, "a loaded ring published fill {}", r.fill());
 }

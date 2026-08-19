@@ -96,3 +96,82 @@ impl Rewind {
         (self.bytes * 100 / self.budget).min(100) as u8
     }
 }
+
+/// `Rewind` on a thread of its own.
+///
+/// The XOR and the LZ4 are 2.6 ms of a snapshot's 9.2 ms on the H700, and neither touches
+/// the core — only the bytes it just handed over. Doing them on the emu thread spends that
+/// inside a 16.67 ms frame for no reason. `serialize` has to stay where the core is; this
+/// is the half that does not.
+///
+/// Ordering is what makes it safe. The channel is FIFO, so a `pop` sent after a run of
+/// `push`es is served after them: history is never read before the writes in front of it
+/// have landed. The cost is that the first `pop` of a rewind waits for whatever is still in
+/// flight, which is a frame or two of compression and happens once per trigger pull.
+pub struct RewindThread {
+    tx: std::sync::mpsc::SyncSender<Msg>,
+    fill: std::sync::Arc<std::sync::atomic::AtomicU8>,
+}
+
+enum Msg {
+    Push(Vec<u8>),
+    Pop(std::sync::mpsc::SyncSender<Option<Vec<u8>>>),
+}
+
+impl RewindThread {
+    pub fn spawn(budget_bytes: usize) -> Self {
+        // Four deep, and a full queue blocks the sender rather than dropping. A snapshot
+        // arrives every other frame and takes about a sixth of that to compress, so four
+        // is roughly 130 ms of slack that normal play never touches. Dropping instead was
+        // tried and is worse than it sounds: history goes missing with nothing to say so,
+        // and rewind quietly coarsens. Blocking only bites when the compressor is
+        // persistently behind the core, which is a machine that is not holding 60 fps
+        // anyway, and it is self limiting — a stalled emu thread produces fewer snapshots.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Msg>(4);
+        let fill = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
+        let published = fill.clone();
+        std::thread::Builder::new()
+            .name("slot-rewind".into())
+            .spawn(move || {
+                let mut rewind = Rewind::new(budget_bytes);
+                while let Ok(msg) = rx.recv() {
+                    match msg {
+                        Msg::Push(state) => {
+                            rewind.push(&state);
+                            published.store(rewind.fill(), std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Msg::Pop(reply) => {
+                            let out = rewind.pop();
+                            published.store(rewind.fill(), std::sync::atomic::Ordering::Relaxed);
+                            // A caller that has gone away is a session that ended mid
+                            // rewind, which is not an error worth reporting.
+                            let _ = reply.send(out);
+                        }
+                    }
+                }
+            })
+            .expect("rewind thread");
+        RewindThread { tx, fill }
+    }
+
+    /// Hands the state over. Returns immediately unless the compressor is four snapshots
+    /// behind, which is backpressure rather than a routine cost.
+    pub fn push(&self, state: Vec<u8>) {
+        let _ = self.tx.send(Msg::Push(state));
+    }
+
+    /// Blocks until every push queued ahead of it has been applied, then returns the state.
+    pub fn pop(&self) -> Option<Vec<u8>> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(0);
+        if self.tx.send(Msg::Pop(tx)).is_err() {
+            return None;
+        }
+        rx.recv().ok().flatten()
+    }
+
+    /// Last published fill, read without a round trip: the HUD wants it every frame and
+    /// does not need it to be this frame's.
+    pub fn fill(&self) -> u8 {
+        self.fill.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}

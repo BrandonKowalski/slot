@@ -12,7 +12,7 @@ use crate::drc::{drc_ratio, drc_target};
 use crate::frames::{FrameRef, Frames};
 use crate::persist::Snapshot;
 use crate::resample::Resampler;
-use crate::rewind::{Rewind, REWIND_BYTES};
+use crate::rewind::{RewindThread, REWIND_BYTES};
 
 /// Present is locked to the 60 Hz panel and the core is stepped once per present, so the
 /// 0.456% the GBA runs slow lands entirely on audio rate control.
@@ -29,8 +29,12 @@ const PRESENT: Duration = Duration::from_nanos(16_666_667);
 /// runs choppier.
 pub const FAST_STEPS: u32 = 4;
 
-/// Snapshot every other frame, so rewinding at one pop per present runs back at 2x. Every
-/// frame would double the serialize cost for playback nobody watches at real time anyway.
+/// Snapshot every other frame, so rewinding at one pop per present runs back at 2x.
+///
+/// Not raiseable to 1 without a fight: measured on the H700 a snapshot is 9.2 ms of the
+/// 16.67 ms frame — serialize 6.6, compress 2.6 — so every frame would spend most of the
+/// budget before the core has run at all. The Mac does the same work in 0.33 ms, which is
+/// why this has to be measured on the device and not the desk.
 const SNAPSHOT_EVERY: u32 = 2;
 
 /// Frames between traced pacing lines, about five seconds.
@@ -338,7 +342,7 @@ impl Worker {
 
         let mut out = Vec::new();
         let mut muted_at = Speed::Normal;
-        let mut rewind = Rewind::new(REWIND_BYTES);
+        let rewind = RewindThread::spawn(REWIND_BYTES);
         let mut since_snapshot = 0;
         let mut deadline = Instant::now();
         let mut paced = 0u64;
@@ -399,9 +403,17 @@ impl Worker {
                         eprintln!("slot: rewind: {e}");
                     }
                     // A core is not obliged to repaint from a load, so the frame the user
-                    // sees comes from running one. The pop before it is two frames back, so
-                    // this still nets one frame of travel backwards per present.
-                    core.run_frame(input);
+                    // sees comes from running one. `pop` walks back two frames and this
+                    // runs one forward, so the picture travels back two frames per present:
+                    // reverse at 2x, showing every other frame.
+                    //
+                    // Empty input, never the live mask. The live one necessarily holds L2 —
+                    // it is what is being held to rewind — so replaying with it re-simulated
+                    // the frame under buttons that were not pressed at the time, and the
+                    // state landed on when the trigger was released inherited the
+                    // difference. Nothing was being replayed faithfully; it was being
+                    // re-played.
+                    core.run_frame(ButtonMask(0));
                     self.publish(core.video_xrgb8888());
                 }
                 self.shared
@@ -415,23 +427,33 @@ impl Worker {
                 }
                 self.publish(core.video_xrgb8888());
 
+                // Counted per present rather than per frame, so a fast forward pays the
+                // same snapshot cost per present as normal play and simply records a
+                // coarser trail: eight frames apart at `FAST_STEPS` rather than two.
+                //
+                // This used to sit inside the `Normal` arm below, which exists to gate the
+                // audio, and was swept in with it. The effect was a hole: nothing recorded
+                // while fast forwarding, so the newest state was whatever predated the
+                // trigger and the first pop of a rewind swallowed the entire stretch in one
+                // step instead of walking back through it.
+                since_snapshot += 1;
+                if since_snapshot >= SNAPSHOT_EVERY {
+                    since_snapshot = 0;
+                    // A core that will not serialize has already said so through the save
+                    // path. Rewind is not the place to say it again at 30 Hz.
+                    if let Ok(state) = core.serialize() {
+                        rewind.push(state);
+                        self.shared
+                            .rewind_fill
+                            .store(rewind.fill(), Ordering::Relaxed);
+                    }
+                }
+
                 let audio = core.take_audio();
                 // Fast forward drops the core's audio outright. Resampling accelerated
                 // playback down to real time would be pitch shifted noise nobody wants to
                 // hear.
                 if speed == Speed::Normal {
-                    since_snapshot += 1;
-                    if since_snapshot >= SNAPSHOT_EVERY {
-                        since_snapshot = 0;
-                        // A core that will not serialize has already said so through the
-                        // save path. Rewind is not the place to say it again at 30 Hz.
-                        if let Ok(state) = core.serialize() {
-                            rewind.push(&state);
-                            self.shared
-                                .rewind_fill
-                                .store(rewind.fill(), Ordering::Relaxed);
-                        }
-                    }
                     let target = drc_target(ring.capacity_frames());
                     let queued = ring.queued_frames();
                     resampler.set_ratio(drc_ratio(queued, target));
