@@ -1,6 +1,6 @@
 //! Raw libretro ABI. Nothing here knows what a GBA is.
 
-use std::ffi::{c_char, c_uint, c_void};
+use std::ffi::{c_char, c_int, c_uint, c_void};
 
 use libloading::Library;
 
@@ -16,6 +16,10 @@ pub const GET_VARIABLE_UPDATE: c_uint = 17;
 pub const GET_RUMBLE_INTERFACE: c_uint = 23;
 pub const GET_LOG_INTERFACE: c_uint = 27;
 pub const GET_SAVE_DIRECTORY: c_uint = 31;
+/// `Host` doesn't answer this yet — that lands with the environment match arm in a later
+/// commit on this branch, which is what turns this from dead code into a real ABI entry.
+#[allow(dead_code)]
+pub const SET_NETPACKET_INTERFACE: c_uint = 78;
 
 pub const RUMBLE_STRONG: c_uint = 0;
 pub const RUMBLE_WEAK: c_uint = 1;
@@ -26,6 +30,13 @@ pub const DEVICE_JOYPAD: c_uint = 1;
 pub const MEMORY_SAVE_RAM: c_uint = 0;
 /// `RETRO_DEVICE_ID_JOYPAD_MASK`, a query for every button at once.
 pub const JOYPAD_MASK: c_uint = 256;
+
+pub const NETPACKET_UNRELIABLE: i32 = 0;
+pub const NETPACKET_RELIABLE: i32 = 1 << 0;
+pub const NETPACKET_UNSEQUENCED: i32 = 1 << 1;
+pub const NETPACKET_FLUSH_HINT: i32 = 1 << 2;
+/// Not a flag: passed as `client_id` to address every connected peer at once.
+pub const NETPACKET_BROADCAST: u16 = 0xFFFF;
 
 #[repr(C)]
 pub struct GameInfo {
@@ -75,6 +86,48 @@ pub type SetRumbleStateFn = unsafe extern "C" fn(c_uint, c_uint, u16) -> bool;
 #[repr(C)]
 pub struct RumbleInterface {
     pub set_rumble_state: SetRumbleStateFn,
+}
+
+// The core hands these two to `start` so the frontend can push and pull packets on its own
+// schedule; the frontend never calls them itself outside of that.
+//
+// Nothing in this crate constructs a `NetpacketCallback` or names these types yet — that
+// starts with the environment match arm for `SET_NETPACKET_INTERFACE` in a later commit on
+// this branch. Each item is `allow(dead_code)` until then; there's no single point to hang
+// one blanket allow off of outside a module.
+#[allow(dead_code)]
+pub type NetpacketSend =
+    unsafe extern "C" fn(flags: c_int, buf: *const c_void, len: usize, client_id: u16);
+#[allow(dead_code)]
+pub type NetpacketPollReceive = unsafe extern "C" fn();
+
+#[allow(dead_code)]
+pub type NetpacketStart =
+    unsafe extern "C" fn(client_id: u16, send: NetpacketSend, poll_receive: NetpacketPollReceive);
+#[allow(dead_code)]
+pub type NetpacketReceive = unsafe extern "C" fn(buf: *const c_void, len: usize, client_id: u16);
+#[allow(dead_code)]
+pub type NetpacketStop = unsafe extern "C" fn();
+#[allow(dead_code)]
+pub type NetpacketPoll = unsafe extern "C" fn();
+#[allow(dead_code)]
+pub type NetpacketConnected = unsafe extern "C" fn(client_id: u16) -> bool;
+#[allow(dead_code)]
+pub type NetpacketDisconnected = unsafe extern "C" fn(client_id: u16);
+
+/// `start` and `receive` are the only fields libretro guarantees a core will fill in.
+/// Everything from `stop` onward is documented optional and arrives NULL from some cores, so
+/// each is an `Option` and every call site has to check before dereferencing it.
+#[allow(dead_code)]
+#[repr(C)]
+pub struct NetpacketCallback {
+    pub start: Option<NetpacketStart>,
+    pub receive: Option<NetpacketReceive>,
+    pub stop: Option<NetpacketStop>,
+    pub poll: Option<NetpacketPoll>,
+    pub connected: Option<NetpacketConnected>,
+    pub disconnected: Option<NetpacketDisconnected>,
+    pub protocol_version: *const c_char,
 }
 
 pub type EnvironmentFn = unsafe extern "C" fn(c_uint, *mut c_void) -> bool;
