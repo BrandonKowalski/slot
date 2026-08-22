@@ -525,6 +525,15 @@ impl App {
 
     /// Ends the session and leaves the cart playing single player. Never an error: the peer
     /// vanishing and the user ending it deliberately look the same from here.
+    ///
+    /// This is the app's own bookkeeping only, exactly like `link` itself (see its doc
+    /// comment) — it does not touch the core or the transport, both of which live on the
+    /// emulator thread. `Session::act` is what actually reaches them: it watches
+    /// `link_active()` around every `apply`, and mirrors an ending onto
+    /// `EmuHandle::end_link()`, which is what tells the core (`RetroCore::stop_link`, if it
+    /// offered one to call) and drops the transport. Anything that ends a session without
+    /// going through `apply` would need to repeat that mirroring by hand — there is no such
+    /// call site today.
     pub fn end_link(&mut self) {
         self.link = None;
     }
@@ -1491,7 +1500,35 @@ impl App {
     /// Flush, then dark, then idle. The cart stays in the slot and `slot.state` is not
     /// touched: a sleep is not an eject, and the next boot has to resume this session
     /// whether the lid opens again or the battery runs out first.
+    ///
+    /// The one function every doze actually goes through: both `LidClose` arms (with the
+    /// power menu open, and without) and `PowerTap` by way of `power_press` all return
+    /// `self.doze()` rather than reimplementing it, so a guard here — and only here — closes
+    /// every path in at once. Three copies of the same `if self.link_active()` at each call
+    /// site is exactly the kind of duplication that let a mutation slip through unnoticed
+    /// last time: `on_doze_timeout` carried a redundant copy of `doze_expired`'s own guard,
+    /// and that second copy alone was enough to keep `doze_never_expires_while_a_session_is_live`
+    /// passing after the real guard was mutated away.
+    ///
+    /// A live session ends here rather than surviving the doze. `Session::sync_speed` maps
+    /// `Phase::Doze` to `Speed::Paused`, and pausing is one of the exact manipulations
+    /// libretro's netpacket contract names as forbidden while players are connected — the
+    /// same desync hazard as dropping the transport outright, not a lesser one. The
+    /// alternative — holding the session open through a doze that keeps the core running
+    /// *unpaused*, so the panel can go dark for free — is a bigger change than this fix
+    /// (`sync_speed` would have to learn about sessions too) and would not even save the
+    /// battery it sounds like it would: `doze_expired` already refuses to end a session on
+    /// its own idle timer, so a session left open behind a shut lid would sit at 400-700 mA
+    /// with the radio up for as long as the lid stayed shut, never once reaching the sub-45
+    /// mA a real doze exists to reach. Ending the session costs a trade partner who shut the
+    /// lid only to think for a moment — there is no answer here that costs nothing — but it
+    /// is the one already chosen for `PowerPress`, and it is the only one of the three that
+    /// cannot also violate the very contract it exists to enforce.
     fn doze(&mut self) {
+        if self.link_active() {
+            self.end_link();
+            return;
+        }
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }

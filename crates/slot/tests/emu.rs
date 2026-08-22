@@ -1,11 +1,14 @@
-use std::path::PathBuf;
-use std::sync::mpsc;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
 use slot::emu::{CoreState, EmuHandle, Speed, FAST_STEPS};
 use slot::persist::Snapshot;
-use slot_retro::{LinkChannel, MockCore, NETPACKET_RELIABLE};
+use slot_retro::{
+    AvInfo, ButtonMask, CoreError, LinkChannel, MockCore, RetroCore, NETPACKET_RELIABLE,
+};
 
 fn spawn() -> EmuHandle {
     spawn_with(None)
@@ -371,5 +374,83 @@ fn end_link_marks_the_session_inactive() {
     assert!(
         wait_for(|| !emu.net().is_active()),
         "end_link must mark the session no longer active"
+    );
+}
+
+/// Wraps `MockCore` and counts `stop_link` calls. `MockCore` itself never registers
+/// netpacket and never overrides `stop_link`, so it cannot show whether the worker's
+/// `Cmd::EndLink` handling actually calls through to the core at all — only that
+/// `emu.net().is_active()` goes false, which the transport being dropped would do on its
+/// own. This is what proves the *other* half of ending a session: the core being told, the
+/// libretro counterpart to `start_link` that `RetroCore::stop_link` exists for.
+struct SpyStopCore {
+    inner: MockCore,
+    stop_calls: Arc<AtomicUsize>,
+}
+
+impl RetroCore for SpyStopCore {
+    fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
+        self.inner.load(rom)
+    }
+    fn run_frame(&mut self, input: ButtonMask) {
+        self.inner.run_frame(input)
+    }
+    fn video_xrgb8888(&self) -> &[u8] {
+        self.inner.video_xrgb8888()
+    }
+    fn take_audio(&mut self) -> Vec<i16> {
+        self.inner.take_audio()
+    }
+    fn serialize(&mut self) -> Result<Vec<u8>, CoreError> {
+        self.inner.serialize()
+    }
+    fn unserialize(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.unserialize(data)
+    }
+    fn save_ram(&self) -> Option<Vec<u8>> {
+        self.inner.save_ram()
+    }
+    fn load_save_ram(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.load_save_ram(data)
+    }
+    fn av_info(&self) -> AvInfo {
+        self.inner.av_info()
+    }
+    fn stop_link(&mut self) {
+        self.stop_calls.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn spawn_with_core(core: Box<dyn RetroCore>) -> EmuHandle {
+    let mut sink = StubSink::new();
+    sink.open(32_768).expect("the stub refused to open");
+    drain(sink.clone());
+    let emu = EmuHandle::spawn(core, PathBuf::from("mock"), sink.ring(), None, None);
+    emu.set_speed(Speed::Normal);
+    assert!(
+        wait_for(|| emu.state() != CoreState::Loading),
+        "the core never finished loading"
+    );
+    emu
+}
+
+/// The libretro counterpart to `start_link`: `Cmd::EndLink` must reach the core's own
+/// `stop_link`, not just drop the transport and flip `Link`'s active flag — a core left
+/// believing a session is live keeps producing packets nobody is left to carry.
+#[test]
+fn ending_a_link_tells_the_cores_own_stop_link() {
+    let stop_calls = Arc::new(AtomicUsize::new(0));
+    let emu = spawn_with_core(Box::new(SpyStopCore {
+        inner: MockCore::new(),
+        stop_calls: stop_calls.clone(),
+    }));
+    let (_here, there) = paired_links();
+    emu.begin_link(0, Box::new(there));
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    assert!(
+        wait_for(|| stop_calls.load(Ordering::Relaxed) > 0),
+        "end_link must call the core's own stop_link"
     );
 }

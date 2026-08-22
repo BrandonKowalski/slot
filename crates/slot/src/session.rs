@@ -100,6 +100,15 @@ impl Session {
         &mut self.app
     }
 
+    /// The emulator thread's own handle, reachable only from here — `App` never touches the
+    /// transport or the core itself (see its `link` field's doc comment). `None` before a
+    /// cart has spawned one. Exists for whoever ends up wiring a link indicator, and for
+    /// tests proving `act`'s own bridge to `EmuHandle::end_link` actually reaches the
+    /// emulator thread rather than only `App`'s bookkeeping.
+    pub fn emu(&self) -> Option<&EmuHandle> {
+        self.emu.as_ref()
+    }
+
     pub fn frame(&self) -> Option<FrameRef> {
         self.emu.as_ref().and_then(|e| e.latest_frame())
     }
@@ -173,7 +182,22 @@ impl Session {
         // A button the switcher used is not the game's, on either edge of it: the press that
         // opens it and the one that dismisses it both belong to the switcher.
         let switcher = self.showing_polaroids();
+        // `App` only ever holds a session's own bookkeeping (see `App::link`'s doc comment)
+        // — the transport and the core it feeds live on the emulator thread, reachable only
+        // through `EmuHandle`. Watching the edge here, around every `apply`, is what closes
+        // that gap for every action that can end a session (a power press today; `doze`'s
+        // own guard as of this file's sibling fix) without either of them having to know
+        // `EmuHandle` exists.
+        let had_link = self.app.link_active();
         self.app.apply(action);
+        if had_link && !self.app.link_active() {
+            if let Some(emu) = &self.emu {
+                // Tells the core the session is over (`RetroCore::stop_link`, if it offered
+                // a `stop` to hear it through) and drops the transport, which is what
+                // actually closes the wire — see `Cmd::EndLink` in `emu.rs`.
+                emu.end_link();
+            }
+        }
         // After apply: the level the sink wants is the one the action just produced.
         if matches!(
             action,

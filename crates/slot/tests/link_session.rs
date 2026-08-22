@@ -2,13 +2,15 @@ mod common;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::{app_playing_in, tmp_root_with_carts};
 use slot::app::Phase;
 use slot::link_net::TcpLink;
-use slot_input::Action;
-use slot_retro::{LinkChannel, NETPACKET_RELIABLE};
+use slot::session::Session;
+use slot_input::{Action, Btn, Millis, RawEvent};
+use slot_retro::{LinkChannel, LoopbackLink, NETPACKET_RELIABLE};
+use slot_store::{write_slot_state, SlotState};
 
 /// Both ends on loopback: no radio, no peer device, no BaseOS. This proves the framing and
 /// the threading, which is everything the transport is responsible for.
@@ -234,6 +236,54 @@ fn a_power_press_ends_a_live_session_instead_of_flushing_only() {
     assert!(!a.link_active());
 }
 
+/// `PowerTap` reaches `doze` by way of `power_press`, bypassing `PowerPress`'s own guard
+/// entirely — the actual hole this closes. Before the fix this silently dozed a live session
+/// instead of ending it, which is precisely the desync `App::may_rewind`/`may_load_state`
+/// exist to prevent, just reached through a different button edge.
+#[test]
+fn a_power_tap_ends_a_live_session_instead_of_dozing() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+    assert!(a.link_active());
+
+    a.apply(Action::PowerTap);
+    assert!(!a.link_active(), "a power tap must end a live session");
+    assert!(
+        matches!(a.phase(), Phase::Playing { .. }),
+        "ending the session must not also doze in the same tap"
+    );
+
+    // Nothing left to end: a second tap behaves exactly as it does outside a session.
+    a.apply(Action::PowerTap);
+    assert!(matches!(a.phase(), Phase::Doze { .. }));
+}
+
+/// `LidClose` calls `doze` directly (both arms: with the power menu open and without), so it
+/// needs no guard of its own — the one inside `doze` closes this path exactly the way it
+/// closes `PowerTap`'s. A trade partner's lid closing must not silently drop their game the
+/// way it silently dozed it before this fix; ending the session here (rather than holding it
+/// open through a doze, which pauses the core — see `doze`'s own comment for why that would
+/// just trade one contract violation for another) is the deliberate choice.
+#[test]
+fn a_lid_close_ends_a_live_session_instead_of_dozing() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+    assert!(a.link_active());
+
+    a.apply(Action::LidClose);
+    assert!(!a.link_active(), "closing the lid must end a live session");
+    assert!(
+        matches!(a.phase(), Phase::Playing { .. }),
+        "ending the session must not also doze on the same close"
+    );
+
+    // Nothing left to end: closing it again behaves exactly as it does outside a session.
+    a.apply(Action::LidClose);
+    assert!(matches!(a.phase(), Phase::Doze { .. }));
+}
+
 /// The production path, and the only one: `App::update` drives `timers`, which reads
 /// `doze_expired` itself rather than being told the timeout fired — `on_doze_timeout` (also
 /// callable directly, which is what `power.rs`'s own timeout tests use as a stand-in for the
@@ -281,4 +331,80 @@ fn link_client_id_reports_which_side_of_the_session_this_device_is() {
 
     a.begin_link(1);
     assert_eq!(a.link_client_id(), Some(1));
+}
+
+// --- ending a session reaches the emulator thread, not just App's own bookkeeping ---------
+//
+// Every test above drives `App` alone, with no core and no `EmuHandle` — proof enough that
+// `App::end_link` clears the app's own state, but not that anything downstream ever hears
+// about it. `App::end_link` never touches the core (see its doc comment): `Session::act` is
+// what bridges an ending onto `EmuHandle::end_link`, which is what this test drives a real
+// `Session` — App plus a spawned core — to prove.
+
+fn step(s: &mut Session, now: &mut Millis, ev: Option<RawEvent>) {
+    *now += 16;
+    s.feed(ev, *now);
+    s.update(1.0 / 60.0);
+}
+
+fn wait_until(cond: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if cond() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Before the fix in `Session::act` this could pass forever with the fix absent: `App`'s own
+/// bookkeeping already flipped correctly on a power press (see
+/// `a_power_press_ends_a_live_session_instead_of_flushing_only` above), so a test that only
+/// reads `App::link_active` would never notice the core was left believing a session it can
+/// no longer reach was still live, still pumping, still producing packets nobody carries.
+#[test]
+fn ending_a_session_reaches_the_emulator_thread_too() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.emu()
+        .expect("a cart is seated, a core must be running")
+        .begin_link(0, Box::new(LoopbackLink::default()));
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| e.net().is_active())),
+        "begin_link never took"
+    );
+    s.app_mut().begin_link(0);
+    assert!(s.app().link_active());
+
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::Power)));
+    assert!(
+        !s.app().link_active(),
+        "the app's own bookkeeping should have ended"
+    );
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| !e.net().is_active())),
+        "ending a session at the App level must reach the emulator thread too"
+    );
 }

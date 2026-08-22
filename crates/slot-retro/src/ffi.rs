@@ -105,11 +105,12 @@ pub type NetpacketDisconnected = unsafe extern "C" fn(client_id: u16);
 ///
 /// `start`, `stop`, `connected`, `disconnected` and `protocol_version` are read as a group —
 /// stored whole by the `SET_NETPACKET_INTERFACE` environment arm. `start` is called through
-/// once a session actually begins (`RetroCore::start_link`, behind `begin_link`); `stop`,
-/// `connected` and `disconnected` still are not — ending a session drops the transport and
-/// marks the link inactive without calling the core's `stop`, and nothing here tracks peer
-/// connect/disconnect. Both are places to extend this if disconnect handling misbehaves once
-/// real packets flow (see the plan's RFU patches).
+/// once a session actually begins (`RetroCore::start_link`, behind `begin_link`), and `stop`
+/// once one ends (`RetroCore::stop_link`, behind `halt_link`) — the two are now a matched
+/// pair. `connected` and `disconnected` are still never called: they answer a peer joining or
+/// leaving a session with more than two participants, which this product does not model
+/// beyond "there is a peer or there is not" — a place to extend this if that stops being true
+/// (see the plan's RFU patches).
 #[repr(C)]
 pub struct NetpacketCallback {
     pub start: Option<NetpacketStart>,

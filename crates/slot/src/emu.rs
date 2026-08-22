@@ -466,6 +466,13 @@ impl Worker {
                         transport = Some(t);
                     }
                     Cmd::EndLink => {
+                        // `Cmd::BeginLink`'s counterpart: tells the core the session is over,
+                        // if it registered a `stop` to hear it through (`RetroCore::stop_link`
+                        // — libretro documents `stop` as OPTIONAL, unlike `start`, so this is
+                        // a no-op for a core that never offered one). Without this the core
+                        // keeps believing a session is live and keeps producing packets
+                        // nobody is left to carry.
+                        core.stop_link();
                         // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
                         // this is just letting go of it.
                         transport = None;

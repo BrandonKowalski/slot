@@ -91,4 +91,10 @@ pub trait RetroCore: Send {
     /// netpacket has nothing to drain, so the default is a no-op — only `LibretroCore` (gpSP)
     /// ever overrides this.
     fn pump_link(&mut self) {}
+    /// Ends a netpacket session on this core: `start_link`'s counterpart, called once
+    /// whatever was carrying the session's traffic is going away. libretro documents `stop`
+    /// as OPTIONAL — unlike `start`, a spec-compliant core may leave it NULL — so a core that
+    /// never offered one simply has nothing to hear this through, and the default does
+    /// nothing.
+    fn stop_link(&mut self) {}
 }

@@ -247,6 +247,24 @@ unsafe fn begin_link(client_id: u16) {
     });
 }
 
+/// The logic behind `RetroCore::stop_link`, mirroring `begin_link` immediately above: a free
+/// function so it too can be driven directly against a bare `Host` in tests, with no dylib.
+///
+/// `stop` is documented OPTIONAL — libretro guarantees only `start` and `receive` — so a
+/// core that never filled it in has nothing to call through, and this is silently a no-op
+/// rather than something every caller has to check for first. Deliberately does not touch
+/// `h.net`'s active flag: that is `Link::set_active`'s job, called by whoever is ending the
+/// session (see `Cmd::EndLink` in `slot`'s `emu.rs`) whether or not the core had a `stop` to
+/// hear it through — a core with no `stop` still needs its session marked over.
+unsafe fn halt_link() {
+    with_host(|h| {
+        let Some(stop) = h.netpacket.as_ref().and_then(|cb| cb.stop) else {
+            return;
+        };
+        stop();
+    });
+}
+
 /// The logic behind `LibretroCore::pump_link`, factored out to a free function that reaches
 /// the host through the thread-local instead of `&mut self`, so it can be driven directly
 /// against a bare `Host` in tests the same way the `GET_VARIABLE` tests below drive
@@ -607,6 +625,16 @@ impl RetroCore for LibretroCore {
         let _a = Active::bind(&mut self.host);
         unsafe { drain_link() };
     }
+
+    /// Ends a netpacket session: tells the core it is over, if it registered a `stop` to
+    /// hear it through. `halt_link` carries the actual logic — see it for why a core with no
+    /// `stop` is a silent no-op rather than an error. Binds `Active` the same as
+    /// `start_link`/`pump_link`, since `stop` runs on the core's own thread and may itself
+    /// reach back through the thread-local.
+    fn stop_link(&mut self) {
+        let _a = Active::bind(&mut self.host);
+        unsafe { halt_link() };
+    }
 }
 
 #[cfg(test)]
@@ -731,6 +759,9 @@ mod tests {
         /// What `test_start` was last called with, so `begin_link` can be proven to have
         /// actually reached the core rather than merely not panicked.
         static TEST_START_CLIENT: Cell<Option<u16>> = const { Cell::new(None) };
+        /// How many times `test_stop` fired, so `halt_link` can be proven to have actually
+        /// reached the core rather than merely not panicked.
+        static TEST_STOP_CALLS: Cell<u32> = const { Cell::new(0) };
     }
 
     /// Thread-local recorders persist across tests that land on the same worker thread in
@@ -740,6 +771,7 @@ mod tests {
         TEST_RECEIVED.with(|r| r.borrow_mut().clear());
         TEST_POLLS.with(|p| p.set(0));
         TEST_START_CLIENT.with(|c| c.set(None));
+        TEST_STOP_CALLS.with(|c| c.set(0));
     }
 
     unsafe extern "C" fn test_receive(buf: *const c_void, len: usize, _client_id: u16) {
@@ -757,6 +789,10 @@ mod tests {
         _poll_receive: NetpacketPollReceive,
     ) {
         TEST_START_CLIENT.with(|c| c.set(Some(client_id)));
+    }
+
+    unsafe extern "C" fn test_stop() {
+        TEST_STOP_CALLS.with(|c| c.set(c.get() + 1));
     }
 
     /// `start` and `receive` are the two fields libretro guarantees a core fills in; the
@@ -994,5 +1030,40 @@ mod tests {
 
         TEST_START_CLIENT.with(|c| assert_eq!(c.get(), None, "nothing to start, nothing called"));
         assert!(!host.net.is_active());
+    }
+
+    // --- halt_link (the logic behind `RetroCore::stop_link`) -----------------------------
+
+    #[test]
+    fn halt_link_calls_the_cores_stop_when_it_registered_one() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            stop: Some(test_stop),
+            ..test_netpacket_callback()
+        });
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { halt_link() };
+        }
+
+        TEST_STOP_CALLS.with(|c| assert_eq!(c.get(), 1, "stop was never called"));
+    }
+
+    /// `stop` is documented OPTIONAL, unlike `start` — a spec-compliant core may leave it
+    /// NULL, and calling through a null pointer would crash the frontend rather than the
+    /// core that never offered one.
+    #[test]
+    fn halt_link_is_a_noop_when_the_core_never_offered_a_stop() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback()); // stop: None, the minimal core
+
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { halt_link() };
+        }
+
+        TEST_STOP_CALLS.with(|c| assert_eq!(c.get(), 0));
     }
 }
