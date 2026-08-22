@@ -25,6 +25,7 @@ jobs:
       mgba_sha: ${{ steps.package.outputs.mgba_sha }}
       gpsp_sha: ${{ steps.package.outputs.gpsp_sha }}
       core_date: ${{ steps.package.outputs.core_date }}
+      gpsp_head: ${{ steps.package.outputs.gpsp_head }}
     steps:
       - uses: actions/checkout@v7
 
@@ -70,6 +71,12 @@ jobs:
             echo "mgba_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
             echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
             echo "core_date=$(date -u +%Y-%m-%d)"
+            # GPL-2.0 section 3 obligation (see licenses/README.md): the buildbot does not
+            # publish which commit a nightly was built from, so there is no exact revision to
+            # record. gpSP's `master` HEAD at the moment this release fetched the binary is
+            # the closest identifiable proxy for it, and is what the written offer there
+            # falls back to when a request cannot be matched more precisely.
+            echo "gpsp_head=$(git ls-remote https://github.com/libretro/gpsp HEAD | cut -f1)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
@@ -100,6 +107,7 @@ jobs:
           MGBA_SHA: ${{ needs.build.outputs.mgba_sha }}
           GPSP_SHA: ${{ needs.build.outputs.gpsp_sha }}
           CORE_DATE: ${{ needs.build.outputs.core_date }}
+          GPSP_HEAD: ${{ needs.build.outputs.gpsp_head }}
         run: |
           set -eu
           cat > notes.md <<NOTES
@@ -113,6 +121,10 @@ jobs:
 
           mGBA is MPL-2.0, gpSP is GPL-2.0 — both shipped as unmodified libretro cores, both
           credited with their license text and upstream source under \`System/licenses/\`.
+          gpSP's corresponding source is available under the written offer in
+          \`System/licenses/README.md\`; the buildbot does not publish which commit a nightly
+          was built from, so the closest identifiable proxy is recorded here: gpSP \`master\`
+          HEAD at fetch time was \`${GPSP_HEAD}\`.
           NOTES
           # --repo because this job never checks out: gh works out where to publish from the
           # git remote otherwise, and there is no repository here to ask.
