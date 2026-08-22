@@ -118,6 +118,12 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
                 return false;
             }
             let var = &mut *(data as *mut Variable);
+            // Every other arm here guards `data` and stops; this one goes on to deref a
+            // second pointer the core packed inside it, which the null check above never
+            // covers.
+            if var.key.is_null() {
+                return false;
+            }
             let Ok(key) = std::ffi::CStr::from_ptr(var.key).to_str() else {
                 return false;
             };
@@ -281,7 +287,12 @@ impl MgbaCore {
     }
 
     /// Set a libretro core option. Takes effect the next time the core asks, which for most
-    /// options means the next `retro_load_game`.
+    /// options means the next `retro_load_game`. That "next time" matters for aliasing, not
+    /// just timing: `GET_VARIABLE` hands the core a raw pointer into the previous `CString`
+    /// for this key, and calling `set_option` again for the same key drops that `CString`,
+    /// freeing the memory the core's old pointer still points at. Fine for the libretro
+    /// frontend contract, which only reads the pointer right after asking for it, but not
+    /// safe to hold onto across a `set_option` call.
     /// Reaches `self.host` directly rather than through `with_host`. `Active::bind` is
     /// scoped to one call *into* the core, so outside such a call the thread local is null
     /// and `with_host` would silently do nothing. These are called from the frontend, never
@@ -472,5 +483,110 @@ impl RetroCore for MgbaCore {
 
     fn rumble(&self) -> Rumble {
         self.host.rumble.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::ffi::CStr;
+
+    // `crates/slot-retro/tests/options.rs` calls `MgbaCore::set_option`/`option`, which are
+    // a HashMap round trip and never reach `environment` at all — reverting the whole of the
+    // `GET_VARIABLE`/`GET_VARIABLE_UPDATE` arms below left that test suite green. These
+    // tests call `environment` itself, the one place a core actually crosses the ABI to ask
+    // for an option, so they go red on the same revert. No dylib is needed: `environment` is
+    // a plain function and a `Host` is just a struct, both reachable from inside this crate.
+
+    fn host_with(options: HashMap<String, CString>, options_dirty: bool) -> Box<Host> {
+        Box::new(Host {
+            video: Vec::new(),
+            format: PixelFormat::Xrgb8888,
+            audio: Vec::new(),
+            input: 0,
+            system_dir: CString::new(".").unwrap(),
+            save_dir: CString::new(".").unwrap(),
+            rumble: Rumble::default(),
+            asked_for_rumble: false,
+            options,
+            options_dirty,
+        })
+    }
+
+    #[test]
+    fn get_variable_writes_the_options_pointer_for_the_core_to_read() {
+        let mut options = HashMap::new();
+        options.insert("gpsp_serial".to_string(), CString::new("rfu").unwrap());
+        let mut host = host_with(options, false);
+        let _active = Active::bind(&mut host);
+
+        let key = CString::new("gpsp_serial").unwrap();
+        let mut var = Variable {
+            key: key.as_ptr(),
+            value: ptr::null(),
+        };
+        let ok = unsafe { environment(GET_VARIABLE, &mut var as *mut Variable as *mut c_void) };
+
+        assert!(ok);
+        let value = unsafe { CStr::from_ptr(var.value) };
+        assert_eq!(value.to_str().unwrap(), "rfu");
+    }
+
+    #[test]
+    fn get_variable_reports_false_for_an_unknown_key() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+
+        let key = CString::new("nope").unwrap();
+        let mut var = Variable {
+            key: key.as_ptr(),
+            value: ptr::null(),
+        };
+        let ok = unsafe { environment(GET_VARIABLE, &mut var as *mut Variable as *mut c_void) };
+
+        assert!(!ok);
+        assert!(var.value.is_null());
+    }
+
+    /// `set_option` is what marks `options_dirty`, so the core knows to re-ask; this is the
+    /// other half, that `GET_VARIABLE_UPDATE` reports it once and then clears it, matching
+    /// libretro's contract that the flag means "changed since I last asked", not "changed
+    /// ever".
+    #[test]
+    fn get_variable_update_reports_and_clears_the_dirty_flag() {
+        let mut host = host_with(HashMap::new(), true);
+        let _active = Active::bind(&mut host);
+
+        let mut dirty = false;
+        let ok =
+            unsafe { environment(GET_VARIABLE_UPDATE, &mut dirty as *mut bool as *mut c_void) };
+        assert!(ok);
+        assert!(dirty, "first call must report the pending change");
+
+        let mut dirty_again = true;
+        let ok = unsafe {
+            environment(
+                GET_VARIABLE_UPDATE,
+                &mut dirty_again as *mut bool as *mut c_void,
+            )
+        };
+        assert!(ok);
+        assert!(!dirty_again, "flag must be cleared after being read once");
+    }
+
+    /// M1: `GET_VARIABLE` derefs `var.key` past the `data` null check, so a core that hands
+    /// back a `Variable` with a null key must not crash the frontend.
+    #[test]
+    fn get_variable_refuses_a_null_key() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+
+        let mut var = Variable {
+            key: ptr::null(),
+            value: ptr::null(),
+        };
+        let ok = unsafe { environment(GET_VARIABLE, &mut var as *mut Variable as *mut c_void) };
+        assert!(!ok);
     }
 }
