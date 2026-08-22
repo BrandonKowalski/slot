@@ -35,6 +35,7 @@ fn gpsp_loads_and_runs_a_frame() {
         eprintln!("no gpSP dylib on this host, skipping");
         return;
     }
+    let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
     // Serial mode is the whole reason gpSP is here. Setting it before load is what the
     // core expects: it reads options during retro_load_game.
@@ -52,6 +53,7 @@ fn gpsp_is_told_its_serial_mode_before_load() {
         eprintln!("no gpSP dylib on this host, skipping");
         return;
     }
+    let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
     slot::core::apply_core_options(&mut core, Core::Gpsp);
     assert_eq!(
@@ -70,6 +72,7 @@ fn mgba_is_given_no_options() {
         eprintln!("no mGBA dylib on this host, skipping");
         return;
     }
+    let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open mgba");
     slot::core::apply_core_options(&mut core, Core::Mgba);
     assert_eq!(
@@ -141,6 +144,70 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     );
 }
 
+/// I1: `session.rs:372`'s `open_core(&self.root, core)` is the one production line that
+/// actually opens the engine a cart resolved to. Every test above that proves a `gpsp` cart's
+/// state lands under `States/gpsp/` does so with no real dylib on this host, so `open_core`
+/// falls back to the mock regardless of which `Core` it is handed — mutating that call to
+/// `open_core(&self.root, slot_store::Core::Mgba)` (state directory still follows the ini,
+/// engine no longer does — the original divergence bug, verbatim) is invisible to every one
+/// of them, because the mock's own 8 byte state is what all of them observe either way.
+///
+/// Only a real dylib, opened through the real `Session`, can tell "the right engine ran"
+/// apart from "the right directory was merely named". This plants mGBA's own build under
+/// gpSP's filename — the same trick
+/// `open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory` uses on
+/// `open_core` directly — but drives it through a full `Session`, which is the one thing that
+/// test does not do and the one thing `session.rs:372` needs pinned.
+#[test]
+fn a_gpsp_cart_runs_the_dylib_planted_under_its_own_name_through_the_session() {
+    use slot::app::Phase;
+    use slot::persist;
+    use slot::session::Session;
+    use slot_input::{Btn, RawEvent};
+    use slot_store::SELECTED_CORE_FILE;
+    use std::time::{Duration, Instant};
+
+    let Some(mgba) = common::vendored_core() else {
+        eprintln!("no host-openable dylib on this machine, skipping");
+        return;
+    };
+    let _g = common::core_lock();
+
+    let d = common::tmp_root_with_real_carts(&["Emerald"]);
+    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Emerald = gpsp\n").unwrap();
+    let planted = d
+        .path()
+        .join("System")
+        .join(slot::core::dylib_name(Core::Gpsp));
+    std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
+
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut now = 32;
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    // Past the autosave deadline, so the planted core's own (large, real) state is what
+    // gets written back through the path the binary uses.
+    s.app_mut().tick_ms(60_000);
+
+    let state = persist::read_resume(d.path(), Core::Gpsp, "Emerald").expect("nothing resumed");
+    assert!(
+        state.len() > 100_000,
+        "the session ran the mock, not the dylib the ini named: {} bytes",
+        state.len()
+    );
+}
+
 /// F2: `core_for` used to be re-read on every flush, not just at insert — and
 /// `read_selected_cores` returns an empty map on ANY read failure (a typo, a remount, a
 /// write caught mid-flight), which silently reclassified every seated cart as mGBA. This is
@@ -199,6 +266,112 @@ fn changing_the_ini_mid_session_does_not_move_a_seated_carts_autosave() {
     );
 }
 
+/// I3: `flush_resume` is only one of three state-directory sinks in `app.rs` that take
+/// `self.core` — the `Core` `session.rs` resolved once at insert — instead of re-deriving one.
+/// `App::ring()` (app.rs, behind `SELECT+R1`'s manual save) is a second, and the test above
+/// does not exercise it: re-deriving with `slot_store::core_for(root, cart)` at `ring()`
+/// passes it and every other test in the suite just as it does for `flush_resume`. Same trick
+/// as above — the ini is changed out from under an already-seated cart — aimed at the sink
+/// that test cannot see.
+#[test]
+fn changing_the_ini_mid_session_does_not_move_a_manual_save_state() {
+    use slot::app::Phase;
+    use slot::session::Session;
+    use slot_input::{Action, Btn, RawEvent};
+    use slot_store::{StateRing, SELECTED_CORE_FILE};
+    use std::time::{Duration, Instant};
+
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Emerald = gpsp\n").unwrap();
+
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut now = 32;
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    std::fs::remove_file(d.path().join(SELECTED_CORE_FILE)).unwrap();
+
+    s.app_mut().apply(Action::SaveState);
+
+    assert!(
+        !StateRing::new(d.path(), Core::Gpsp, "Emerald")
+            .list()
+            .unwrap()
+            .is_empty(),
+        "the manual save did not land under the seated core's own directory"
+    );
+    assert!(
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
+            .list()
+            .unwrap()
+            .is_empty(),
+        "the manual save followed the ini's new (absent) reading instead of the core the \
+         session actually spawned"
+    );
+}
+
+/// I3's third sink: `flush_eject` (app.rs) re-derives with the same shape of bug the two
+/// tests above already catch at `flush_resume` and `ring`. Same trick again, ended with an
+/// eject rather than an autosave or a manual save.
+#[test]
+fn changing_the_ini_mid_session_does_not_move_an_ejected_carts_resume() {
+    use slot::app::Phase;
+    use slot::session::Session;
+    use slot_input::{Action, Btn, RawEvent};
+    use slot_store::{StateRing, SELECTED_CORE_FILE};
+    use std::time::{Duration, Instant};
+
+    // Two carts: a lone cart is a dedicated device and has nowhere to eject to, so `eject()`
+    // refuses outright.
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Emerald = gpsp\n").unwrap();
+
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut now = 32;
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    std::fs::remove_file(d.path().join(SELECTED_CORE_FILE)).unwrap();
+
+    s.app_mut().apply(Action::Eject);
+
+    assert!(
+        StateRing::new(d.path(), Core::Gpsp, "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_some(),
+        "the ejected cart's resume did not land under the seated core's own directory"
+    );
+    assert!(
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_none(),
+        "the ejected cart's resume followed the ini's new (absent) reading instead of the \
+         core the session actually spawned"
+    );
+}
+
 /// The half the test above cannot pin, by its own admission: it never needed a real core, so
 /// a mutation that hands `open_core` the wrong `Core` — the original bug, verbatim — sails
 /// through it and every other test in the suite. Before `candidates` searched `root/System`,
@@ -222,6 +395,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         eprintln!("no host-openable dylib on this machine, skipping");
         return;
     };
+    let _g = common::core_lock();
     let d = common::tmp_root_with_real_carts(&["Probe"]);
     let planted = d
         .path()

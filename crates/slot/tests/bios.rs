@@ -1,20 +1,12 @@
 mod common;
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
 
+use common::core_lock;
 use slot::core::open_core_for;
 use slot_retro::{ButtonMask, LibretroCore};
 use slot_store::Core;
 use tempfile::tempdir;
-
-/// A libretro core keeps its machine in dylib globals, so two live cores is not a
-/// configuration the tests may reach.
-static CORE_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock() -> MutexGuard<'static, ()> {
-    CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn vendored_core_paths() -> Vec<PathBuf> {
     common::vendored_core().into_iter().collect()
@@ -22,7 +14,7 @@ fn vendored_core_paths() -> Vec<PathBuf> {
 
 #[test]
 fn a_missing_bios_folder_still_boots_a_core() {
-    let _g = lock();
+    let _g = core_lock();
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
     std::fs::remove_dir_all(d.path().join("BIOS")).ok();
     let mut core = open_core_for(d.path(), Core::Mgba, &vendored_core_paths());
@@ -32,7 +24,7 @@ fn a_missing_bios_folder_still_boots_a_core() {
 
 #[test]
 fn an_empty_bios_folder_still_boots_a_core() {
-    let _g = lock();
+    let _g = core_lock();
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
     std::fs::create_dir_all(d.path().join("BIOS")).unwrap();
     let mut core = open_core_for(d.path(), Core::Mgba, &vendored_core_paths());
@@ -42,7 +34,7 @@ fn an_empty_bios_folder_still_boots_a_core() {
 
 #[test]
 fn the_core_is_told_the_bios_folder_not_the_dylib_folder() {
-    let _g = lock();
+    let _g = core_lock();
     let d = tempdir().unwrap();
     let bios = d.path().join("BIOS");
     let saves = d.path().join("Saves");
@@ -63,7 +55,7 @@ fn the_core_is_told_the_bios_folder_not_the_dylib_folder() {
 /// would scatter `.sav` files next to the core instead of into the content root.
 #[test]
 fn the_core_is_told_the_saves_folder_too() {
-    let _g = lock();
+    let _g = core_lock();
     let d = tempdir().unwrap();
     let bios = d.path().join("BIOS");
     let saves = d.path().join("Saves");

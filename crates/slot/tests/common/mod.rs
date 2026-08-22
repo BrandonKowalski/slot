@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use slot::app::App;
@@ -15,6 +15,19 @@ use tempfile::TempDir;
 
 /// What the emulator was last told to load. `None` until something loads.
 pub type Loaded = Arc<Mutex<Option<Vec<u8>>>>;
+
+/// A libretro core keeps its machine in dylib globals, so two live cores is not a
+/// configuration any test in this crate may reach — `LIVE` (`slot_retro::libretro`) refuses
+/// the second one and `open_core_for` falls back to the mock, which makes a test that opens a
+/// real core race under CPU contention and fail looking exactly like the regression it was
+/// meant to catch. Every test in this crate that opens a real dylib takes `core_lock()` first.
+/// Shared here rather than declared per file: three separate copies of this same `Mutex` was
+/// the duplication that let a fourth file (`gpsp.rs`) go without one.
+static CORE_LOCK: Mutex<()> = Mutex::new(());
+
+pub fn core_lock() -> MutexGuard<'static, ()> {
+    CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 pub fn tmp_root_with_carts(stems: &[&str]) -> TempDir {
     let d = tmp_root();

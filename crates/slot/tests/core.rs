@@ -1,9 +1,9 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use common::core_lock;
 use slot::app::Phase;
 use slot::audio::{AudioSink, StubSink};
 use slot::core::open_core_for;
@@ -12,14 +12,6 @@ use slot::session::Session;
 use slot_input::{Btn, RawEvent};
 use slot_retro::{ButtonMask, RetroCore};
 use slot_store::Core;
-
-/// A libretro core keeps its machine in dylib globals, so two live cores is not a
-/// configuration the tests may reach.
-static CORE_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock() -> MutexGuard<'static, ()> {
-    CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 fn rom(name: &str) -> PathBuf {
     let p = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
@@ -37,7 +29,7 @@ fn is_mgba(core: &mut dyn RetroCore, rom: &Path) -> bool {
 
 #[test]
 fn the_vendored_core_is_preferred_over_the_mock() {
-    let _g = lock();
+    let _g = core_lock();
     let Some(dylib) = common::vendored_core() else {
         return;
     };
@@ -60,7 +52,7 @@ fn a_missing_core_falls_back_to_the_mock_rather_than_failing() {
 /// insert animation waiting on a core that is never coming.
 #[test]
 fn a_rom_the_real_core_refuses_reports_failed() {
-    let _g = lock();
+    let _g = core_lock();
     let Some(dylib) = common::vendored_core() else {
         return;
     };
@@ -84,7 +76,7 @@ fn a_rom_the_real_core_refuses_reports_failed() {
 /// that only exists once the real core is the default.
 #[test]
 fn a_cart_the_real_core_refuses_comes_back_out_of_the_slot() {
-    let _g = lock();
+    let _g = core_lock();
     let Some(dylib) = common::vendored_core() else {
         return;
     };
