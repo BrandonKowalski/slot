@@ -1,4 +1,4 @@
-use slot_retro::{ButtonMask, MgbaCore, RetroCore, GBA_H, GBA_W};
+use slot_retro::{ButtonMask, LibretroCore, RetroCore, GBA_H, GBA_W};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -14,24 +14,25 @@ fn dylib() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/mgba_libretro.dylib")
 }
 
-fn test_core() -> Option<MgbaCore> {
+fn test_core() -> Option<LibretroCore> {
     let p = dylib();
     if !p.exists() {
         return None;
     }
-    Some(MgbaCore::open(&p).expect("vendored core is present but would not open"))
+    Some(LibretroCore::open(&p).expect("vendored core is present but would not open"))
 }
 
 /// The one real `gba_bios.bin` in the tree. Without it mGBA falls back to its own HLE bios,
 /// which has no boot animation to play whatever the core is told about skipping it.
-fn core_with_bios() -> Option<MgbaCore> {
+fn core_with_bios() -> Option<LibretroCore> {
     let p = dylib();
     let bios = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sdcard/BIOS");
     if !p.exists() || !bios.join("gba_bios.bin").exists() {
         return None;
     }
     Some(
-        MgbaCore::open_with(&p, &bios, &bios).expect("vendored core is present but would not open"),
+        LibretroCore::open_with(&p, &bios, &bios)
+            .expect("vendored core is present but would not open"),
     )
 }
 

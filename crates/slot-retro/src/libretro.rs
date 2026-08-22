@@ -26,7 +26,7 @@ enum PixelFormat {
 }
 
 /// Everything the core's callbacks read or write. Lives in a `Box` so its address survives
-/// the `MgbaCore` being moved.
+/// the `LibretroCore` being moved.
 struct Host {
     video: Vec<u8>,
     format: PixelFormat,
@@ -239,7 +239,11 @@ unsafe extern "C" fn input_state(port: c_uint, device: c_uint, _index: c_uint, i
     .unwrap_or(0)
 }
 
-pub struct MgbaCore {
+/// One live libretro core. Which emulator this is comes from the dylib handed to `open`;
+/// nothing in this type is specific to any of them. A libretro core keeps its machine in
+/// dylib globals, so a second live core would share that state — `open_with` refuses to
+/// open one while another is still live, rather than trusting callers not to try.
+pub struct LibretroCore {
     api: Api,
     host: Box<Host>,
     /// mGBA reads the rom in place, so these bytes must outlive the loaded game.
@@ -255,7 +259,7 @@ fn cdir(path: &Path) -> Result<CString, CoreError> {
         .map_err(|_| CoreError::Load(format!("{} contains a nul", path.display())))
 }
 
-impl MgbaCore {
+impl LibretroCore {
     /// Reports the dylib's own directory as both. That is only right when there is no
     /// content root to point at, which is every test and nothing else.
     pub fn open(dylib: &Path) -> Result<Self, CoreError> {
@@ -342,7 +346,7 @@ impl MgbaCore {
             (api.set_input_state)(input_state);
             (api.init)();
         }
-        Ok(MgbaCore {
+        Ok(LibretroCore {
             api,
             host,
             rom: Vec::new(),
@@ -366,7 +370,7 @@ impl MgbaCore {
     }
 }
 
-impl Drop for MgbaCore {
+impl Drop for LibretroCore {
     fn drop(&mut self) {
         self.unload();
         unsafe {
@@ -377,7 +381,7 @@ impl Drop for MgbaCore {
     }
 }
 
-impl RetroCore for MgbaCore {
+impl RetroCore for LibretroCore {
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.unload();
         self.rom = std::fs::read(rom)?;
@@ -492,7 +496,7 @@ mod tests {
     use std::collections::HashMap;
     use std::ffi::CStr;
 
-    // `crates/slot-retro/tests/options.rs` calls `MgbaCore::set_option`/`option`, which are
+    // `crates/slot-retro/tests/options.rs` calls `LibretroCore::set_option`/`option`, which are
     // a HashMap round trip and never reach `environment` at all — reverting the whole of the
     // `GET_VARIABLE`/`GET_VARIABLE_UPDATE` arms below left that test suite green. These
     // tests call `environment` itself, the one place a core actually crosses the ABI to ask

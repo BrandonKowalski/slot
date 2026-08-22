@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use slot_retro::{MgbaCore, MockCore, RetroCore};
+use slot_retro::{LibretroCore, MockCore, RetroCore};
 
 use crate::root;
 
@@ -43,7 +43,7 @@ pub fn open_core_for(root: &Path, paths: &[PathBuf]) -> Box<dyn RetroCore> {
         if !path.exists() {
             continue;
         }
-        match MgbaCore::open_with(path, &bios, &saves) {
+        match LibretroCore::open_with(path, &bios, &saves) {
             Ok(core) => {
                 eprintln!("slot: core {}", path.display());
                 return Box::new(core);

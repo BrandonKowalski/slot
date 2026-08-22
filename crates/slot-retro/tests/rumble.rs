@@ -1,18 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use slot_retro::{ButtonMask, MgbaCore, RetroCore, Rumble};
+use slot_retro::{ButtonMask, LibretroCore, RetroCore, Rumble};
 
 /// `RETRO_RUMBLE_STRONG` and `RETRO_RUMBLE_WEAK`, spelled out here because the test stands
 /// in for the core and the core only ever passes the raw numbers.
 const STRONG: u32 = 0;
 const WEAK: u32 = 1;
 
-fn test_core() -> Option<MgbaCore> {
+fn test_core() -> Option<LibretroCore> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/mgba_libretro.dylib");
     if !p.exists() {
         return None;
     }
-    Some(MgbaCore::open(&p).expect("vendored core is present but would not open"))
+    Some(LibretroCore::open(&p).expect("vendored core is present but would not open"))
 }
 
 /// A header and nothing else. The core sniffs the fixed byte at 0xb2 and the branch at the

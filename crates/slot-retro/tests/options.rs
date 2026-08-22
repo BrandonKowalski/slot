@@ -1,4 +1,4 @@
-use slot_retro::MgbaCore;
+use slot_retro::LibretroCore;
 use std::sync::{Mutex, MutexGuard};
 
 /// A libretro core keeps its machine in dylib globals, so two live cores is not a thing.
@@ -22,7 +22,7 @@ fn dylib() -> std::path::PathBuf {
 #[test]
 fn an_unset_option_reads_back_as_absent() {
     let _g = lock();
-    let Ok(core) = MgbaCore::open(&dylib()) else {
+    let Ok(core) = LibretroCore::open(&dylib()) else {
         eprintln!("no core available on this host, skipping");
         return;
     };
@@ -32,7 +32,7 @@ fn an_unset_option_reads_back_as_absent() {
 #[test]
 fn a_set_option_reads_back() {
     let _g = lock();
-    let Ok(mut core) = MgbaCore::open(&dylib()) else {
+    let Ok(mut core) = LibretroCore::open(&dylib()) else {
         eprintln!("no core available on this host, skipping");
         return;
     };
