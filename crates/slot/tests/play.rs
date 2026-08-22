@@ -13,12 +13,12 @@ use slot::app::Phase;
 use slot::persist;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
-use slot_store::StateRing;
+use slot_store::{Core, StateRing};
 
 #[test]
 fn a_tap_resumes_and_a_hold_starts_clean() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
-    StateRing::new(d.path(), "Emerald")
+    StateRing::new(d.path(), Core::Mgba, "Emerald")
         .write_resume(&[7u8; 64])
         .unwrap();
 
@@ -42,7 +42,7 @@ fn a_tap_resumes_and_a_hold_starts_clean() {
 #[test]
 fn a_clean_start_leaves_the_state_on_disk() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
-    let r = StateRing::new(d.path(), "Emerald");
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
     r.write_resume(&[7u8; 64]).unwrap();
     let mut a = boot(d.path());
     a.apply_at(Action::GbaDown(Btn::A), 0);

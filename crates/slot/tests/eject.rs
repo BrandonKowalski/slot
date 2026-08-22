@@ -8,7 +8,7 @@ use slot::app::Phase;
 use slot::emu::Speed;
 use slot::persist::eject;
 use slot_input::Action;
-use slot_store::{read_slot_state, write_slot_state, SlotState, StateRing};
+use slot_store::{read_slot_state, write_slot_state, Core, SlotState, StateRing};
 use slot_ui::{Draw, CART_W, OUT_H, OUT_W};
 
 fn seated(cart: &str) -> SlotState {
@@ -38,7 +38,7 @@ fn eject_clears_the_slot_only_after_the_state_is_durable() {
     .unwrap();
     eject(d.path(), "Emerald", &[9u8; 1024], Some(b"savdata")).unwrap();
     assert_eq!(read_slot_state(d.path()).cart, None);
-    let r = StateRing::new(d.path(), "Emerald");
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
     assert_eq!(r.read_resume().unwrap().unwrap().len(), 1024);
     assert_eq!(
         std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
@@ -56,7 +56,7 @@ fn eject_clears_the_slot_only_after_the_state_is_durable() {
 fn a_resume_that_cannot_be_written_leaves_the_cart_in_the_slot() {
     let d = tmp_root_with_carts(&["Emerald"]);
     write_slot_state(d.path(), &seated("Emerald")).unwrap();
-    std::fs::write(d.path().join("States/Emerald"), b"in the way").unwrap();
+    std::fs::write(d.path().join("States/mgba"), b"in the way").unwrap();
     assert!(eject(d.path(), "Emerald", &[9u8; 1024], None).is_err());
     assert_eq!(read_slot_state(d.path()).cart, Some("Emerald".into()));
 }
@@ -110,7 +110,7 @@ fn ejecting_a_playing_cart_flushes_before_the_animation_starts() {
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::Eject);
     assert!(matches!(a.phase(), Phase::Ejecting { .. }));
-    let r = StateRing::new(d.path(), "Emerald");
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
     assert_eq!(
         r.read_resume().unwrap().expect("nothing was flushed").len(),
         1024
@@ -130,7 +130,7 @@ fn a_refused_cart_writes_no_resume() {
     for _ in 0..120 {
         a.update(1.0 / 60.0);
     }
-    assert!(StateRing::new(d.path(), "Emerald")
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
         .read_resume()
         .unwrap()
         .is_none());

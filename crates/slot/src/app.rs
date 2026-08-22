@@ -4,8 +4,8 @@ use slot_gfx::{OUT_H, OUT_W};
 use slot_input::{Action, Btn, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_store::{
-    format_stamp, read_slot_state, scan, write_slot_state, Cart, SlotState, StateEntry, StateRing,
-    Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
+    core_for, format_stamp, read_slot_state, scan, write_slot_state, Cart, SlotState, StateEntry,
+    StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     draw_backdrop, draw_footer, draw_sticker, ClockPicker, Draw, FfState, Hud, HudKind, Icon,
@@ -1575,7 +1575,7 @@ impl App {
         let (Some(root), Some(cart)) = (&self.root, self.seated()) else {
             return None;
         };
-        Some(StateRing::new(root, cart))
+        Some(StateRing::new(root, core_for(root, cart), cart))
     }
 
     fn seated(&self) -> Option<&str> {

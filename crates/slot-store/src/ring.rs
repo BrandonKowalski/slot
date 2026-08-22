@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::atomic::atomic_write;
+use crate::core::Core;
 
 pub const RING_MAX: usize = 10;
 
@@ -24,9 +25,12 @@ pub struct StateRing {
 }
 
 impl StateRing {
-    pub fn new(root: &Path, stem: &str) -> Self {
+    /// States are core private: a serialized machine from one emulator cannot be loaded by
+    /// another, so offering them together would only produce a confusing failure. Battery
+    /// saves under `Saves/` are raw cartridge bytes and stay shared.
+    pub fn new(root: &Path, core: Core, stem: &str) -> Self {
         StateRing {
-            dir: root.join("States").join(stem),
+            dir: root.join("States").join(core.as_str()).join(stem),
         }
     }
 

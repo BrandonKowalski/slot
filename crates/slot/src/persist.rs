@@ -16,7 +16,7 @@ pub trait Snapshot {
 /// What lid close, the power press edge and the autosave all write. The slot is untouched:
 /// none of them is an eject, and the cart has to still be in it on the next boot.
 pub fn flush(root: &Path, stem: &str, state: &[u8], sav: Option<&[u8]>) -> std::io::Result<()> {
-    StateRing::new(root, stem).write_resume(state)?;
+    StateRing::new(root, slot_store::core_for(root, stem), stem).write_resume(state)?;
     if let Some(sav) = sav {
         write_sav(root, stem, sav)?;
     }
@@ -58,7 +58,10 @@ pub fn read_sav(root: &Path, stem: &str) -> Option<Vec<u8>> {
 /// The counterpart to the resume write in `flush`. Without this the cart is seated on the
 /// next boot but the game restarts.
 pub fn read_resume(root: &Path, stem: &str) -> Option<Vec<u8>> {
-    StateRing::new(root, stem).read_resume().ok().flatten()
+    StateRing::new(root, slot_store::core_for(root, stem), stem)
+        .read_resume()
+        .ok()
+        .flatten()
 }
 
 fn sav_path(root: &Path, stem: &str) -> PathBuf {
