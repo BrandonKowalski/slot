@@ -44,6 +44,25 @@ fn read_resume_finds_what_a_flush_wrote() {
     );
 }
 
+/// Every other test in this file leaves `System/selected_core.ini` absent, which only ever
+/// exercises the mGBA default. A cart that actually opts into gpSP has to land its resume
+/// under `States/gpsp/`, through the same `flush` the device calls, not through
+/// `StateRing` directly.
+#[test]
+fn flush_resolves_a_non_default_core_from_the_ini() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    std::fs::write(
+        d.path().join(slot_store::SELECTED_CORE_FILE),
+        "Emerald = gpsp\n",
+    )
+    .unwrap();
+
+    persist::flush(d.path(), "Emerald", &[7u8; 64], None).unwrap();
+
+    assert!(d.path().join("States/gpsp/Emerald/resume.state").exists());
+    assert!(!d.path().join("States/mgba/Emerald/resume.state").exists());
+}
+
 /// RetroArch's libretro cores write `.srm`; mGBA standalone writes `.sav`. A card carrying
 /// only the RetroArch file has a real save on it and must not boot as a new game.
 #[test]

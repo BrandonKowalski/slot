@@ -45,8 +45,8 @@ BIOS/         gba_bios.bin, optional. Absent means mGBA's own high level BIOS.
 Games/        .gba roms.
 Labels/       <rom stem>.png, drawn on the cartridge face. Absent means a text only label.
 Saves/        .sav and .srm battery saves.
-States/       save state rings, ten deep per cart.
-System/       the binary, the core, and theme.txt.
+States/       <core>/<rom stem>/, save state rings ten deep per cart.
+System/       the binary, the core, theme.txt, and selected_core.ini.
 Wallpapers/   .png, one picked at random each boot and drawn behind the shelf.
 ```
 
@@ -61,6 +61,14 @@ housing #24242a
 recess  #1a1a1e
 opening #050508
 edge    #4d4d57
+```
+
+`System/selected_core.ini` is entirely optional and picks which core opens a cart, one
+`<rom stem> = <core>` per line. Every cart defaults to mGBA; list only the ones that need
+gpSP, which exists for the serial link hardware mGBA's libretro build does not carry:
+
+```
+Emerald = gpsp
 ```
 
 ## Installing on your RG SP
