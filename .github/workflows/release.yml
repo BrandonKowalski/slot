@@ -49,6 +49,7 @@ jobs:
           out="slot-${GITHUB_REF_NAME}"
           file "$out/System/slot" | grep -q aarch64
           file "$out/System/mgba_libretro.so" | grep -q aarch64
+          file "$out/System/gpsp_libretro.so" | grep -q aarch64
           test -x "$out/System/slot"
 
       - name: Package

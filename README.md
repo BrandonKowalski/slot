@@ -46,7 +46,7 @@ Games/        .gba roms.
 Labels/       <rom stem>.png, drawn on the cartridge face. Absent means a text only label.
 Saves/        .sav and .srm battery saves.
 States/       <core>/<rom stem>/, save state rings ten deep per cart.
-System/       the binary, the core, theme.txt, and selected_core.ini.
+System/       the binary, both cores, theme.txt, and selected_core.ini.
 Wallpapers/   .png, one picked at random each boot and drawn behind the shelf.
 ```
 
@@ -66,16 +66,13 @@ edge    #4d4d57
 `System/selected_core.ini` is entirely optional and names which core a cart's save states
 belong to, one `<rom stem> = <core>` per line. Every cart defaults to mGBA, and states are
 kept apart per core under `States/<core>/<rom stem>/` so switching cores later never mixes
-one core's save with another's:
+one core's save with another's. Both cores ship in `System/`, so naming `gpsp` actually
+switches emulators for that cart — gpSP exists for the serial link hardware mGBA's libretro
+build does not carry:
 
 ```
 Emerald = gpsp
 ```
-
-**gpSP itself is not shipped yet.** `System/` only carries mGBA today, so naming `gpsp`
-above does not switch emulators — that cart still runs on mGBA, just with its states filed
-under `States/gpsp/` instead of `States/mgba/`. This line has nothing to offer you before
-gpSP ships; it exists so a card written now needs no editing once it does.
 
 ## Installing on your RG SP
 
