@@ -311,6 +311,7 @@ impl App {
     /// `Games` directory scans empty, which is a shelf, not a boot failure.
     pub fn boot(root: &Path) -> Self {
         crate::root::ensure(root);
+        crate::root::migrate(root);
         // Before anything is drawn. The card's palette cannot change while the device is on,
         // so it is read once and never asked for again.
         slot_ui::set_theme(Theme::read(root));

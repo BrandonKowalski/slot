@@ -19,6 +19,13 @@ pub fn ensure(root: &Path) {
     }
 }
 
+/// Bring a card written before states were namespaced up to the current layout. Best
+/// effort on purpose: a read only or half mounted card is an empty shelf, not a boot
+/// failure, exactly as `ensure` treats it.
+pub fn migrate(root: &Path) {
+    let _ = slot_store::migrate_states(root);
+}
+
 /// Reported to the core as the libretro system directory. `gba_bios.bin` present means the
 /// real BIOS, absent means mGBA's HLE BIOS. Neither is an error.
 pub fn bios_dir(root: &Path) -> PathBuf {
