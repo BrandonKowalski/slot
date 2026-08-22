@@ -220,7 +220,11 @@ tasks:
 
   dist:device:
     desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
-    deps: [core:device, core:gpsp, build:device]
+    # gpSP is fetchable (`task core:gpsp`) but `crates/slot/src/core.rs` does not open it yet,
+    # so shipping `gpsp_libretro.so` here would only dress up `System/selected_core.ini` as a
+    # working setting it is not — a cart naming gpsp still runs mGBA. Bring `core:gpsp` back
+    # into this list, and add its `cp` beside mGBA's below, once that is true.
+    deps: [core:device, build:device]
     vars:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
@@ -234,12 +238,12 @@ tasks:
           CMD: ./target-device/release/slot --init-root {{.OUT}}
       - cp target-device/release/slot {{.OUT}}/System/slot
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
-      - cp vendor/gpsp_libretro.so {{.OUT}}/System/
       - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
 
   deploy:device:
     desc: Build and push onto a device over adb, then restart it. SD defaults to /mnt/sdcard
-    deps: [core:device, core:gpsp, build:device]
+    # See the note on dist:device: gpSP is not wired up to run yet, so it is not pushed.
+    deps: [core:device, build:device]
     vars:
       SD: '{{.SD | default "/mnt/sdcard"}}'
     cmds:
@@ -249,7 +253,6 @@ tasks:
       # part of the task and not left to be remembered.
       - adb push target-device/release/slot '{{.SD}}/System/slot'
       - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
-      - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
       - adb shell 'chmod +x {{.SD}}/System/slot && sync'
       - adb reboot
       - adb wait-for-device

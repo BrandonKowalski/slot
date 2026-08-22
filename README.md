@@ -63,13 +63,19 @@ opening #050508
 edge    #4d4d57
 ```
 
-`System/selected_core.ini` is entirely optional and picks which core opens a cart, one
-`<rom stem> = <core>` per line. Every cart defaults to mGBA; list only the ones that need
-gpSP, which exists for the serial link hardware mGBA's libretro build does not carry:
+`System/selected_core.ini` is entirely optional and names which core a cart's save states
+belong to, one `<rom stem> = <core>` per line. Every cart defaults to mGBA, and states are
+kept apart per core under `States/<core>/<rom stem>/` so switching cores later never mixes
+one core's save with another's:
 
 ```
 Emerald = gpsp
 ```
+
+**gpSP itself is not shipped yet.** `System/` only carries mGBA today, so naming `gpsp`
+above does not switch emulators — that cart still runs on mGBA, just with its states filed
+under `States/gpsp/` instead of `States/mgba/`. This line has nothing to offer you before
+gpSP ships; it exists so a card written now needs no editing once it does.
 
 ## Installing on your RG SP
 
