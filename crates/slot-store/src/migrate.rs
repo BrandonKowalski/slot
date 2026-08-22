@@ -30,7 +30,19 @@ pub fn migrate_states(root: &Path) -> std::io::Result<usize> {
     let entries: Vec<_> = dir.collect::<Result<Vec<_>, _>>()?;
 
     for entry in entries {
-        if !entry.file_type()?.is_dir() {
+        // Every fallible step from here on is isolated to this one entry rather than
+        // propagated with `?`. `read_dir` above is the one place a hard `Err` is right,
+        // because there is nothing left to iterate at all. Once inside the loop, `read_dir`
+        // order is stable, so letting one entry's failure — a corrupt subdirectory, a
+        // permission bit, `States/mgba` existing as a plain file — abort the whole call
+        // would strand every cart that sorts after it on every future boot, which is
+        // exactly the "safe to run on every boot" guarantee this function exists to keep.
+        // A cart this loop cannot move this boot is still there, unharmed, to try again on
+        // the next one.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
             continue;
         }
         let name = entry.file_name();
@@ -46,9 +58,13 @@ pub fn migrate_states(root: &Path) -> std::io::Result<usize> {
         if dest.exists() {
             continue;
         }
-        std::fs::create_dir_all(dest.parent().expect("dest has a parent"))?;
-        std::fs::rename(entry.path(), &dest)?;
-        moved += 1;
+        let dest_parent = dest.parent().expect("dest has a parent");
+        if std::fs::create_dir_all(dest_parent).is_err() {
+            continue;
+        }
+        if std::fs::rename(entry.path(), &dest).is_ok() {
+            moved += 1;
+        }
     }
     Ok(moved)
 }

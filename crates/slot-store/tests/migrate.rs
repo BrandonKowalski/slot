@@ -104,3 +104,44 @@ fn core_directories_are_not_themselves_migrated() {
     assert_eq!(migrate_states(d.path()).unwrap(), 0);
     assert!(d.path().join("States/gpsp/Emerald").is_dir());
 }
+
+/// `.DS_Store` is not hypothetical: these cards get edited on a Mac, and Finder drops one
+/// into every directory it visits, including `States/`. A stray file must not stop the
+/// carts that migrate fine from migrating. Created before the cart so that, if the
+/// implementation ever regresses to a `?` per entry, the stray sorts first and aborts the
+/// whole call rather than the failure being hidden by iteration order alone.
+#[test]
+fn a_stray_file_does_not_stop_a_real_cart_migrating() {
+    let d = card();
+    std::fs::write(d.path().join("States/.DS_Store"), b"finder junk").unwrap();
+    bare_state(d.path(), "Emerald");
+
+    assert_eq!(migrate_states(d.path()).unwrap(), 1);
+    assert_eq!(
+        std::fs::read(d.path().join("States/mgba/Emerald/resume.state")).unwrap(),
+        b"resume"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("States/.DS_Store")).unwrap(),
+        b"finder junk",
+        "the stray file was moved or deleted"
+    );
+}
+
+/// `States/mgba` existing as a plain file is not something a healthy card produces, but a
+/// corrupted one is not impossible, and it must not abort the call or destroy the cart it
+/// was about to move. `create_dir_all` fails because a non-directory sits where a directory
+/// is wanted; that failure is isolated to the entry that hit it, the same as any other.
+#[test]
+fn mgba_as_a_plain_file_fails_soft_and_leaves_the_source_alone() {
+    let d = card();
+    bare_state(d.path(), "Emerald");
+    std::fs::write(d.path().join("States/mgba"), b"not a directory").unwrap();
+
+    assert_eq!(migrate_states(d.path()).unwrap(), 0);
+    assert_eq!(
+        std::fs::read(d.path().join("States/Emerald/resume.state")).unwrap(),
+        b"resume",
+        "the source was disturbed"
+    );
+}
