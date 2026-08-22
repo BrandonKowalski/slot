@@ -170,52 +170,107 @@ tasks:
         file vendor/mgba_libretro.so | grep -q aarch64
         echo "fetched vendor/mgba_libretro.so"
 
-  core:gpsp:source:
+  core:gpsp:
     desc: >-
-      Fetch gpSP's source at libretro/gpsp's current master, so the binary core:gpsp fetches
-      ships with its GPL-2.0 section 3(a) corresponding source rather than only a written offer
+      Fetch the aarch64 linux gpSP core together with its GPL-2.0 section 3(a) corresponding
+      source, as one set
+    # Binary, source archive, sha and metadata are fetched, resolved and verified by one
+    # script, and the status check below requires all four. That is what stops the binary and
+    # the source silently drifting apart: with independent guards (as this used to have),
+    # deleting only the .so to pick up a newer nightly would refetch just the binary and
+    # leave it paired with a source recorded on some earlier run. Here, any one of the four
+    # missing means none of them are trusted, and the whole set is refetched together.
     status:
+      - test -f vendor/gpsp_libretro.so
       - test -f vendor/gpsp-src.tar.gz
       - test -f vendor/gpsp-src.sha
+      - test -f vendor/gpsp-src.meta
     cmds:
       - |
         set -euo pipefail
         mkdir -p vendor
-        # The buildbot never says which commit it built (see licenses/README.md), so this is
-        # the closest identifiable source: master's HEAD at the moment we fetch it, recorded
-        # so every later step — the shipped filename, the release notes — names the same
-        # commit rather than each guessing independently.
-        sha="$(git ls-remote https://github.com/libretro/gpsp master | cut -f1)"
-        if [ -z "$sha" ]; then
-          echo "could not resolve libretro/gpsp's master commit" >&2
+        # Clear the whole set first. A partial leftover (say, a .meta from a run that got
+        # killed before it finished) must never be reused as if it belonged to what's fetched
+        # below.
+        rm -f vendor/gpsp_libretro.so vendor/gpsp-linux.zip \
+              vendor/gpsp-src.tar.gz vendor/gpsp-src.sha vendor/gpsp-src.meta
+
+        curl -fsSL -o vendor/gpsp-linux.zip \
+          "https://buildbot.libretro.com/nightly/linux/aarch64/latest/gpsp_libretro.so.zip"
+
+        # Anchor the source to the binary's own build timestamp, not to whenever we happen to
+        # run this task. The zip's HTTP Last-Modified header is not a safe stand-in for that:
+        # it moves whenever the buildbot's storage re-touches the file even though the binary
+        # inside hasn't changed — confirmed directly while writing this, a fresh HEAD on this
+        # same URL returned a Last-Modified two days newer than a .so whose sha256 was
+        # byte-for-byte identical to what was already vendored. The zip entry's own timestamp,
+        # set once when the file was archived, doesn't move like that: it's the closer
+        # stand-in for when gpSP was actually compiled, so that's what gets anchored to.
+        # `unzip -Z -T` reads it straight out of the zip's central directory as sortable
+        # digits (YYYYMMDD.HHMMSS) — a verbatim field read, not a localtime round trip, so it
+        # comes out identical on every machine regardless of that machine's own timezone. The
+        # digits carry no timezone of their own; they're treated as UTC here, matching the
+        # buildbot's own Last-Modified (which is GMT) and standard practice for CI build
+        # infrastructure generally.
+        raw="$(unzip -Z -T vendor/gpsp-linux.zip gpsp_libretro.so | grep -E '^-' | awk '{print $(NF-1)}')"
+        binary_date="$(printf '%s' "$raw" | \
+          sed -E 's/^([0-9]{4})([0-9]{2})([0-9]{2})\.([0-9]{2})([0-9]{2})([0-9]{2})$/\1-\2-\3T\4:\5:\6Z/')"
+        if [ -z "$binary_date" ]; then
+          echo "could not read gpsp_libretro.so's timestamp out of the fetched zip" >&2
           exit 1
         fi
+
+        unzip -o -q vendor/gpsp-linux.zip -d vendor
+        rm -f vendor/gpsp-linux.zip
+        file vendor/gpsp_libretro.so | grep -q aarch64
+
+        # Resolve libretro/gpsp's master as of the binary's own timestamp above, not as of
+        # now: source visibly newer than the binary it's meant to correspond to is exactly the
+        # failure mode this replaces. GitHub's commits API can name master's tip as of a given
+        # moment via `until=`; `git ls-remote` can only ever name master's tip *right now*, so
+        # it is a fallback for when the API can't be reached — unauthenticated, it's
+        # rate-limited to 60/hr — not the first choice, and which one actually ran is recorded
+        # below, so the shipped archive never claims a precision it didn't get.
+        sha=""
+        method=""
+        api_response="$(curl -fsS --max-time 10 \
+          "https://api.github.com/repos/libretro/gpsp/commits?until=${binary_date}&per_page=1" \
+          2>/dev/null || true)"
+        if [ -n "$api_response" ]; then
+          sha="$(printf '%s' "$api_response" | grep -m1 '"sha"' | sed -E 's/.*"sha": *"([0-9a-f]+)".*/\1/')"
+        fi
+        if [ -n "$sha" ]; then
+          method="github-api"
+        else
+          echo "GitHub API unreachable or exhausted; falling back to git ls-remote master (current tip, NOT anchored to ${binary_date})" >&2
+          sha="$(git ls-remote https://github.com/libretro/gpsp master | cut -f1)"
+          method="git-ls-remote-fallback"
+        fi
+        if [ -z "$sha" ]; then
+          echo "could not resolve libretro/gpsp's master commit by any method" >&2
+          exit 1
+        fi
+
         curl -fsSL -o vendor/gpsp-src.tar.gz \
           "https://github.com/libretro/gpsp/archive/${sha}.tar.gz"
         # A real gpSP checkout, not just a valid tarball: same shape as any GitHub source
         # archive, one top directory named for the commit, and the Makefile lives in it.
         tar -tzf vendor/gpsp-src.tar.gz | grep -q "^gpsp-${sha}/Makefile$"
-        echo "$sha" > vendor/gpsp-src.sha
-        echo "fetched vendor/gpsp-src.tar.gz at ${sha}"
 
-  core:gpsp:
-    desc: Fetch the aarch64 linux gpSP core, which carries the serial hardware mGBA's build does not
-    # The source has to name the same commit the binary was built from — as closely as that
-    # can be known at all, see core:gpsp:source — so it is fetched every time this is,
-    # not left to whoever happens to run dist:device or deploy:device afterward.
-    deps: [core:gpsp:source]
-    status:
-      - test -f vendor/gpsp_libretro.so
+        echo "$sha" > vendor/gpsp-src.sha
+        {
+          echo "commit=${sha}"
+          echo "binary_date=${binary_date}"
+          echo "resolved_via=${method}"
+        } > vendor/gpsp-src.meta
+
+        echo "fetched vendor/gpsp_libretro.so and vendor/gpsp-src.tar.gz @ ${sha} (anchored ${binary_date}, ${method})"
+
+  core:gpsp:update:
+    desc: Re-fetch gpSP's core and source together, even if some of the set is already vendored
     cmds:
-      - |
-        set -euo pipefail
-        mkdir -p vendor
-        curl -fsSL -o vendor/gpsp-linux.zip \
-          "https://buildbot.libretro.com/nightly/linux/aarch64/latest/gpsp_libretro.so.zip"
-        unzip -o -q vendor/gpsp-linux.zip -d vendor
-        rm -f vendor/gpsp-linux.zip
-        file vendor/gpsp_libretro.so | grep -q aarch64
-        echo "fetched vendor/gpsp_libretro.so"
+      - rm -f vendor/gpsp_libretro.so vendor/gpsp-src.tar.gz vendor/gpsp-src.sha vendor/gpsp-src.meta
+      - task: core:gpsp
 
   device:sh:
     desc: Run CMD on the box the device build wants, fetching one if this is not it
@@ -279,13 +334,16 @@ tasks:
       - cp -r licenses {{.OUT}}/System/licenses
       # GPL-2.0 section 3(a): gpSP's corresponding source travels with the binary rather than
       # staying a promise in the written offer. It lands inside licenses/ itself, next to the
-      # license text and the offer that already explain it, named for the commit
-      # core:gpsp:source fetched so the file identifies its own source with no release page
-      # to point back to — the exact thing a hand-built SD card does not have.
+      # license text and the offer that already explain it, named for the commit core:gpsp
+      # resolved so the file identifies its own source with no release page to point back to
+      # — the exact thing a hand-built SD card does not have. The .meta file travels with it,
+      # named to match, so the anchor timestamp and resolution method core:gpsp recorded ship
+      # on the card too, not only in a GitHub release's notes.
       - |
         set -euo pipefail
         sha="$(cat vendor/gpsp-src.sha)"
         cp vendor/gpsp-src.tar.gz "{{.OUT}}/System/licenses/gpsp-${sha}.tar.gz"
+        cp vendor/gpsp-src.meta "{{.OUT}}/System/licenses/gpsp-${sha}.meta"
       - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
 
   deploy:device:
@@ -309,11 +367,13 @@ tasks:
       - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
       - adb push licenses '{{.SD}}/System/licenses'
       # Same reasoning as dist:device: the source belongs on the card next to the binary it
-      # corresponds to, not only offered on request.
+      # corresponds to, not only offered on request, and the .meta beside it so the anchor
+      # timestamp and resolution method travel too.
       - |
         set -euo pipefail
         sha="$(cat vendor/gpsp-src.sha)"
         adb push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
+        adb push vendor/gpsp-src.meta "{{.SD}}/System/licenses/gpsp-${sha}.meta"
       - adb shell 'chmod +x {{.SD}}/System/slot && sync'
       - adb reboot
       - adb wait-for-device

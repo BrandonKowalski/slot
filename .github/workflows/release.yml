@@ -26,6 +26,8 @@ jobs:
       gpsp_sha: ${{ steps.package.outputs.gpsp_sha }}
       core_date: ${{ steps.package.outputs.core_date }}
       gpsp_head: ${{ steps.package.outputs.gpsp_head }}
+      gpsp_anchor: ${{ steps.package.outputs.gpsp_anchor }}
+      gpsp_method: ${{ steps.package.outputs.gpsp_method }}
     steps:
       - uses: actions/checkout@v7
 
@@ -54,10 +56,12 @@ jobs:
           file "$out/System/gpsp_libretro.so" | grep -q aarch64
           test -x "$out/System/slot"
           # GPL-2.0 section 3(a): the release does not ship without gpSP's corresponding
-          # source. `task dist:device` names the file for the commit `core:gpsp:source`
-          # recorded, so that recording is what says which file to look for.
+          # source. `task dist:device` names the file for the commit `core:gpsp` recorded, so
+          # that recording is what says which file to look for. The .meta file travels with
+          # it, same naming, carrying the anchor timestamp and resolution method.
           gpsp_src_sha="$(cat vendor/gpsp-src.sha)"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.tar.gz"
+          test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.meta"
 
       - name: Package
         id: package
@@ -77,10 +81,16 @@ jobs:
             echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
             echo "core_date=$(date -u +%Y-%m-%d)"
             # The commit whose source archive actually shipped in this zip (see
-            # licenses/README.md) — read back from what core:gpsp:source recorded, not
-            # re-resolved here, so this can never name a different commit than the file
-            # the "Check what is about to ship" step just verified is in the tree.
+            # licenses/README.md) — read back from what core:gpsp recorded, not re-resolved
+            # here, so this can never name a different commit than the file the "Check what
+            # is about to ship" step just verified is in the tree. gpsp_anchor and
+            # gpsp_method come from the same recording: the binary timestamp the commit was
+            # anchored to, and whether that anchoring used GitHub's API or fell back to
+            # git ls-remote — so the notes below can never claim a precision the fetch
+            # itself didn't get.
             echo "gpsp_head=$(cat vendor/gpsp-src.sha)"
+            echo "gpsp_anchor=$(grep '^binary_date=' vendor/gpsp-src.meta | cut -d= -f2)"
+            echo "gpsp_method=$(grep '^resolved_via=' vendor/gpsp-src.meta | cut -d= -f2)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
@@ -112,6 +122,8 @@ jobs:
           GPSP_SHA: ${{ needs.build.outputs.gpsp_sha }}
           CORE_DATE: ${{ needs.build.outputs.core_date }}
           GPSP_HEAD: ${{ needs.build.outputs.gpsp_head }}
+          GPSP_ANCHOR: ${{ needs.build.outputs.gpsp_anchor }}
+          GPSP_METHOD: ${{ needs.build.outputs.gpsp_method }}
         run: |
           set -eu
           cat > notes.md <<NOTES
@@ -123,12 +135,14 @@ jobs:
           | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${MGBA_SHA}\` |
           | \`System/gpsp_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${GPSP_SHA}\` |
           | \`System/licenses/gpsp-${GPSP_HEAD}.tar.gz\` | gpSP source, libretro/gpsp \`master\` @ \`${GPSP_HEAD}\` |
+          | \`System/licenses/gpsp-${GPSP_HEAD}.meta\` | anchor \`${GPSP_ANCHOR}\`, resolved via \`${GPSP_METHOD}\` |
 
           mGBA is MPL-2.0, gpSP is GPL-2.0 — both shipped as unmodified libretro cores, both
           credited with their license text under \`System/licenses/\`. gpSP's corresponding
           source ships in this zip too, per GPL-2.0 section 3(a): the buildbot does not publish
-          which commit a nightly was built from, so \`master\`'s HEAD at fetch time,
-          \`${GPSP_HEAD}\`, is the closest identifiable source rather than a proven match to
+          which commit a nightly was built from, so what ships is \`master\` as of
+          \`${GPSP_ANCHOR}\` — the timestamp the buildbot itself stamped onto this release's
+          \`gpsp_libretro.so\` — resolved via \`${GPSP_METHOD}\`, rather than a proven match to
           this exact binary. \`System/licenses/README.md\` says so plainly and keeps a
           section 3(b) written offer as a backstop for the gap.
           NOTES
