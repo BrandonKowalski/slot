@@ -189,6 +189,24 @@ fn draw_count(a: &App) -> usize {
     out.len()
 }
 
+/// `App::boot` is the only caller of `crate::root::migrate`. Every other migration test
+/// calls `slot_store::migrate_states` directly, so none of them would notice if boot ever
+/// stopped calling it — that call would just quietly stop moving anyone's states.
+#[test]
+fn boot_migrates_a_pre_namespacing_state_shelf() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let old = d.path().join("States/Emerald");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("resume.state"), b"pre-namespacing").unwrap();
+
+    App::boot(d.path());
+
+    assert!(
+        d.path().join("States/mgba/Emerald/resume.state").exists(),
+        "boot did not carry the pre-namespacing state shelf under States/mgba/"
+    );
+}
+
 /// And it is already home rather than travelling there.
 #[test]
 fn a_resumed_cart_starts_seated() {

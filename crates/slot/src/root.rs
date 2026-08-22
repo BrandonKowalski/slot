@@ -22,8 +22,27 @@ pub fn ensure(root: &Path) {
 /// Bring a card written before states were namespaced up to the current layout. Best
 /// effort on purpose: a read only or half mounted card is an empty shelf, not a boot
 /// failure, exactly as `ensure` treats it.
+///
+/// A per-entry failure does not stop the sweep — the rest of the shelf still gets a chance —
+/// but silently eating every one of them would leave a cart stuck pre-migration forever with
+/// nothing on the card to say so. Logged here, once per boot, rather than inside
+/// `migrate_states` itself, which only counts and has no read on where "once per boot" ends.
 pub fn migrate(root: &Path) {
-    let _ = slot_store::migrate_states(root);
+    match slot_store::migrate_states(root) {
+        Ok(report) if report.failed > 0 => {
+            eprintln!(
+                "slot: migrate: {} of {} state director{} did not move",
+                report.failed,
+                report.moved + report.failed,
+                if report.moved + report.failed == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
+            );
+        }
+        _ => {}
+    }
 }
 
 /// Reported to the core as the libretro system directory. `gba_bios.bin` present means the
