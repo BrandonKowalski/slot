@@ -58,7 +58,7 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
 /// the same value for every later read and write, and it does that by storing it rather than
 /// asking again.
 pub fn open_core(root: &Path, core: Core) -> Box<dyn RetroCore> {
-    open_core_for(root, &candidates(root, core))
+    open_core_for(root, core, &candidates(root, core))
 }
 
 /// The named core if one of these opens, the mock if none of them do. A missing core is not
@@ -66,7 +66,15 @@ pub fn open_core(root: &Path, core: Core) -> Box<dyn RetroCore> {
 ///
 /// The core is told the content root's own folders, never the dylib's: on the device the
 /// core lives in `System/` and the user's BIOS does not.
-pub fn open_core_for(root: &Path, paths: &[PathBuf]) -> Box<dyn RetroCore> {
+///
+/// `core` is redundant with `paths` in production — `open_core` derived both from the same
+/// `Core` — but this function stays the seam that takes `paths` explicitly, because tests
+/// plant a dylib somewhere `candidates` would not otherwise look. `apply_core_options` needs
+/// `core` too, and only `open_core_for` ever holds a concrete `slot_retro::LibretroCore` to
+/// call it on: everything above here deals in `Box<dyn RetroCore>`, which has no `set_option`.
+/// That is also why the call sits here rather than at a caller — after `open_with` succeeds,
+/// before the `Box<dyn RetroCore>` is handed back and `load` becomes reachable at all.
+pub fn open_core_for(root: &Path, core: Core, paths: &[PathBuf]) -> Box<dyn RetroCore> {
     let bios = root::bios_dir(root);
     let saves = root::saves_dir(root);
     for path in paths {
@@ -74,15 +82,29 @@ pub fn open_core_for(root: &Path, paths: &[PathBuf]) -> Box<dyn RetroCore> {
             continue;
         }
         match LibretroCore::open_with(path, &bios, &saves) {
-            Ok(core) => {
+            Ok(mut opened) => {
+                apply_core_options(&mut opened, core);
                 eprintln!("slot: core {}", path.display());
-                return Box::new(core);
+                return Box::new(opened);
             }
             Err(e) => eprintln!("slot: {}: {e}", path.display()),
         }
     }
     eprintln!("slot: no core vendored, running the mock");
     Box::new(MockCore::new())
+}
+
+/// Options a core needs before `load`, because libretro cores read them during
+/// `retro_load_game` rather than continuously.
+///
+/// `auto` resolves the serial protocol from the ROM, so two devices running the same game
+/// agree on a mode without either being told which. Anything more deliberate belongs to a
+/// link session, which knows what the other end picked. mGBA gets nothing: it has no
+/// `gpsp_serial` option, and handing it one anyway is a landmine the day it grows one.
+pub fn apply_core_options(core: &mut LibretroCore, which: Core) {
+    if which == Core::Gpsp {
+        core.set_option("gpsp_serial", "auto");
+    }
 }
 
 #[cfg(test)]

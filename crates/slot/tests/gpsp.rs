@@ -42,6 +42,43 @@ fn gpsp_loads_and_runs_a_frame() {
     assert_eq!(core.option("gpsp_serial"), Some("rfu".to_string()));
 }
 
+/// `auto` resolves the serial protocol from the ROM itself, so two devices running the same
+/// game agree on a mode without either being told which — the right default before there is
+/// any UI to pick one deliberately.
+#[test]
+fn gpsp_is_told_its_serial_mode_before_load() {
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
+    slot::core::apply_core_options(&mut core, Core::Gpsp);
+    assert_eq!(
+        core.option("gpsp_serial"),
+        Some("auto".to_string()),
+        "auto resolves per ROM, so both devices agree without being told"
+    );
+}
+
+/// mGBA has no `gpsp_serial` option at all; handing it one anyway would be silently ignored
+/// by mGBA today and a landmine the moment mGBA ever grows an option by that name.
+#[test]
+fn mgba_is_given_no_options() {
+    let path = dylib_for(Core::Mgba);
+    if !path.exists() {
+        eprintln!("no mGBA dylib on this host, skipping");
+        return;
+    }
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open mgba");
+    slot::core::apply_core_options(&mut core, Core::Mgba);
+    assert_eq!(
+        core.option("gpsp_serial"),
+        None,
+        "mGBA has no such option and must not be handed one"
+    );
+}
+
 /// The bug the previous plan shipped: `open_core` searched for `mgba_libretro` no matter
 /// what the cart asked for, while the resume lookup already read `core_for` from the ini.
 /// A `gpsp` cart could therefore run on mGBA with its state filed under `States/gpsp/` — two
