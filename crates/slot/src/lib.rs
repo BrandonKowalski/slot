@@ -7,6 +7,7 @@ pub mod emu;
 pub mod frames;
 pub mod frontend;
 pub mod input;
+pub mod link_net;
 pub mod persist;
 pub mod resample;
 pub mod rewind;
