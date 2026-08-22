@@ -232,15 +232,25 @@ impl Session {
     }
 
     /// The bar belongs to the hold, so it is pushed every frame it lasts and taken down the
-    /// moment L2 stops being a rewind, whether that was the button or the phase.
+    /// moment L2 stops being a rewind, whether that was the button, the phase, or a live link
+    /// session refusing it — a bar held up over a rewind that never actually happens would be
+    /// showing the player a lie about their own input.
     fn sync_rewind_hud(&mut self) {
-        let fill = (self.rewinding && self.playing())
+        let fill = self
+            .actually_rewinding()
             .then(|| self.emu.as_ref().map(EmuHandle::rewind_fill))
             .flatten();
         match fill {
             Some(fill) => self.app.show_rewind(fill),
             None => self.app.hide_rewind(),
         }
+    }
+
+    /// L2 held, over a game actually in charge of the device, with nothing forbidding it.
+    /// Shared between `sync_speed` (which acts on it) and `sync_rewind_hud` (which shows it),
+    /// so the two can never drift into disagreeing about whether a rewind is really underway.
+    fn actually_rewinding(&self) -> bool {
+        self.rewinding && self.playing() && self.app.may_rewind()
     }
 
     fn inserting(&self) -> bool {
@@ -304,8 +314,10 @@ impl Session {
                 },
             );
             // Held through an eject or into the switcher, L2 stops rewinding rather than
-            // eating the history of a cart that is on its way out.
-            emu.set_rewinding(self.rewinding && self.playing());
+            // eating the history of a cart that is on its way out — and refused outright
+            // during a live link session, since rewinding one device desynchronises the
+            // other with no way back to agreement.
+            emu.set_rewinding(self.actually_rewinding());
         }
     }
 

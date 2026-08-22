@@ -81,4 +81,14 @@ pub trait RetroCore: Send {
     fn net(&self) -> Link {
         Link::default()
     }
+    /// Begins a netpacket session on this core, if it carries one. `client_id` is libretro's
+    /// own: 0 the host, 1 the joiner — the only two this product has (RFU supports four; see
+    /// the plan for why this stays at two). A core with no serial traffic of its own — every
+    /// core but gpSP — has nothing to start, so the default does nothing.
+    fn start_link(&mut self, _client_id: u16) {}
+    /// Once per frame: hand the core anything the transport put in its inbound queue since
+    /// the last call, then let the core do its own polling. A core that never registered
+    /// netpacket has nothing to drain, so the default is a no-op — only `LibretroCore` (gpSP)
+    /// ever overrides this.
+    fn pump_link(&mut self) {}
 }

@@ -119,6 +119,14 @@ pub enum PendingUndo {
     },
 }
 
+/// One side of a live netpacket session. Nothing about the transport or the packets lives
+/// here — only what a session being live at all means for the rest of `App`, and which of
+/// libretro's two client ids this device is, for whatever the UI ends up showing while one
+/// is open.
+struct LinkSession {
+    client_id: u16,
+}
+
 #[derive(Debug)]
 pub enum Phase {
     /// Slot's own first launch, ahead of the shelf and ahead of a seated cart. Three things
@@ -207,6 +215,11 @@ pub struct App {
     /// exactly the way `snapshot` is — both are set together and neither is cleared on eject —
     /// which is safe because every reader of either is gated on a cart actually being seated.
     core: Core,
+    /// `Some` for as long as a netpacket session is live. `App` never touches the transport
+    /// or the core itself — those live on the emulator thread, wherever `EmuHandle::begin_link`
+    /// was called from the same gesture this answers — this is only what the interlocks below
+    /// need: that one is live at all, and which side of it this device is.
+    link: Option<LinkSession>,
     /// What the slot itself is about to sound like, drained by whoever owns the device. One
     /// slot: two of these in a frame is not a movement the cart can make.
     sfx: Option<Sfx>,
@@ -289,6 +302,7 @@ impl App {
             vol_before: Vec::new(),
             snapshot: None,
             core: Core::default(),
+            link: None,
             sfx: None,
             polaroids: None,
             pending: None,
@@ -474,6 +488,47 @@ impl App {
         self.core = core;
     }
 
+    /// Whether a netpacket session is live right now. libretro disables an entire class of
+    /// time manipulation for as long as one is — see `may_rewind`/`may_load_state` — because
+    /// rewinding or loading a state on one device desynchronises the other with no way back
+    /// to agreement.
+    pub fn link_active(&self) -> bool {
+        self.link.is_some()
+    }
+
+    /// Begins a session. `client_id` is libretro's own: 0 the host, 1 the joiner — the only
+    /// two this product has. Nothing here touches a transport or a core; that lives on the
+    /// emulator thread, wherever `EmuHandle::begin_link` is called from the same gesture this
+    /// answers. A session always starts from the cart's battery save, never a state — that
+    /// falls out for free here, since nothing on this path touches the state ring at all.
+    pub fn begin_link(&mut self, client_id: u16) {
+        self.link = Some(LinkSession { client_id });
+    }
+
+    /// Which side of the session this device is, for whatever the UI ends up showing while
+    /// one is live. `None` when there is nothing to ask about.
+    pub fn link_client_id(&self) -> Option<u16> {
+        self.link.as_ref().map(|s| s.client_id)
+    }
+
+    /// Rewinding one device desynchronises the other with no way back, which is exactly what
+    /// libretro's netpacket contract forbids for as long as a session is open.
+    pub fn may_rewind(&self) -> bool {
+        !self.link_active()
+    }
+
+    /// Loading a state is the same hazard rewinding is: it moves this device's machine to a
+    /// moment the peer never agreed to and has no way to follow.
+    pub fn may_load_state(&self) -> bool {
+        !self.link_active()
+    }
+
+    /// Ends the session and leaves the cart playing single player. Never an error: the peer
+    /// vanishing and the user ending it deliberately look the same from here.
+    pub fn end_link(&mut self) {
+        self.link = None;
+    }
+
     /// The app has no device, so the sound it wants is left here for whoever does.
     pub fn take_sfx(&mut self) -> Option<Sfx> {
         self.sfx.take()
@@ -596,7 +651,16 @@ impl App {
         match action {
             Action::LidClose => return self.doze(),
             Action::LidOpen => return self.wake(),
-            Action::PowerPress => return self.flush_resume(),
+            Action::PowerPress => {
+                // A live session ends here rather than flushing: this is the one button a
+                // trade partner mid-exchange can still reach, and ending the session is a
+                // decision, not "nothing to flush" — the two must not be the same press.
+                if self.link_active() {
+                    self.end_link();
+                    return;
+                }
+                return self.flush_resume();
+            }
             Action::PowerTap => return self.power_press(),
             Action::PowerHold => return self.open_power_menu(),
             // The release no longer means anything once the menu is what a hold raises:
@@ -653,6 +717,10 @@ impl App {
                 Action::Polaroids => self.open_polaroids(),
                 Action::SaveState => self.save_state(),
                 Action::LoadState => self.load_newest(),
+                // Rewinding interrupts communication libretro's contract says must not be
+                // interrupted. Declined the same way every other "nothing doing" action in
+                // this file is, so the press reads as answered rather than dropped.
+                Action::RewindStart if !self.may_rewind() => self.refuse(),
                 _ => {}
             },
             Phase::Polaroids { .. } => match action {
@@ -1563,6 +1631,12 @@ impl App {
     }
 
     fn doze_expired(&self) -> bool {
+        // Suspended for as long as a session is live: a trade partner reading a menu on the
+        // other device must not have the link dropped out from under them by this one's own
+        // idle timer.
+        if self.link_active() {
+            return false;
+        }
         let (Phase::Doze { .. }, Some(power)) = (&self.phase, &self.power) else {
             return false;
         };
@@ -1687,6 +1761,12 @@ impl App {
     }
 
     fn load_newest(&mut self) {
+        // A state load would desynchronise the other device with no way back to agreement,
+        // ahead of even checking whether there is a state to load: a session that started
+        // from the cart's battery save has nothing this ring should ever hand back to it.
+        if !self.may_load_state() {
+            return self.refuse();
+        }
         let Some(newest) = self.entries().first().map(|e| e.state.clone()) else {
             return self.refuse();
         };

@@ -1,7 +1,13 @@
+mod common;
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
 
+use common::{app_playing_in, tmp_root_with_carts};
+use slot::app::Phase;
 use slot::link_net::TcpLink;
+use slot_input::Action;
 use slot_retro::{LinkChannel, NETPACKET_RELIABLE};
 
 /// Both ends on loopback: no radio, no peer device, no BaseOS. This proves the framing and
@@ -143,4 +149,136 @@ fn wait_for(link: &mut TcpLink) -> Option<Vec<u8>> {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     None
+}
+
+// --- the interlocks -----------------------------------------------------------------------
+//
+// libretro.h: "When two or more players are connected and this interface has been set, time
+// manipulation features (such as pausing, slow motion, fast forward, rewinding, save state
+// loading, etc.) are disabled to avoid interrupting communication." These tests drive `App`
+// with no core, no device and no transport — `begin_link`/`end_link` are pure state, exactly
+// like every other phase transition in this file — so they exercise the interlocks directly
+// rather than through a live session nobody here can open a real one for.
+
+#[test]
+fn a_live_session_disables_rewind_and_state_loading() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    assert!(
+        a.may_rewind() && a.may_load_state(),
+        "not what a fresh app should refuse"
+    );
+
+    a.begin_link(0);
+    assert!(a.link_active());
+    assert!(!a.may_rewind(), "rewind interrupts communication");
+    assert!(
+        !a.may_load_state(),
+        "a state load desynchronises the other device"
+    );
+}
+
+/// The button still means something during a session — it just means "declined" rather than
+/// "start rewinding" — so it shakes the screen instead of doing nothing. Silence reads as a
+/// press that never landed.
+#[test]
+fn a_live_session_refuses_a_rewind_press_instead_of_dropping_it() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+
+    a.apply(Action::RewindStart);
+    assert!(
+        a.refusal_active(a.now()),
+        "a refused rewind must shake, not vanish silently"
+    );
+}
+
+/// Refused ahead of even checking whether there is a state to load, so a session with real
+/// saves sitting in the ring still declines — proving the session is what refused it, not an
+/// incidentally empty ring (`loading_with_no_states_shakes_as_well` in refusal.rs already
+/// covers that ordinary case).
+#[test]
+fn a_live_session_refuses_a_state_load_even_when_one_exists() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::SaveState);
+    a.begin_link(0);
+
+    a.apply(Action::LoadState);
+    assert!(
+        a.refusal_active(a.now()),
+        "a refused load must shake, not vanish silently"
+    );
+}
+
+/// One button, one meaning at a time. Ending a live session is what this press is for, and
+/// it must not also flush-and-continue as though nothing were open.
+#[test]
+fn a_power_press_ends_a_live_session_instead_of_flushing_only() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+    assert!(a.link_active());
+
+    a.apply(Action::PowerPress);
+    assert!(!a.link_active(), "a power press must end a live session");
+    assert!(
+        matches!(a.phase(), Phase::Playing { .. }),
+        "ending the session is not an eject or a doze"
+    );
+
+    // Nothing left to end: a second press is not an error, and behaves exactly as it does
+    // today outside a session (a flush, nothing else — there is no session left to end).
+    a.apply(Action::PowerPress);
+    assert!(!a.link_active());
+}
+
+/// The production path, and the only one: `App::update` drives `timers`, which reads
+/// `doze_expired` itself rather than being told the timeout fired — `on_doze_timeout` (also
+/// callable directly, which is what `power.rs`'s own timeout tests use as a stand-in for the
+/// wait) carries no guard of its own, so this is what actually protects a live session. A
+/// trade partner reading a menu on the other device must not have the link dropped because
+/// this one sat idle behind a closed lid.
+#[test]
+fn doze_never_expires_while_a_session_is_live() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.set_power(common::panel(d.path(), Duration::from_secs(2)).0);
+    a.apply(Action::LidClose);
+    a.begin_link(0);
+
+    // Three seconds of updates against a two second timeout: comfortably past it, the same
+    // margin `power.rs`'s own timeout tests use.
+    for _ in 0..180 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(
+        !a.powering_off(),
+        "a link session was dropped by the doze timer"
+    );
+    assert!(matches!(a.phase(), Phase::Doze { .. }));
+}
+
+#[test]
+fn ending_a_session_restores_normal_behaviour() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+
+    a.end_link();
+    assert!(!a.link_active());
+    assert!(a.may_rewind());
+    assert!(a.may_load_state());
+    assert_eq!(a.link_client_id(), None);
+}
+
+#[test]
+fn link_client_id_reports_which_side_of_the_session_this_device_is() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    assert_eq!(a.link_client_id(), None, "nothing to ask about yet");
+
+    a.begin_link(1);
+    assert_eq!(a.link_client_id(), Some(1));
 }

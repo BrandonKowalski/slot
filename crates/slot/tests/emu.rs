@@ -1,10 +1,11 @@
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
 use slot::emu::{CoreState, EmuHandle, Speed, FAST_STEPS};
 use slot::persist::Snapshot;
-use slot_retro::MockCore;
+use slot_retro::{LinkChannel, MockCore, NETPACKET_RELIABLE};
 
 fn spawn() -> EmuHandle {
     spawn_with(None)
@@ -273,5 +274,102 @@ fn fast_forward_still_records_rewind_history() {
         rewound > before_ff,
         "a short rewind fell back past where the fast forward began, so nothing was \
          recorded while it ran: {before_ff} -> {after_ff} -> {rewound}"
+    );
+}
+
+// --- the link pump --------------------------------------------------------------------
+//
+// `MockCore` never registers netpacket (it does not exercise the FFI, `slot-retro`'s own
+// tests already cover that seam exhaustively), so `RetroCore::pump_link`'s default is a
+// no-op here — meaning any packet the worker moves in either direction has to be the
+// worker's own loop doing it, not the core. That is exactly the wiring this task adds: the
+// worker draining a transport into `push_inbound`, and draining `take_outbound` back onto
+// it, every present, regardless of what the core does with either queue.
+
+/// Two `LinkChannel`s wired to each other over a channel pair, standing in for a peer:
+/// whatever one side sends, the other's `try_recv` eventually returns. `LoopbackLink` cannot
+/// do this — it echoes a send back to the same handle — and a real socket is more than this
+/// test needs to prove the worker's own loop moves bytes in both directions.
+struct PairedLink {
+    tx: mpsc::Sender<Vec<u8>>,
+    rx: mpsc::Receiver<Vec<u8>>,
+}
+
+fn paired_links() -> (PairedLink, PairedLink) {
+    let (tx_a, rx_b) = mpsc::channel();
+    let (tx_b, rx_a) = mpsc::channel();
+    (
+        PairedLink { tx: tx_a, rx: rx_a },
+        PairedLink { tx: tx_b, rx: rx_b },
+    )
+}
+
+impl LinkChannel for PairedLink {
+    fn send(&mut self, _flags: i32, buf: &[u8]) {
+        let _ = self.tx.send(buf.to_vec());
+    }
+
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        self.rx.try_recv().ok()
+    }
+}
+
+fn wait_for_packet(mut poll: impl FnMut() -> Option<Vec<u8>>) -> Option<Vec<u8>> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(p) = poll() {
+            return Some(p);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Inbound: whatever the transport hands back reaches the core's `Link` — `push_inbound` —
+/// every present, with no session-specific behaviour from `MockCore` involved at all.
+#[test]
+fn a_transport_packet_reaches_the_cores_inbound_queue() {
+    let emu = spawn();
+    let (mut here, there) = paired_links();
+    emu.begin_link(0, Box::new(there));
+    assert!(
+        wait_for(|| emu.net().is_active()),
+        "begin_link must mark the session active"
+    );
+
+    here.send(NETPACKET_RELIABLE, b"from the peer");
+    let got = wait_for_packet(|| emu.net().take_inbound());
+    assert_eq!(got.as_deref(), Some(&b"from the peer"[..]));
+}
+
+/// Outbound: whatever lands in `Link`'s outbound queue — here pushed directly, standing in
+/// for what the trampoline would do for a real netpacket core — reaches the transport.
+#[test]
+fn the_cores_outbound_queue_reaches_the_transport() {
+    let emu = spawn();
+    let (mut here, there) = paired_links();
+    emu.begin_link(1, Box::new(there));
+
+    emu.net().push_outbound(b"from the core".to_vec());
+    let got = wait_for_packet(|| here.try_recv());
+    assert_eq!(got.as_deref(), Some(&b"from the core"[..]));
+}
+
+/// `end_link` drops the transport (which is what actually closes a real wire — see
+/// `TcpLink`'s `Drop`) and marks the session no longer active, so nothing pumped after it
+/// still reaches a peer that has moved on.
+#[test]
+fn end_link_marks_the_session_inactive() {
+    let emu = spawn();
+    let (_here, there) = paired_links();
+    emu.begin_link(0, Box::new(there));
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    assert!(
+        wait_for(|| !emu.net().is_active()),
+        "end_link must mark the session no longer active"
     );
 }

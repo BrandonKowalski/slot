@@ -162,6 +162,47 @@ fn the_rewind_bar_is_up_while_l2_is_held_and_gone_once_it_is_let_go() {
     assert!(drawn(&s).is_empty(), "the bar outlived the hold");
 }
 
+/// libretro.h: rewinding is one of the time manipulation features a netpacket session
+/// forbids, because it desynchronises the other device with no way back to agreement. Proven
+/// here through `sync_speed`/`sync_rewind_hud`'s shared `actually_rewinding` — the same gate
+/// `emu.set_rewinding` acts on — rather than only through the `App`-level predicate, so a
+/// regression that forgot to wire the engine itself (and only left `App::may_rewind` correct)
+/// would still fail this.
+#[test]
+fn a_live_link_session_refuses_to_actually_rewind() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    s.app_mut().begin_link(0);
+
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::L2)));
+    for _ in 0..200 {
+        step(&mut s, &mut now, None);
+    }
+    assert!(
+        drawn(&s).is_empty(),
+        "the bar showed for a rewind a live session must refuse"
+    );
+    step(&mut s, &mut now, Some(RawEvent::Up(Btn::L2)));
+}
+
 fn step(s: &mut Session, now: &mut Millis, ev: Option<RawEvent>) {
     *now += 16;
     s.feed(ev, *now);

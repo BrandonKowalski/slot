@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use slot_retro::{ButtonMask, RetroCore, Rumble, GBA_H, GBA_W};
+use slot_retro::{
+    ButtonMask, Link, LinkChannel, RetroCore, Rumble, GBA_H, GBA_W, NETPACKET_RELIABLE,
+};
 
 use crate::audio::Ring;
 use crate::drc::{drc_ratio, drc_target};
@@ -73,6 +75,10 @@ pub struct EmuHandle {
     cmds: Sender<Cmd>,
     join: Option<JoinHandle<()>>,
     rumble: Rumble,
+    /// The core's end of its own serial traffic, cloned off the core exactly once — see
+    /// `spawn` for why calling `RetroCore::net` a second time would not do, for a core (the
+    /// mock) whose default hands back a fresh, unrelated queue every time it is asked.
+    link: Link,
 }
 
 enum Cmd {
@@ -80,6 +86,12 @@ enum Cmd {
     Save(Sender<Vec<u8>>),
     Sav(Sender<Option<Vec<u8>>>),
     Thumb(Sender<Option<Vec<u8>>>),
+    /// Wires a transport to the core's serial traffic. `client_id` is libretro's own: 0 the
+    /// host, 1 the joiner.
+    BeginLink(u16, Box<dyn LinkChannel>),
+    /// Drops the transport — which is what actually closes the wire, see `TcpLink`'s `Drop`
+    /// — and marks the session no longer active.
+    EndLink,
 }
 
 struct Shared {
@@ -124,8 +136,12 @@ impl EmuHandle {
         resume: Option<Vec<u8>>,
     ) -> Self {
         // Taken before the core goes to its thread, which is the last moment this side can
-        // reach it.
+        // reach it. `net()` exactly once, for the same reason `rumble()` is: `RetroCore`'s
+        // default hands back a fresh, disconnected queue on every call (there is nothing to
+        // persist for a core with no serial traffic of its own), so calling it again inside
+        // the worker to get "the same" link would not be the same link at all for the mock.
         let rumble = core.rumble();
+        let link = core.net();
         let frames = Frames::new((GBA_W * GBA_H * 4) as usize);
         let shared = Arc::new(Shared {
             input: AtomicU16::new(0),
@@ -151,9 +167,12 @@ impl EmuHandle {
             shared: shared.clone(),
             cmds: rx,
         };
+        // A clone rather than the value itself: the worker needs its own handle to pump every
+        // frame, and this side keeps one so `EmuHandle::net` can hand it out too.
+        let worker_link = link.clone();
         let join = std::thread::Builder::new()
             .name("slot-emu".into())
-            .spawn(move || worker.run(core, rom, ring, sav, resume))
+            .spawn(move || worker.run(core, rom, ring, sav, resume, worker_link))
             .ok();
         if join.is_none() {
             shared
@@ -166,6 +185,7 @@ impl EmuHandle {
             cmds: tx,
             join,
             rumble,
+            link,
         }
     }
 
@@ -173,6 +193,27 @@ impl EmuHandle {
     /// render one. Keeping the device write on this side is the whole reason it is a cell.
     pub fn rumble(&self) -> &Rumble {
         &self.rumble
+    }
+
+    /// The core's end of its own serial traffic, the same shape `rumble` above is. Exists for
+    /// whoever ends up showing a link indicator, and is what a test pushes a packet onto or
+    /// reads one off to prove the worker's own pump moved it — see `crates/slot/tests/emu.rs`.
+    pub fn net(&self) -> &Link {
+        &self.link
+    }
+
+    /// Wires a transport into the core's serial traffic, on the emulator thread — the only
+    /// place a call into a libretro core is ever allowed to happen. `client_id` is libretro's
+    /// own: 0 the host, 1 the joiner, the only two this product has.
+    pub fn begin_link(&self, client_id: u16, transport: Box<dyn LinkChannel>) {
+        let _ = self.cmds.send(Cmd::BeginLink(client_id, transport));
+    }
+
+    /// Drops the transport and marks the session no longer active. Safe to call whether or
+    /// not one was ever begun — the peer vanishing and this end asking to stop are the same
+    /// request as far as the worker is concerned.
+    pub fn end_link(&self) {
+        let _ = self.cmds.send(Cmd::EndLink);
     }
 
     pub fn set_input(&self, mask: ButtonMask) {
@@ -327,6 +368,7 @@ impl Worker {
         ring: Arc<Ring>,
         sav: Option<Vec<u8>>,
         resume: Option<Vec<u8>>,
+        link: Link,
     ) {
         if let Err(e) = core.load(&rom) {
             eprintln!("slot: {e}");
@@ -388,6 +430,10 @@ impl Worker {
         let mut since_snapshot = 0;
         let mut deadline = Instant::now();
         let mut paced = 0u64;
+        // `None` until a session begins. Held here rather than on `Shared`: the transport is
+        // not `Sync`-shaped state a render-thread read would make sense of, only something
+        // this loop drains and feeds once a frame.
+        let mut transport: Option<Box<dyn LinkChannel>> = None;
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 match cmd {
@@ -408,6 +454,45 @@ impl Worker {
                     Cmd::Thumb(reply) => {
                         let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
                     }
+                    Cmd::BeginLink(client_id, t) => {
+                        core.start_link(client_id);
+                        // Set here as well as by `LibretroCore::start_link` itself: this is
+                        // the thing that actually knows a transport is wired and about to be
+                        // pumped, whatever the concrete core does or does not do with
+                        // `client_id` — the mock, in particular, has no session of its own to
+                        // start and would otherwise leave `is_active` false with real traffic
+                        // already flowing through it.
+                        link.set_active(true);
+                        transport = Some(t);
+                    }
+                    Cmd::EndLink => {
+                        // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
+                        // this is just letting go of it.
+                        transport = None;
+                        link.set_active(false);
+                    }
+                }
+            }
+
+            // Pumped every present regardless of speed or phase, not only while the core is
+            // stepping frames: a trade partner reading the local device's power menu, or
+            // sitting in the switcher, must not see the link go quiet just because this
+            // device paused its own picture. Neither direction may block the frame —
+            // `try_recv` already never does — so this is always safe to run.
+            if let Some(t) = transport.as_mut() {
+                while let Some(packet) = t.try_recv() {
+                    link.push_inbound(packet);
+                }
+            }
+            core.pump_link();
+            if let Some(t) = transport.as_mut() {
+                while let Some(packet) = link.take_outbound() {
+                    // The flag `netpacket_send` was called with never reaches this queue —
+                    // only the bytes do — so this asks every transport for reliable delivery.
+                    // Safe for `TcpLink`, which is reliable regardless of what is asked: TCP
+                    // cannot honour "unreliable" any other way, and `LinkChannel::send`'s own
+                    // contract is to fall back to reliable when a flag cannot be honoured.
+                    t.send(NETPACKET_RELIABLE, &packet);
                 }
             }
 

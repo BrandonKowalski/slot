@@ -104,12 +104,12 @@ pub type NetpacketDisconnected = unsafe extern "C" fn(client_id: u16);
 /// each is an `Option` and every call site has to check before dereferencing it.
 ///
 /// `start`, `stop`, `connected`, `disconnected` and `protocol_version` are read as a group —
-/// stored whole by the `SET_NETPACKET_INTERFACE` environment arm — but this task never calls
-/// through any of them individually: beginning and ending a session, and tracking peer
-/// connect/disconnect, belong to whichever later task actually drives one. Silencing that
-/// with a blanket allow on the struct would also hide a real future regression in `receive`
-/// or `poll`, the two fields this task does call through, so the allow stays narrow and sits
-/// on the fields it actually covers.
+/// stored whole by the `SET_NETPACKET_INTERFACE` environment arm. `start` is called through
+/// once a session actually begins (`RetroCore::start_link`, behind `begin_link`); `stop`,
+/// `connected` and `disconnected` still are not — ending a session drops the transport and
+/// marks the link inactive without calling the core's `stop`, and nothing here tracks peer
+/// connect/disconnect. Both are places to extend this if disconnect handling misbehaves once
+/// real packets flow (see the plan's RFU patches).
 #[repr(C)]
 pub struct NetpacketCallback {
     pub start: Option<NetpacketStart>,
