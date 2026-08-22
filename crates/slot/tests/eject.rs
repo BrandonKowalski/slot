@@ -40,7 +40,7 @@ fn eject_clears_the_slot_only_after_the_state_is_durable() {
         d.path(),
         Core::Mgba,
         "Emerald",
-        &[9u8; 1024],
+        Some(&[9u8; 1024]),
         Some(b"savdata"),
     )
     .unwrap();
@@ -64,7 +64,7 @@ fn a_resume_that_cannot_be_written_leaves_the_cart_in_the_slot() {
     let d = tmp_root_with_carts(&["Emerald"]);
     write_slot_state(d.path(), &seated("Emerald")).unwrap();
     std::fs::write(d.path().join("States/mgba"), b"in the way").unwrap();
-    assert!(eject(d.path(), Core::Mgba, "Emerald", &[9u8; 1024], None).is_err());
+    assert!(eject(d.path(), Core::Mgba, "Emerald", Some(&[9u8; 1024]), None).is_err());
     assert_eq!(read_slot_state(d.path()).cart, Some("Emerald".into()));
 }
 
@@ -76,13 +76,62 @@ fn an_unchanged_battery_save_is_not_rewritten() {
     std::fs::write(d.path().join("Saves/Emerald.sav"), b"savdata").unwrap();
     let saves = d.path().join("Saves");
     set_mode(&saves, 0o555);
-    let unchanged = eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], Some(b"savdata"));
-    let changed = eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], Some(b"changed"));
+    let unchanged = eject(
+        d.path(),
+        Core::Mgba,
+        "Emerald",
+        Some(&[0u8; 8]),
+        Some(b"savdata"),
+    );
+    let changed = eject(
+        d.path(),
+        Core::Mgba,
+        "Emerald",
+        Some(&[0u8; 8]),
+        Some(b"changed"),
+    );
     set_mode(&saves, 0o755);
     unchanged.expect("identical bytes must not touch the card");
     assert!(
         changed.is_err(),
         "the directory stayed writable, so the first half proved nothing"
+    );
+}
+
+/// I5: `load_save_ram` can accept bytes it should have refused — a libretro core copies
+/// `len.min(data.len())` into its save-ram region and returns `Ok` regardless of whether the
+/// two lengths actually matched. If a cart's two cores disagree on `RETRO_MEMORY_SAVE_RAM`'s
+/// size, switching cores would otherwise truncate the player's save on the very next write,
+/// silently: the core accepted what it was given, so nothing upstream of `write_sav` has any
+/// reason to doubt it. This is the backstop `write_sav` itself carries: a shorter save than
+/// what is already on the card is refused and logged rather than trusted.
+#[test]
+fn write_sav_refuses_to_shrink_an_existing_save() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let big = vec![0xEEu8; 4096];
+    let small = vec![0x11u8; 512];
+    slot::persist::write_sav(d.path(), "Emerald", &big).unwrap();
+
+    let wrote = slot::persist::write_sav(d.path(), "Emerald", &small)
+        .expect("a shrink is refused, not an error");
+    assert!(
+        !wrote,
+        "write_sav must report that it did not write a shrink"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
+        big,
+        "the larger, real save was overwritten by a shorter one"
+    );
+
+    // A growth, by contrast, is exactly what a legitimate re-save looks like and must go
+    // through — the guard is specifically for shrinking, not for change.
+    let bigger = vec![0x22u8; 8192];
+    let wrote = slot::persist::write_sav(d.path(), "Emerald", &bigger).unwrap();
+    assert!(wrote, "a longer save must not be refused");
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
+        bigger
     );
 }
 
@@ -103,7 +152,7 @@ fn eject_preserves_the_levels() {
         },
     )
     .unwrap();
-    eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], None).unwrap();
+    eject(d.path(), Core::Mgba, "Emerald", Some(&[0u8; 8]), None).unwrap();
     let s = read_slot_state(d.path());
     assert_eq!((s.brightness, s.blue_light, s.volume), (2, 7, 35));
     assert!(s.muted, "the cart came out and the sound came back");

@@ -117,7 +117,7 @@ fn a_hold_hands_the_core_no_state_and_a_tap_hands_it_the_resume() {
             d.path(),
             Core::Mgba,
             "Emerald",
-            &500_000u64.to_le_bytes(),
+            Some(&500_000u64.to_le_bytes()),
             None,
         )
         .unwrap();

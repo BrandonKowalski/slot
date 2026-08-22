@@ -1413,13 +1413,8 @@ impl App {
             eprintln!("slot: eject: the core gave up no state");
             return;
         };
-        match persist::eject(
-            root,
-            self.core,
-            stem,
-            &state,
-            snapshot.save_ram().as_deref(),
-        ) {
+        let (state, sav) = trusted_write(snapshot.as_ref(), state, "eject");
+        match persist::eject(root, self.core, stem, state.as_deref(), sav.as_deref()) {
             Ok(()) => self.state.cart = None,
             Err(e) => eprintln!("slot: eject: {e}"),
         }
@@ -1588,13 +1583,8 @@ impl App {
             eprintln!("slot: flush: the core gave up no state");
             return;
         };
-        if let Err(e) = persist::flush(
-            root,
-            self.core,
-            cart,
-            &state,
-            snapshot.save_ram().as_deref(),
-        ) {
+        let (state, sav) = trusted_write(snapshot.as_ref(), state, "flush");
+        if let Err(e) = persist::flush(root, self.core, cart, state.as_deref(), sav.as_deref()) {
             eprintln!("slot: flush: {e}");
         }
     }
@@ -1874,6 +1864,41 @@ impl App {
             p.set_title_face(Some(face));
         }
     }
+}
+
+/// The write-back half of the guard `EmuSnapshot` records. `state` is the bytes the live core
+/// actually holds; `snapshot.resume_trusted()`/`save_ram_trusted()` say whether the core that
+/// produced them actually accepted the resume/save-ram it was opened with. A region it
+/// refused is withheld here — turned into `None` rather than passed on to `persist::flush`/
+/// `eject` — because a core running with its own default state has nothing worth writing back
+/// over the file that refusal left alone. `verb` names the caller only for the log line
+/// ("flush" or "eject"), so a withheld region reads the same as everything else either one
+/// already prints.
+fn trusted_write(
+    snapshot: &dyn Snapshot,
+    state: Vec<u8>,
+    verb: &str,
+) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let state = if snapshot.resume_trusted() {
+        Some(state)
+    } else {
+        eprintln!(
+            "slot: {verb}: the core refused the resume it was given, not overwriting the saved one"
+        );
+        None
+    };
+    let sav = snapshot.save_ram();
+    let sav = if snapshot.save_ram_trusted() {
+        sav
+    } else {
+        if sav.is_some() {
+            eprintln!(
+                "slot: {verb}: the core refused the save ram it was given, not overwriting the saved one"
+            );
+        }
+        None
+    };
+    (state, sav)
 }
 
 fn up(level: u8, step: u8, max: u8) -> u8 {

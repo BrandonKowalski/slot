@@ -11,6 +11,23 @@ pub trait Snapshot {
     /// the frame already is, so a save does not cost the compositor a hitch.
     fn thumb(&self) -> Option<Vec<u8>>;
     fn load(&self, state: Vec<u8>);
+
+    /// Whether `state()` came from a core that actually accepted the resume it was opened
+    /// with. Defaults to `true`, which is right for anything that was never handed a resume
+    /// to refuse — a stub in a test, or a cart with none on disk yet. The one implementor
+    /// that can ever answer `false` is a live core, and only once `unserialize` has failed on
+    /// it: see `EmuSnapshot::resume_trusted`, which is where a real refusal is recorded. A
+    /// flush path that writes `state()` back without checking this can turn a core's own
+    /// default machine into the player's save.
+    fn resume_trusted(&self) -> bool {
+        true
+    }
+
+    /// The `save_ram()` twin of `resume_trusted`, and independent of it: a core can accept
+    /// one and refuse the other.
+    fn save_ram_trusted(&self) -> bool {
+        true
+    }
 }
 
 /// What lid close, the power press edge and the autosave all write. The slot is untouched:
@@ -22,14 +39,21 @@ pub trait Snapshot {
 /// `selected_core.ini` for the same cart. `App` is that caller — it resolves `core` once, at
 /// insert, stores it, and hands the stored value here on every later write, which is what
 /// keeps this from ever disagreeing with the dylib actually running.
+///
+/// `state` is `Option` for the same reason `sav` already was: the caller — `App::flush_resume`
+/// and `App::flush_eject` — passes `None` for whichever region the live core refused at open,
+/// via `Snapshot::resume_trusted`/`save_ram_trusted`. This function trusts whatever it is
+/// handed; it is the one place that decides what gets skipped.
 pub fn flush(
     root: &Path,
     core: Core,
     stem: &str,
-    state: &[u8],
+    state: Option<&[u8]>,
     sav: Option<&[u8]>,
 ) -> std::io::Result<()> {
-    StateRing::new(root, core, stem).write_resume(state)?;
+    if let Some(state) = state {
+        StateRing::new(root, core, stem).write_resume(state)?;
+    }
     if let Some(sav) = sav {
         write_sav(root, stem, sav)?;
     }
@@ -38,11 +62,15 @@ pub fn flush(
 
 /// Both durable writes land before the slot is recorded empty, so a cut anywhere in here
 /// leaves a cart that still resumes rather than a session with nowhere to go back to.
+///
+/// Clearing the slot still happens even when `state`/`sav` withheld a refused region: the
+/// files that refusal left alone are exactly as durable as they were before this cart was
+/// seated, so there is nothing an eject would be waiting on.
 pub fn eject(
     root: &Path,
     core: Core,
     stem: &str,
-    state: &[u8],
+    state: Option<&[u8]>,
     sav: Option<&[u8]>,
 ) -> std::io::Result<()> {
     flush(root, core, stem, state, sav)?;
@@ -53,10 +81,30 @@ pub fn eject(
 
 /// The core hands back the whole save ram whether or not the game touched it, so an
 /// unchanged one is a rewrite of up to 128 KB of card for nothing.
+///
+/// Also refuses to shrink an existing file. `load_save_ram` can accept bytes it should have
+/// refused: a libretro core that exposes a save-ram region copies `len.min(data.len())` bytes
+/// into it and returns `Ok` regardless, so a cart whose two cores disagree on
+/// `RETRO_MEMORY_SAVE_RAM`'s size truncates silently rather than failing loudly — the class of
+/// bug `resume_trusted`/`save_ram_trusted` cannot see, because as far as the core is concerned
+/// it accepted what it was given. This is the backstop for that: whatever produced a shorter
+/// save than what is already on the card, refuse it and say so, rather than trust that a
+/// smaller battery save is ever a real one.
 pub fn write_sav(root: &Path, stem: &str, sav: &[u8]) -> std::io::Result<bool> {
     let path = sav_path(root, stem);
-    if std::fs::read(&path).is_ok_and(|old| old == sav) {
-        return Ok(false);
+    if let Ok(old) = std::fs::read(&path) {
+        if old == sav {
+            return Ok(false);
+        }
+        if sav.len() < old.len() {
+            eprintln!(
+                "slot: save ram: refusing to shrink {} from {} to {} bytes",
+                path.display(),
+                old.len(),
+                sav.len()
+            );
+            return Ok(false);
+        }
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;

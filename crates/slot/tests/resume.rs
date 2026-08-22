@@ -41,7 +41,7 @@ fn read_resume_finds_what_a_flush_wrote() {
         d.path(),
         slot_store::Core::Mgba,
         "Emerald",
-        &[7u8; 64],
+        Some(&[7u8; 64]),
         None,
     )
     .unwrap();
@@ -65,7 +65,7 @@ fn flush_routes_by_the_core_it_is_given() {
         d.path(),
         slot_store::Core::Gpsp,
         "Emerald",
-        &[7u8; 64],
+        Some(&[7u8; 64]),
         None,
     )
     .unwrap();
@@ -115,5 +115,131 @@ fn a_sav_wins_over_an_srm_when_both_exist() {
     assert_eq!(
         persist::read_sav(d.path(), "Emerald").as_deref(),
         Some(&b"sav bytes"[..])
+    );
+}
+
+/// C1: with a cart set to a core with no dylib present, `open_core_for` falls back to the
+/// mock. `MockCore::load` fixes its own save ram at 8 KB and its own resume at 8 bytes, so a
+/// real 128 KB battery save and a real 256 KB resume are both refused at open — see
+/// `Worker::run` (emu.rs). Before this test's fix, the very next flush wrote the mock's own
+/// 8 KB of zeros and 8 byte counter over both real files, permanently, and
+/// `Action::PowerPress` — which flushes immediately (app.rs) — could trigger it on the very
+/// press a player made to escape the mock's test pattern. This pins that `EmuSnapshot` records
+/// the refusal at the source.
+#[test]
+fn a_mismatched_save_ram_and_resume_are_flagged_untrusted_rather_than_silently_swapped_in() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let real_sav = vec![0x5Au8; 131_072];
+    let real_resume = vec![0xA5u8; 262_144];
+
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        d.path().join("Games/Emerald.gba"),
+        StubSink::new().ring(),
+        Some(real_sav),
+        Some(real_resume),
+    );
+    wait_ready(&emu);
+    let snapshot = emu.snapshot();
+    assert!(
+        !snapshot.resume_trusted(),
+        "a mismatched resume must not read back as trusted"
+    );
+    assert!(
+        !snapshot.save_ram_trusted(),
+        "a mismatched save ram must not read back as trusted"
+    );
+}
+
+/// The end-to-end half of the test above: not just that the refusal is recorded, but that the
+/// flush path it exists for actually leaves the real files on disk untouched. Reproduces the
+/// bug through the exact trigger the branch review called out — a power tap, which
+/// `Action::PowerPress` flushes immediately.
+#[test]
+fn a_power_press_does_not_let_a_refusing_mock_overwrite_a_real_save() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let real_sav = vec![0x5Au8; 131_072];
+    let real_resume = vec![0xA5u8; 262_144];
+    std::fs::write(d.path().join("Saves/Emerald.sav"), &real_sav).unwrap();
+    persist::flush(
+        d.path(),
+        slot_store::Core::Mgba,
+        "Emerald",
+        Some(&real_resume),
+        None,
+    )
+    .unwrap();
+
+    // Read back exactly the way `session.rs::spawn_core` would, and hand it to a core that
+    // will refuse both: the mock, standing in for "no dylib present" or "SLOT_CORE points at
+    // the wrong game" — `open_core_for` cannot tell those apart from a core that opened fine,
+    // and this is deliberately exercising the downstream guard rather than that fallback.
+    let sav = persist::read_sav(d.path(), "Emerald");
+    let resume = persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald");
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        d.path().join("Games/Emerald.gba"),
+        StubSink::new().ring(),
+        sav,
+        resume,
+    );
+    wait_ready(&emu);
+
+    let mut a = common::app_playing_with(d.path(), "Emerald", Box::new(emu.snapshot()));
+    a.apply(slot_input::Action::PowerPress);
+
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
+        real_sav,
+        "the mock's own save ram overwrote the real one"
+    );
+    assert_eq!(
+        persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald").unwrap(),
+        real_resume,
+        "the mock's own resume overwrote the real one"
+    );
+}
+
+/// The eject path's twin of the test above: `flush_eject` (app.rs) is a second, independent
+/// call into `persist`, and the branch review named it explicitly alongside the autosave/
+/// power-press flush as a place the same loss could land.
+#[test]
+fn an_eject_does_not_let_a_refusing_mock_overwrite_a_real_save() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let real_sav = vec![0x5Au8; 131_072];
+    let real_resume = vec![0xA5u8; 262_144];
+    std::fs::write(d.path().join("Saves/Emerald.sav"), &real_sav).unwrap();
+    persist::flush(
+        d.path(),
+        slot_store::Core::Mgba,
+        "Emerald",
+        Some(&real_resume),
+        None,
+    )
+    .unwrap();
+
+    let sav = persist::read_sav(d.path(), "Emerald");
+    let resume = persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald");
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        d.path().join("Games/Emerald.gba"),
+        StubSink::new().ring(),
+        sav,
+        resume,
+    );
+    wait_ready(&emu);
+
+    let mut a = common::app_playing_with(d.path(), "Emerald", Box::new(emu.snapshot()));
+    a.apply(slot_input::Action::Eject);
+
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
+        real_sav,
+        "the mock's own save ram overwrote the real one on eject"
+    );
+    assert_eq!(
+        persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald").unwrap(),
+        real_resume,
+        "the mock's own resume overwrote the real one on eject"
     );
 }

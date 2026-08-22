@@ -99,6 +99,18 @@ struct Shared {
     /// Frames this core has published. Counted rather than peeked because `Frames::latest`
     /// consumes: anything that asks the buffer a question steals a frame from the renderer.
     published: AtomicU64,
+    /// Set once, at open, if the core refused the resume state it was handed. A core running
+    /// with an `unserialize` it rejected is not resuming the player's session — it is
+    /// wherever `load` left it, most often frame zero — so its own `serialize()` is not the
+    /// player's progress and must not be allowed to overwrite the resume file that state was
+    /// refused instead of replacing. See `EmuSnapshot::resume_trusted`.
+    resume_refused: AtomicBool,
+    /// The save-ram twin of `resume_refused`, and deliberately a separate flag rather than
+    /// one shared bit: a core can accept one and refuse the other (save ram is a fixed-size
+    /// cartridge byte count that can coincidentally match across two unrelated cores; a
+    /// serialized machine state almost never does), so only the region actually refused may
+    /// be withheld. See `EmuSnapshot::save_ram_trusted`.
+    sav_refused: AtomicBool,
 }
 
 impl EmuHandle {
@@ -130,6 +142,8 @@ impl EmuHandle {
             stop: AtomicBool::new(false),
             volume: AtomicU8::new(100),
             published: AtomicU64::new(0),
+            resume_refused: AtomicBool::new(false),
+            sav_refused: AtomicBool::new(false),
         });
         let (tx, rx) = channel();
         let worker = Worker {
@@ -238,15 +252,19 @@ impl EmuHandle {
     pub fn snapshot(&self) -> EmuSnapshot {
         EmuSnapshot {
             cmds: self.cmds.clone(),
+            shared: self.shared.clone(),
         }
     }
 }
 
 /// The flush paths need the core's bytes, not its thread or its frames. Cloning the
-/// command sender is the whole of that.
+/// command sender is most of that; `shared` rides along too, because the two flags on it are
+/// how a flush path learns a region it is about to ask for was never the player's to begin
+/// with — see `resume_trusted`/`save_ram_trusted` below.
 #[derive(Clone)]
 pub struct EmuSnapshot {
     cmds: Sender<Cmd>,
+    shared: Arc<Shared>,
 }
 
 impl Snapshot for EmuSnapshot {
@@ -270,6 +288,19 @@ impl Snapshot for EmuSnapshot {
 
     fn load(&self, state: Vec<u8>) {
         let _ = self.cmds.send(Cmd::Load(state));
+    }
+
+    /// `false` exactly when `Worker::run` handed this core a resume it went on to refuse.
+    /// `state()` above still answers with whatever the core serializes regardless — a running
+    /// core always has *some* state — so a flush path must check this before it is allowed to
+    /// treat those bytes as the player's session and write them over the resume file.
+    fn resume_trusted(&self) -> bool {
+        !self.shared.resume_refused.load(Ordering::Acquire)
+    }
+
+    /// The save-ram twin of `resume_trusted`.
+    fn save_ram_trusted(&self) -> bool {
+        !self.shared.sav_refused.load(Ordering::Acquire)
     }
 }
 
@@ -309,6 +340,12 @@ impl Worker {
         if let Some(sav) = sav {
             if let Err(e) = core.load_save_ram(&sav) {
                 eprintln!("slot: save ram: {e}");
+                // The core is about to run with its own idea of save ram rather than the
+                // player's — most often a mock's or a mismatched core's own default — so
+                // `save_ram()` from here on must never be allowed to overwrite the real file
+                // that refusal left untouched. `EmuSnapshot::save_ram_trusted` is what a
+                // flush path checks before it will.
+                self.shared.sav_refused.store(true, Ordering::Release);
             }
         }
         // Before Ready, so the reveal shows where the cart left off rather than a frame of
@@ -317,6 +354,11 @@ impl Worker {
         if let Some(resume) = resume {
             if let Err(e) = core.unserialize(&resume) {
                 eprintln!("slot: resume: {e}");
+                // Same reasoning as `sav_refused` above, for the resume half: a core running
+                // from wherever `load` left it is not resuming anything, and its `serialize()`
+                // must not be allowed to overwrite the resume file that was refused instead of
+                // replacing.
+                self.shared.resume_refused.store(true, Ordering::Release);
             }
         }
         let av = core.av_info();
