@@ -1,7 +1,14 @@
 use slot_retro::MgbaCore;
+use std::sync::{Mutex, MutexGuard};
 
 /// A libretro core keeps its machine in dylib globals, so two live cores is not a thing.
 /// These tests share one, in one process, exactly as the other core tests here do.
+static CORE_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn dylib() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../vendor")
@@ -14,6 +21,7 @@ fn dylib() -> std::path::PathBuf {
 
 #[test]
 fn an_unset_option_reads_back_as_absent() {
+    let _g = lock();
     let Ok(core) = MgbaCore::open(&dylib()) else {
         eprintln!("no core available on this host, skipping");
         return;
@@ -23,6 +31,7 @@ fn an_unset_option_reads_back_as_absent() {
 
 #[test]
 fn a_set_option_reads_back() {
+    let _g = lock();
     let Ok(mut core) = MgbaCore::open(&dylib()) else {
         eprintln!("no core available on this host, skipping");
         return;
