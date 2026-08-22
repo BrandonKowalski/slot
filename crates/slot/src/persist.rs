@@ -82,7 +82,7 @@ pub fn eject(
 /// The core hands back the whole save ram whether or not the game touched it, so an
 /// unchanged one is a rewrite of up to 128 KB of card for nothing.
 ///
-/// Also refuses to shrink an existing file. `load_save_ram` can accept bytes it should have
+/// Also refuses to shrink an existing save. `load_save_ram` can accept bytes it should have
 /// refused: a libretro core that exposes a save-ram region copies `len.min(data.len())` bytes
 /// into it and returns `Ok` regardless, so a cart whose two cores disagree on
 /// `RETRO_MEMORY_SAVE_RAM`'s size truncates silently rather than failing loudly — the class of
@@ -90,9 +90,16 @@ pub fn eject(
 /// it accepted what it was given. This is the backstop for that: whatever produced a shorter
 /// save than what is already on the card, refuse it and say so, rather than trust that a
 /// smaller battery save is ever a real one.
+///
+/// The comparison goes through `read_sav`, not a stat of `sav_path` alone: `read_sav` also
+/// accepts `Saves/<stem>.srm` (RetroArch's name for the same battery bytes, see its own doc
+/// comment below), and a card carrying only an `.srm` still has a real save on it. Stat-ing
+/// `.sav` directly would find nothing there, wave a smaller write through unguarded, and that
+/// new `.sav` would then shadow the larger `.srm` on every read after — this is the exact
+/// loss shape the guard above exists to stop, just reached from the one path it could not see.
 pub fn write_sav(root: &Path, stem: &str, sav: &[u8]) -> std::io::Result<bool> {
     let path = sav_path(root, stem);
-    if let Ok(old) = std::fs::read(&path) {
+    if let Some(old) = read_sav(root, stem) {
         if old == sav {
             return Ok(false);
         }

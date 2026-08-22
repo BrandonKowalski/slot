@@ -243,3 +243,62 @@ fn an_eject_does_not_let_a_refusing_mock_overwrite_a_real_save() {
         "the mock's own resume overwrote the real one on eject"
     );
 }
+
+/// The manual-save twin of the two tests above, and a different loss shape: `App::save_state`
+/// (`SELECT+R1`) is not a write-back over an existing file, so `trusted_write`'s withholding
+/// does not reach it. It is a push onto a ten-deep ring that evicts the oldest entry once full
+/// (`StateRing::evict`). A refusing mock's own placeholder state landing on a full ring does
+/// not just fail to help the player — `ring.push` deletes their oldest genuine save to make
+/// room for it. This pins that `save_state` consults `resume_trusted` before it ever reaches
+/// `ring.push`, the same way `flush`/`eject` consult it before they reach `persist::flush`.
+#[test]
+fn a_refusing_mock_does_not_evict_a_real_ring_entry_on_manual_save() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let real_sav = vec![0x5Au8; 131_072];
+    let real_resume = vec![0xA5u8; 262_144];
+
+    // A full ring of genuine saves, ten deep, oldest to newest.
+    let ring = slot_store::StateRing::new(d.path(), slot_store::Core::Mgba, "Emerald");
+    for i in 0..slot_store::RING_MAX {
+        let stamp = format!("2026-01-01_00-00-{i:02}");
+        ring.push(&vec![i as u8; 200_000], b"png", &stamp)
+            .expect("push");
+    }
+    let before = ring.list().expect("list");
+    assert_eq!(before.len(), slot_store::RING_MAX, "the ring did not fill");
+    let oldest = before.last().expect("an oldest entry").stamp.clone();
+    assert_eq!(oldest, "2026-01-01_00-00-00", "wrong entry called oldest");
+
+    // A mock standing in for "no dylib present", handed a real resume it does not match —
+    // exactly what `open_core_for`'s fallback and the documented SLOT_CORE trap both produce.
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        d.path().join("Games/Emerald.gba"),
+        StubSink::new().ring(),
+        Some(real_sav),
+        Some(real_resume),
+    );
+    wait_ready(&emu);
+    assert!(
+        !emu.snapshot().resume_trusted(),
+        "the mock must have refused the resume for this test to mean anything"
+    );
+
+    let mut a = common::app_playing_with(d.path(), "Emerald", Box::new(emu.snapshot()));
+    a.apply(slot_input::Action::SaveState);
+
+    let after = ring.list().expect("list");
+    assert_eq!(
+        after.len(),
+        slot_store::RING_MAX,
+        "the ring changed size: either nothing was declined or something else broke"
+    );
+    assert!(
+        after.iter().any(|e| e.stamp == oldest),
+        "the oldest genuine save was evicted to make room for the mock's placeholder"
+    );
+    assert!(
+        a.refusal_active(a.now()),
+        "nothing told the player the save was declined"
+    );
+}

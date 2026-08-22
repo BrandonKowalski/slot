@@ -135,6 +135,49 @@ fn write_sav_refuses_to_shrink_an_existing_save() {
     );
 }
 
+/// The `.srm`-only twin of the test above. `read_sav` accepts `Saves/<stem>.srm` as well as
+/// `.sav` — RetroArch's name for the same battery bytes — but the shrink guard used to stat
+/// `.sav` alone. A card carrying nothing but an `.srm` therefore had no guard at all: a core
+/// with a smaller save-ram region would write a small `.sav` straight past it, and that `.sav`
+/// then shadows the larger `.srm` on every read after (`.sav` wins when both exist), which
+/// makes the loss permanent on the very first write. `write_sav` now compares against whatever
+/// `read_sav` would actually return, `.srm` included.
+#[test]
+fn write_sav_refuses_to_shrink_an_existing_srm() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let big = vec![0xEEu8; 131_072];
+    std::fs::write(d.path().join("Saves/Emerald.srm"), &big).unwrap();
+
+    let small = vec![0x11u8; 8_192];
+    let wrote = slot::persist::write_sav(d.path(), "Emerald", &small)
+        .expect("a shrink is refused, not an error");
+    assert!(
+        !wrote,
+        "write_sav must report that it did not write a shrink against an srm baseline"
+    );
+    assert!(
+        !d.path().join("Saves/Emerald.sav").exists(),
+        "a refused shrink must not create a .sav that would shadow the larger .srm"
+    );
+    assert_eq!(
+        slot::persist::read_sav(d.path(), "Emerald").as_deref(),
+        Some(&big[..]),
+        "the real save carried on the srm must survive"
+    );
+
+    // The healthy path must still work against an srm baseline: a legitimate growth writes.
+    let bigger = vec![0x22u8; 200_000];
+    let wrote = slot::persist::write_sav(d.path(), "Emerald", &bigger).unwrap();
+    assert!(
+        wrote,
+        "a longer save must not be refused against an srm baseline"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav")).unwrap(),
+        bigger
+    );
+}
+
 /// `slot.state` is one file. Clearing the cart must not take the levels with it.
 #[test]
 fn eject_preserves_the_levels() {

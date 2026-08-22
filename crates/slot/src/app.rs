@@ -1715,10 +1715,25 @@ impl App {
 
     /// `SELECT+R1` and nothing else reaches here. A state with no picture is still worth
     /// keeping: the switcher draws a blank card rather than losing the save.
+    ///
+    /// Declines outright when the live core refused the resume it was opened with — the same
+    /// condition `trusted_write` withholds from `flush`/`eject` for. This is the one durable
+    /// sink that guard does not reach, because it is not a write-back over an existing file:
+    /// `ring.push` is a deliberate ring buffer, and once it holds `RING_MAX` entries, pushing
+    /// an eleventh evicts the oldest to make room. A core running on its own default machine
+    /// has nothing worth keeping in that slot, so pushing it would not just waste an entry —
+    /// it would delete a real one to make room for a placeholder. Refused the same way every
+    /// other "nothing to do here" action in this file is, via `refuse()`: the player gets the
+    /// same shake `load_newest`/`open_polaroids` already answer with, rather than a save that
+    /// silently did not happen.
     fn save_state(&mut self) {
         let (Some(ring), Some(snapshot)) = (self.ring(), &self.snapshot) else {
             return;
         };
+        if !snapshot.resume_trusted() {
+            eprintln!("slot: save: the core refused the resume it was given, not pushing a state");
+            return self.refuse();
+        }
         let Some(state) = snapshot.state() else {
             eprintln!("slot: save: the core gave up no state");
             return;
