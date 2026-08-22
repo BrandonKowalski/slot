@@ -13,6 +13,12 @@ pub enum Core {
 }
 
 impl Core {
+    /// Every variant, once. The single source of truth for "is this name a core directory" —
+    /// `migrate_states` walks this rather than spelling the variant list out a second time,
+    /// so a third core added here does not also have to be remembered at every call site
+    /// that needs to tell a core's own directory apart from a cart's.
+    pub const ALL: [Core; 2] = [Core::Mgba, Core::Gpsp];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Core::Mgba => "mgba",

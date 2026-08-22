@@ -70,7 +70,7 @@ fn a_later_duplicate_wins() {
 
 #[test]
 fn core_names_round_trip() {
-    for c in [Core::Mgba, Core::Gpsp] {
+    for c in Core::ALL {
         assert_eq!(Core::parse(c.as_str()), Some(c));
     }
     assert_eq!(
