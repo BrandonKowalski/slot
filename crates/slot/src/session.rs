@@ -354,13 +354,18 @@ impl Session {
         else {
             return;
         };
+        // Resolved once: this is both which dylib gets opened and which `States/<core>/`
+        // directory the resume lookup below reads from. Deriving it twice let a `gpsp` cart
+        // run on mGBA with its state filed under `States/gpsp/` — the two calls always agreed
+        // in practice, right up until `open_core` did not yet know `Core` existed.
+        let core = slot_store::core_for(&self.root, stem);
         // A clean start skips the state, it does not delete it: the file stays on the card
         // for the next tap to resume from.
         let resume = (!self.app.starting_clean())
-            .then(|| persist::read_resume(&self.root, stem))
+            .then(|| persist::read_resume(&self.root, core, stem))
             .flatten();
         let emu = EmuHandle::spawn(
-            open_core(&self.root),
+            open_core(&self.root, core),
             rom,
             self.sink.ring(),
             persist::read_sav(&self.root, stem),

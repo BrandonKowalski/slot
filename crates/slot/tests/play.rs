@@ -102,7 +102,7 @@ fn counter_after(root: &Path, hold: bool) -> u64 {
     // Past the autosave deadline, which is the cheapest way to get the core's own state
     // written back out through the path the binary uses.
     s.app_mut().tick_ms(60_000);
-    let state = persist::read_resume(root, "Emerald").expect("nothing was flushed");
+    let state = persist::read_resume(root, Core::Mgba, "Emerald").expect("nothing was flushed");
     u64::from_le_bytes(state.try_into().expect("the mock's state is 8 bytes"))
 }
 

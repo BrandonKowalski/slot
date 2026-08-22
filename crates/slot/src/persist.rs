@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use slot_store::{atomic_write, read_slot_state, write_slot_state, StateRing};
+use slot_store::{atomic_write, read_slot_state, write_slot_state, Core, StateRing};
 
 /// What a save, a load or a flush needs from the emulator. The core runs on a worker thread
 /// and nothing above this trait knows that.
@@ -57,8 +57,14 @@ pub fn read_sav(root: &Path, stem: &str) -> Option<Vec<u8>> {
 
 /// The counterpart to the resume write in `flush`. Without this the cart is seated on the
 /// next boot but the game restarts.
-pub fn read_resume(root: &Path, stem: &str) -> Option<Vec<u8>> {
-    StateRing::new(root, slot_store::core_for(root, stem), stem)
+///
+/// Takes `core` rather than resolving it here: the caller already has to know which core it
+/// is about to open, and asking this function to work it out too would be a second,
+/// independent read of `selected_core.ini` for the same cart in the same breath as the
+/// first. `session.rs` resolves it once per insert and hands that value to both this and
+/// `open_core`, which is what keeps the resume directory and the dylib from ever disagreeing.
+pub fn read_resume(root: &Path, core: Core, stem: &str) -> Option<Vec<u8>> {
+    StateRing::new(root, core, stem)
         .read_resume()
         .ok()
         .flatten()

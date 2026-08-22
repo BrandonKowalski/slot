@@ -39,7 +39,7 @@ fn read_resume_finds_what_a_flush_wrote() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
     persist::flush(d.path(), "Emerald", &[7u8; 64], None).unwrap();
     assert_eq!(
-        persist::read_resume(d.path(), "Emerald"),
+        persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald"),
         Some(vec![7u8; 64])
     );
 }
@@ -89,7 +89,7 @@ fn srm_bytes_on_disk_reach_the_cores_save_ram() {
         d.path().join("Games/Emerald.gba"),
         StubSink::new().ring(),
         persist::read_sav(d.path(), "Emerald"),
-        persist::read_resume(d.path(), "Emerald"),
+        persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald"),
     );
     wait_ready(&emu);
     let got = emu.snapshot().save_ram().expect("the core has no save ram");
