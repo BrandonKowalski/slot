@@ -38,6 +38,11 @@ struct Host {
     /// A core that is never offered the interface disables rumble outright and says nothing
     /// about it, so this is the only way to see that the offer was taken.
     asked_for_rumble: bool,
+    /// Core options, keyed as libretro names them. Values are kept as CStrings because the
+    /// pointer handed back to the core has to stay valid after the callback returns.
+    options: std::collections::HashMap<String, std::ffi::CString>,
+    /// Set when an option changed since the core last asked, cleared when it does.
+    options_dirty: bool,
 }
 
 thread_local! {
@@ -109,10 +114,37 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             .unwrap_or(false)
         }
         GET_VARIABLE => {
-            if !data.is_null() {
-                (*(data as *mut Variable)).value = ptr::null();
+            if data.is_null() {
+                return false;
             }
-            false // there are no core options, so no variable is ever set
+            let var = &mut *(data as *mut Variable);
+            let Ok(key) = std::ffi::CStr::from_ptr(var.key).to_str() else {
+                return false;
+            };
+            with_host(|h| match h.options.get(key) {
+                // The core reads this pointer after we return, so it must point at storage
+                // the host owns and keeps, not at a temporary.
+                Some(value) => {
+                    var.value = value.as_ptr();
+                    true
+                }
+                None => {
+                    var.value = ptr::null();
+                    false
+                }
+            })
+            .unwrap_or(false)
+        }
+        GET_VARIABLE_UPDATE => {
+            if data.is_null() {
+                return false;
+            }
+            with_host(|h| {
+                *(data as *mut bool) = h.options_dirty;
+                h.options_dirty = false;
+                true
+            })
+            .unwrap_or(false)
         }
         SET_VARIABLES => true,
         GET_RUMBLE_INTERFACE => {
@@ -248,6 +280,28 @@ impl MgbaCore {
         self.host.asked_for_rumble
     }
 
+    /// Set a libretro core option. Takes effect the next time the core asks, which for most
+    /// options means the next `retro_load_game`.
+    /// Reaches `self.host` directly rather than through `with_host`. `Active::bind` is
+    /// scoped to one call *into* the core, so outside such a call the thread local is null
+    /// and `with_host` would silently do nothing. These are called from the frontend, never
+    /// from a core callback.
+    pub fn set_option(&mut self, key: &str, value: &str) {
+        let Ok(value) = CString::new(value) else {
+            return;
+        };
+        self.host.options.insert(key.to_string(), value);
+        self.host.options_dirty = true;
+    }
+
+    pub fn option(&self, key: &str) -> Option<String> {
+        self.host
+            .options
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+    }
+
     fn open_inner(dylib: &Path, system_dir: &Path, save_dir: &Path) -> Result<Self, CoreError> {
         let lib = unsafe { Library::new(dylib) }.map_err(|e| CoreError::Load(e.to_string()))?;
         let api = unsafe { Api::load(&lib) }?;
@@ -264,6 +318,8 @@ impl MgbaCore {
             save_dir: cdir(save_dir)?,
             rumble: Rumble::default(),
             asked_for_rumble: false,
+            options: std::collections::HashMap::new(),
+            options_dirty: false,
         });
         unsafe {
             let _a = Active::bind(&mut host);

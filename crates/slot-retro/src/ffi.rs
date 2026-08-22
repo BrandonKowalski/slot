@@ -12,6 +12,7 @@ pub const GET_SYSTEM_DIRECTORY: c_uint = 9;
 pub const SET_PIXEL_FORMAT: c_uint = 10;
 pub const GET_VARIABLE: c_uint = 15;
 pub const SET_VARIABLES: c_uint = 16;
+pub const GET_VARIABLE_UPDATE: c_uint = 17;
 pub const GET_RUMBLE_INTERFACE: c_uint = 23;
 pub const GET_LOG_INTERFACE: c_uint = 27;
 pub const GET_SAVE_DIRECTORY: c_uint = 31;
