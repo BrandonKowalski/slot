@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::link::Link;
 use crate::rumble::Rumble;
 
 pub const GBA_W: u32 = 240;
@@ -72,5 +73,12 @@ pub trait RetroCore: Send {
     /// that turned it down, hands back a cell nothing ever writes.
     fn rumble(&self) -> Rumble {
         Rumble::default()
+    }
+    /// Where this core's serial traffic — link cable, wireless adapter — goes. Only gpSP ever
+    /// answers this for real; a core that never registers libretro's netpacket interface
+    /// hands back a handle nothing ever reads from or writes to, the same shape `rumble`
+    /// above uses for a core with no motor.
+    fn net(&self) -> Link {
+        Link::default()
     }
 }

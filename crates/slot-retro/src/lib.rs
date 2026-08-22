@@ -11,6 +11,6 @@ pub use ffi::{
     NETPACKET_UNSEQUENCED,
 };
 pub use libretro::LibretroCore;
-pub use link::{LinkChannel, LoopbackLink};
+pub use link::{Link, LinkChannel, LoopbackLink};
 pub use mock::MockCore;
 pub use rumble::Rumble;

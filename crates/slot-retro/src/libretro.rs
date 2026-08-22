@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::ffi::{c_char, c_uint, c_void, CString};
+use std::ffi::{c_char, c_int, c_uint, c_void, CString};
 use std::marker::PhantomData;
 use std::path::Path;
 use std::ptr;
@@ -9,6 +9,7 @@ use libloading::Library;
 
 use crate::core::{AvInfo, ButtonMask, CoreError, RetroCore, GBA_H, GBA_W};
 use crate::ffi::*;
+use crate::link::Link;
 use crate::rumble::Rumble;
 
 const VIDEO_BYTES: usize = (GBA_W * GBA_H * 4) as usize;
@@ -38,6 +39,14 @@ struct Host {
     /// A core that is never offered the interface disables rumble outright and says nothing
     /// about it, so this is the only way to see that the offer was taken.
     asked_for_rumble: bool,
+    /// The core's own netpacket vtable, handed over during `retro_load_game`. Its function
+    /// pointers belong to the dylib and stay valid for as long as it is loaded. `None` until
+    /// the core registers one, and legally back to `None` if the core later withdraws it.
+    netpacket: Option<NetpacketCallback>,
+    /// Where the core's serial traffic actually goes. Created eagerly, exactly like `rumble`
+    /// above, so `net()` always hands back something valid whether or not this core ever
+    /// registers netpacket.
+    net: Link,
     /// Core options, keyed as libretro names them. Values are kept as CStrings because the
     /// pointer handed back to the core has to stay valid after the callback returns.
     options: std::collections::HashMap<String, std::ffi::CString>,
@@ -170,8 +179,79 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             (*(data as *mut LogCallback)).log = log_noop as *const c_void;
             true
         }
+        SET_NETPACKET_INTERFACE => {
+            // A NULL pointer is the core withdrawing the interface, which is legal.
+            if data.is_null() {
+                return with_host(|h| h.netpacket = None).is_some();
+            }
+            with_host(|h| {
+                h.netpacket = Some(std::ptr::read(data as *const NetpacketCallback));
+            })
+            .is_some()
+        }
         _ => false,
     }
+}
+
+/// Called by the core, on the emulator thread, to hand us a packet to put on the wire. A C
+/// function pointer cannot capture, so — like every other callback here — this reaches the
+/// host through the thread-local rather than a closure.
+///
+/// The core only ever calls this after `cb.start` has handed it this function pointer, and
+/// no task before this one calls `start` — that belongs wherever a link session actually
+/// begins with a real peer and a real client id, which needs the transport this task does
+/// not have. Until then this is reachable only from the tests below, hence the narrow allow.
+#[allow(dead_code)]
+unsafe extern "C" fn netpacket_send(
+    _flags: c_int,
+    buf: *const c_void,
+    len: usize,
+    _client_id: u16,
+) {
+    if buf.is_null() || len == 0 {
+        return;
+    }
+    let bytes = std::slice::from_raw_parts(buf as *const u8, len).to_vec();
+    with_host(|h| h.net.push_outbound(bytes));
+}
+
+/// The core asking us, mid frame, to hand it anything that has arrived. `pump_link` already
+/// does this once a frame; answering here too keeps a core that polls aggressively between
+/// frames from starving.
+///
+/// Same story as `netpacket_send`: live only once `cb.start` has been called with this
+/// pointer, which is not yet.
+#[allow(dead_code)]
+unsafe extern "C" fn netpacket_poll_receive() {
+    with_host(|h| {
+        let Some(receive) = h.netpacket.as_ref().and_then(|cb| cb.receive) else {
+            return;
+        };
+        while let Some(packet) = h.net.take_inbound() {
+            receive(packet.as_ptr() as *const c_void, packet.len(), 0);
+        }
+    });
+}
+
+/// The logic behind `LibretroCore::pump_link`, factored out to a free function that reaches
+/// the host through the thread-local instead of `&mut self`, so it can be driven directly
+/// against a bare `Host` in tests the same way the `GET_VARIABLE` tests below drive
+/// `environment` — this repo has no gpSP dylib to load on macOS, and gpSP is the only core
+/// that will ever exercise this for real.
+unsafe fn drain_link() {
+    with_host(|h| {
+        let Some(cb) = h.netpacket.as_ref() else {
+            return;
+        };
+        if let Some(receive) = cb.receive {
+            while let Some(packet) = h.net.take_inbound() {
+                receive(packet.as_ptr() as *const c_void, packet.len(), 0);
+            }
+        }
+        if let Some(poll) = cb.poll {
+            poll();
+        }
+    });
 }
 
 unsafe extern "C" fn video_refresh(
@@ -317,6 +397,16 @@ impl LibretroCore {
             .map(|s| s.to_string())
     }
 
+    /// Once per frame: hand the core anything that arrived since last frame, then let it do
+    /// its own polling if it offered one. Binds `Active` the same as `run_frame` does, rather
+    /// than assuming `receive` and `poll` only ever touch the link — either could in
+    /// principle reenter another environment callback that also reaches the host through the
+    /// thread-local.
+    pub fn pump_link(&mut self) {
+        let _a = Active::bind(&mut self.host);
+        unsafe { drain_link() };
+    }
+
     fn open_inner(dylib: &Path, system_dir: &Path, save_dir: &Path) -> Result<Self, CoreError> {
         let lib = unsafe { Library::new(dylib) }.map_err(|e| CoreError::Load(e.to_string()))?;
         let api = unsafe { Api::load(&lib) }?;
@@ -333,6 +423,8 @@ impl LibretroCore {
             save_dir: cdir(save_dir)?,
             rumble: Rumble::default(),
             asked_for_rumble: false,
+            netpacket: None,
+            net: Link::default(),
             options: std::collections::HashMap::new(),
             options_dirty: false,
         });
@@ -488,6 +580,10 @@ impl RetroCore for LibretroCore {
     fn rumble(&self) -> Rumble {
         self.host.rumble.clone()
     }
+
+    fn net(&self) -> Link {
+        self.host.net.clone()
+    }
 }
 
 #[cfg(test)]
@@ -513,6 +609,8 @@ mod tests {
             save_dir: CString::new(".").unwrap(),
             rumble: Rumble::default(),
             asked_for_rumble: false,
+            netpacket: None,
+            net: Link::default(),
             options,
             options_dirty,
         })
@@ -592,5 +690,242 @@ mod tests {
         };
         let ok = unsafe { environment(GET_VARIABLE, &mut var as *mut Variable as *mut c_void) };
         assert!(!ok);
+    }
+
+    // --- netpacket -----------------------------------------------------------------------
+    //
+    // Same rationale as the `GET_VARIABLE` tests above: this repo has no gpSP dylib to load
+    // on macOS, and gpSP is the only core that speaks netpacket at all. So the ABI seam is
+    // driven directly — a hand-built `NetpacketCallback` standing in for the core, and the
+    // private trampolines and `drain_link` invoked exactly as the core (or `pump_link`)
+    // would invoke them.
+
+    use std::cell::RefCell;
+
+    thread_local! {
+        static TEST_RECEIVED: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+        static TEST_POLLS: Cell<u32> = const { Cell::new(0) };
+    }
+
+    /// Thread-local recorders persist across tests that land on the same worker thread in
+    /// cargo's test pool, unlike `ACTIVE`, which `Active`'s own `Drop` resets after every
+    /// test. Each test that reads them must reset first.
+    fn reset_test_netpacket_recorders() {
+        TEST_RECEIVED.with(|r| r.borrow_mut().clear());
+        TEST_POLLS.with(|p| p.set(0));
+    }
+
+    unsafe extern "C" fn test_receive(buf: *const c_void, len: usize, _client_id: u16) {
+        let bytes = std::slice::from_raw_parts(buf as *const u8, len).to_vec();
+        TEST_RECEIVED.with(|r| r.borrow_mut().push(bytes));
+    }
+
+    unsafe extern "C" fn test_poll() {
+        TEST_POLLS.with(|p| p.set(p.get() + 1));
+    }
+
+    unsafe extern "C" fn test_start(
+        _client_id: u16,
+        _send: NetpacketSend,
+        _poll_receive: NetpacketPollReceive,
+    ) {
+    }
+
+    /// `start` and `receive` are the two fields libretro guarantees a core fills in; the
+    /// rest are left `None`/null the way a minimal, spec-compliant core is allowed to.
+    fn test_netpacket_callback() -> NetpacketCallback {
+        NetpacketCallback {
+            start: Some(test_start),
+            receive: Some(test_receive),
+            stop: None,
+            poll: Some(test_poll),
+            connected: None,
+            disconnected: None,
+            protocol_version: ptr::null(),
+        }
+    }
+
+    // Every test below sets up `host.netpacket`/`host.net` *before* binding `Active`, and
+    // reads them back only after that binding has dropped: `Active::bind` holds an exclusive
+    // borrow of `host` for as long as the guard it returns is alive (mirroring the real
+    // lifetime — the core has exclusive access to the host for the duration of one call into
+    // it), so touching `host` directly while a binding is still in scope does not borrow-check.
+
+    #[test]
+    fn set_netpacket_interface_stores_the_callback_the_core_hands_over() {
+        let mut host = host_with(HashMap::new(), false);
+        let mut cb = test_netpacket_callback();
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe {
+                environment(
+                    SET_NETPACKET_INTERFACE,
+                    &mut cb as *mut NetpacketCallback as *mut c_void,
+                )
+            }
+        };
+
+        assert!(ok);
+        assert!(host.netpacket.is_some(), "the callback was never stored");
+    }
+
+    #[test]
+    fn set_netpacket_interface_null_data_withdraws_the_interface() {
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe { environment(SET_NETPACKET_INTERFACE, ptr::null_mut()) }
+        };
+
+        assert!(ok, "withdrawing is a legal call and must be answered true");
+        assert!(
+            host.netpacket.is_none(),
+            "a NULL data pointer must clear a previously registered callback"
+        );
+    }
+
+    #[test]
+    fn netpacket_send_pushes_the_cores_packet_onto_outbound() {
+        let mut host = host_with(HashMap::new(), false);
+        let packet = b"link cable byte";
+        {
+            let _active = Active::bind(&mut host);
+            unsafe {
+                netpacket_send(
+                    NETPACKET_RELIABLE,
+                    packet.as_ptr() as *const c_void,
+                    packet.len(),
+                    0,
+                )
+            };
+        }
+
+        assert_eq!(host.net.take_outbound().as_deref(), Some(&packet[..]));
+        assert_eq!(host.net.take_outbound(), None, "only one packet was sent");
+    }
+
+    #[test]
+    fn netpacket_send_ignores_a_null_or_empty_packet() {
+        let mut host = host_with(HashMap::new(), false);
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_send(0, ptr::null(), 4, 0) };
+            unsafe { netpacket_send(0, [1u8].as_ptr() as *const c_void, 0, 0) };
+        }
+
+        assert_eq!(
+            host.net.take_outbound(),
+            None,
+            "a null buffer or zero length must not enqueue a phantom packet"
+        );
+    }
+
+    #[test]
+    fn netpacket_poll_receive_drains_inbound_into_the_cores_receive_in_order() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        host.net.push_inbound(b"first".to_vec());
+        host.net.push_inbound(b"second".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        TEST_RECEIVED.with(|r| {
+            assert_eq!(
+                r.borrow().as_slice(),
+                &[b"first".to_vec(), b"second".to_vec()],
+                "order was not kept"
+            );
+        });
+        assert_eq!(host.net.take_inbound(), None, "queue must be drained");
+    }
+
+    #[test]
+    fn netpacket_poll_receive_does_nothing_without_a_receive_callback() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        // No callback registered at all.
+        host.net.push_inbound(b"stranded".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        TEST_RECEIVED.with(|r| assert!(r.borrow().is_empty()));
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"stranded"[..]),
+            "with nowhere to hand the packet it must be left queued, not dropped"
+        );
+    }
+
+    #[test]
+    fn drain_link_hands_the_core_everything_waiting_then_polls() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        host.net.push_inbound(b"queued".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| assert_eq!(r.borrow().as_slice(), &[b"queued".to_vec()]));
+        TEST_POLLS.with(|p| assert_eq!(p.get(), 1, "poll must run once a frame"));
+    }
+
+    #[test]
+    fn drain_link_polls_even_with_nothing_inbound() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_POLLS.with(|p| assert_eq!(p.get(), 1));
+    }
+
+    #[test]
+    fn drain_link_skips_poll_when_the_core_offered_none() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            poll: None,
+            ..test_netpacket_callback()
+        });
+        host.net.push_inbound(b"still delivered".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| {
+            assert_eq!(r.borrow().as_slice(), &[b"still delivered".to_vec()]);
+        });
+        TEST_POLLS.with(|p| assert_eq!(p.get(), 0, "poll is optional and was not offered"));
+    }
+
+    #[test]
+    fn drain_link_is_a_noop_when_the_core_never_registered_netpacket() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.net.push_inbound(b"nobody asked".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| assert!(r.borrow().is_empty()));
+        TEST_POLLS.with(|p| assert_eq!(p.get(), 0));
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"nobody asked"[..]),
+            "with no registered core the packet must be left queued, not lost"
+        );
     }
 }

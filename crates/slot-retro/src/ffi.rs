@@ -16,9 +16,6 @@ pub const GET_VARIABLE_UPDATE: c_uint = 17;
 pub const GET_RUMBLE_INTERFACE: c_uint = 23;
 pub const GET_LOG_INTERFACE: c_uint = 27;
 pub const GET_SAVE_DIRECTORY: c_uint = 31;
-/// `Host` doesn't answer this yet — that lands with the environment match arm in a later
-/// commit on this branch, which is what turns this from dead code into a real ABI entry.
-#[allow(dead_code)]
 pub const SET_NETPACKET_INTERFACE: c_uint = 78;
 
 pub const RUMBLE_STRONG: c_uint = 0;
@@ -90,35 +87,29 @@ pub struct RumbleInterface {
 
 // The core hands these two to `start` so the frontend can push and pull packets on its own
 // schedule; the frontend never calls them itself outside of that.
-//
-// Nothing in this crate constructs a `NetpacketCallback` or names these types yet — that
-// starts with the environment match arm for `SET_NETPACKET_INTERFACE` in a later commit on
-// this branch. Each item is `allow(dead_code)` until then; there's no single point to hang
-// one blanket allow off of outside a module.
-#[allow(dead_code)]
 pub type NetpacketSend =
     unsafe extern "C" fn(flags: c_int, buf: *const c_void, len: usize, client_id: u16);
-#[allow(dead_code)]
 pub type NetpacketPollReceive = unsafe extern "C" fn();
 
-#[allow(dead_code)]
 pub type NetpacketStart =
     unsafe extern "C" fn(client_id: u16, send: NetpacketSend, poll_receive: NetpacketPollReceive);
-#[allow(dead_code)]
 pub type NetpacketReceive = unsafe extern "C" fn(buf: *const c_void, len: usize, client_id: u16);
-#[allow(dead_code)]
 pub type NetpacketStop = unsafe extern "C" fn();
-#[allow(dead_code)]
 pub type NetpacketPoll = unsafe extern "C" fn();
-#[allow(dead_code)]
 pub type NetpacketConnected = unsafe extern "C" fn(client_id: u16) -> bool;
-#[allow(dead_code)]
 pub type NetpacketDisconnected = unsafe extern "C" fn(client_id: u16);
 
 /// `start` and `receive` are the only fields libretro guarantees a core will fill in.
 /// Everything from `stop` onward is documented optional and arrives NULL from some cores, so
 /// each is an `Option` and every call site has to check before dereferencing it.
-#[allow(dead_code)]
+///
+/// `start`, `stop`, `connected`, `disconnected` and `protocol_version` are read as a group —
+/// stored whole by the `SET_NETPACKET_INTERFACE` environment arm — but this task never calls
+/// through any of them individually: beginning and ending a session, and tracking peer
+/// connect/disconnect, belong to whichever later task actually drives one. Silencing that
+/// with a blanket allow on the struct would also hide a real future regression in `receive`
+/// or `poll`, the two fields this task does call through, so the allow stays narrow and sits
+/// on the fields it actually covers.
 #[repr(C)]
 pub struct NetpacketCallback {
     pub start: Option<NetpacketStart>,
@@ -129,6 +120,14 @@ pub struct NetpacketCallback {
     pub disconnected: Option<NetpacketDisconnected>,
     pub protocol_version: *const c_char,
 }
+
+// Every field here is either a C function pointer (already `Send`) or `protocol_version`, a
+// pointer at a string literal owned by the dylib itself — fixed for the life of the load,
+// never written by this crate, and no more thread-bound than the function pointers beside
+// it. `Host` moves to the emulator's own thread with the rest of `LibretroCore`, and this
+// struct has to move with it: without this, the raw pointer would make the whole of `Host`
+// `!Send` and `LibretroCore` would fail `RetroCore: Send`.
+unsafe impl Send for NetpacketCallback {}
 
 pub type EnvironmentFn = unsafe extern "C" fn(c_uint, *mut c_void) -> bool;
 pub type VideoRefreshFn = unsafe extern "C" fn(*const c_void, c_uint, c_uint, usize);
