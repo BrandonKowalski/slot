@@ -101,9 +101,10 @@ Emulation is [mGBA](https://mgba.io) by endrift, and [gpSP](https://github.com/l
 by Gilead "Exophase" Kutnick — a cart's `System/selected_core.ini` picks between them, gpSP
 for the serial link hardware mGBA's libretro build does not carry — both through
 [libretro](https://www.libretro.com). The release ships both cores' compiled libretro
-binaries unmodified: mGBA's under MPL-2.0, gpSP's under GPL-2.0. Their license texts and
-upstream source pointers are in [`licenses/`](licenses/), which `dist:device` copies into
-the shipped tree alongside the cores they cover.
+binaries unmodified: mGBA's under MPL-2.0, gpSP's under GPL-2.0. Their license texts, and
+gpSP's own corresponding source (fetched at build time and shipped alongside the binary, per
+GPL-2.0 section 3(a)), are in [`licenses/`](licenses/), which `dist:device` copies into the
+shipped tree alongside the cores they cover.
 
 The device boots [AGS-102](https://github.com/BrandonKowalski/AGS-102), a purpose-made fork
 of [BaseOS](https://github.com/pvaibhav/BaseOS) by @pvaibhav.

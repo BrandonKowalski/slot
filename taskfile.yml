@@ -170,8 +170,40 @@ tasks:
         file vendor/mgba_libretro.so | grep -q aarch64
         echo "fetched vendor/mgba_libretro.so"
 
+  core:gpsp:source:
+    desc: >-
+      Fetch gpSP's source at libretro/gpsp's current master, so the binary core:gpsp fetches
+      ships with its GPL-2.0 section 3(a) corresponding source rather than only a written offer
+    status:
+      - test -f vendor/gpsp-src.tar.gz
+      - test -f vendor/gpsp-src.sha
+    cmds:
+      - |
+        set -euo pipefail
+        mkdir -p vendor
+        # The buildbot never says which commit it built (see licenses/README.md), so this is
+        # the closest identifiable source: master's HEAD at the moment we fetch it, recorded
+        # so every later step — the shipped filename, the release notes — names the same
+        # commit rather than each guessing independently.
+        sha="$(git ls-remote https://github.com/libretro/gpsp master | cut -f1)"
+        if [ -z "$sha" ]; then
+          echo "could not resolve libretro/gpsp's master commit" >&2
+          exit 1
+        fi
+        curl -fsSL -o vendor/gpsp-src.tar.gz \
+          "https://github.com/libretro/gpsp/archive/${sha}.tar.gz"
+        # A real gpSP checkout, not just a valid tarball: same shape as any GitHub source
+        # archive, one top directory named for the commit, and the Makefile lives in it.
+        tar -tzf vendor/gpsp-src.tar.gz | grep -q "^gpsp-${sha}/Makefile$"
+        echo "$sha" > vendor/gpsp-src.sha
+        echo "fetched vendor/gpsp-src.tar.gz at ${sha}"
+
   core:gpsp:
     desc: Fetch the aarch64 linux gpSP core, which carries the serial hardware mGBA's build does not
+    # The source has to name the same commit the binary was built from — as closely as that
+    # can be known at all, see core:gpsp:source — so it is fetched every time this is,
+    # not left to whoever happens to run dist:device or deploy:device afterward.
+    deps: [core:gpsp:source]
     status:
       - test -f vendor/gpsp_libretro.so
     cmds:
@@ -245,6 +277,15 @@ tasks:
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
       - cp vendor/gpsp_libretro.so {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
+      # GPL-2.0 section 3(a): gpSP's corresponding source travels with the binary rather than
+      # staying a promise in the written offer. It lands inside licenses/ itself, next to the
+      # license text and the offer that already explain it, named for the commit
+      # core:gpsp:source fetched so the file identifies its own source with no release page
+      # to point back to — the exact thing a hand-built SD card does not have.
+      - |
+        set -euo pipefail
+        sha="$(cat vendor/gpsp-src.sha)"
+        cp vendor/gpsp-src.tar.gz "{{.OUT}}/System/licenses/gpsp-${sha}.tar.gz"
       - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
 
   deploy:device:
@@ -267,6 +308,12 @@ tasks:
       - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
       - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
       - adb push licenses '{{.SD}}/System/licenses'
+      # Same reasoning as dist:device: the source belongs on the card next to the binary it
+      # corresponds to, not only offered on request.
+      - |
+        set -euo pipefail
+        sha="$(cat vendor/gpsp-src.sha)"
+        adb push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
       - adb shell 'chmod +x {{.SD}}/System/slot && sync'
       - adb reboot
       - adb wait-for-device

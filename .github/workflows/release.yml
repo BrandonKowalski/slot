@@ -53,6 +53,11 @@ jobs:
           file "$out/System/mgba_libretro.so" | grep -q aarch64
           file "$out/System/gpsp_libretro.so" | grep -q aarch64
           test -x "$out/System/slot"
+          # GPL-2.0 section 3(a): the release does not ship without gpSP's corresponding
+          # source. `task dist:device` names the file for the commit `core:gpsp:source`
+          # recorded, so that recording is what says which file to look for.
+          gpsp_src_sha="$(cat vendor/gpsp-src.sha)"
+          test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.tar.gz"
 
       - name: Package
         id: package
@@ -71,12 +76,11 @@ jobs:
             echo "mgba_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
             echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
             echo "core_date=$(date -u +%Y-%m-%d)"
-            # GPL-2.0 section 3 obligation (see licenses/README.md): the buildbot does not
-            # publish which commit a nightly was built from, so there is no exact revision to
-            # record. gpSP's `master` HEAD at the moment this release fetched the binary is
-            # the closest identifiable proxy for it, and is what the written offer there
-            # falls back to when a request cannot be matched more precisely.
-            echo "gpsp_head=$(git ls-remote https://github.com/libretro/gpsp HEAD | cut -f1)"
+            # The commit whose source archive actually shipped in this zip (see
+            # licenses/README.md) — read back from what core:gpsp:source recorded, not
+            # re-resolved here, so this can never name a different commit than the file
+            # the "Check what is about to ship" step just verified is in the tree.
+            echo "gpsp_head=$(cat vendor/gpsp-src.sha)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
@@ -118,13 +122,15 @@ jobs:
           | \`System/slot\` | aarch64, built against glibc 2.31 |
           | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${MGBA_SHA}\` |
           | \`System/gpsp_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${GPSP_SHA}\` |
+          | \`System/licenses/gpsp-${GPSP_HEAD}.tar.gz\` | gpSP source, libretro/gpsp \`master\` @ \`${GPSP_HEAD}\` |
 
           mGBA is MPL-2.0, gpSP is GPL-2.0 — both shipped as unmodified libretro cores, both
-          credited with their license text and upstream source under \`System/licenses/\`.
-          gpSP's corresponding source is available under the written offer in
-          \`System/licenses/README.md\`; the buildbot does not publish which commit a nightly
-          was built from, so the closest identifiable proxy is recorded here: gpSP \`master\`
-          HEAD at fetch time was \`${GPSP_HEAD}\`.
+          credited with their license text under \`System/licenses/\`. gpSP's corresponding
+          source ships in this zip too, per GPL-2.0 section 3(a): the buildbot does not publish
+          which commit a nightly was built from, so \`master\`'s HEAD at fetch time,
+          \`${GPSP_HEAD}\`, is the closest identifiable source rather than a proven match to
+          this exact binary. \`System/licenses/README.md\` says so plainly and keeps a
+          section 3(b) written offer as a backstop for the gap.
           NOTES
           # --repo because this job never checks out: gh works out where to publish from the
           # git remote otherwise, and there is no repository here to ask.
