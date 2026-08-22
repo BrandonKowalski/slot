@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use slot::link_net::TcpLink;
@@ -105,6 +105,34 @@ fn peer_disconnecting_does_not_panic_or_hang() {
         client.send(NETPACKET_RELIABLE, b"into the void");
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+}
+
+/// Dropping a `TcpLink` must close its socket: the peer needs a real FIN, not a link that
+/// has merely gone quiet, since silence is indistinguishable from a player still thinking.
+///
+/// The peer here is a raw `TcpStream`, not a `TcpLink`, for the same reason as
+/// `peer_disconnecting_does_not_panic_or_hang` above: a raw socket genuinely reflects what
+/// arrives on the wire. A read timeout makes the proof deterministic — if the drop doesn't
+/// close the connection, this test fails on its own timeout instead of hanging the suite.
+#[test]
+fn dropping_the_link_closes_the_wire() {
+    let port = 45885;
+    let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
+    let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
+    let client = TcpLink::join("127.0.0.1", port).expect("join");
+    let mut host_raw = acceptor.join().expect("accept thread");
+    host_raw
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .expect("set read timeout");
+
+    drop(client);
+
+    let mut buf = [0u8; 1];
+    let n = host_raw.read(&mut buf).expect("read after drop");
+    assert_eq!(
+        n, 0,
+        "peer should observe a clean EOF, not a hang or an error"
+    );
 }
 
 fn wait_for(link: &mut TcpLink) -> Option<Vec<u8>> {

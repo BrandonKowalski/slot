@@ -4,7 +4,7 @@
 //! queue the core side actually touches, is the next layer's job, not this one's.
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
 use slot_retro::LinkChannel;
@@ -59,6 +59,19 @@ impl TcpLink {
         });
 
         Ok(TcpLink { out: stream, inbox })
+    }
+}
+
+impl Drop for TcpLink {
+    /// Shutting the socket down does two jobs at once, and both are why this exists, not
+    /// just the second one: it makes the reader thread's blocked `read_exact` return an
+    /// error so that thread actually exits instead of leaking for the life of the process,
+    /// and it sends the peer a FIN so their side sees a real close rather than a link that
+    /// has simply gone quiet — which, without this, is indistinguishable from a player who
+    /// is still thinking. A `shutdown` error here almost always means the peer tore the
+    /// connection down first, which is the ordinary case, not a fault, so it's ignored.
+    fn drop(&mut self) {
+        let _ = self.out.shutdown(Shutdown::Both);
     }
 }
 
