@@ -103,3 +103,101 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
         "the session resumed the wrong core's state (or none): counter is {n}"
     );
 }
+
+/// F2: `core_for` used to be re-read on every flush, not just at insert — and
+/// `read_selected_cores` returns an empty map on ANY read failure (a typo, a remount, a
+/// write caught mid-flight), which silently reclassified every seated cart as mGBA. This is
+/// a removable card in a handheld, so that window is reachable without a person touching the
+/// file by hand. Proves the fix holds through it: the ini is edited (here, removed outright)
+/// while the cart is already playing, and the autosave 60 s later still lands under the
+/// seated core's own directory, because `App` stored what `session.rs` resolved at insert
+/// instead of asking `core_for` again on the way out.
+#[test]
+fn changing_the_ini_mid_session_does_not_move_a_seated_carts_autosave() {
+    use slot::app::Phase;
+    use slot::session::Session;
+    use slot_input::{Btn, RawEvent};
+    use slot_store::{StateRing, SELECTED_CORE_FILE};
+    use std::time::{Duration, Instant};
+
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Emerald = gpsp\n").unwrap();
+
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut now = 32;
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    // The card is edited out from under the already-running session — indistinguishable,
+    // from `read_selected_cores`'s point of view, from the transient read failure it
+    // deliberately turns into an empty map rather than an error.
+    std::fs::remove_file(d.path().join(SELECTED_CORE_FILE)).unwrap();
+
+    s.app_mut().tick_ms(60_000);
+
+    assert!(
+        StateRing::new(d.path(), Core::Gpsp, "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_some(),
+        "the autosave did not land under the seated core's own directory"
+    );
+    assert!(
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
+            .read_resume()
+            .unwrap()
+            .is_none(),
+        "the autosave followed the ini's new (absent) reading instead of the core the \
+         session actually spawned"
+    );
+}
+
+/// The half the test above cannot pin, by its own admission: it never needed a real core, so
+/// a mutation that hands `open_core` the wrong `Core` — the original bug, verbatim — sails
+/// through it and every other test in the suite. Before `candidates` searched `root/System`,
+/// nothing could catch that either: an integration test's tmp root sits nowhere
+/// `current_exe()` or `./vendor` look, so there was no candidate a test could plant a fake
+/// dylib under and observe.
+///
+/// This is a path resolution test, not an ABI one, so a zero-byte stand-in would do for
+/// gpSP's own dylib — except it would open (or fail to) identically whichever `Core` was
+/// asked for, proving nothing about which filename the search actually reached. Real content
+/// that can be told apart from the mock is what makes the difference observable: this plants
+/// the one host-openable dylib the repo keeps around, mGBA's own build, filed under gpSP's
+/// name. `open_core` does not care what a dylib is, only whether it opens, so if `Core::Gpsp`
+/// ever resolves to `mgba_libretro`'s filename instead, or the search never reaches
+/// `root/System` at all, this returns the mock rather than the planted core.
+#[test]
+fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory() {
+    use slot_retro::ButtonMask;
+
+    let Some(mgba) = common::vendored_core() else {
+        eprintln!("no host-openable dylib on this machine, skipping");
+        return;
+    };
+    let d = common::tmp_root_with_real_carts(&["Probe"]);
+    let planted = d
+        .path()
+        .join("System")
+        .join(slot::core::dylib_name(Core::Gpsp));
+    std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
+
+    let mut core = slot::core::open_core(d.path(), Core::Gpsp);
+    core.load(&d.path().join("Games/Probe.gba"))
+        .expect("the planted core refused the test rom");
+    core.run_frame(ButtonMask::default());
+    assert!(
+        core.serialize().expect("core gave up no state").len() > 100_000,
+        "open_core fell back to the mock instead of the dylib planted at root/System"
+    );
+}

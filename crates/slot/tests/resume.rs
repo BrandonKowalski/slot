@@ -37,27 +37,38 @@ fn a_resume_state_is_restored_before_the_core_reports_ready() {
 #[test]
 fn read_resume_finds_what_a_flush_wrote() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
-    persist::flush(d.path(), "Emerald", &[7u8; 64], None).unwrap();
+    persist::flush(
+        d.path(),
+        slot_store::Core::Mgba,
+        "Emerald",
+        &[7u8; 64],
+        None,
+    )
+    .unwrap();
     assert_eq!(
         persist::read_resume(d.path(), slot_store::Core::Mgba, "Emerald"),
         Some(vec![7u8; 64])
     );
 }
 
-/// Every other test in this file leaves `System/selected_core.ini` absent, which only ever
-/// exercises the mGBA default. A cart that actually opts into gpSP has to land its resume
-/// under `States/gpsp/`, through the same `flush` the device calls, not through
-/// `StateRing` directly.
+/// `flush` used to read `selected_core.ini` itself, which meant its own read of the ini and
+/// `session.rs`'s could disagree — that gap is the whole reason this task exists. `flush`
+/// now takes `core` rather than deriving it, so this pins the half of the contract that
+/// lives in this function: whichever `Core` it is handed is where the resume lands, no ini
+/// involved. `crates/slot/tests/gpsp.rs` covers the other half — that `session.rs` resolves
+/// the ini exactly once and hands that same value to every reader and writer for the cart.
 #[test]
-fn flush_resolves_a_non_default_core_from_the_ini() {
+fn flush_routes_by_the_core_it_is_given() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
-    std::fs::write(
-        d.path().join(slot_store::SELECTED_CORE_FILE),
-        "Emerald = gpsp\n",
+
+    persist::flush(
+        d.path(),
+        slot_store::Core::Gpsp,
+        "Emerald",
+        &[7u8; 64],
+        None,
     )
     .unwrap();
-
-    persist::flush(d.path(), "Emerald", &[7u8; 64], None).unwrap();
 
     assert!(d.path().join("States/gpsp/Emerald/resume.state").exists());
     assert!(!d.path().join("States/mgba/Emerald/resume.state").exists());

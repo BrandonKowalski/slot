@@ -4,7 +4,7 @@ use slot_gfx::{OUT_H, OUT_W};
 use slot_input::{Action, Btn, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_store::{
-    core_for, format_stamp, read_slot_state, scan, write_slot_state, Cart, SlotState, StateEntry,
+    format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, SlotState, StateEntry,
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
@@ -199,6 +199,14 @@ pub struct App {
     vol_before: Vec<(u8, bool, Millis)>,
     /// `None` until a cart is in the slot. There is nothing to flush without a core.
     snapshot: Option<Box<dyn Snapshot>>,
+    /// The seated cart's `Core`, resolved once by whoever spawned `snapshot` and handed here
+    /// through `set_core` rather than re-read. `ring`, `flush_resume` and the eject path all
+    /// take this instead of calling `core_for` themselves, which is what makes it structurally
+    /// impossible for a later read or write to disagree with the dylib actually running: there
+    /// is nowhere left in this file to derive a second opinion from. Stale between carts in
+    /// exactly the way `snapshot` is — both are set together and neither is cleared on eject —
+    /// which is safe because every reader of either is gated on a cart actually being seated.
+    core: Core,
     /// What the slot itself is about to sound like, drained by whoever owns the device. One
     /// slot: two of these in a frame is not a movement the cart can make.
     sfx: Option<Sfx>,
@@ -280,6 +288,7 @@ impl App {
             state: SlotState::default(),
             vol_before: Vec::new(),
             snapshot: None,
+            core: Core::default(),
             sfx: None,
             polaroids: None,
             pending: None,
@@ -455,6 +464,14 @@ impl App {
     /// Handed over when the core is spawned, which is on the way into the slot.
     pub fn set_snapshot(&mut self, snapshot: Box<dyn Snapshot>) {
         self.snapshot = Some(snapshot);
+    }
+
+    /// The `Core` that `session.rs` resolved for the cart it just spawned. Called in the same
+    /// breath as `set_snapshot`, from the one place a cart's core is ever decided, so every
+    /// later read or write in this file has a stored answer to take rather than a reason to
+    /// ask `core_for` again.
+    pub fn set_core(&mut self, core: Core) {
+        self.core = core;
     }
 
     /// The app has no device, so the sound it wants is left here for whoever does.
@@ -1396,7 +1413,13 @@ impl App {
             eprintln!("slot: eject: the core gave up no state");
             return;
         };
-        match persist::eject(root, stem, &state, snapshot.save_ram().as_deref()) {
+        match persist::eject(
+            root,
+            self.core,
+            stem,
+            &state,
+            snapshot.save_ram().as_deref(),
+        ) {
             Ok(()) => self.state.cart = None,
             Err(e) => eprintln!("slot: eject: {e}"),
         }
@@ -1565,7 +1588,13 @@ impl App {
             eprintln!("slot: flush: the core gave up no state");
             return;
         };
-        if let Err(e) = persist::flush(root, cart, &state, snapshot.save_ram().as_deref()) {
+        if let Err(e) = persist::flush(
+            root,
+            self.core,
+            cart,
+            &state,
+            snapshot.save_ram().as_deref(),
+        ) {
             eprintln!("slot: flush: {e}");
         }
     }
@@ -1576,7 +1605,7 @@ impl App {
         let (Some(root), Some(cart)) = (&self.root, self.seated()) else {
             return None;
         };
-        Some(StateRing::new(root, core_for(root, cart), cart))
+        Some(StateRing::new(root, self.core, cart))
     }
 
     fn seated(&self) -> Option<&str> {

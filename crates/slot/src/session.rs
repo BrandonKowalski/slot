@@ -354,11 +354,15 @@ impl Session {
         else {
             return;
         };
-        // Resolved once: this is both which dylib gets opened and which `States/<core>/`
-        // directory the resume lookup below reads from. Deriving it twice let a `gpsp` cart
+        // Resolved once, and only here: this is which dylib gets opened, which `States/<core>/`
+        // directory the resume lookup below reads from, and — via `set_core` — every later
+        // flush, eject and polaroid read for this cart too. Deriving it twice let a `gpsp` cart
         // run on mGBA with its state filed under `States/gpsp/` — the two calls always agreed
-        // in practice, right up until `open_core` did not yet know `Core` existed.
+        // in practice, right up until `open_core` did not yet know `Core` existed. `App` stores
+        // this rather than re-deriving it later, which is what makes that class of drift
+        // structurally unreachable now instead of merely unobserved.
         let core = slot_store::core_for(&self.root, stem);
+        self.app.set_core(core);
         // A clean start skips the state, it does not delete it: the file stays on the card
         // for the next tap to resume from.
         let resume = (!self.app.starting_clean())

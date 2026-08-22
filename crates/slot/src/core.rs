@@ -26,15 +26,20 @@ pub fn dylib_name(core: Core) -> String {
     )
 }
 
-/// Most specific first: the environment, then next to the binary, which is how the device
-/// ships, then the `vendor` directory `scripts/fetch-core.sh` writes into.
-fn candidates(core: Core) -> Vec<PathBuf> {
+/// Most specific first: the environment, then the content root's own `System/` — where the
+/// device actually keeps a core, and, on the device, also where the binary itself lives, so
+/// the next candidate coincides with this one there. Off the device — a host build, or a
+/// test with its own tmp root — the binary's directory and `root` are different places, and
+/// only searching the root's own `System/` gives a cart's own content root somewhere a test
+/// can plant a dylib under. The `vendor` directory `scripts/fetch-core.sh` writes into is
+/// last: a host development convenience, not anywhere a shipped device looks.
+fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
     if let Some(named) = std::env::var_os(CORE_ENV) {
         return vec![PathBuf::from(named)];
     }
     // Spelled from the platform's own convention so the same search finds the device's `.so`.
     let name = dylib_name(core);
-    let mut paths = Vec::new();
+    let mut paths = vec![root.join("System").join(&name)];
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(Path::to_path_buf))
@@ -47,11 +52,13 @@ fn candidates(core: Core) -> Vec<PathBuf> {
 }
 
 /// The one place a cart's `Core` becomes a dylib path. Callers that already know which core
-/// they want — `session.rs` resolves it once per insert — pass it straight through; nothing
-/// downstream of this re-derives it, so there is nowhere left for the dylib choice to
-/// disagree with wherever the caller filed that cart's states.
+/// they want — `session.rs` resolves it once per insert — pass it straight through, which is
+/// what keeps this call from disagreeing with the caller's own choice. It says nothing about
+/// what the caller does with that `Core` afterward: `App` is the one that has to keep using
+/// the same value for every later read and write, and it does that by storing it rather than
+/// asking again.
 pub fn open_core(root: &Path, core: Core) -> Box<dyn RetroCore> {
-    open_core_for(root, &candidates(core))
+    open_core_for(root, &candidates(root, core))
 }
 
 /// The named core if one of these opens, the mock if none of them do. A missing core is not
@@ -104,8 +111,9 @@ mod tests {
         // search this test exists to check, so it cannot assume the var is unset.
         std::env::remove_var(CORE_ENV);
 
-        let mgba = candidates(Core::Mgba);
-        let gpsp = candidates(Core::Gpsp);
+        let root = Path::new("/root");
+        let mgba = candidates(root, Core::Mgba);
+        let gpsp = candidates(root, Core::Gpsp);
         assert_ne!(mgba, gpsp, "the two cores searched the same paths");
         assert!(!mgba.is_empty());
         assert!(!gpsp.is_empty());
@@ -119,14 +127,32 @@ mod tests {
         }
     }
 
+    /// The property `crates/slot/tests/gpsp.rs`'s integration test relies on: a content root
+    /// with its own tmp directory is not near `current_exe()` or `./vendor`, so without this
+    /// candidate an integration test has nowhere to plant a fake dylib for `open_core` to
+    /// find. Root cause of the gap F3 closed — before this candidate existed, a mutation
+    /// that fed `open_core` the wrong `Core` had no candidate list a test could observe
+    /// disagree.
+    #[test]
+    fn candidates_search_the_roots_own_system_directory() {
+        let _g = lock();
+        std::env::remove_var(CORE_ENV);
+        let root = Path::new("/some/content/root");
+        assert_eq!(
+            candidates(root, Core::Gpsp)[0],
+            root.join("System").join(dylib_name(Core::Gpsp)),
+        );
+    }
+
     /// The override is a filename, not a `Core`: it must win regardless of which core asked,
     /// which is what makes it a trap when the ini disagrees rather than a second selector.
     #[test]
     fn the_env_override_ignores_which_core_was_asked_for() {
         let _g = lock();
         std::env::set_var(CORE_ENV, "/dev/null/named-core");
-        let mgba = candidates(Core::Mgba);
-        let gpsp = candidates(Core::Gpsp);
+        let root = Path::new("/root");
+        let mgba = candidates(root, Core::Mgba);
+        let gpsp = candidates(root, Core::Gpsp);
         std::env::remove_var(CORE_ENV);
         assert_eq!(mgba, vec![PathBuf::from("/dev/null/named-core")]);
         assert_eq!(

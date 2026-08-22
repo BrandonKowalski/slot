@@ -113,7 +113,14 @@ fn a_hold_hands_the_core_no_state_and_a_tap_hands_it_the_resume() {
     let tapped = tmp_root_with_carts(&["Emerald", "Fusion"]);
     let held = tmp_root_with_carts(&["Emerald", "Fusion"]);
     for d in [&tapped, &held] {
-        persist::flush(d.path(), "Emerald", &500_000u64.to_le_bytes(), None).unwrap();
+        persist::flush(
+            d.path(),
+            Core::Mgba,
+            "Emerald",
+            &500_000u64.to_le_bytes(),
+            None,
+        )
+        .unwrap();
     }
     assert!(
         counter_after(tapped.path(), false) >= 500_000,

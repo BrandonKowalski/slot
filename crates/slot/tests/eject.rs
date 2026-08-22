@@ -36,7 +36,14 @@ fn eject_clears_the_slot_only_after_the_state_is_durable() {
         },
     )
     .unwrap();
-    eject(d.path(), "Emerald", &[9u8; 1024], Some(b"savdata")).unwrap();
+    eject(
+        d.path(),
+        Core::Mgba,
+        "Emerald",
+        &[9u8; 1024],
+        Some(b"savdata"),
+    )
+    .unwrap();
     assert_eq!(read_slot_state(d.path()).cart, None);
     let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
     assert_eq!(r.read_resume().unwrap().unwrap().len(), 1024);
@@ -57,7 +64,7 @@ fn a_resume_that_cannot_be_written_leaves_the_cart_in_the_slot() {
     let d = tmp_root_with_carts(&["Emerald"]);
     write_slot_state(d.path(), &seated("Emerald")).unwrap();
     std::fs::write(d.path().join("States/mgba"), b"in the way").unwrap();
-    assert!(eject(d.path(), "Emerald", &[9u8; 1024], None).is_err());
+    assert!(eject(d.path(), Core::Mgba, "Emerald", &[9u8; 1024], None).is_err());
     assert_eq!(read_slot_state(d.path()).cart, Some("Emerald".into()));
 }
 
@@ -69,8 +76,8 @@ fn an_unchanged_battery_save_is_not_rewritten() {
     std::fs::write(d.path().join("Saves/Emerald.sav"), b"savdata").unwrap();
     let saves = d.path().join("Saves");
     set_mode(&saves, 0o555);
-    let unchanged = eject(d.path(), "Emerald", &[0u8; 8], Some(b"savdata"));
-    let changed = eject(d.path(), "Emerald", &[0u8; 8], Some(b"changed"));
+    let unchanged = eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], Some(b"savdata"));
+    let changed = eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], Some(b"changed"));
     set_mode(&saves, 0o755);
     unchanged.expect("identical bytes must not touch the card");
     assert!(
@@ -96,7 +103,7 @@ fn eject_preserves_the_levels() {
         },
     )
     .unwrap();
-    eject(d.path(), "Emerald", &[0u8; 8], None).unwrap();
+    eject(d.path(), Core::Mgba, "Emerald", &[0u8; 8], None).unwrap();
     let s = read_slot_state(d.path());
     assert_eq!((s.brightness, s.blue_light, s.volume), (2, 7, 35));
     assert!(s.muted, "the cart came out and the sound came back");

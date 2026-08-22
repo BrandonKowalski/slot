@@ -15,8 +15,21 @@ pub trait Snapshot {
 
 /// What lid close, the power press edge and the autosave all write. The slot is untouched:
 /// none of them is an eject, and the cart has to still be in it on the next boot.
-pub fn flush(root: &Path, stem: &str, state: &[u8], sav: Option<&[u8]>) -> std::io::Result<()> {
-    StateRing::new(root, slot_store::core_for(root, stem), stem).write_resume(state)?;
+///
+/// Takes `core` rather than resolving it here, for the same reason `read_resume` does below:
+/// the caller already has to know which core is live to have anything worth flushing, and
+/// asking this function to work it out too would be a second, independent read of
+/// `selected_core.ini` for the same cart. `App` is that caller — it resolves `core` once, at
+/// insert, stores it, and hands the stored value here on every later write, which is what
+/// keeps this from ever disagreeing with the dylib actually running.
+pub fn flush(
+    root: &Path,
+    core: Core,
+    stem: &str,
+    state: &[u8],
+    sav: Option<&[u8]>,
+) -> std::io::Result<()> {
+    StateRing::new(root, core, stem).write_resume(state)?;
     if let Some(sav) = sav {
         write_sav(root, stem, sav)?;
     }
@@ -25,8 +38,14 @@ pub fn flush(root: &Path, stem: &str, state: &[u8], sav: Option<&[u8]>) -> std::
 
 /// Both durable writes land before the slot is recorded empty, so a cut anywhere in here
 /// leaves a cart that still resumes rather than a session with nowhere to go back to.
-pub fn eject(root: &Path, stem: &str, state: &[u8], sav: Option<&[u8]>) -> std::io::Result<()> {
-    flush(root, stem, state, sav)?;
+pub fn eject(
+    root: &Path,
+    core: Core,
+    stem: &str,
+    state: &[u8],
+    sav: Option<&[u8]>,
+) -> std::io::Result<()> {
+    flush(root, core, stem, state, sav)?;
     let mut slot = read_slot_state(root);
     slot.cart = None;
     write_slot_state(root, &slot)
@@ -61,8 +80,10 @@ pub fn read_sav(root: &Path, stem: &str) -> Option<Vec<u8>> {
 /// Takes `core` rather than resolving it here: the caller already has to know which core it
 /// is about to open, and asking this function to work it out too would be a second,
 /// independent read of `selected_core.ini` for the same cart in the same breath as the
-/// first. `session.rs` resolves it once per insert and hands that value to both this and
-/// `open_core`, which is what keeps the resume directory and the dylib from ever disagreeing.
+/// first. `session.rs` resolves it once per insert and hands that single value to both this
+/// and `open_core`, which is what keeps the resume directory and the dylib from disagreeing
+/// at that moment. It says nothing about later: `flush` and eject read the core `App` stored
+/// from that same resolution rather than asking again, which is what keeps them agreeing too.
 pub fn read_resume(root: &Path, core: Core, stem: &str) -> Option<Vec<u8>> {
     StateRing::new(root, core, stem)
         .read_resume()
