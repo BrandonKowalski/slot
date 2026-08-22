@@ -22,7 +22,8 @@ jobs:
     container: rust:1-bullseye
     outputs:
       zip: ${{ steps.package.outputs.zip }}
-      core_sha: ${{ steps.package.outputs.core_sha }}
+      mgba_sha: ${{ steps.package.outputs.mgba_sha }}
+      gpsp_sha: ${{ steps.package.outputs.gpsp_sha }}
       core_date: ${{ steps.package.outputs.core_date }}
     steps:
       - uses: actions/checkout@v7
@@ -61,9 +62,13 @@ jobs:
           zip -qry "$zip" "$out"
           {
             echo "zip=$zip"
-            # Recorded rather than pinned: the core is whatever the buildbot was serving as
-            # latest when this ran, and a release should be able to say which one that was.
-            echo "core_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
+            # Recorded rather than pinned: both cores are whatever the buildbot was serving
+            # as latest when this ran, and a release should be able to say which ones those
+            # were. Both are hashed, not only mGBA's — the release ships gpSP's binary too,
+            # and a card with a corrupted or substituted gpSP core deserves the same way to
+            # check it against the announcement as mGBA already had.
+            echo "mgba_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
+            echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
             echo "core_date=$(date -u +%Y-%m-%d)"
           } >> "$GITHUB_OUTPUT"
 
@@ -92,7 +97,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ZIP: ${{ needs.build.outputs.zip }}
-          CORE_SHA: ${{ needs.build.outputs.core_sha }}
+          MGBA_SHA: ${{ needs.build.outputs.mgba_sha }}
+          GPSP_SHA: ${{ needs.build.outputs.gpsp_sha }}
           CORE_DATE: ${{ needs.build.outputs.core_date }}
         run: |
           set -eu
@@ -102,9 +108,11 @@ jobs:
           | | |
           |---|---|
           | \`System/slot\` | aarch64, built against glibc 2.31 |
-          | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE} |
+          | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${MGBA_SHA}\` |
+          | \`System/gpsp_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${GPSP_SHA}\` |
 
-          mGBA core sha256 \`${CORE_SHA}\`
+          mGBA is MPL-2.0, gpSP is GPL-2.0 — both shipped as unmodified libretro cores, both
+          credited with their license text and upstream source under \`System/licenses/\`.
           NOTES
           # --repo because this job never checks out: gh works out where to publish from the
           # git remote otherwise, and there is no repository here to ask.
