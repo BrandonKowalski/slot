@@ -523,6 +523,14 @@ impl App {
         !self.link_active()
     }
 
+    /// Fast forward runs this device's machine out ahead of what the peer has actually been
+    /// sent — the same desync `may_rewind` refuses for running it backwards instead, and
+    /// named in the very libretro.h sentence `may_rewind`'s own contract comes from
+    /// ("pausing, slow motion, fast forward, rewinding, save state loading... are disabled").
+    pub fn may_fast_forward(&self) -> bool {
+        !self.link_active()
+    }
+
     /// Ends the session and leaves the cart playing single player. Never an error: the peer
     /// vanishing and the user ending it deliberately look the same from here.
     ///
@@ -730,6 +738,10 @@ impl App {
                 // interrupted. Declined the same way every other "nothing doing" action in
                 // this file is, so the press reads as answered rather than dropped.
                 Action::RewindStart if !self.may_rewind() => self.refuse(),
+                // Fast forward is the same interruption run forwards. `Session::sync_speed`
+                // is what actually withholds `Speed::Fast` for as long as `may_fast_forward`
+                // says no — this is only the shake, so the press reads as answered.
+                Action::FfStart if !self.may_fast_forward() => self.refuse(),
                 _ => {}
             },
             Phase::Polaroids { .. } => match action {
@@ -1465,6 +1477,15 @@ impl App {
             Phase::Playing { cart } | Phase::Inserting { cart, .. } => std::mem::take(cart),
             _ => return,
         };
+        // A session does not survive its cart. Without this a phantom session outlives the
+        // eject: `link_active()` stays true with no core left to carry it, `may_rewind`/
+        // `may_load_state` stay wedged closed for whatever cart goes in next, and
+        // `doze_expired`'s own guard refuses to let the device sleep again — forever, since
+        // nothing left in the app ever flips it back. `Session::act`'s edge bridge (watching
+        // `link_active()` fall across every `apply`) is what carries this to
+        // `EmuHandle::end_link` on the emulator thread, the same way it does for a doze or a
+        // power press.
+        self.end_link();
         self.flush_eject(&cart);
         // The offer names a file in this cart's ring and a state only this cart's core can
         // read. Carried across the slot it would delete or load the wrong one.
@@ -1510,24 +1531,30 @@ impl App {
     /// and that second copy alone was enough to keep `doze_never_expires_while_a_session_is_live`
     /// passing after the real guard was mutated away.
     ///
-    /// A live session ends here rather than surviving the doze. `Session::sync_speed` maps
-    /// `Phase::Doze` to `Speed::Paused`, and pausing is one of the exact manipulations
-    /// libretro's netpacket contract names as forbidden while players are connected — the
-    /// same desync hazard as dropping the transport outright, not a lesser one. The
-    /// alternative — holding the session open through a doze that keeps the core running
-    /// *unpaused*, so the panel can go dark for free — is a bigger change than this fix
-    /// (`sync_speed` would have to learn about sessions too) and would not even save the
+    /// A live session ends here rather than surviving the doze — but the doze still happens:
+    /// this used to `return` right after `end_link()`, which ended the session and then left
+    /// the device sitting in `Phase::Playing`, wide awake, behind a lid the player had just
+    /// shut. That is exactly the 400-700 mA outcome the paragraph below argues against,
+    /// reached anyway, with the session dead on top of it — proven by `phase` still reading
+    /// `Playing` ten seconds after a `LidClose` that hardware delivers exactly once per
+    /// physical close, with no second press coming to "retry" into an actual doze.
+    ///
+    /// `Session::sync_speed` maps `Phase::Doze` to `Speed::Paused`, and pausing is one of the
+    /// exact manipulations libretro's netpacket contract names as forbidden while players are
+    /// connected — the same desync hazard as dropping the transport outright, not a lesser
+    /// one. The alternative — holding the session open through a doze that keeps the core
+    /// running *unpaused*, so the panel can go dark for free — is a bigger change than this
+    /// fix (`sync_speed` would have to learn about sessions too) and would not even save the
     /// battery it sounds like it would: `doze_expired` already refuses to end a session on
     /// its own idle timer, so a session left open behind a shut lid would sit at 400-700 mA
     /// with the radio up for as long as the lid stayed shut, never once reaching the sub-45
     /// mA a real doze exists to reach. Ending the session costs a trade partner who shut the
     /// lid only to think for a moment — there is no answer here that costs nothing — but it
-    /// is the one already chosen for `PowerPress`, and it is the only one of the three that
-    /// cannot also violate the very contract it exists to enforce.
+    /// is the one already chosen for `PowerPress`, and completing the doze underneath it is
+    /// the only way to actually reach the low-power state this function exists for.
     fn doze(&mut self) {
         if self.link_active() {
             self.end_link();
-            return;
         }
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
@@ -1599,6 +1626,14 @@ impl App {
     fn open_power_menu(&mut self) {
         if self.power_menu.is_some() {
             return;
+        }
+        // Same hazard as the switcher: the menu pauses the core too — `Session::sync_speed`
+        // maps `held()`, which the menu is one of, to `Speed::Paused` — one of the exact
+        // manipulations libretro's netpacket contract forbids while a session is live. Unlike
+        // `PowerPress` this button does not end the session for the player; it just declines,
+        // the same shake every other "nothing doing" action in this file answers with.
+        if self.link_active() {
+            return self.refuse();
         }
         // Durable before the menu is even on screen: from here the user may hold on to the
         // PMIC's own six second cutoff, which takes the rails away whatever we wanted.
@@ -1722,6 +1757,15 @@ impl App {
 
     /// An empty ring shakes rather than opening an empty screen, per spec section 4.
     fn open_polaroids(&mut self) {
+        // Opening the switcher pauses the core — `Session::sync_speed` maps
+        // `Phase::Polaroids` straight to `Speed::Paused` — one of the exact manipulations
+        // libretro's netpacket contract forbids while a session is live, whether or not the
+        // player means to load anything once inside. Checked ahead of even looking for
+        // states to show, the same way `load_newest` already checked ahead of looking for
+        // one to load.
+        if self.link_active() {
+            return self.refuse();
+        }
         let entries = self.entries();
         if entries.is_empty() {
             return self.refuse();
@@ -1798,19 +1842,23 @@ impl App {
     }
 
     fn load_newest(&mut self) {
-        // A state load would desynchronise the other device with no way back to agreement,
-        // ahead of even checking whether there is a state to load: a session that started
-        // from the cart's battery save has nothing this ring should ever hand back to it.
-        if !self.may_load_state() {
-            return self.refuse();
-        }
         let Some(newest) = self.entries().first().map(|e| e.state.clone()) else {
             return self.refuse();
         };
         self.load_file(&newest);
     }
 
+    /// The chokepoint every load-from-disk route funnels through — `load_newest` above and
+    /// `load_selected` alike — so the session guard lives here once rather than at each
+    /// caller. That used to be `load_newest`'s own job, checked ahead of even looking for a
+    /// state to load; `load_selected` never got the same check, which is what let the
+    /// switcher's own A-button pick bypass it entirely. Guarding here instead closes that
+    /// hole for both today's callers and whatever the next one turns out to be.
     fn load_file(&mut self, state: &Path) {
+        // A state load would desynchronise the other device with no way back to agreement.
+        if !self.may_load_state() {
+            return self.refuse();
+        }
         let Some(snapshot) = &self.snapshot else {
             return;
         };
@@ -1927,6 +1975,16 @@ impl App {
         if !self.undo_available(now) {
             self.pending = None;
             return;
+        }
+        // Undoing a load moves the core to a moment the peer never agreed to — the exact
+        // hazard `load_file` guards against, and the one route into it that never passes
+        // through `load_file` at all: the bytes are already in hand from when the load
+        // happened, not read fresh off disk. Refused without consuming the offer, the same
+        // way a refused rewind or state load leaves the player able to try again once the
+        // session that refused it is gone — an undo's own save-file cleanup, `undo_save`
+        // below, touches no core state at all, so only this arm needs the check.
+        if matches!(&self.pending, Some((PendingUndo::Load { .. }, _))) && !self.may_load_state() {
+            return self.refuse();
         }
         let Some((what, _)) = self.pending.take() else {
             return;

@@ -331,7 +331,13 @@ impl Session {
                     || self.held()
                 {
                     Speed::Paused
-                } else if self.fast && self.playing() {
+                } else if self.fast && self.playing() && self.app.may_fast_forward() {
+                    // A live link session forbids fast forward the same way it forbids
+                    // rewind: running this device's machine out ahead of what the peer has
+                    // actually been sent is a desync with no way back, and libretro's
+                    // netpacket contract names fast forward in the same breath as pausing
+                    // and rewinding. `App::apply`'s own `FfStart` arm is what shakes the
+                    // screen for the player; this is what actually withholds the speed.
                     Speed::Fast
                 } else {
                     Speed::Normal

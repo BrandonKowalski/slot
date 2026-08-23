@@ -4,13 +4,14 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
-use common::{app_playing_in, tmp_root_with_carts};
+use common::{app_playing_in, app_playing_with, tmp_root_with_carts, StubSnapshot};
 use slot::app::Phase;
+use slot::emu::Speed;
 use slot::link_net::TcpLink;
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::{LinkChannel, LoopbackLink, NETPACKET_RELIABLE};
-use slot_store::{write_slot_state, SlotState};
+use slot_store::{write_slot_state, Core, SlotState, StateRing};
 
 /// Both ends on loopback: no radio, no peer device, no BaseOS. This proves the framing and
 /// the threading, which is everything the transport is responsible for.
@@ -296,6 +297,125 @@ fn a_live_session_refuses_a_state_load_even_when_one_exists() {
     );
 }
 
+/// C3: `load_newest` (`Action::LoadState`, above) was the only one of the two switcher load
+/// routes ever guarded. `load_selected` — the switcher's own A-button pick — funnelled into
+/// the same unguarded `load_file` underneath, and reached the core with no check at all. The
+/// switcher has to already be open for a pick to mean anything, so this begins the session
+/// only after opening it — proving the guard `load_file` itself now carries, independent of
+/// whichever caller happens to reach it.
+#[test]
+fn a_live_session_refuses_a_switcher_pick_even_when_one_exists() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
+    r.push(&[0u8; 64], b"png", "2026-08-09_00-00-00").unwrap();
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.apply(Action::Polaroids);
+    a.begin_link(0);
+
+    a.apply(Action::GbaDown(Btn::A));
+    assert!(
+        a.refusal_active(a.now()),
+        "picking a state in the switcher must be refused during a session"
+    );
+}
+
+/// C3: the same hole reaches undo. `load_file` guards every load read fresh off disk, but an
+/// undo of a *load* replays bytes already in hand from when that load happened — it never
+/// calls `load_file` at all, so it needs its own check. Priming the offer happens before the
+/// session starts (a load during one is refused by the test above already); this proves the
+/// undo of that earlier, legitimate load is what a session still forbids.
+#[test]
+fn a_live_session_refuses_to_undo_a_load() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
+    r.push(&[7u8; 64], b"png", "2026-08-09_00-00-00").unwrap();
+    let (snapshot, loaded) = StubSnapshot::pair();
+    let mut a = app_playing_with(d.path(), "Emerald", snapshot);
+
+    a.apply(Action::Polaroids);
+    a.apply(Action::GbaDown(Btn::A)); // load_selected: primes a Load undo
+    assert!(a.undo_available(a.now()), "the load did not offer an undo");
+    *loaded.lock().unwrap() = None; // clear what that priming load itself recorded
+
+    a.begin_link(0);
+    a.undo(a.now());
+
+    assert!(
+        a.refusal_active(a.now()),
+        "undoing a load must be refused during a session, the same hazard load_file guards"
+    );
+    assert!(
+        loaded.lock().unwrap().is_none(),
+        "the core must not have been moved to the prior state"
+    );
+    assert!(
+        a.undo_available(a.now()),
+        "a refused undo must not consume the offer"
+    );
+}
+
+/// C3: opening the switcher pauses the core (`Session::sync_speed` maps `Phase::Polaroids`
+/// straight to `Speed::Paused`), one of the exact manipulations libretro's netpacket
+/// contract forbids while a session is live — whether or not the player means to load
+/// anything once inside.
+#[test]
+fn a_live_session_refuses_to_open_the_switcher() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
+    r.push(&[0u8; 64], b"png", "2026-08-09_00-00-00").unwrap();
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+
+    a.apply(Action::Polaroids);
+    assert!(
+        matches!(a.phase(), Phase::Playing { .. }),
+        "opening the switcher pauses the core, which a session forbids"
+    );
+    assert!(
+        a.refusal_active(a.now()),
+        "a refused switcher open must shake"
+    );
+}
+
+/// C3: the power menu pauses the core too (`Session::sync_speed` maps `held()`, which an
+/// open menu is one of, to `Speed::Paused`) — the same hazard as the switcher, reached
+/// through `PowerHold` instead.
+#[test]
+fn a_live_session_refuses_to_open_the_power_menu() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+
+    a.apply(Action::PowerHold);
+    assert!(
+        a.power_menu().is_none(),
+        "the power menu pauses the core, which a session forbids"
+    );
+    assert!(
+        a.refusal_active(a.now()),
+        "a refused power-menu open must shake"
+    );
+}
+
+/// I3: `eject` used to leave `self.link` untouched. Proven the way the reviewer proved it —
+/// `link_active()` still true, both interlocks still wedged closed — with no cart left to
+/// carry the session at all, and nothing short of this fix ever clearing it again.
+#[test]
+fn ejecting_during_a_session_ends_it() {
+    let d = tmp_root_with_carts(&["Emerald", "Ruby"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+    assert!(a.link_active());
+
+    a.apply(Action::Eject);
+    assert!(
+        !a.link_active(),
+        "an ejected cart must not leave a phantom session behind"
+    );
+    assert!(a.may_rewind());
+    assert!(a.may_load_state());
+}
+
 /// One button, one meaning at a time. Ending a live session is what this press is for, and
 /// it must not also flush-and-continue as though nothing were open.
 #[test]
@@ -319,11 +439,12 @@ fn a_power_press_ends_a_live_session_instead_of_flushing_only() {
 }
 
 /// `PowerTap` reaches `doze` by way of `power_press`, bypassing `PowerPress`'s own guard
-/// entirely — the actual hole this closes. Before the fix this silently dozed a live session
-/// instead of ending it, which is precisely the desync `App::may_rewind`/`may_load_state`
-/// exist to prevent, just reached through a different button edge.
+/// entirely — the actual hole this closes. `doze` ends a live session and then completes the
+/// doze underneath it (see `doze`'s own doc comment for why leaving the device awake behind
+/// it is worse, not safer) — so one tap during a session both ends it and puts the device to
+/// sleep, exactly as one tap outside a session already does.
 #[test]
-fn a_power_tap_ends_a_live_session_instead_of_dozing() {
+fn a_power_tap_ends_a_live_session_and_dozes_in_the_same_tap() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.begin_link(0);
@@ -332,23 +453,24 @@ fn a_power_tap_ends_a_live_session_instead_of_dozing() {
     a.apply(Action::PowerTap);
     assert!(!a.link_active(), "a power tap must end a live session");
     assert!(
-        matches!(a.phase(), Phase::Playing { .. }),
-        "ending the session must not also doze in the same tap"
+        matches!(a.phase(), Phase::Doze { .. }),
+        "ending the session must not leave the device awake behind the tap that closed it"
     );
 
-    // Nothing left to end: a second tap behaves exactly as it does outside a session.
+    // A second tap wakes, exactly as it does outside a session.
     a.apply(Action::PowerTap);
-    assert!(matches!(a.phase(), Phase::Doze { .. }));
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
 }
 
 /// `LidClose` calls `doze` directly (both arms: with the power menu open and without), so it
 /// needs no guard of its own — the one inside `doze` closes this path exactly the way it
-/// closes `PowerTap`'s. A trade partner's lid closing must not silently drop their game the
-/// way it silently dozed it before this fix; ending the session here (rather than holding it
-/// open through a doze, which pauses the core — see `doze`'s own comment for why that would
-/// just trade one contract violation for another) is the deliberate choice.
+/// closes `PowerTap`'s. A real lid delivers `LidClose` once per physical close
+/// (`gesture.rs:198`) — there is no second press to "retry" with, the way `PowerTap` has —
+/// so ending a live session here must land the device in `Doze`, not leave it awake behind a
+/// shut lid at 400-700 mA waiting for a close that is not coming again. `LidOpen` is what a
+/// real lid can actually deliver next, and is what wakes it back up.
 #[test]
-fn a_lid_close_ends_a_live_session_instead_of_dozing() {
+fn a_lid_close_ends_a_live_session_and_dozes() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.begin_link(0);
@@ -357,13 +479,13 @@ fn a_lid_close_ends_a_live_session_instead_of_dozing() {
     a.apply(Action::LidClose);
     assert!(!a.link_active(), "closing the lid must end a live session");
     assert!(
-        matches!(a.phase(), Phase::Playing { .. }),
-        "ending the session must not also doze on the same close"
+        matches!(a.phase(), Phase::Doze { .. }),
+        "ending the session must not leave the device awake behind a shut lid"
     );
 
-    // Nothing left to end: closing it again behaves exactly as it does outside a session.
-    a.apply(Action::LidClose);
-    assert!(matches!(a.phase(), Phase::Doze { .. }));
+    // The lid opening, not a second close, is what hardware can actually deliver next.
+    a.apply(Action::LidOpen);
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
 }
 
 /// The production path, and the only one: `App::update` drives `timers`, which reads
@@ -488,5 +610,44 @@ fn ending_a_session_reaches_the_emulator_thread_too() {
     assert!(
         wait_until(|| s.emu().is_some_and(|e| !e.net().is_active())),
         "ending a session at the App level must reach the emulator thread too"
+    );
+}
+
+/// C3: fast forward had no `may_*` check at all — `session.rs:334` picked `Speed::Fast`
+/// whenever R2 was held and the game was playing, session or not. Driven through a real
+/// `Session` (unlike the pure-`App` interlock tests above) because the gate lives in
+/// `Session::sync_speed`, not in `App`.
+#[test]
+fn a_live_session_refuses_fast_forward() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.app_mut().begin_link(0);
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::R2)));
+    for _ in 0..5 {
+        step(&mut s, &mut now, None);
+    }
+
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| e.observed_speed() == Speed::Normal)),
+        "fast forward must be refused while a session is live"
     );
 }
