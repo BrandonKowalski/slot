@@ -81,3 +81,57 @@ fn core_names_round_trip() {
     assert_eq!(Core::parse("nonsense"), None);
     assert_eq!(Core::default(), Core::Mgba);
 }
+
+#[test]
+fn writing_a_core_creates_the_file_when_absent() {
+    let d = root_with(None);
+    slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
+}
+
+#[test]
+fn writing_a_core_replaces_that_carts_line_and_leaves_the_rest_alone() {
+    let d = root_with(Some(concat!(
+        "# my notes\n",
+        "\n",
+        "Emerald = mgba\n",
+        "Metroid Fusion = gpsp\n",
+    )));
+    slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
+
+    let text = std::fs::read_to_string(d.path().join("System/selected_core.ini")).unwrap();
+    assert!(
+        text.contains("# my notes"),
+        "a hand-written comment was destroyed"
+    );
+    assert!(
+        text.contains("Metroid Fusion = gpsp"),
+        "another cart's entry was lost"
+    );
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
+    assert_eq!(core_for(d.path(), "Metroid Fusion"), Core::Gpsp);
+    assert_eq!(
+        text.matches("Emerald").count(),
+        1,
+        "the old line was left behind"
+    );
+}
+
+#[test]
+fn writing_a_core_appends_a_cart_the_file_has_never_seen() {
+    let d = root_with(Some("Emerald = gpsp\n"));
+    slot_store::write_selected_core(d.path(), "Drill Dozer", Core::Gpsp).unwrap();
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
+    assert_eq!(core_for(d.path(), "Drill Dozer"), Core::Gpsp);
+}
+
+#[test]
+fn writing_the_default_still_records_it() {
+    // Not a no-op: a cart set to gpsp and then back to mgba must actually change, and the
+    // absence of a line means "default", which is the same answer for a different reason.
+    let d = root_with(Some("Emerald = gpsp\n"));
+    slot_store::write_selected_core(d.path(), "Emerald", Core::Mgba).unwrap();
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Mgba);
+    let text = std::fs::read_to_string(d.path().join("System/selected_core.ini")).unwrap();
+    assert!(text.contains("Emerald = mgba"));
+}

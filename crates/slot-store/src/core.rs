@@ -80,3 +80,45 @@ pub fn core_for(root: &Path, stem: &str) -> Core {
         .copied()
         .unwrap_or_default()
 }
+
+/// Set one cart's core, leaving the rest of the file exactly as it was.
+///
+/// The line is replaced in place, or appended when the cart has no line yet. The file is
+/// never rebuilt from `read_selected_cores`' map: it is meant to be opened in a text editor
+/// on a computer, and a rebuild would quietly drop every comment, blank line and unparsed
+/// line in it — including the note somebody wrote to themselves above a cart.
+pub fn write_selected_core(root: &Path, stem: &str, core: Core) -> std::io::Result<()> {
+    let path = root.join(SELECTED_CORE_FILE);
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let entry = format!("{stem} = {}", core.as_str());
+    let mut out = String::with_capacity(existing.len() + entry.len() + 1);
+    let mut replaced = false;
+
+    for line in existing.lines() {
+        let is_this_cart = line
+            .split_once('=')
+            .map(|(k, _)| k.trim() == stem)
+            .unwrap_or(false);
+        if is_this_cart && !replaced {
+            out.push_str(&entry);
+            replaced = true;
+        } else if is_this_cart {
+            // A duplicate for the same cart: the later line already won when read, so
+            // dropping it keeps the file saying one thing per cart.
+            continue;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !replaced {
+        out.push_str(&entry);
+        out.push('\n');
+    }
+
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    crate::atomic::atomic_write(&path, out.as_bytes())
+}

@@ -9,7 +9,7 @@ mod stamp;
 mod theme;
 
 pub use atomic::atomic_write;
-pub use core::{core_for, read_selected_cores, Core, SELECTED_CORE_FILE};
+pub use core::{core_for, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE};
 pub use gba::{header_code, header_title};
 pub use migrate::{migrate_states, MigrationReport};
 pub use ring::{StateEntry, StateRing, RING_MAX};
