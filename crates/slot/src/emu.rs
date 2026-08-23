@@ -483,14 +483,16 @@ impl Worker {
                         // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
                         // this is just letting go of it.
                         transport = None;
-                        link.set_active(false);
-                        // `set_active(false)` stops anything new from being handed to the
-                        // core (`drain_link`/`netpacket_poll_receive` both check it now), but
-                        // it does not by itself remove what is already queued — a packet that
-                        // arrived a moment before this command would otherwise sit here until
-                        // the *next* session begins and gets fed to a core that never sent or
-                        // asked for it. `Link::clear` is what actually empties both queues.
+                        // Cleared *before* the flag flips, not after: `Link::clear` empties
+                        // both queues (a packet that arrived a moment before this command
+                        // would otherwise sit here until the *next* session begins and gets
+                        // fed to a core that never sent or asked for it), and `set_active`'s
+                        // `Release` store only carries a happens-before guarantee for what
+                        // ran on this thread *before* it. Clearing first is what lets a
+                        // reader who observes `is_active() == false` (`Acquire`) also see the
+                        // queues already empty, with no sleep needed to bridge the gap.
                         link.clear();
+                        link.set_active(false);
                     }
                 }
             }

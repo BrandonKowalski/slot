@@ -568,11 +568,11 @@ fn ending_a_link_clears_stale_packets_for_the_next_session() {
         .push_inbound(b"stale from the old session".to_vec());
 
     emu.end_link();
+    // No settle needed: `Cmd::EndLink` clears both queues before flipping `is_active`, and
+    // `Link::set_active`'s `Release` store is paired with `is_active`'s own `Acquire` load —
+    // so observing the flag fall here is itself the guarantee the clear already happened,
+    // not merely a likely one a fixed sleep would only approximate.
     assert!(wait_for(|| !emu.net().is_active()), "end_link never took");
-    // `Cmd::EndLink` flips `is_active` and clears both queues in the same handler, on the
-    // same thread — a short settle covers the gap between the atomic becoming visible here
-    // and the plain `Mutex`-guarded clear beside it.
-    std::thread::sleep(Duration::from_millis(50));
 
     assert!(
         emu.net().take_inbound().is_none(),

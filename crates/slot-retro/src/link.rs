@@ -86,16 +86,23 @@ impl Link {
         self.0.outbound.lock().unwrap().pop_front()
     }
 
-    /// Whether a session is actually live right now.
+    /// Whether a session is actually live right now. `Acquire`, paired with `set_active`'s
+    /// `Release`: a caller who observes this flip to `false` is guaranteed to also see
+    /// whatever the writer did *before* that store — which `Cmd::EndLink` (`slot`'s `emu.rs`)
+    /// relies on by calling `clear` first and flipping the flag second, so a reader never has
+    /// to bridge the gap between the two with a sleep of its own (see
+    /// `ending_a_link_clears_stale_packets_for_the_next_session` in `emu.rs`).
     pub fn is_active(&self) -> bool {
-        self.0.active.load(Ordering::Relaxed)
+        self.0.active.load(Ordering::Acquire)
     }
 
     /// Mark the session live or ended. Ending it does not clear either queue itself — see
     /// `clear` for that — so a transport that is winding down may still flush what is left
-    /// before its caller gets around to calling it.
+    /// before its caller gets around to calling it. `Release`, so that whatever a caller did
+    /// before this call (`clear`, in `Cmd::EndLink`'s case) is visible to anyone who observes
+    /// the flip through `is_active`'s matching `Acquire` load.
     pub fn set_active(&self, active: bool) {
-        self.0.active.store(active, Ordering::Relaxed);
+        self.0.active.store(active, Ordering::Release);
     }
 
     /// Empties both queues. A packet that arrived — or was produced — before a session ended
