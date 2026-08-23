@@ -8,9 +8,40 @@
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use slot_retro::LinkChannel;
+
+/// A shared "stop waiting" flag. Cloned to whoever might press cancel; checked by whoever is
+/// blocking. Separate from a deadline because the two failures need different words on
+/// screen: a deadline means nobody arrived, a cancel means the player changed their mind.
+#[derive(Clone, Default)]
+pub struct Cancel(Arc<AtomicBool>);
+
+impl Cancel {
+    pub fn new() -> Cancel {
+        Cancel::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// How often a waiting host looks up from the socket to ask whether it should still be
+/// waiting. Well under a frame's worth of perceived lag on a cancel, and costs nothing
+/// meaningful spread over a 30 s wait.
+const POLL_MS: u64 = 50;
+
+/// What a host waits for a friend before deciding nobody is coming.
+pub const HOST_BOUND: Duration = Duration::from_secs(30);
 
 /// One TCP connection carrying a core's serial traffic.
 ///
@@ -37,29 +68,65 @@ pub struct TcpLink {
 }
 
 impl TcpLink {
-    /// Wait for the other handheld. Blocking by design: the caller is a session that has
-    /// nothing else to do until a peer arrives.
+    /// Wait for the other handheld, but not forever and not uninterruptibly.
+    ///
+    /// `accept()` cannot be cancelled, so the listener goes non-blocking and the wait becomes
+    /// a poll: every 50 ms, ask whether a peer has arrived, whether the player has given up,
+    /// and whether the bound has passed. The three outcomes get three different error kinds
+    /// because the screen above says a different sentence for each — `Interrupted` is the
+    /// player pressing B, `TimedOut` is nobody coming, and anything else is a real socket
+    /// fault worth saying so about.
     ///
     /// Binds to `addr` specifically rather than `0.0.0.0`: a listener open on every
     /// interface is reachable from anything on the user's home network, not just the private
     /// WiFi a link session actually runs over, with no handshake and no ROM check to turn
     /// away whatever finds it — see the module doc for why this transport does not hardcode
     /// which address that is.
-    ///
-    /// Known gap, deliberately left for whoever wires the session entry point rather than
-    /// closed here: `accept()` has no timeout and nothing can cancel it, so a real UI that
-    /// called this directly on its own thread would freeze solid until a peer showed up,
-    /// with no way back — no cancel button, no "give up after N seconds". Every caller
-    /// today is a test that already spawns its own peer to connect promptly, so nothing
-    /// live is exposed to it yet. The right fix depends on how that not-yet-built entry
-    /// point wants to drive cancellation (a channel, a deadline, a background thread the UI
-    /// can abandon) — inventing that shape now, without the real call site to design it
-    /// against, risks an API the entry-point work has to redo anyway. Tracked here rather
-    /// than silently inherited.
-    pub fn host(addr: &str, port: u16) -> std::io::Result<TcpLink> {
+    pub fn host_until(
+        addr: &str,
+        port: u16,
+        bound: Duration,
+        cancel: &Cancel,
+    ) -> std::io::Result<TcpLink> {
         let listener = TcpListener::bind((addr, port))?;
-        let (stream, _peer) = listener.accept()?;
-        TcpLink::wrap(stream)
+        listener.set_nonblocking(true)?;
+        let deadline = Instant::now() + bound;
+        loop {
+            if cancel.is_cancelled() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "cancelled while waiting for a peer",
+                ));
+            }
+            match listener.accept() {
+                Ok((stream, _peer)) => {
+                    // Back to blocking before `wrap` sees it. The mode rides along through
+                    // `try_clone` (a dup: one shared file description), and `read_exact`
+                    // hands WouldBlock straight back to a caller that treats any error as
+                    // "peer gone" — so a stream left non-blocking kills the host's reader
+                    // thread on its first read and the host never hears its peer again.
+                    // `a_bounded_host_still_accepts_a_peer_that_does_arrive` is what holds
+                    // this line in place; it sends in both directions for exactly this.
+                    stream.set_nonblocking(false)?;
+                    return TcpLink::wrap(stream);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e),
+            }
+            if Instant::now() >= deadline {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "no peer arrived",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(POLL_MS));
+        }
+    }
+
+    /// The unbounded-looking spelling, kept for the tests that spawn their own peer. It is
+    /// bounded now too: there is no caller anywhere that genuinely wants to wait forever.
+    pub fn host(addr: &str, port: u16) -> std::io::Result<TcpLink> {
+        TcpLink::host_until(addr, port, HOST_BOUND, &Cancel::new())
     }
 
     /// Connect to a host that is already waiting.

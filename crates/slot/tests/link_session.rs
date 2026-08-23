@@ -9,7 +9,7 @@ use common::{
 };
 use slot::app::Phase;
 use slot::emu::Speed;
-use slot::link_net::TcpLink;
+use slot::link_net::{Cancel, TcpLink};
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_power::{Battery, Charge};
@@ -799,5 +799,89 @@ fn a_live_session_hides_the_fast_forward_badge() {
         s.app().ff_badge(),
         None,
         "the badge must not claim fast forward is happening while a session withholds it"
+    );
+}
+
+// --- a bounded, cancellable accept ---------------------------------------------------------
+//
+// `host` used to block in `accept()` forever with nothing able to interrupt it. A real entry
+// point wants both ways out, and each has to be told apart from the other on screen: a
+// deadline means nobody arrived, a cancel means the player changed their mind.
+
+/// Port 0 is "any free port", and nothing is ever told which one it got — so nothing can
+/// connect, which is the point. The bound is what has to end this.
+#[test]
+fn a_host_that_nobody_joins_gives_up_instead_of_waiting_forever() {
+    let cancel = Cancel::new();
+    let started = Instant::now();
+    // `let Err(..) else` rather than `expect_err`, which would want a `Debug` on `TcpLink`
+    // that nothing but this line has ever asked for.
+    let Err(err) = TcpLink::host_until("127.0.0.1", 0, Duration::from_millis(300), &cancel) else {
+        panic!("nobody connected, so this must not succeed");
+    };
+    assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "waited past its bound"
+    );
+}
+
+#[test]
+fn a_host_can_be_cancelled_while_it_is_waiting() {
+    let cancel = Cancel::new();
+    let flag = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        flag.cancel();
+    });
+    let started = Instant::now();
+    let Err(err) = TcpLink::host_until("127.0.0.1", 0, Duration::from_secs(60), &cancel) else {
+        panic!("cancelled, so this must not succeed");
+    };
+    assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
+    // The bound was a minute; cancellation is what ended this, not the deadline.
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "cancel did not take effect"
+    );
+}
+
+/// The bound and the flag are both ways out, not the only ways out: a peer that does arrive
+/// still has to come back as a link that carries a packet, in *both* directions.
+///
+/// The inbound half is the load-bearing one. `host_until` puts the listener in non-blocking
+/// mode to make the wait pollable, and on this platform the accepted stream inherits that
+/// mode through every `try_clone` (a `dup`, one shared file description) — so unless it is
+/// taken back off before `wrap` sees it, the host's reader thread meets `WouldBlock` on its
+/// first `read_exact` and gives up on the peer forever. Sending host → joiner alone cannot
+/// see that: the joiner's socket came from `join`, which this function never touches.
+#[test]
+fn a_bounded_host_still_accepts_a_peer_that_does_arrive() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let cancel = Cancel::new();
+    let peer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        TcpLink::join("127.0.0.1", port)
+    });
+    let mut host = TcpLink::host_until("127.0.0.1", port, Duration::from_secs(10), &cancel)
+        .expect("the peer arrived inside the bound");
+    let mut joiner = peer.join().unwrap().expect("joiner connected");
+
+    host.send(0, b"ping");
+    let got = wait_for(&mut joiner);
+    assert_eq!(
+        got.as_deref(),
+        Some(&b"ping"[..]),
+        "a bounded accept must yield a working link"
+    );
+
+    joiner.send(0, b"pong");
+    let got = wait_for(&mut host);
+    assert_eq!(
+        got.as_deref(),
+        Some(&b"pong"[..]),
+        "the accepted socket must be blocking again, or the host never hears its peer"
     );
 }
