@@ -8,6 +8,7 @@ pub mod frames;
 pub mod frontend;
 pub mod input;
 pub mod link_net;
+pub mod link_radio;
 pub mod persist;
 pub mod resample;
 pub mod rewind;
