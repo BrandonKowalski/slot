@@ -1485,7 +1485,12 @@ impl App {
             y: 0.0,
             w: OUT_W as f32,
             h: OUT_H as f32,
-            colour: slot_ui::opening(),
+            // A scrim, not the opaque ground the power menu takes. That menu ends the
+            // session, so there is nothing behind it worth keeping; this one edits a
+            // property of a cart the player is looking at, and the picker draws only the
+            // core names — with the shelf painted out there would be nothing on screen
+            // saying which cart this is about.
+            colour: slot_ui::scrim(),
         });
         let pitch = POWER_MENU_PITCH;
         let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;

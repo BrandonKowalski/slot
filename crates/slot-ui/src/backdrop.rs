@@ -10,6 +10,13 @@ use crate::art;
 /// is atmosphere behind the shelf, not the shelf's background.
 const SCRIM: f32 = 0.62;
 
+/// The same veil `draw_backdrop` lays over a wallpaper, offered to menus that sit *over* a
+/// screen rather than replacing it. A menu that ends the session can take the whole panel;
+/// one that edits a property of something on screen has to leave that thing readable.
+pub fn scrim() -> [f32; 4] {
+    [0.0, 0.0, 0.0, SCRIM]
+}
+
 /// Cover the whole panel, centre cropped. PNG only, as the labels are.
 pub fn wallpaper_face(path: &Path) -> Option<Vec<u8>> {
     art::cover(path, OUT_W, OUT_H)

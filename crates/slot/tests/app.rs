@@ -7,7 +7,7 @@ use slot::audio::Sfx;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, SlotState};
-use slot_ui::{edge, opening, Draw, TexId, CART_W, OUT_W};
+use slot_ui::{edge, opening, Draw, TexId, CART_W, OUT_H, OUT_W};
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
 /// start the cart clean, and the app cannot know which until the finger comes off.
@@ -806,5 +806,40 @@ fn closing_the_picker_takes_it_off_the_screen() {
     assert!(
         highlight_bars(&out, &faces).is_empty(),
         "the bar behind a row survived the picker closing"
+    );
+}
+
+/// The picker names cores and nothing else — no cart title, no "which game is this". The only
+/// thing on screen saying which cart is being configured is the shelf behind it, so the ground
+/// the picker lays down has to be a scrim rather than the opaque one the power menu takes.
+/// Painting the shelf out would leave "mGBA / gpSP" floating with no subject.
+#[test]
+fn the_picker_lets_the_shelf_read_through_so_the_cart_is_still_visible() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let _faces = fake_core_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+
+    let mut out = Vec::new();
+    app.draw(&mut out);
+
+    let full_panel: Vec<f32> = out
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Rect { x, y, w, h, colour }
+                if *x == 0.0 && *y == 0.0 && *w == OUT_W as f32 && *h == OUT_H as f32 =>
+            {
+                Some(colour[3])
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !full_panel.is_empty(),
+        "the picker laid down no ground at all"
+    );
+    assert!(
+        full_panel.iter().all(|a| *a < 1.0),
+        "a full-panel ground is opaque, so the shelf cannot read through it: {full_panel:?}"
     );
 }
