@@ -809,37 +809,60 @@ fn closing_the_picker_takes_it_off_the_screen() {
     );
 }
 
-/// The picker names cores and nothing else — no cart title, no "which game is this". The only
-/// thing on screen saying which cart is being configured is the shelf behind it, so the ground
-/// the picker lays down has to be a scrim rather than the opaque one the power menu takes.
-/// Painting the shelf out would leave "mGBA / gpSP" floating with no subject.
+/// The picker's own rows read only "mGBA" and "gpSP". Without the cart's name above them the
+/// screen never says which cart is about to change, and the ground is opaque so the shelf
+/// behind it cannot say so either. The name is part of the menu, not decoration on it.
 #[test]
-fn the_picker_lets_the_shelf_read_through_so_the_cart_is_still_visible() {
+fn the_picker_names_the_cart_it_is_about_to_change() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    let _faces = fake_core_faces(&mut app);
+    let faces = fake_core_faces(&mut app);
+    let title = (TexId::from_raw(999), 200, 30);
+    app.set_core_picker_title_face(Some(title));
     app.apply(Action::GbaDown(Btn::Start));
 
     let mut out = Vec::new();
     app.draw(&mut out);
 
-    let full_panel: Vec<f32> = out
+    let title_y = out.iter().find_map(|d| match *d {
+        Draw::Tex { y, tex, .. } if tex == title.0 => Some(y),
+        _ => None,
+    });
+    let title_y = title_y.expect("the picker drew no cart name");
+
+    let first_row = core_rows(&out, &faces)
+        .first()
+        .map(|(_, _, y)| *y)
+        .expect("the picker drew no core rows");
+    assert!(
+        title_y < first_row,
+        "the cart name must sit above the cores, got title at {title_y} and first row at {first_row}"
+    );
+}
+
+/// The power menu ends the session, so it can take the whole panel. This one names its cart,
+/// so it can too - but only because it names it. Painting the shelf out while drawing nothing
+/// but "mGBA" and "gpSP" is the state that has neither.
+#[test]
+fn the_picker_lays_down_an_opaque_ground_under_its_own_title() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let _faces = fake_core_faces(&mut app);
+    app.set_core_picker_title_face(Some((TexId::from_raw(999), 200, 30)));
+    app.apply(Action::GbaDown(Btn::Start));
+
+    let mut out = Vec::new();
+    app.draw(&mut out);
+
+    let ground = out
         .iter()
-        .filter_map(|d| match d {
+        .filter_map(|d| match *d {
             Draw::Rect { x, y, w, h, colour }
-                if *x == 0.0 && *y == 0.0 && *w == OUT_W as f32 && *h == OUT_H as f32 =>
+                if x == 0.0 && y == 0.0 && w == OUT_W as f32 && h == OUT_H as f32 =>
             {
                 Some(colour[3])
             }
             _ => None,
         })
-        .collect();
-
-    assert!(
-        !full_panel.is_empty(),
-        "the picker laid down no ground at all"
-    );
-    assert!(
-        full_panel.iter().all(|a| *a < 1.0),
-        "a full-panel ground is opaque, so the shelf cannot read through it: {full_panel:?}"
-    );
+        .next_back()
+        .expect("the picker laid down no ground at all");
+    assert_eq!(ground, 1.0, "the ground under the picker is see-through");
 }

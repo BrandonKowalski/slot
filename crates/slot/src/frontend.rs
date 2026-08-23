@@ -41,6 +41,8 @@ pub struct Frontend {
     polaroid_texes: Vec<TexId>,
     /// The top plate's line of type, re-rasterised whenever the selection moves.
     title_tex: Option<TexId>,
+    core_title_tex: Option<TexId>,
+    core_titled: Option<String>,
     /// The undo cap's label, which changes with what is on offer.
     undo_tex: Option<TexId>,
     switcher: Switcher,
@@ -94,6 +96,8 @@ impl Frontend {
             draws: Vec::new(),
             polaroid_texes: Vec::new(),
             title_tex: None,
+            core_title_tex: None,
+            core_titled: None,
             undo_tex: None,
             switcher: Switcher::default(),
             clocks: Clocks::default(),
@@ -216,6 +220,12 @@ impl Frontend {
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_about(self.session.app_mut(), compositor, &mut self.about);
+        sync_core_picker(
+            self.session.app_mut(),
+            compositor,
+            &mut self.core_title_tex,
+            &mut self.core_titled,
+        );
         sync_switcher(
             self.session.app_mut(),
             compositor,
@@ -389,6 +399,33 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
 
 /// Into the slot's own texture if it has one, so the pool stops growing after the first
 /// opening.
+/// The cart's name over the core picker, rebuilt only when the name under the caret changes:
+/// once per open, and once more per arrow press while it is shut. `titled` is what makes that
+/// a comparison rather than a rasterise every frame.
+fn sync_core_picker(
+    app: &mut App,
+    compositor: &mut Compositor,
+    slot: &mut Option<TexId>,
+    titled: &mut Option<String>,
+) {
+    let want = app
+        .core_picker()
+        .and_then(|_| app.selected_stem().map(str::to_string));
+    if *titled == want {
+        return;
+    }
+    *titled = want.clone();
+    match want {
+        Some(stem) => {
+            let face = title_face(&stem);
+            let (w, h) = (face.w, face.h);
+            let id = upload(compositor, slot, face);
+            app.set_core_picker_title_face(Some((id, w, h)));
+        }
+        None => app.set_core_picker_title_face(None),
+    }
+}
+
 fn upload(compositor: &mut Compositor, slot: &mut Option<TexId>, face: slot_ui::UndoFace) -> TexId {
     match *slot {
         Some(id) => {

@@ -91,6 +91,8 @@ const SHUTDOWN_SHOW_MS: Millis = 250;
 const POWER_MENU_PITCH: f32 = 44.0;
 /// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
 /// stay separate things rather than one continuous block when the selection moves.
+/// Between the cart's name and the first core row.
+const CORE_PICKER_TITLE_GAP: f32 = 18.0;
 const POWER_MENU_BAR_INSET: f32 = 4.0;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
@@ -194,6 +196,10 @@ pub struct App {
     /// cannot move while it is up, so there is only ever one answer and no way for a
     /// remembered one to go stale against it.
     core_picker: Option<usize>,
+    /// The highlighted cart's name, rasterised by the frontend when the picker opens. The
+    /// picker's own rows say only "mGBA" and "gpSP", so without this the screen never names
+    /// the cart it is about to change.
+    core_picker_title_face: Option<(TexId, u32, u32)>,
     /// One per `Core::ALL`, in that order, with the size each was rastered at. Uploaded at
     /// startup beside the power menu's, for a quieter version of the same reason: the faces
     /// never change, so rastering them the moment a button opens the menu would put a font
@@ -306,6 +312,7 @@ impl App {
             power_menu: None,
             power_menu_faces: Vec::new(),
             core_picker: None,
+            core_picker_title_face: None,
             core_picker_faces: Vec::new(),
             restarting: false,
             act_at: 0,
@@ -1410,6 +1417,10 @@ impl App {
         self.power_menu_faces = faces;
     }
 
+    pub fn set_core_picker_title_face(&mut self, face: Option<(TexId, u32, u32)>) {
+        self.core_picker_title_face = face;
+    }
+
     pub fn set_core_picker_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
         self.core_picker_faces = faces;
     }
@@ -1485,15 +1496,26 @@ impl App {
             y: 0.0,
             w: OUT_W as f32,
             h: OUT_H as f32,
-            // A scrim, not the opaque ground the power menu takes. That menu ends the
-            // session, so there is nothing behind it worth keeping; this one edits a
-            // property of a cart the player is looking at, and the picker draws only the
-            // core names — with the shelf painted out there would be nothing on screen
-            // saying which cart this is about.
-            colour: slot_ui::scrim(),
+            colour: slot_ui::opening(),
         });
         let pitch = POWER_MENU_PITCH;
-        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
+        // Title and rows are centred as one block, not the rows alone with a caption pushed
+        // above them: a menu that names the cart it is about has the name as part of it.
+        let head = self
+            .core_picker_title_face
+            .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_TITLE_GAP);
+        let top = (OUT_H as f32 - (pitch * rows as f32 + head)) / 2.0;
+        if let Some((tex, w, h)) = self.core_picker_title_face {
+            out.push(Draw::Tex {
+                x: ((OUT_W as f32 - w as f32) / 2.0).round(),
+                y: top,
+                w: w as f32,
+                h: h as f32,
+                tex,
+                alpha: 1.0,
+            });
+        }
+        let top = top + head;
         for (row, (tex, w, h)) in self.core_picker_faces.iter().copied().enumerate() {
             let y = top + pitch * row as f32;
             let x = ((OUT_W as f32 - w as f32) / 2.0).round();
