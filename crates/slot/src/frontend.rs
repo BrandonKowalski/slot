@@ -14,8 +14,9 @@ use slot_ui::{
     Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
-use crate::app::{App, Phase};
+use crate::app::{App, GameRow, LinkRow, Phase};
 use crate::build_info::Build;
+use crate::link_start::{LinkFail, LinkStep};
 use crate::session::Session;
 use crate::wallpaper;
 
@@ -178,6 +179,19 @@ impl Frontend {
         self.session
             .app_mut()
             .set_core_picker_caption_face(Some(cap));
+        // The in-game menu, its two link rows, and the sentences the screen says while a
+        // link is coming up or after it did not. All of it at the same size and through the
+        // same rasteriser as the two menus above, because they are the same object — and all
+        // of it at boot, because a link that is failing is the worst moment to be asking a
+        // font for a sentence.
+        let rows = menu_faces(compositor, GameRow::ALL.iter().map(|r| r.text()));
+        self.session.app_mut().set_game_menu_faces(rows);
+        let link = menu_faces(compositor, LinkRow::ALL.iter().map(|r| r.text()));
+        self.session.app_mut().set_link_menu_faces(link);
+        let steps = menu_faces(compositor, LinkStep::ALL.iter().map(|s| s.line()));
+        self.session.app_mut().set_link_step_faces(steps);
+        let fails = menu_faces(compositor, LinkFail::SHOWN.iter().map(|f| f.line()));
+        self.session.app_mut().set_link_fail_faces(fails);
         let toasts = Toast::ALL
             .iter()
             .map(|t| {
@@ -285,6 +299,22 @@ impl Frontend {
     pub fn poweroff(&mut self) {
         self.session.app_mut().poweroff();
     }
+}
+
+/// A line of menu type per label, in the order they were handed over, each with the size it
+/// was rastered at. Every menu on the device is drawn from a list shaped exactly like this,
+/// so the four the in-game menu needs are built through one function rather than four copies
+/// of the same three lines.
+fn menu_faces<'a>(
+    compositor: &mut Compositor,
+    labels: impl Iterator<Item = &'a str>,
+) -> Vec<(TexId, u32, u32)> {
+    labels
+        .map(|label| {
+            let f = menu_face(label);
+            (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+        })
+        .collect()
 }
 
 /// A screen's key caps, in the order the legend names them. None of them ever changes what

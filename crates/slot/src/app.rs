@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use slot_gfx::{OUT_H, OUT_W};
 use slot_input::{Action, Btn, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
+use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, SlotState, StateEntry,
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
@@ -13,6 +14,8 @@ use slot_ui::{
 };
 
 use crate::audio::Sfx;
+use crate::link_radio::LinkRole;
+use crate::link_start::{LinkFail, LinkProgress, LinkStarter, LinkStep, LINK_PORT};
 use crate::persist::{self, Snapshot};
 
 /// A floor, not a delay. The animation is where the core load hides, so a slow load
@@ -135,6 +138,96 @@ struct LinkSession {
     client_id: u16,
 }
 
+/// A link being started: the worker doing the slow parts, and which of libretro's two client
+/// ids this device becomes if it succeeds. The id is decided by the row that was picked and
+/// has to outlive the pick, because it is `Ready`, frames later, that needs it.
+struct LinkStarting {
+    starter: LinkStarter,
+    client_id: u16,
+}
+
+/// The in-game menu, over a paused game rather than instead of it. `Phase::Playing` carries
+/// the session; leaving it to show a menu would mean rebuilding it to come back, and "cancel
+/// returns you to your game" is the entire requirement.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GameMenu {
+    /// The top level, holding whichever row is in hand.
+    Rows(usize),
+    /// Host or Join.
+    Link(usize),
+    /// The worker is running, and `LinkStep` is what the screen says while it does.
+    Working(LinkStep),
+    /// It did not work, and this is which one. B returns to the game.
+    Failed(LinkFail),
+}
+
+/// A row of the in-game menu. One today — the menu exists for it — and an enum rather than a
+/// bare index so a second row is a variant and a face rather than a set of numbers to keep
+/// in agreement.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GameRow {
+    Link,
+}
+
+impl GameRow {
+    /// Every row, once, in the order their faces are uploaded. Which of them a given cart
+    /// actually shows is `App::game_rows`.
+    pub const ALL: [GameRow; 1] = [GameRow::Link];
+
+    /// Position in `ALL`, which is the order the faces are in.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn text(self) -> &'static str {
+        match self {
+            GameRow::Link => "Link",
+        }
+    }
+}
+
+/// Which end of a link this device is offering to be. The player picks; there is no
+/// discovery on this network and nothing to negotiate it with.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LinkRow {
+    Host,
+    Join,
+}
+
+impl LinkRow {
+    /// Host first: it is the end that has to exist before the other one can arrive.
+    pub const ALL: [LinkRow; 2] = [LinkRow::Host, LinkRow::Join];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn text(self) -> &'static str {
+        match self {
+            LinkRow::Host => "Host",
+            LinkRow::Join => "Join",
+        }
+    }
+
+    /// What the radio is asked to bring up: an access point, or an association to one.
+    pub fn role(self) -> LinkRole {
+        match self {
+            LinkRow::Host => LinkRole::Host,
+            LinkRow::Join => LinkRole::Join,
+        }
+    }
+
+    /// libretro's own client id, not ours — 0 the host and 1 the joiner, the only two this
+    /// product has. The two devices must never both think they are the same one, which is
+    /// exactly what the role they picked decides.
+    pub fn client_id(self) -> u16 {
+        match self {
+            LinkRow::Host => 0,
+            LinkRow::Join => 1,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Phase {
     /// Slot's own first launch, ahead of the shelf and ahead of a seated cart. Three things
@@ -216,6 +309,29 @@ pub struct App {
     /// never change, so rastering them the moment a button opens the menu would put a font
     /// pass in front of a press that has nothing to gain by it.
     core_picker_faces: Vec<(TexId, u32, u32)>,
+    /// Open when SELECT+MENU raised the in-game menu over a running game. An overlay rather
+    /// than a phase, and for a stronger reason than the power menu's: `Phase::Playing` is
+    /// what holds the seated cart, and a menu that left it would have to rebuild the session
+    /// to come back from cancelling.
+    game_menu: Option<GameMenu>,
+    /// One per `GameRow::ALL`, in that order. Every row is uploaded whether or not this
+    /// cart shows it — the faces never change, and which rows exist does.
+    game_menu_faces: Vec<(TexId, u32, u32)>,
+    /// One per `LinkRow::ALL`, in that order.
+    link_menu_faces: Vec<(TexId, u32, u32)>,
+    /// One per `LinkStep::ALL`, and one per `LinkFail::SHOWN`, in those orders. A sentence
+    /// each rather than a list, so nothing is ever in hand on either.
+    link_step_faces: Vec<(TexId, u32, u32)>,
+    link_fail_faces: Vec<(TexId, u32, u32)>,
+    /// The worker behind `GameMenu::Working`, and `None` the rest of the time. It has no
+    /// `Drop` of its own, so `close_game_menu` is what stops it: see there.
+    starting: Option<LinkStarting>,
+    /// The wire a finished starter handed over, waiting for whoever owns the emulator thread
+    /// to collect it. `App` holds a session's own bookkeeping and never a transport (see
+    /// `link`), and this is the one hop between the two — `Session::update` drains it into
+    /// `EmuHandle::begin_link`, mirroring the hop `Session::bridge_link` already makes for
+    /// an ending.
+    link_transport: Option<(u16, Box<dyn LinkChannel>)>,
     /// Set when the menu's Restart is chosen. The binary acts on it, like `powering_off`.
     restarting: bool,
     /// When the binary is allowed to act. The screen is drawn from the instant the choice is
@@ -327,6 +443,13 @@ impl App {
             core_picker_caption_face: None,
             core_picker_tag_faces: Vec::new(),
             core_picker_faces: Vec::new(),
+            game_menu: None,
+            game_menu_faces: Vec::new(),
+            link_menu_faces: Vec::new(),
+            link_step_faces: Vec::new(),
+            link_fail_faces: Vec::new(),
+            starting: None,
+            link_transport: None,
             restarting: false,
             act_at: 0,
             root: None,
@@ -674,6 +797,34 @@ impl App {
         self.core_picker
     }
 
+    /// Whether the in-game menu is up. Read by whoever owns the emulator as well as by the
+    /// draw: the game underneath is paused for as long as it is.
+    pub fn game_menu_open(&self) -> bool {
+        self.game_menu.is_some()
+    }
+
+    /// Which screen of the in-game menu is up, and `None` while it is closed.
+    pub fn game_menu(&self) -> Option<GameMenu> {
+        self.game_menu
+    }
+
+    /// What is on the menu right now, in the order it is drawn. Empty while it is closed,
+    /// and on the two screens that are a sentence rather than a list.
+    pub fn game_menu_rows(&self) -> Vec<&'static str> {
+        match self.game_menu {
+            Some(GameMenu::Rows(_)) => self.game_rows().iter().map(|r| r.text()).collect(),
+            Some(GameMenu::Link(_)) => LinkRow::ALL.iter().map(|r| r.text()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The wire a link that just came up runs over, handed on exactly once. `App` never
+    /// touches a transport itself — the core and the socket both live on the emulator
+    /// thread — so this is left here for whoever owns that thread to collect.
+    pub fn take_link_transport(&mut self) -> Option<(u16, Box<dyn LinkChannel>)> {
+        self.link_transport.take()
+    }
+
     /// The cart under the highlight, and `None` on an empty shelf.
     pub fn selected_stem(&self) -> Option<&str> {
         self.shelf
@@ -754,6 +905,14 @@ impl App {
             Action::GbaUp(Btn::Right) => self.shelf.release_right(),
             _ => {}
         }
+        // Beside the power menu's own block rather than inside the phase match, so the two
+        // menus can never both take a press: that one returns above this, and this returns
+        // above the phase. Below the lid, the button and the levels, unlike that one — this
+        // is a menu over a game that is still running, not a machine about to stop, so the
+        // device's own keys keep working while it is up.
+        if self.game_menu.is_some() {
+            return self.game_menu_input(action);
+        }
         let now = self.now();
         match self.phase {
             Phase::Shelf => match action {
@@ -790,6 +949,7 @@ impl App {
             Phase::Inserting { .. } if action == Action::Eject => self.eject(),
             Phase::Playing { .. } => match action {
                 Action::Eject => self.eject(),
+                Action::GameMenu => self.open_game_menu(),
                 Action::Polaroids => self.open_polaroids(),
                 Action::SaveState => self.save_state(),
                 Action::LoadState => self.load_newest(),
@@ -976,6 +1136,10 @@ impl App {
     pub fn update(&mut self, dt: f32) {
         self.clock += dt as f64 * 1000.0;
         self.timers();
+        // A queue poll rather than a syscall, so the frame loop can afford it every frame —
+        // which is the whole reason the slow parts of starting a link are on a thread of
+        // their own.
+        self.poll_link();
         let now = self.now();
         // A direction still held as the shelf leaves the screen is not held when it comes
         // back: the row repeats only while it is the thing being looked at.
@@ -1345,6 +1509,13 @@ impl App {
         if let Some(index) = self.core_picker {
             self.draw_core_picker(index, out);
         }
+        // Over the game and under the HUD, for the same reason the picker is over the shelf:
+        // it is a menu about the thing still on screen behind it, and the level bars have to
+        // stay visible while it is up. Only a running game can raise it, so no phase needs
+        // excluding here — the ones that own the whole panel have already returned.
+        if let Some(menu) = self.game_menu {
+            self.draw_game_menu(menu, out);
+        }
         // Over everything, in every phase. The bar is never what the user is looking at.
         self.hud.draw(self.now(), out);
     }
@@ -1446,20 +1617,34 @@ impl App {
         self.core_picker_faces = faces;
     }
 
-    /// Black, the rows, and a bar behind the one in hand. The highlight is a rect rather than
-    /// a second face per row: the labels are rastered once at boot and never again, and a
-    /// device about to lose its GPU is not the place to be uploading textures.
-    /// Type on the case's own ground, with the row in hand marked by a bar the width of its
-    /// own words. No plate behind it: the menu is three words and a choice, and a box around
-    /// them was furniture the screen did not need.
+    /// One per `GameRow::ALL`, in that order, whether or not the cart in the slot shows it.
+    pub fn set_game_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.game_menu_faces = faces;
+    }
+
+    /// One per `LinkRow::ALL`, in that order.
+    pub fn set_link_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.link_menu_faces = faces;
+    }
+
+    /// One per `LinkStep::ALL`, and one per `LinkFail::SHOWN`, in those orders. Uploaded at
+    /// boot with every other menu face: a link that is failing is the worst moment to be
+    /// asking a font for a sentence.
+    pub fn set_link_step_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.link_step_faces = faces;
+    }
+
+    pub fn set_link_fail_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.link_fail_faces = faces;
+    }
+
+    /// The case's own ground, and the rows on it. No plate behind them: the menu is three
+    /// words and a choice, and a box around those was furniture the screen did not need.
     ///
-    /// The bar is `edge` — the lightest thing in the theme — because it has to read at a
-    /// glance on a device someone is about to switch off. `recess` was tried first and is the
-    /// right idea and the wrong value: it and `housing` are adjacent dark greys by design,
-    /// which is correct for a slot you look into and far too quiet for a selection.
-    ///
-    /// A rect rather than a second face per row: the labels are rastered once at boot and
-    /// never again, and a device about to lose its GPU is not the place to upload textures.
+    /// The ground is drawn here rather than in `draw_menu_rows` because it is the only thing
+    /// about this menu that is its own: the core picker draws over a shelf it did not paint,
+    /// and the in-game menu over a game it did not either. See `draw_menu_rows` for why the
+    /// bar behind the row in hand is the colour it is.
     fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
         out.push(Draw::Rect {
             x: 0.0,
@@ -1468,33 +1653,12 @@ impl App {
             h: OUT_H as f32,
             colour: slot_ui::opening(),
         });
-        let rows = self.power_menu_faces.len();
-        if rows == 0 {
-            return;
-        }
-        let pitch = POWER_MENU_PITCH;
-        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
-        for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
-            let y = top + pitch * row as f32;
-            let x = ((OUT_W as f32 - w as f32) / 2.0).round();
-            if row == index {
-                out.push(Draw::Rect {
-                    x,
-                    y: y + POWER_MENU_BAR_INSET,
-                    w: w as f32,
-                    h: pitch - 2.0 * POWER_MENU_BAR_INSET,
-                    colour: slot_ui::edge(),
-                });
-            }
-            out.push(Draw::Tex {
-                x,
-                y: y + (pitch - h as f32) / 2.0,
-                w: w as f32,
-                h: h as f32,
-                tex,
-                alpha: 1.0,
-            });
-        }
+        draw_menu_rows(
+            &self.power_menu_faces,
+            Some(index),
+            centred_top(self.power_menu_faces.len()),
+            out,
+        );
     }
 
     /// The power menu's rows, at the power menu's pitch, in the power menu's materials —
@@ -1590,28 +1754,40 @@ impl App {
             });
             y += h as f32 + CORE_PICKER_CAPTION_GAP;
         }
-        let top = y;
-        for (row, (tex, w, h)) in self.core_picker_faces.iter().copied().enumerate() {
-            let y = top + pitch * row as f32;
-            let x = ((OUT_W as f32 - w as f32) / 2.0).round();
-            if row == index {
-                out.push(Draw::Rect {
-                    x,
-                    y: y + POWER_MENU_BAR_INSET,
-                    w: w as f32,
-                    h: pitch - 2.0 * POWER_MENU_BAR_INSET,
-                    colour: slot_ui::edge(),
-                });
-            }
-            out.push(Draw::Tex {
-                x,
-                y: y + (pitch - h as f32) / 2.0,
-                w: w as f32,
-                h: h as f32,
-                tex,
-                alpha: 1.0,
-            });
-        }
+        draw_menu_rows(&self.core_picker_faces, Some(index), y, out);
+    }
+
+    /// The power menu's rows, at its pitch, in its materials — the third menu on the device
+    /// and the third to be the same object. What differs is where it goes in the frame and
+    /// what it is drawn over: this one goes over the paused game, which is still on screen
+    /// behind it and is what the player gets back by cancelling.
+    fn draw_game_menu(&self, menu: GameMenu, out: &mut Vec<Draw>) {
+        out.push(Draw::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: OUT_W as f32,
+            h: OUT_H as f32,
+            colour: slot_ui::opening(),
+        });
+        // The two working screens are a sentence rather than a list, so nothing on them is
+        // in hand and nothing is marked.
+        let (faces, index) = match menu {
+            GameMenu::Rows(index) => (self.game_row_faces(), Some(index)),
+            GameMenu::Link(index) => (self.link_menu_faces.clone(), Some(index)),
+            GameMenu::Working(step) => (one(&self.link_step_faces, Some(step.index())), None),
+            GameMenu::Failed(fail) => (one(&self.link_fail_faces, fail.shown()), None),
+        };
+        draw_menu_rows(&faces, index, centred_top(faces.len()), out);
+    }
+
+    /// A face per row this cart actually shows, in the order they are drawn. The uploads are
+    /// one per `GameRow::ALL`, so a row this cart hides is skipped here rather than missing
+    /// from the upload.
+    fn game_row_faces(&self) -> Vec<(TexId, u32, u32)> {
+        self.game_rows()
+            .iter()
+            .filter_map(|row| self.game_menu_faces.get(row.index()).copied())
+            .collect()
     }
 
     fn on_shelf(&self) -> bool {
@@ -1685,6 +1861,11 @@ impl App {
         // `EmuHandle::end_link` on the emulator thread, the same way it does for a doze or a
         // power press.
         self.end_link();
+        // The cart the menu was about is on its way out. Not reachable through the overlay
+        // itself, which swallows the eject; this is here for whatever route into an eject
+        // comes next, the way `begin_power_off` guards its own chokepoint rather than the
+        // one caller that happened to need it.
+        self.close_game_menu();
         self.flush_eject(&cart);
         // The offer names a file in this cart's ring and a state only this cart's core can
         // read. Carried across the slot it would delete or load the wrong one.
@@ -1755,6 +1936,9 @@ impl App {
         if self.link_active() {
             self.end_link();
         }
+        // The overlay is drawn over a game that is about to go dark, and a starter left
+        // running behind it would keep a radio up through the doze.
+        self.close_game_menu();
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
@@ -1853,6 +2037,10 @@ impl App {
             Action::GbaDown(Btn::B) => self.power_menu = None,
             Action::GbaDown(Btn::A) => {
                 self.power_menu = None;
+                // Both choices end the game whatever was underneath was drawn over, and only
+                // one of them reaches `begin_power_off`: a restart sets its flag here and
+                // goes straight to the shutdown screen.
+                self.close_game_menu();
                 match PowerChoice::ALL[index] {
                     PowerChoice::Restart => {
                         self.restarting = true;
@@ -1905,6 +2093,188 @@ impl App {
         }
     }
 
+    /// The rows this menu has right now. A question about the cart in the slot rather than
+    /// about the menu, so it is asked per open and never held: a stored answer could only
+    /// ever go stale against the cart it was about.
+    fn game_rows(&self) -> Vec<GameRow> {
+        GameRow::ALL
+            .into_iter()
+            .filter(|row| match row {
+                // gpSP is the only core with a netpacket interface to link over. Absent
+                // rather than shown and refused: the fix is not on this screen — it is four
+                // steps away on the shelf — and a row that says so is a row that teaches a
+                // dead end.
+                GameRow::Link => self.core == Core::Gpsp,
+            })
+            .collect()
+    }
+
+    /// Where the Link row sits among the rows that exist, so backing out of it lands back on
+    /// it rather than on whatever happens to be first.
+    fn link_row(&self) -> usize {
+        self.game_rows()
+            .iter()
+            .position(|r| *r == GameRow::Link)
+            .unwrap_or(0)
+    }
+
+    /// SELECT+MENU over a running game. Nothing is torn down and no phase changes: the cart
+    /// is still seated behind it and cancelling gives it straight back.
+    fn open_game_menu(&mut self) {
+        if self.game_menu.is_some() {
+            return;
+        }
+        // The same hazard the power menu's own guard exists for: this overlay pauses the
+        // core underneath it (`Session::held` names it, and `sync_speed` maps that to
+        // `Speed::Paused`), which is one of the exact manipulations libretro's netpacket
+        // contract forbids while players are connected. Declined with the shake every other
+        // "nothing doing" in this file answers with — and a device already in a session has
+        // nothing to pick in here anyway.
+        if self.link_active() {
+            return self.refuse();
+        }
+        // An empty panel over a paused game is worse than no panel at all. Today that means
+        // an mGBA cart raises nothing, Link being the only row there is; when a second row
+        // lands this stops being about the link at all and stays exactly as true.
+        if self.game_rows().is_empty() {
+            return;
+        }
+        self.game_menu = Some(GameMenu::Rows(0));
+    }
+
+    /// The menu owns every button on the game's side of the device while it is up. Up and
+    /// down wrap, for the core picker's reason: with two rows either arrow is the other's
+    /// undo, and an end that stuck would need the player to know which one they were against.
+    fn game_menu_input(&mut self, action: Action) {
+        let Some(menu) = self.game_menu else {
+            return;
+        };
+        match menu {
+            GameMenu::Rows(row) => {
+                let rows = self.game_rows();
+                let last = rows.len();
+                match action {
+                    Action::GbaDown(Btn::Up) if last > 0 => {
+                        self.game_menu = Some(GameMenu::Rows((row + last - 1) % last))
+                    }
+                    Action::GbaDown(Btn::Down) if last > 0 => {
+                        self.game_menu = Some(GameMenu::Rows((row + 1) % last))
+                    }
+                    Action::GbaDown(Btn::A) => match rows.get(row) {
+                        Some(GameRow::Link) => self.game_menu = Some(GameMenu::Link(0)),
+                        None => {}
+                    },
+                    // The chord closes it as well as opening it, so the gesture that got
+                    // here gets back without the player having to know B also works.
+                    Action::GbaDown(Btn::B) | Action::GameMenu => self.close_game_menu(),
+                    _ => {}
+                }
+            }
+            GameMenu::Link(row) => {
+                let last = LinkRow::ALL.len();
+                match action {
+                    Action::GbaDown(Btn::Up) => {
+                        self.game_menu = Some(GameMenu::Link((row + last - 1) % last))
+                    }
+                    Action::GbaDown(Btn::Down) => {
+                        self.game_menu = Some(GameMenu::Link((row + 1) % last))
+                    }
+                    Action::GbaDown(Btn::A) => {
+                        if let Some(pick) = LinkRow::ALL.get(row).copied() {
+                            self.start_link(
+                                LinkStarter::spawn(pick.role(), LINK_PORT),
+                                pick.client_id(),
+                            );
+                        }
+                    }
+                    // Back to the rows rather than out of the menu: a player one press into
+                    // a two-press choice is not asking to leave.
+                    Action::GbaDown(Btn::B) => {
+                        self.game_menu = Some(GameMenu::Rows(self.link_row()))
+                    }
+                    Action::GameMenu => self.close_game_menu(),
+                    _ => {}
+                }
+            }
+            // B asks the worker to stop and the screen stays where it is until it answers.
+            // `link_radio::up` is an opaque blocking process spawn and nothing can interrupt
+            // it for one to five seconds, so closing here would put the player back in their
+            // game with an access point still coming up behind them.
+            GameMenu::Working(_) => {
+                if action == Action::GbaDown(Btn::B) {
+                    if let Some(starting) = &mut self.starting {
+                        starting.starter.cancel();
+                    }
+                }
+            }
+            // A sentence to read, and either button is the way off it.
+            GameMenu::Failed(_) => match action {
+                Action::GbaDown(Btn::A) | Action::GbaDown(Btn::B) | Action::GameMenu => {
+                    self.close_game_menu()
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// Hands the overlay a worker that is already running, and puts the screen on the first
+    /// step. Split from the pick that spawns one so a caller can supply its own: that is the
+    /// only seam by which this screen can be driven with no network interface anywhere near
+    /// it, and it is the same seam `LinkStarter::spawn_with` exists for one layer down.
+    pub fn start_link(&mut self, starter: LinkStarter, client_id: u16) {
+        // Whatever was already running is asked to stop on its way out. `LinkStarter` has no
+        // `Drop`: dropping one silently leaves its radio up behind the screen.
+        if let Some(mut old) = self.starting.replace(LinkStarting { starter, client_id }) {
+            old.starter.cancel();
+        }
+        self.game_menu = Some(GameMenu::Working(LinkStep::Radio));
+    }
+
+    /// Ends the overlay and anything it had running.
+    ///
+    /// `LinkStarter` has no `Drop`, so a starter dropped mid-wait keeps working: a host
+    /// dropped while waiting leaves its access point up for up to thirty seconds with
+    /// nothing on the other end of it. Every path that ends the overlay comes through here,
+    /// including the three that never touched it — a shut lid, a cart coming out and a power
+    /// off all end the game this was drawn over.
+    fn close_game_menu(&mut self) {
+        self.game_menu = None;
+        if let Some(mut starting) = self.starting.take() {
+            starting.starter.cancel();
+        }
+    }
+
+    /// One message a frame, which is all the worker ever has for it.
+    fn poll_link(&mut self) {
+        // Only while this overlay is the thing on screen. A power menu raised over it pauses
+        // the core, and a session must not begin under one — the worker's message keeps in
+        // its own queue until that menu is gone.
+        if self.power_menu.is_some() {
+            return;
+        }
+        let Some(mut starting) = self.starting.take() else {
+            return;
+        };
+        match starting.starter.poll() {
+            None => self.starting = Some(starting),
+            Some(LinkProgress::At(step)) => {
+                self.game_menu = Some(GameMenu::Working(step));
+                self.starting = Some(starting);
+            }
+            // The overlay's job is done and the game comes back with a session live over it.
+            // `begin_link` is this side's bookkeeping; the transport is left for whoever owns
+            // the emulator thread to collect, since nothing here may touch a wire.
+            Some(LinkProgress::Ready(link)) => {
+                self.game_menu = None;
+                self.begin_link(starting.client_id);
+                self.link_transport = Some((starting.client_id, Box::new(link)));
+            }
+            // The player asked for this. Not a screen to read: straight back to the game.
+            Some(LinkProgress::Failed(LinkFail::Cancelled)) => self.game_menu = None,
+            Some(LinkProgress::Failed(fail)) => self.game_menu = Some(GameMenu::Failed(fail)),
+        }
+    }
+
     /// The choice, onto the card. Best effort, like every other card write here: a read only
     /// or absent card is a shelf that still works, not a boot failure. Nothing else in the
     /// app is told — `self.core` is the seated cart's, set when a core is actually spawned,
@@ -1948,6 +2318,7 @@ impl App {
         if self.link_active() {
             self.end_link();
         }
+        self.close_game_menu();
         self.powering_off = true;
         self.act_at = self.now() + SHUTDOWN_SHOW_MS;
         self.set_led(LedState::Off);
@@ -2409,4 +2780,61 @@ fn free_stamp(ring: &StateRing, now: i64) -> String {
         stamp = format_stamp(secs);
     }
     stamp
+}
+
+/// Where a block of `rows` menu rows starts, so it sits in the middle of the panel.
+fn centred_top(rows: usize) -> f32 {
+    (OUT_H as f32 - POWER_MENU_PITCH * rows as f32) / 2.0
+}
+
+/// One face out of a list, as the one-row list the row drawer takes. `None` for an index
+/// that has no face, which is a screen with nothing to say rather than a blank panel with a
+/// highlight on it.
+fn one(faces: &[(TexId, u32, u32)], index: Option<usize>) -> Vec<(TexId, u32, u32)> {
+    index
+        .and_then(|i| faces.get(i))
+        .copied()
+        .into_iter()
+        .collect()
+}
+
+/// The rows of a menu, at the menu pitch from `top`, with a bar behind the one in hand and
+/// none at all when nothing is. Shared by all three menus on the device: the power menu, the
+/// core picker and the in-game menu are the same object, and a device this small has no
+/// business carrying three copies of the loop that draws one.
+///
+/// The bar is `edge` — the lightest thing in the theme — because it has to read at a glance.
+/// `recess` was tried first and is the right idea and the wrong value: it and `housing` are
+/// adjacent dark greys by design, which is correct for a slot you look into and far too quiet
+/// for a selection.
+///
+/// A rect rather than a second face per row: the labels are rastered once at boot and never
+/// again, and a device about to lose its GPU is not the place to be uploading textures.
+fn draw_menu_rows(
+    faces: &[(TexId, u32, u32)],
+    index: Option<usize>,
+    top: f32,
+    out: &mut Vec<Draw>,
+) {
+    for (row, (tex, w, h)) in faces.iter().copied().enumerate() {
+        let y = top + POWER_MENU_PITCH * row as f32;
+        let x = ((OUT_W as f32 - w as f32) / 2.0).round();
+        if index == Some(row) {
+            out.push(Draw::Rect {
+                x,
+                y: y + POWER_MENU_BAR_INSET,
+                w: w as f32,
+                h: POWER_MENU_PITCH - 2.0 * POWER_MENU_BAR_INSET,
+                colour: slot_ui::edge(),
+            });
+        }
+        out.push(Draw::Tex {
+            x,
+            y: y + (POWER_MENU_PITCH - h as f32) / 2.0,
+            w: w as f32,
+            h: h as f32,
+            tex,
+            alpha: 1.0,
+        });
+    }
 }

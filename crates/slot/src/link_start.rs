@@ -60,6 +60,61 @@ pub enum LinkFail {
     Cancelled,
 }
 
+impl LinkStep {
+    /// Every step, in the order the worker reports them, which is also the order their faces
+    /// are uploaded in.
+    pub const ALL: [LinkStep; 2] = [LinkStep::Radio, LinkStep::Waiting];
+
+    /// Position in `ALL`, so a step is a face without a lookup.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// What the screen says while the worker is here. Thirty seconds of a screen saying
+    /// nothing and then saying "nobody came" is indistinguishable from a crash, which is the
+    /// whole reason the worker reports steps rather than only outcomes.
+    ///
+    /// One sentence covers both ends of the socket step. A host is waiting for its friend
+    /// and a joiner is reaching for its host; which of those two the machine is doing is not
+    /// a thing the player has to be told.
+    pub fn line(self) -> &'static str {
+        match self {
+            LinkStep::Radio => "Bringing the radio up",
+            LinkStep::Waiting => "Looking for the other player",
+        }
+    }
+}
+
+impl LinkFail {
+    /// The failures that reach the screen, in the order their faces are uploaded.
+    ///
+    /// `Cancelled` is not one of them: a player who backed out is put straight back in their
+    /// game, not shown a panel telling them what they just did on purpose.
+    pub const SHOWN: [LinkFail; 3] = [
+        LinkFail::Radio,
+        LinkFail::NobodyCame,
+        LinkFail::PeerVanished,
+    ];
+
+    /// Which of `SHOWN` this is, and `None` for the one that is never drawn.
+    pub fn shown(self) -> Option<usize> {
+        LinkFail::SHOWN.iter().position(|f| *f == self)
+    }
+
+    /// One sentence each, never a single generic "link failed": the three say whether to try
+    /// again, to move closer, or to ask the other player to press something. `Cancelled` has
+    /// a line only because this is total over the enum — it is never drawn, since the
+    /// overlay closes on it.
+    pub fn line(self) -> &'static str {
+        match self {
+            LinkFail::Radio => "The radio did not come up",
+            LinkFail::NobodyCame => "Nobody arrived",
+            LinkFail::PeerVanished => "The other player vanished",
+            LinkFail::Cancelled => "Cancelled",
+        }
+    }
+}
+
 /// One message from the worker. `At` may arrive more than once; exactly one `Ready` or
 /// `Failed` ever does, and it is the last thing the worker says.
 pub enum LinkProgress {

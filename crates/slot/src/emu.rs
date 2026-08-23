@@ -227,6 +227,13 @@ impl EmuHandle {
         self.shared.input.store(mask.0, Ordering::Relaxed);
     }
 
+    /// What the worker will read on its next pass. The far side of the one boundary a
+    /// button crosses to become the game's, and the only place a test can ask whether a
+    /// press a menu was using reached the core anyway.
+    pub fn input(&self) -> ButtonMask {
+        ButtonMask(self.shared.input.load(Ordering::Relaxed))
+    }
+
     pub fn latest_frame(&self) -> Option<FrameRef> {
         self.frames.latest()
     }

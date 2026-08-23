@@ -306,3 +306,88 @@ fn x_without_select_is_still_the_games_x() {
     assert_eq!(g.feed(Down(X), 0), vec![GbaDown(Btn::X)]);
     assert_eq!(g.feed(Up(X), 40), vec![GbaUp(Btn::X)]);
 }
+
+/// SELECT+MENU, which is what opens the in-game menu. One gesture, not two: it fires on the
+/// MENU press and the release says nothing at all.
+#[test]
+fn select_and_menu_open_the_in_game_menu() {
+    let mut g = Gestures::new();
+    g.feed(Down(Select), 0);
+    assert_eq!(g.feed(Down(Menu), 50), vec![GameMenu]);
+    assert!(
+        g.feed(Up(Menu), 150).is_empty(),
+        "the release landed as a second gesture on top of the menu"
+    );
+    assert!(
+        g.feed(Up(Select), 200).is_empty(),
+        "SELECT reached the game behind the chord that consumed it"
+    );
+}
+
+/// The chorded press must not also arm the eject hold, or reading the menu with the buttons
+/// still down would eject the cart out from under it.
+#[test]
+fn a_chorded_menu_never_arms_the_eject_hold() {
+    let mut g = Gestures::new();
+    g.feed(Down(Select), 0);
+    assert_eq!(g.feed(Down(Menu), 50), vec![GameMenu]);
+    assert!(
+        g.tick(50 + MENU_HOLD_MS + 1).is_empty(),
+        "holding the menu open ejected the cart"
+    );
+}
+
+/// The whole test is the ordering inside `menu_down`. Behind the double tap check, a
+/// SELECT+MENU that follows a recent MENU tap opens the switcher instead of the menu.
+#[test]
+fn a_chord_after_a_recent_menu_tap_is_still_the_menu() {
+    let mut g = Gestures::new();
+    g.feed(Down(Menu), 0);
+    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
+    g.feed(Down(Select), 150);
+    assert_eq!(
+        g.feed(Down(Menu), 200),
+        vec![GameMenu],
+        "a recent tap turned the chord into the switcher"
+    );
+}
+
+/// The difference between a chord and a trap. SELECT commits to being the game's after
+/// `SELECT_CHORD_MS`, and MENU under a SELECT the game already has is an ordinary MENU.
+#[test]
+fn menu_under_a_select_the_game_already_has_is_not_the_menu() {
+    let mut g = Gestures::new();
+    g.feed(Down(Select), 0);
+    assert_eq!(g.tick(SELECT_CHORD_MS), vec![GbaDown(Select)]);
+    assert!(
+        g.feed(Down(Menu), 700).is_empty(),
+        "a SELECT the game already owns still chorded"
+    );
+    assert_eq!(g.feed(Up(Menu), 800), vec![OpenAbout]);
+}
+
+/// The chord clears both of MENU's own windows, so the press after it has to start its own.
+///
+/// It has to begin with a real tap, or the half of that which matters is invisible: the tap
+/// leaves a double tap window open, the chord lands inside it, and a chord that does not
+/// close that window leaves the very next MENU tap opening the switcher instead of the about
+/// screen — a press whose meaning depends on a chord two presses ago.
+#[test]
+fn the_menu_button_still_works_after_a_chord() {
+    let mut g = Gestures::new();
+    g.feed(Down(Menu), 0);
+    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
+    g.feed(Down(Select), 150);
+    assert_eq!(g.feed(Down(Menu), 200), vec![GameMenu]);
+    assert!(g.feed(Up(Menu), 250).is_empty());
+    assert!(g.feed(Up(Select), 260).is_empty());
+    assert!(
+        g.feed(Down(Menu), 400).is_empty(),
+        "the tap before the chord was still standing as half of a double tap"
+    );
+    assert_eq!(
+        g.feed(Up(Menu), 450),
+        vec![OpenAbout],
+        "the chord left the menu button dead"
+    );
+}

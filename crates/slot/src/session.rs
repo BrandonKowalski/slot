@@ -208,9 +208,10 @@ impl Session {
             Action::FfStop => self.fast = false,
             _ => {}
         }
-        // A button the switcher used is not the game's, on either edge of it: the press that
-        // opens it and the one that dismisses it both belong to the switcher.
-        let switcher = self.showing_polaroids();
+        // A button a menu used is not the game's, on either edge of it: the press that opens
+        // one and the press that dismisses it both belong to the menu. Read on both sides of
+        // the `apply`, because either of those two presses is the one that moves the answer.
+        let menu = self.overlaid();
         self.bridge_link(|app| app.apply(action));
         // After apply: the level the sink wants is the one the action just produced.
         if matches!(
@@ -221,7 +222,7 @@ impl Session {
                 emu.set_volume(self.app.output_volume());
             }
         }
-        if switcher || self.showing_polaroids() {
+        if menu || self.overlaid() {
             self.pad.clear();
         } else {
             self.pad.apply(action);
@@ -233,6 +234,19 @@ impl Session {
 
     pub fn update(&mut self, dt: f32) {
         self.bridge_link(|app| app.update(dt));
+        // The wire a link that just came up runs over. `App` holds a session's own
+        // bookkeeping and never a transport (see `App::link`), so this is the hop that
+        // carries one to the emulator thread — the mirror of `bridge_link`'s own hop for the
+        // ending. Ahead of `sync_speed` below, so the frame the overlay closes on is already
+        // a frame the game is running again.
+        if let Some((client_id, transport)) = self.app.take_link_transport() {
+            match &self.emu {
+                Some(emu) => emu.begin_link(client_id, transport),
+                // No core to carry it. Dropping the transport closes the socket, which is
+                // the only honest thing to do with a session that has nowhere to run.
+                None => eprintln!("slot: link: a transport arrived with no core to run it"),
+            }
+        }
         if let Some(sfx) = self.app.take_sfx() {
             self.play_sfx(sfx);
         }
@@ -310,6 +324,15 @@ impl Session {
         matches!(self.app.phase(), Phase::Polaroids { .. })
     }
 
+    /// The screens whose buttons belong to them rather than to the game underneath. Both
+    /// pause the core as well (`held`, and `sync_speed`'s own `showing_polaroids`), which is
+    /// what keeps a press landing here from being seen — but a pause is not a mask, and a
+    /// press taken while paused whose release arrives after it is a button the game finds
+    /// already down. This is what stops either edge reaching the pad at all.
+    fn overlaid(&self) -> bool {
+        self.showing_polaroids() || self.app.game_menu_open()
+    }
+
     /// Whether the game is live and in charge of the device. Not the phase alone: the power
     /// menu and the shutdown screen are overlays rather than phases — deliberately, so
     /// cancelling returns to whatever was underneath — and the phase stays `Playing` under
@@ -322,7 +345,7 @@ impl Session {
     /// The screens that have taken the panel away from a cart still seated. The switcher is
     /// not one of them: it has its own phase and `sync_speed` names it separately.
     fn held(&self) -> bool {
-        self.app.power_menu().is_some() || self.app.shutting_down()
+        self.app.power_menu().is_some() || self.app.game_menu_open() || self.app.shutting_down()
     }
 
     fn dozing(&self) -> bool {

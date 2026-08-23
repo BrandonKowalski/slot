@@ -50,6 +50,13 @@ pub enum Action {
     /// The about screen, off a tap of MENU. The button's other two gestures both need a
     /// game under them, so on the shelf a tap of it meant nothing at all.
     OpenAbout,
+    /// The in-game menu, off SELECT+MENU. Emitted on every screen, exactly as `OpenAbout`
+    /// and `Polaroids` are: this file is blind to which screen is up, and the app is what
+    /// decides where a gesture lands.
+    ///
+    /// Not START, which in a game is the GBA's own and the game needs it; not a bare MENU
+    /// tap, which the about screen already has.
+    GameMenu,
     MuteToggle,
     /// The press itself. Nothing visible hangs off it — it exists so the save state is
     /// flushed before a hold can reach the PMIC's own cutoff, which takes the rails away
@@ -245,7 +252,25 @@ impl Gestures {
         }
     }
 
+    /// MENU is dispatched by name from `down`, ahead of the `_` arm that reads the `chord`
+    /// table, so a row there would never be looked at. Its one chord lives here instead.
+    ///
+    /// Ahead of the double tap check, and the order is load-bearing: behind it, a SELECT+MENU
+    /// that follows a recent tap opens the switcher rather than the menu.
     fn menu_down(&mut self, now: Millis) -> Vec<Action> {
+        if matches!(self.select, Select::Pending(_) | Select::Consumed) {
+            // So `select_up` emits no stray press for a SELECT the game never gets.
+            self.select = Select::Consumed;
+            // The chord is the whole gesture, and these two are what make it one. Clearing
+            // the hold stops this press also arming an eject — and, because `menu_up` reads
+            // that same field to decide the press ever happened, it is what makes the release
+            // silent rather than a tap landing on top of the menu it just opened. Clearing
+            // the tap stops the press standing as half of a double tap in either direction:
+            // this one is not the first half of one, and it must not complete one either.
+            self.menu_down_at = None;
+            self.menu_last_tap = None;
+            return vec![Action::GameMenu];
+        }
         if let Some(tap) = self.menu_last_tap {
             if now.saturating_sub(tap) <= MENU_DOUBLE_TAP_MS {
                 self.menu_last_tap = None;
@@ -260,6 +285,9 @@ impl Gestures {
     }
 
     fn menu_up(&mut self, now: Millis) -> Vec<Action> {
+        // No armed press to release, because `menu_down` already spent this one: on a
+        // double tap, or on the SELECT+MENU chord. Either way, letting go of it is not a
+        // second gesture on top of what it already did.
         let Some(d) = self.menu_down_at.take() else {
             return Vec::new();
         };
