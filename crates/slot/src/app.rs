@@ -1811,10 +1811,17 @@ impl App {
             .as_ref()
             .and_then(|p| p.selected())
             .map(|e| e.state.clone());
-        if let Some(state) = state {
-            self.load_file(&state);
+        // `None` means nothing was selected, not a refusal, and still closes exactly as
+        // before. `Some(false)` means `load_file` refused (a live session, most reachably —
+        // see its own doc comment) and already shook the screen for it; closing the switcher
+        // on top of that shake would read as the pick landing and then being dismissed, when
+        // nothing happened at all. Unreachable today, since `open_polaroids` already refuses
+        // to open a switcher a session forbids picking from — but wrong the moment that guard
+        // moves, and cheap to keep correct regardless of where it lives.
+        let refused = state.map(|state| self.load_file(&state)) == Some(false);
+        if !refused {
+            self.close_polaroids();
         }
-        self.close_polaroids();
     }
 
     /// Not undoable, and deliberately so. The undo slot holds one save or one load, and a
@@ -1869,19 +1876,24 @@ impl App {
     /// state to load; `load_selected` never got the same check, which is what let the
     /// switcher's own A-button pick bypass it entirely. Guarding here instead closes that
     /// hole for both today's callers and whatever the next one turns out to be.
-    fn load_file(&mut self, state: &Path) {
+    /// Reports whether the load actually happened, so a caller that only means to load —
+    /// `load_newest` — can ignore it, and one that has something else riding on the answer —
+    /// `load_selected`, which must not close the switcher out from under a refusal it just
+    /// drew — can ask rather than repeating the guard above for itself.
+    fn load_file(&mut self, state: &Path) -> bool {
         // A state load would desynchronise the other device with no way back to agreement.
         if !self.may_load_state() {
-            return self.refuse();
+            self.refuse();
+            return false;
         }
         let Some(snapshot) = &self.snapshot else {
-            return;
+            return false;
         };
         let bytes = match std::fs::read(state) {
             Ok(bytes) => bytes,
             Err(e) => {
                 eprintln!("slot: load: {e}");
-                return;
+                return false;
             }
         };
         // Taken before the load, which is the last moment there is anything to go back to.
@@ -1891,6 +1903,7 @@ impl App {
         if let Some(prior) = prior {
             self.pending = Some((PendingUndo::Load { prior }, self.now()));
         }
+        true
     }
 
     /// `SELECT+R1` and nothing else reaches here. A state with no picture is still worth

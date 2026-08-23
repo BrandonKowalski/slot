@@ -334,6 +334,13 @@ fn a_live_session_refuses_a_switcher_pick_even_when_one_exists() {
         a.refusal_active(a.now()),
         "picking a state in the switcher must be refused during a session"
     );
+    // `load_selected` used to call `close_polaroids` unconditionally, so a refused pick
+    // shook the screen *and* closed the switcher out from under it — a refusal that reads
+    // as accepted-and-dismissed is worse than no feedback at all.
+    assert!(
+        matches!(a.phase(), Phase::Polaroids { .. }),
+        "a refused pick must not also close the switcher"
+    );
 }
 
 /// C3: the same hole reaches undo. `load_file` guards every load read fresh off disk, but an
