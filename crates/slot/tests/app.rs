@@ -527,11 +527,11 @@ fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
 /// Opening on row zero would be a menu that says every cart runs mGBA, which is a lie the
 /// moment one of them does not.
 #[test]
-fn select_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
+fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     assert_eq!(app.selected_stem(), Some("Emerald"));
 
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(
         app.core_picker(),
         Some(0),
@@ -540,7 +540,7 @@ fn select_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
     app.apply(Action::GbaDown(Btn::B));
 
     slot_store::write_selected_core(d.path(), "Emerald", slot_store::Core::Gpsp).unwrap();
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(
         app.core_picker(),
         Some(1),
@@ -551,7 +551,7 @@ fn select_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
 #[test]
 fn choosing_a_core_writes_it_and_closes() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Down));
     app.apply(Action::GbaDown(Btn::A));
 
@@ -574,7 +574,7 @@ fn choosing_a_core_writes_it_and_closes() {
 #[test]
 fn b_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Down));
     app.apply(Action::GbaDown(Btn::B));
 
@@ -591,7 +591,7 @@ fn b_closes_the_picker_without_writing() {
 #[test]
 fn the_picker_swallows_the_shelf_arrows() {
     let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion"]);
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
     assert_eq!(
@@ -606,7 +606,7 @@ fn the_picker_swallows_the_shelf_arrows() {
 #[test]
 fn the_picker_does_not_open_on_an_empty_shelf() {
     let (_d, mut app) = on_shelf(&[]);
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(app.core_picker(), None);
 }
 
@@ -615,9 +615,30 @@ fn the_picker_does_not_open_on_an_empty_shelf() {
 #[test]
 fn the_picker_wraps_at_both_ends() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Up));
     assert_eq!(app.core_picker(), Some(slot_store::Core::ALL.len() - 1));
     app.apply(Action::GbaDown(Btn::Down));
     assert_eq!(app.core_picker(), Some(0));
+}
+
+/// The picker is on START because SELECT is the chord key. Held, SELECT turns Up/Down into
+/// brightness and Left/Right into blue light, and `adjust` answers those on the shelf as
+/// readily as in a game. A picker on SELECT would have to choose between eating the first
+/// half of every one of those chords and putting the 600 ms chord window in front of the
+/// menu; START is bound to nothing here and owes neither.
+#[test]
+fn select_on_the_shelf_leaves_the_picker_shut_so_it_can_still_chord() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+
+    app.apply(Action::GbaDown(Btn::Select));
+    assert_eq!(
+        app.core_picker(),
+        None,
+        "SELECT must stay free for brightness and blue light on the shelf"
+    );
+
+    // That SELECT+Up actually yields BrightnessUp is the gesture layer's to prove, and it
+    // does: see the chord table test in slot-input/tests/gesture.rs. What this layer owes is
+    // only that the shelf does not intercept SELECT before the chord can form.
 }

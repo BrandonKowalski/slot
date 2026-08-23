@@ -731,7 +731,14 @@ impl App {
         let now = self.now();
         match self.phase {
             Phase::Shelf => match action {
-                Action::GbaDown(Btn::Select) if self.core_picker.is_none() => {
+                // START rather than SELECT, and the difference is not cosmetic. SELECT is
+                // the chord key: held, it turns Up/Down into brightness and Left/Right into
+                // blue light, and `adjust` answers those on every screen including this one.
+                // Opening a menu the instant SELECT goes down would eat the first half of
+                // every one of those chords; waiting out the 600 ms window instead would put
+                // that delay in front of the menu. START is bound to nothing here and reaches
+                // no core from the shelf, so it costs neither.
+                Action::GbaDown(Btn::Start) if self.core_picker.is_none() => {
                     self.open_core_picker()
                 }
                 // Ahead of the shelf's own movement, so an open picker takes the arrows
