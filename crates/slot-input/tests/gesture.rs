@@ -306,30 +306,3 @@ fn x_without_select_is_still_the_games_x() {
     assert_eq!(g.feed(Down(X), 0), vec![GbaDown(Btn::X)]);
     assert_eq!(g.feed(Up(X), 40), vec![GbaUp(Btn::X)]);
 }
-
-/// The 600 ms window exists so SELECT can be the first key of a chord a game never sees.
-/// That is the only thing it buys, so it is only bought while a game is running.
-#[test]
-fn select_waits_for_the_chord_window_in_game() {
-    let mut g = Gestures::new();
-    g.set_in_game(true);
-    assert_eq!(g.feed(RawEvent::Down(Btn::Select), 0), Vec::new());
-    assert_eq!(
-        g.tick(SELECT_CHORD_MS - 1),
-        Vec::new(),
-        "delivered too early"
-    );
-    assert_eq!(g.tick(SELECT_CHORD_MS), vec![GbaDown(Select)]);
-}
-
-#[test]
-fn select_is_immediate_outside_a_game() {
-    let mut g = Gestures::new();
-    g.set_in_game(false);
-    assert_eq!(
-        g.feed(RawEvent::Down(Btn::Select), 0),
-        vec![GbaDown(Select)],
-        "the shelf has no game to chord with, so the wait is pure latency"
-    );
-    assert_eq!(g.tick(SELECT_CHORD_MS), Vec::new(), "delivered twice");
-}

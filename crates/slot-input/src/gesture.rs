@@ -83,12 +83,9 @@ enum Select {
     ReleaseDue(Millis),
 }
 
+#[derive(Default)]
 pub struct Gestures {
     select: Select,
-    /// Whether a game is running. The only thing this machine is told about the screen, and
-    /// it earns the exception: SELECT's hold exists so it can modify a chord mid-game, and
-    /// off a game there is nothing to modify — the wait would just be latency on a menu.
-    in_game: bool,
     /// Buttons swallowed by a chord, so their release is swallowed too.
     chord_held: u8,
     menu_down_at: Option<Millis>,
@@ -113,33 +110,6 @@ pub struct Gestures {
     rewinding: bool,
 }
 
-impl Default for Gestures {
-    /// In game, because that is what every caller who never says otherwise has always got:
-    /// the wait is only ever dropped by someone who knows there is no game under it.
-    fn default() -> Self {
-        Self {
-            select: Select::default(),
-            in_game: true,
-            chord_held: 0,
-            menu_down_at: None,
-            menu_last_tap: None,
-            menu_eject_fired: false,
-            power_down_at: None,
-            power_hold_fired: false,
-            vol_up_at: None,
-            vol_down_at: None,
-            vol_up_ramp: None,
-            vol_down_ramp: None,
-            mute_fired: false,
-            ff_on: false,
-            ff_latched: false,
-            ff_latching_press: false,
-            r2_last_release: None,
-            rewinding: false,
-        }
-    }
-}
-
 /// Whether a held key owes a step at `now`. The wait before the first is longer than the gap
 /// between the rest, so a slow tap never lands as two.
 fn ramp_due(down: Option<Millis>, last: Option<Millis>, now: Millis) -> bool {
@@ -155,12 +125,6 @@ fn ramp_due(down: Option<Millis>, last: Option<Millis>, now: Millis) -> bool {
 impl Gestures {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Told by the frontend as the phase changes; nothing else about the screen reaches
-    /// this machine.
-    pub fn set_in_game(&mut self, in_game: bool) {
-        self.in_game = in_game;
     }
 
     /// Whether fast forward is latched rather than held. Not an action: the latch is
@@ -219,12 +183,6 @@ impl Gestures {
     fn down(&mut self, b: Btn, now: Millis) -> Vec<Action> {
         match b {
             Btn::Select => {
-                // Off a game there is no chord to be the first key of, so the window buys
-                // nothing and the press goes straight through.
-                if !self.in_game {
-                    self.select = Select::Delivered;
-                    return vec![Action::GbaDown(Btn::Select)];
-                }
                 self.select = Select::Pending(now);
                 Vec::new()
             }
