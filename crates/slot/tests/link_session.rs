@@ -4,12 +4,15 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
-use common::{app_playing_in, app_playing_with, tmp_root_with_carts, StubSnapshot};
+use common::{
+    app_playing_in, app_playing_with, panel_with_battery, tmp_root_with_carts, StubSnapshot,
+};
 use slot::app::Phase;
 use slot::emu::Speed;
 use slot::link_net::TcpLink;
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
+use slot_power::{Battery, Charge};
 use slot_retro::{LinkChannel, LoopbackLink, NETPACKET_RELIABLE};
 use slot_store::{write_slot_state, Core, SlotState, StateRing};
 
@@ -488,6 +491,32 @@ fn a_lid_close_ends_a_live_session_and_dozes() {
     assert!(matches!(a.phase(), Phase::Playing { .. }));
 }
 
+/// I1: the fifth route into `begin_power_off` — no button, no menu, and no doze anywhere
+/// upstream of it to have ended a session first. Before this fix `on_battery` reached
+/// `begin_power_off` with no session guard at all, so a critical reading mid-session left
+/// `link_active()` true, `shutting_down()` true, and the core paused underneath both
+/// (`Session::sync_speed` maps `held()`, of which `shutting_down()` is one part, straight to
+/// `Speed::Paused`) — the exact hazard libretro's netpacket contract forbids, with the
+/// session itself never ended and nothing ever telling the core or the peer the exchange was
+/// over. `begin_power_off` now ends a live session itself, the same way `doze` already does.
+#[test]
+fn a_critical_battery_reading_ends_a_live_session_instead_of_pausing_it() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.begin_link(0);
+    assert!(a.link_active());
+
+    a.on_battery(Battery {
+        percent: 3,
+        charge: Charge::Discharging,
+    });
+    assert!(
+        !a.link_active(),
+        "a critical battery reading must end a live session, not merely pause it"
+    );
+    assert!(a.powering_off(), "the shutdown itself must still proceed");
+}
+
 /// The production path, and the only one: `App::update` drives `timers`, which reads
 /// `doze_expired` itself rather than being told the timeout fired — `on_doze_timeout` (also
 /// callable directly, which is what `power.rs`'s own timeout tests use as a stand-in for the
@@ -610,6 +639,67 @@ fn ending_a_session_reaches_the_emulator_thread_too() {
     assert!(
         wait_until(|| s.emu().is_some_and(|e| !e.net().is_active())),
         "ending a session at the App level must reach the emulator thread too"
+    );
+}
+
+/// I1: the fifth route closed at the `App` level
+/// (`a_critical_battery_reading_ends_a_live_session_instead_of_pausing_it` in this file) needs
+/// the same proof `ending_a_session_reaches_the_emulator_thread_too` gives `PowerPress` above
+/// — that the ending mirrors onto the emulator thread too, not only `App`'s own bookkeeping.
+/// This route reaches `App` through `update`/`timers`, not through `apply`, which is exactly
+/// what `Session::act`'s old, `apply`-only bridge never watched; `Session::bridge_link` now
+/// wraps both of `Session`'s own entry points into `App`, so an ending reached this way
+/// reaches the emulator thread exactly like a button press does. Driven through a real
+/// `Power`, not `on_battery` called directly: the ending has to happen *inside* the same
+/// `update` call `bridge_link` wraps, exactly as a real battery poll would deliver it, or the
+/// edge it watches for would never fire.
+#[test]
+fn a_critical_battery_reading_reaches_the_emulator_thread_too() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.emu()
+        .expect("a cart is seated, a core must be running")
+        .begin_link(0, Box::new(LoopbackLink::default()));
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| e.net().is_active())),
+        "begin_link never took"
+    );
+    s.app_mut().begin_link(0);
+    assert!(s.app().link_active());
+
+    // `set_power` primes `battery_at` to fire on the very next poll (see its own doc
+    // comment), so one frame is enough for `timers` to read this critical reading and call
+    // `on_battery` from inside the `update` this test's `step` drives.
+    let (power, _) = panel_with_battery(d.path(), Duration::from_secs(300), 1, 3);
+    s.app_mut().set_power(power);
+    step(&mut s, &mut now, None);
+
+    assert!(
+        !s.app().link_active(),
+        "a critical battery reading must end a live session"
+    );
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| !e.net().is_active())),
+        "ending a session from inside `update` must reach the emulator thread too"
     );
 }
 

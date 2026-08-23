@@ -1667,10 +1667,11 @@ impl App {
         }
     }
 
-    /// Both paths to shutdown — a held button and an idle doze timing out — funnel through
-    /// here, so neither leaves the LED reporting Running or Charging through a shutdown the
-    /// user is not watching finish. A real behaviour on a handheld: the case still has a
-    /// light on it for as long as `poweroff` takes to actually cut power.
+    /// Every path to shutdown — a held button, an idle doze timing out, and a critical
+    /// battery reading that needs no button at all — funnels through here, so none of them
+    /// leaves the LED reporting Running or Charging through a shutdown the user is not
+    /// watching finish. A real behaviour on a handheld: the case still has a light on it for
+    /// as long as `poweroff` takes to actually cut power.
     fn begin_power_off(&mut self) {
         // Idempotent, and that is the whole of why: `doze_expired` is a level rather than an
         // edge and this leaves the phase on `Doze`, so `timers` calls back here every frame
@@ -1680,6 +1681,20 @@ impl App {
         // hands, on the frame they came back to the session.
         if self.powering_off {
             return;
+        }
+        // A power-off pauses the core outright (`shutting_down()`, of which this is the
+        // start, is one of the states `Session::sync_speed` maps to `Speed::Paused`) —
+        // libretro's netpacket contract forbids that for as long as a session is live, the
+        // same hazard `doze`'s own guard exists for. `doze` and the power menu's own open
+        // already end a session before either of their own routes reaches here, which is
+        // why this was previously always false in practice by the time any caller arrived —
+        // right up until a critical battery reading turned out to be a fifth route in, with
+        // no button, no menu and no doze anywhere upstream of it to have ended one first.
+        // Guarding the chokepoint itself, rather than that one caller, is what keeps a sixth
+        // route from reopening the same hole: whatever calls `begin_power_off` next inherits
+        // this for free.
+        if self.link_active() {
+            self.end_link();
         }
         self.powering_off = true;
         self.act_at = self.now() + SHUTDOWN_SHOW_MS;

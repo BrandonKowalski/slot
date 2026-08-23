@@ -269,6 +269,20 @@ pub fn panel(root: &Path, timeout: Duration) -> (Power, Arc<AtomicU8>) {
     (power, backlight)
 }
 
+/// `panel`, but with the charge state and percent chosen instead of a healthy default — what
+/// a link-session test needs to drive `App::on_battery` through a real `timers` poll (via
+/// `Session::update`) rather than calling it directly, so the ending it triggers actually
+/// exercises `Session::bridge_link` instead of only `App`'s own bookkeeping.
+pub fn panel_with_battery(
+    root: &Path,
+    timeout: Duration,
+    charge: u8,
+    percent: u8,
+) -> (Power, Arc<AtomicU8>) {
+    let (power, backlight, _, _, _) = rig_with_charge(root, timeout, CLOCK_IS_SET, charge, percent);
+    (power, backlight)
+}
+
 fn rig(root: &Path, timeout: Duration, secs: i64) -> (Power, Arc<AtomicU8>, Clock) {
     let (power, backlight, clock, _, _) = rig_with_charge(root, timeout, secs, 0, 50);
     (power, backlight, clock)

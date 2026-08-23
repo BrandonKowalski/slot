@@ -168,6 +168,35 @@ impl Session {
         }
     }
 
+    /// `App` only ever holds a session's own bookkeeping (see `App::link`'s doc comment) —
+    /// the transport and the core it feeds live on the emulator thread, reachable only
+    /// through `EmuHandle`. Watching the edge here, around whatever `f` does to `App`, is
+    /// what closes that gap for every action that can end a session, without either side
+    /// having to know the other exists.
+    ///
+    /// The one place this is called from used to be inline inside `act`, wrapping only
+    /// `App::apply` — which covered every button but missed a critical battery reading,
+    /// which reaches `App` through `update`/`timers` instead, with no `Action` and no
+    /// `apply` call anywhere on its path. `App::begin_power_off` now ends a live session
+    /// itself (see its own doc comment) the same way `doze` already did, but that ending
+    /// still needed a way to reach the emulator thread — the whole reason this moved out of
+    /// `act` and became the one thing both of `Session`'s own entry points into `App`
+    /// (`act`'s `apply`, `update`'s `update`) route every call through. A session can now
+    /// only ever end from inside `App` on a path this already watches; there is no longer a
+    /// way to add a sixth route that skips it.
+    fn bridge_link(&mut self, f: impl FnOnce(&mut App)) {
+        let had_link = self.app.link_active();
+        f(&mut self.app);
+        if had_link && !self.app.link_active() {
+            if let Some(emu) = &self.emu {
+                // Tells the core the session is over (`RetroCore::stop_link`, if it offered
+                // a `stop` to hear it through) and drops the transport, which is what
+                // actually closes the wire — see `Cmd::EndLink` in `emu.rs`.
+                emu.end_link();
+            }
+        }
+    }
+
     fn act(&mut self, action: Action) {
         if trace() {
             eprintln!("slot: {action:?} in {:?}", self.app.phase());
@@ -182,22 +211,7 @@ impl Session {
         // A button the switcher used is not the game's, on either edge of it: the press that
         // opens it and the one that dismisses it both belong to the switcher.
         let switcher = self.showing_polaroids();
-        // `App` only ever holds a session's own bookkeeping (see `App::link`'s doc comment)
-        // — the transport and the core it feeds live on the emulator thread, reachable only
-        // through `EmuHandle`. Watching the edge here, around every `apply`, is what closes
-        // that gap for every action that can end a session (a power press today; `doze`'s
-        // own guard as of this file's sibling fix) without either of them having to know
-        // `EmuHandle` exists.
-        let had_link = self.app.link_active();
-        self.app.apply(action);
-        if had_link && !self.app.link_active() {
-            if let Some(emu) = &self.emu {
-                // Tells the core the session is over (`RetroCore::stop_link`, if it offered
-                // a `stop` to hear it through) and drops the transport, which is what
-                // actually closes the wire — see `Cmd::EndLink` in `emu.rs`.
-                emu.end_link();
-            }
-        }
+        self.bridge_link(|app| app.apply(action));
         // After apply: the level the sink wants is the one the action just produced.
         if matches!(
             action,
@@ -218,7 +232,7 @@ impl Session {
     }
 
     pub fn update(&mut self, dt: f32) {
-        self.app.update(dt);
+        self.bridge_link(|app| app.update(dt));
         if let Some(sfx) = self.app.take_sfx() {
             self.play_sfx(sfx);
         }
