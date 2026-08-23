@@ -107,10 +107,11 @@ pub type NetpacketDisconnected = unsafe extern "C" fn(client_id: u16);
 /// stored whole by the `SET_NETPACKET_INTERFACE` environment arm. `start` is called through
 /// once a session actually begins (`RetroCore::start_link`, behind `begin_link`), and `stop`
 /// once one ends (`RetroCore::stop_link`, behind `halt_link`) — the two are now a matched
-/// pair. `connected` and `disconnected` are still never called: they answer a peer joining or
-/// leaving a session with more than two participants, which this product does not model
-/// beyond "there is a peer or there is not" — a place to extend this if that stops being true
-/// (see the plan's RFU patches).
+/// pair. `connected` and `disconnected` are called through the same way, right beside `start`
+/// and `stop` respectively (`begin_link`/`halt_link` again): `connected` answers gpSP's own
+/// serial IRQ timing, which counts connected peers, and `disconnected` tells the core the one
+/// peer this product ever has has left. Neither means anything richer than that — there is
+/// still only "there is a peer or there is not" — but both are on the wire now, not stubs.
 #[repr(C)]
 pub struct NetpacketCallback {
     pub start: Option<NetpacketStart>,
