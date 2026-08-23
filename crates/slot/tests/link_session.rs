@@ -151,7 +151,16 @@ fn dropping_the_link_closes_the_wire() {
 /// worker calls it from inside its own frame, every present, and `EmuHandle::drop` joins
 /// that thread, so a hang here used to hang eject, cart swap and shutdown behind it.
 /// Before the fix (a direct, synchronous `write_all`) this test does not fail — it hangs,
-/// the same way the reviewer had to kill a hand-run reproduction of it.
+/// the same way the reviewer had to kill a hand-run reproduction of it, confirmed by hand at
+/// 90 s with no end in sight.
+///
+/// Driven from its own thread and bounded by `recv_timeout` below, rather than calling
+/// `send` straight from the test thread the way earlier versions of this test did: a
+/// regression back to a direct, synchronous `write_all` would block inside the loop and
+/// never send on `tx` at all, which would hang this test — and the whole suite behind it —
+/// instead of failing it. `host_binds_the_address_it_is_given_not_every_interface` above
+/// uses the identical shape for the identical reason: no test may be allowed to hang the
+/// suite, a bound failure is strictly better than an unbounded one.
 #[test]
 fn send_never_blocks_on_a_peer_that_stopped_reading() {
     let port = 45886;
@@ -161,20 +170,25 @@ fn send_never_blocks_on_a_peer_that_stopped_reading() {
     // Accepted, held onto, and never read from again.
     let _peer = acceptor.join().expect("accept thread");
 
-    let start = Instant::now();
-    // Large packets, comfortably more total volume than any OS's default *or auto-tuned*
-    // socket buffers would absorb before a synchronous `write_all` blocked waiting for the
-    // peer to make room. A smaller burst of small packets was tried first and is not
-    // reliable here: macOS's default 128 KB send buffer, with the kernel free to auto-tune
-    // well past it for a fast loopback link, swallowed tens of thousands of small sends
-    // without the old, unfixed synchronous `write_all` ever blocking at all — the volume has
-    // to clear that headroom, not just clear a headline packet count.
-    let payload = vec![0u8; 60_000];
-    for _ in 0..300 {
-        client.send(NETPACKET_RELIABLE, &payload);
-    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        // Large packets, comfortably more total volume than any OS's default *or
+        // auto-tuned* socket buffers would absorb before a synchronous `write_all` blocked
+        // waiting for the peer to make room. A smaller burst of small packets was tried
+        // first and is not reliable here: macOS's default 128 KB send buffer, with the
+        // kernel free to auto-tune well past it for a fast loopback link, swallowed tens of
+        // thousands of small sends without the old, unfixed synchronous `write_all` ever
+        // blocking at all — the volume has to clear that headroom, not just clear a
+        // headline packet count.
+        let payload = vec![0u8; 60_000];
+        for _ in 0..300 {
+            client.send(NETPACKET_RELIABLE, &payload);
+        }
+        let _ = tx.send(());
+    });
+
     assert!(
-        start.elapsed() < Duration::from_secs(2),
+        rx.recv_timeout(Duration::from_secs(2)).is_ok(),
         "send blocked on a peer that stopped reading"
     );
 }
