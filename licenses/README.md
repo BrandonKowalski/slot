@@ -24,9 +24,13 @@ repo carries the same notice the release zip does.
 - **GPL-2.0 (gpSP): the corresponding source ships in this directory, under section 3(a).**
   Section 3 allows conveying object code three ways: with the corresponding source, with a
   written offer for it, or — noncommercial only — by passing along an offer you received. This
-  release takes the first. `taskfile.yml`'s `core:gpsp` task fetches the binary, resolves a
-  matching source commit, downloads that commit's source archive from GitHub, and records the
-  commit — all as one fetch (see below). `dist:device` and `deploy:device` carry the result
+  release takes the first and makes no offer: the source is here, in the same directory and
+  the same zip and on the same card as the binary it corresponds to. There is nothing to
+  request and nobody to request it from.
+
+  `taskfile.yml`'s `core:gpsp` task fetches the binary, resolves a matching source commit,
+  downloads that commit's source archive from GitHub, and records the commit — all as one
+  fetch (see below). `dist:device` and `deploy:device` carry the result
   right here, next to this notice, as:
 
   ```
@@ -71,12 +75,3 @@ repo carries the same notice the release zip does.
   a new binary and silently leave it paired with whatever source an earlier run had recorded.
   That coupling is gone: nothing here can pair a binary from one fetch with a source recorded
   by another.
-
-  **A written offer, section 3(b), stands as a backstop.** For three years from the date of
-  the GitHub release that shipped a given `gpsp_libretro.so`, on written request to
-  **brandon@kowalski.io** naming that release's tag or the binary's sha256 (both recorded in
-  the release notes), the source corresponding to that binary will be provided on a medium
-  customarily used for software interchange, for a charge no more than the cost of physically
-  performing the distribution. This exists for the case the shipped archive turns out not to
-  match: a request naming a specific release lets us go back and check, and provide the actual
-  commit if the two diverge from what shipped.
