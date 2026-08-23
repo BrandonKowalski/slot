@@ -17,7 +17,7 @@ use slot_store::{write_slot_state, SlotState};
 #[test]
 fn a_packet_survives_the_wire_intact() {
     let port = 45881;
-    let server = std::thread::spawn(move || TcpLink::host(port).expect("host"));
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
     let mut host = server.join().expect("host thread");
@@ -45,7 +45,7 @@ fn a_packet_survives_the_wire_intact() {
 #[test]
 fn batched_writes_keep_their_boundaries() {
     let port = 45882;
-    let server = std::thread::spawn(move || TcpLink::host(port).expect("host"));
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut raw = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     let mut host = server.join().expect("host thread");
@@ -64,7 +64,7 @@ fn batched_writes_keep_their_boundaries() {
 #[test]
 fn try_recv_never_blocks_on_an_idle_link() {
     let port = 45883;
-    let server = std::thread::spawn(move || TcpLink::host(port).expect("host"));
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
     let _host = server.join().expect("host thread");
@@ -141,6 +141,88 @@ fn dropping_the_link_closes_the_wire() {
         n, 0,
         "peer should observe a clean EOF, not a hang or an error"
     );
+}
+
+/// C1: a peer that accepts and then never reads must not be able to block `send` — the
+/// worker calls it from inside its own frame, every present, and `EmuHandle::drop` joins
+/// that thread, so a hang here used to hang eject, cart swap and shutdown behind it.
+/// Before the fix (a direct, synchronous `write_all`) this test does not fail — it hangs,
+/// the same way the reviewer had to kill a hand-run reproduction of it.
+#[test]
+fn send_never_blocks_on_a_peer_that_stopped_reading() {
+    let port = 45886;
+    let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
+    let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
+    let mut client = TcpLink::join("127.0.0.1", port).expect("join");
+    // Accepted, held onto, and never read from again.
+    let _peer = acceptor.join().expect("accept thread");
+
+    let start = Instant::now();
+    // Large packets, comfortably more total volume than any OS's default *or auto-tuned*
+    // socket buffers would absorb before a synchronous `write_all` blocked waiting for the
+    // peer to make room. A smaller burst of small packets was tried first and is not
+    // reliable here: macOS's default 128 KB send buffer, with the kernel free to auto-tune
+    // well past it for a fast loopback link, swallowed tens of thousands of small sends
+    // without the old, unfixed synchronous `write_all` ever blocking at all — the volume has
+    // to clear that headroom, not just clear a headline packet count.
+    let payload = vec![0u8; 60_000];
+    for _ in 0..300 {
+        client.send(NETPACKET_RELIABLE, &payload);
+    }
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "send blocked on a peer that stopped reading"
+    );
+}
+
+/// I7: `set_nodelay(true)` in `wrap` had no test watching it at all — one of the four
+/// wirings the reviewer's mutation run found nothing covering.
+#[test]
+fn wrap_disables_nagle_on_both_sockets() {
+    let port = 45887;
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    let client = TcpLink::join("127.0.0.1", port).expect("join");
+    let host = server.join().expect("host thread");
+
+    assert!(
+        host.nodelay().expect("nodelay"),
+        "the host socket must disable Nagle"
+    );
+    assert!(
+        client.nodelay().expect("nodelay"),
+        "the joiner socket must disable Nagle"
+    );
+}
+
+/// I6: `host` used to bind `0.0.0.0` regardless of what it was asked for, reachable from
+/// anything on the user's home network rather than just the private WiFi a session actually
+/// runs over. Proven here by an address absent from every interface on this machine
+/// (`203.0.113.1` is RFC 5737's TEST-NET-3, reserved so it can never be a real one): if
+/// `host` still bound the wildcard under the hood instead of what it was actually given,
+/// this bind would succeed rather than fail.
+#[test]
+fn host_binds_the_address_it_is_given_not_every_interface() {
+    // Run on its own thread and bounded with a timeout, rather than called directly: if a
+    // regression ever bound `0.0.0.0` again, `bind` would succeed here and `host` would go
+    // on to block in `accept()` forever, with nothing on the other end ever going to
+    // connect. No test may be allowed to hang the suite that way — a bind failure resolves
+    // near instantly, so the timeout below only ever gets paid on the regression itself,
+    // turning what would otherwise be a hang into a clean, deterministic failure.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let kind = TcpLink::host("203.0.113.1", 0).err().map(|e| e.kind());
+        let _ = tx.send(kind);
+    });
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Some(kind)) => assert_eq!(kind, std::io::ErrorKind::AddrNotAvailable),
+        Ok(None) => panic!("must not silently bind 0.0.0.0"),
+        Err(_) => panic!(
+            "host() did not return within 2s -- a bind-address regression blocks forever in \
+             accept() instead of failing to bind, which is exactly what this test exists to \
+             catch without hanging the suite to do it"
+        ),
+    }
 }
 
 fn wait_for(link: &mut TcpLink) -> Option<Vec<u8>> {

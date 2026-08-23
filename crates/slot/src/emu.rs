@@ -42,6 +42,13 @@ const SNAPSHOT_EVERY: u32 = 2;
 /// Frames between traced pacing lines, about five seconds.
 const TRACE_EVERY: u64 = 300;
 
+/// A per-present cap on how many packets the worker will move from the transport into the
+/// core's inbound queue. Real GBA serial hardware never comes close to this in a present's
+/// worth of traffic; it exists for a peer that floods, so one present's worth of a flood
+/// costs one present's worth of work — the transport's `try_recv` is a queue poll, not a
+/// syscall, so this is cheap insurance rather than a real constraint on anything legitimate.
+const MAX_LINK_PACKETS_PER_PRESENT: u32 = 256;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Speed {
     Paused,
@@ -477,6 +484,13 @@ impl Worker {
                         // this is just letting go of it.
                         transport = None;
                         link.set_active(false);
+                        // `set_active(false)` stops anything new from being handed to the
+                        // core (`drain_link`/`netpacket_poll_receive` both check it now), but
+                        // it does not by itself remove what is already queued — a packet that
+                        // arrived a moment before this command would otherwise sit here until
+                        // the *next* session begins and gets fed to a core that never sent or
+                        // asked for it. `Link::clear` is what actually empties both queues.
+                        link.clear();
                     }
                 }
             }
@@ -487,9 +501,7 @@ impl Worker {
             // device paused its own picture. Neither direction may block the frame —
             // `try_recv` already never does — so this is always safe to run.
             if let Some(t) = transport.as_mut() {
-                while let Some(packet) = t.try_recv() {
-                    link.push_inbound(packet);
-                }
+                drain_transport(t.as_mut(), &link, MAX_LINK_PACKETS_PER_PRESENT);
             }
             core.pump_link();
             if let Some(t) = transport.as_mut() {
@@ -641,5 +653,72 @@ impl Worker {
 
     fn speed(&self) -> Speed {
         Speed::from_u8(self.shared.speed.load(Ordering::Relaxed))
+    }
+}
+
+/// Moves up to `cap` packets from `transport` into `link`'s inbound queue, in order, and
+/// leaves the rest — however many there are — queued in the transport for the next call.
+/// A free function, rather than inline in `Worker::run`'s loop, so the cap can be driven
+/// directly against a fake transport in a test with no worker thread and no real timing
+/// involved (`MAX_LINK_PACKETS_PER_PRESENT`'s own point is to bound work in one present,
+/// which a test racing a real 60 Hz loop could never pin down deterministically).
+fn drain_transport(transport: &mut dyn LinkChannel, link: &Link, cap: u32) {
+    for _ in 0..cap {
+        let Some(packet) = transport.try_recv() else {
+            break;
+        };
+        link.push_inbound(packet);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slot_retro::LoopbackLink;
+
+    /// I6: an unbounded drain here gives a flooding peer unbounded work in a single present.
+    /// `LoopbackLink` holds everything sent to it in a plain queue, so filling it past the
+    /// cap and draining once is enough to prove the cap actually holds — no thread, no
+    /// timing, no worker loop needed.
+    #[test]
+    fn drain_transport_stops_at_the_cap_and_leaves_the_rest_queued() {
+        let mut transport = LoopbackLink::default();
+        for i in 0..10u8 {
+            transport.send(0, &[i]);
+        }
+        let link = Link::default();
+
+        drain_transport(&mut transport, &link, 4);
+
+        let mut got = Vec::new();
+        while let Some(p) = link.take_inbound() {
+            got.push(p[0]);
+        }
+        assert_eq!(
+            got,
+            vec![0, 1, 2, 3],
+            "the cap must stop the drain, not just slow it"
+        );
+        assert_eq!(
+            transport.try_recv(),
+            Some(vec![4]),
+            "packets past the cap must stay queued in the transport, not be dropped"
+        );
+    }
+
+    /// The ordinary case: a present's worth of traffic never comes close to the cap, so
+    /// everything waiting moves in one call, same as an unbounded drain would.
+    #[test]
+    fn drain_transport_moves_everything_under_the_cap() {
+        let mut transport = LoopbackLink::default();
+        transport.send(0, b"one");
+        transport.send(0, b"two");
+        let link = Link::default();
+
+        drain_transport(&mut transport, &link, MAX_LINK_PACKETS_PER_PRESENT);
+
+        assert_eq!(link.take_inbound().as_deref(), Some(&b"one"[..]));
+        assert_eq!(link.take_inbound().as_deref(), Some(&b"two"[..]));
+        assert_eq!(link.take_inbound(), None);
     }
 }

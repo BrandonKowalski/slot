@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
@@ -377,18 +377,35 @@ fn end_link_marks_the_session_inactive() {
     );
 }
 
-/// Wraps `MockCore` and counts `stop_link` calls. `MockCore` itself never registers
-/// netpacket and never overrides `stop_link`, so it cannot show whether the worker's
-/// `Cmd::EndLink` handling actually calls through to the core at all — only that
-/// `emu.net().is_active()` goes false, which the transport being dropped would do on its
-/// own. This is what proves the *other* half of ending a session: the core being told, the
-/// libretro counterpart to `start_link` that `RetroCore::stop_link` exists for.
-struct SpyStopCore {
+/// Wraps `MockCore` and counts calls into the `RetroCore` link methods the worker is
+/// responsible for invoking on its own schedule — `start_link`, `pump_link` and `stop_link`.
+/// `MockCore` itself overrides none of the three (see its own doc comment on `net()`'s
+/// default: a fresh, unrelated `Link` on every call, which is also why this spy does not try
+/// to override `net()` either — nothing here needs the core's own link state, only proof the
+/// worker actually called through). Without a spy like this, none of the worker's own calls
+/// into the core are visible from `slot`'s tests at all — the mutation run that found this
+/// (I7) deleted `pump_link()` from the worker loop, `start_link(client_id)` from
+/// `Cmd::BeginLink`, and made `Cmd::EndLink` keep the transport instead of dropping it, and
+/// all 652 tests stayed green because nothing was watching any of the three.
+struct SpyLinkCore {
     inner: MockCore,
+    start_calls: Arc<Mutex<Vec<u16>>>,
+    pump_calls: Arc<AtomicUsize>,
     stop_calls: Arc<AtomicUsize>,
 }
 
-impl RetroCore for SpyStopCore {
+impl Default for SpyLinkCore {
+    fn default() -> Self {
+        SpyLinkCore {
+            inner: MockCore::new(),
+            start_calls: Arc::new(Mutex::new(Vec::new())),
+            pump_calls: Arc::new(AtomicUsize::new(0)),
+            stop_calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl RetroCore for SpyLinkCore {
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.inner.load(rom)
     }
@@ -416,6 +433,12 @@ impl RetroCore for SpyStopCore {
     fn av_info(&self) -> AvInfo {
         self.inner.av_info()
     }
+    fn start_link(&mut self, client_id: u16) {
+        self.start_calls.lock().unwrap().push(client_id);
+    }
+    fn pump_link(&mut self) {
+        self.pump_calls.fetch_add(1, Ordering::Relaxed);
+    }
     fn stop_link(&mut self) {
         self.stop_calls.fetch_add(1, Ordering::Relaxed);
     }
@@ -439,11 +462,9 @@ fn spawn_with_core(core: Box<dyn RetroCore>) -> EmuHandle {
 /// believing a session is live keeps producing packets nobody is left to carry.
 #[test]
 fn ending_a_link_tells_the_cores_own_stop_link() {
-    let stop_calls = Arc::new(AtomicUsize::new(0));
-    let emu = spawn_with_core(Box::new(SpyStopCore {
-        inner: MockCore::new(),
-        stop_calls: stop_calls.clone(),
-    }));
+    let core = SpyLinkCore::default();
+    let stop_calls = core.stop_calls.clone();
+    let emu = spawn_with_core(Box::new(core));
     let (_here, there) = paired_links();
     emu.begin_link(0, Box::new(there));
     assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
@@ -452,5 +473,109 @@ fn ending_a_link_tells_the_cores_own_stop_link() {
     assert!(
         wait_for(|| stop_calls.load(Ordering::Relaxed) > 0),
         "end_link must call the core's own stop_link"
+    );
+}
+
+/// I7 mutation 2: `Cmd::BeginLink` must call the core's own `start_link`, with the
+/// `client_id` it was actually given — `MockCore` never overrides `start_link`, so nothing
+/// short of a spy shows whether the worker forgot to call through at all.
+#[test]
+fn beginning_a_link_calls_the_cores_own_start_link() {
+    let core = SpyLinkCore::default();
+    let start_calls = core.start_calls.clone();
+    let emu = spawn_with_core(Box::new(core));
+    let (_here, there) = paired_links();
+
+    emu.begin_link(1, Box::new(there));
+    assert!(
+        wait_for(|| !start_calls.lock().unwrap().is_empty()),
+        "Cmd::BeginLink must call the core's own start_link"
+    );
+    assert_eq!(start_calls.lock().unwrap().as_slice(), &[1]);
+}
+
+/// I7 mutation 1: the worker must call `core.pump_link()` every present, regardless of
+/// speed or phase or whether a session is even live — see the comment above the call site in
+/// `emu.rs` for why. A spawn with no `begin_link` at all is the strictest version of that
+/// claim: it has to keep happening with nothing wired up yet.
+#[test]
+fn the_worker_pumps_the_core_every_present() {
+    let core = SpyLinkCore::default();
+    let pump_calls = core.pump_calls.clone();
+    let emu = spawn_with_core(Box::new(core));
+
+    assert!(
+        wait_for(|| pump_calls.load(Ordering::Relaxed) > 3),
+        "the worker must call core.pump_link() every present"
+    );
+    drop(emu);
+}
+
+/// I7 mutation 3: `Cmd::EndLink` must actually drop the transport, not merely mark the
+/// session inactive — `is_active()` going false is necessary but not sufficient, since a
+/// mutation that keeps the transport alive while still flipping the flag would pass every
+/// other test here. A `Drop` flag is what proves the transport itself is gone, the same way
+/// the module doc for `TcpLink` explains a socket drop matters for a real one.
+#[test]
+fn end_link_drops_the_transport_not_just_marks_it_inactive() {
+    struct DropSignal {
+        inner: PairedLink,
+        dropped: Arc<AtomicBool>,
+    }
+    impl LinkChannel for DropSignal {
+        fn send(&mut self, flags: i32, buf: &[u8]) {
+            self.inner.send(flags, buf)
+        }
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            self.inner.try_recv()
+        }
+    }
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let emu = spawn();
+    let (_here, there) = paired_links();
+    let dropped = Arc::new(AtomicBool::new(false));
+    let transport = DropSignal {
+        inner: there,
+        dropped: dropped.clone(),
+    };
+    emu.begin_link(0, Box::new(transport));
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    assert!(
+        wait_for(|| dropped.load(Ordering::Relaxed)),
+        "Cmd::EndLink must drop the transport, not merely mark the session inactive"
+    );
+}
+
+/// I2: a packet that arrived just before the session ended must not survive to be handed to
+/// the next one. Proven directly against `Link`, since `MockCore::pump_link` is a no-op and
+/// cannot itself drain this for a probe to observe — `slot-retro`'s own tests cover the
+/// `drain_link`/`netpacket_poll_receive` half of this at the ABI seam.
+#[test]
+fn ending_a_link_clears_stale_packets_for_the_next_session() {
+    let emu = spawn();
+    let (_here, there) = paired_links();
+    emu.begin_link(0, Box::new(there));
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.net()
+        .push_inbound(b"stale from the old session".to_vec());
+
+    emu.end_link();
+    assert!(wait_for(|| !emu.net().is_active()), "end_link never took");
+    // `Cmd::EndLink` flips `is_active` and clears both queues in the same handler, on the
+    // same thread — a short settle covers the gap between the atomic becoming visible here
+    // and the plain `Mutex`-guarded clear beside it.
+    std::thread::sleep(Duration::from_millis(50));
+
+    assert!(
+        emu.net().take_inbound().is_none(),
+        "a packet queued before the session ended survived into the next one"
     );
 }
