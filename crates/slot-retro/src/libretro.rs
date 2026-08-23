@@ -237,7 +237,16 @@ unsafe extern "C" fn netpacket_send(
 unsafe extern "C" fn netpacket_poll_receive() {
     let Some((receive, net, client_id)) = with_host(|h| {
         let receive = h.netpacket.as_ref().and_then(|cb| cb.receive)?;
-        Some((receive, h.net.clone(), h.net_peer.unwrap_or(0)))
+        // No fallback to `0`: that id is the host's own, and handing a packet to the core
+        // tagged with it is exactly the C2 bug (packets mislabelled as our own) this file
+        // already fixed once, reopened by a different route. `net_peer` is `None` for a
+        // real moment `halt_link` creates — it takes the peer out before `Cmd::EndLink`'s
+        // own `link.set_active(false)` runs, so a core that reenters from its `stop`
+        // callback (the same reentrancy `receive` and `start` are already proven safe
+        // against) can observe `is_active() == true` with no peer recorded. `?` makes that
+        // window a skipped delivery instead of a mislabelled one.
+        let client_id = h.net_peer?;
+        Some((receive, h.net.clone(), client_id))
     })
     .flatten() else {
         return;
@@ -338,7 +347,10 @@ unsafe fn halt_link() {
 unsafe fn drain_link() {
     let Some((receive, poll, net, client_id)) = with_host(|h| {
         let cb = h.netpacket.as_ref()?;
-        Some((cb.receive, cb.poll, h.net.clone(), h.net_peer.unwrap_or(0)))
+        // Same fix as `netpacket_poll_receive`, same reason: `0` is our own id, and a
+        // fallback to it would mislabel the sender instead of simply not delivering.
+        let client_id = h.net_peer?;
+        Some((cb.receive, cb.poll, h.net.clone(), client_id))
     })
     .flatten() else {
         return;
@@ -1008,6 +1020,10 @@ mod tests {
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
         host.net.set_active(true);
+        // I4: a peer has to be on record for `netpacket_poll_receive` to deliver anything
+        // at all now — `begin_link` sets both together in production, so this test's own
+        // shortcut of activating the session directly has to set both too.
+        host.net_peer = Some(1);
         host.net.push_inbound(b"first".to_vec());
         host.net.push_inbound(b"second".to_vec());
         {
@@ -1068,6 +1084,41 @@ mod tests {
         );
     }
 
+    /// I4: `is_active()` reading true is not by itself proof a peer was ever recorded —
+    /// `halt_link` takes `net_peer` back out before `Cmd::EndLink`'s own
+    /// `link.set_active(false)` runs, so a core that reenters from its `stop` callback (the
+    /// same shape `receive` and `start` are already proven safe against) can observe exactly
+    /// this combination. The old `unwrap_or(0)` fallback would have delivered this packet
+    /// mislabelled as client `0` — our own id, and the same mislabelling C2 fixed once
+    /// already. Refusing to deliver at all is the point of the fix this proves.
+    #[test]
+    fn netpacket_poll_receive_does_nothing_without_a_recorded_peer() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        // Active with no `net_peer` — never reachable through `begin_link`, which always
+        // sets both together; only a direct poke at the flag (standing in for the window
+        // above) can put the host in this state at all.
+        host.net.set_active(true);
+        host.net.push_inbound(b"orphaned".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        TEST_RECEIVED.with(|r| {
+            assert!(
+                r.borrow().is_empty(),
+                "a packet must not be delivered with no peer to tag it"
+            )
+        });
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"orphaned"[..]),
+            "the packet must be left queued, not delivered mislabelled as our own id"
+        );
+    }
+
     /// C2: the host must tag an incoming packet with the peer's client id, not its own —
     /// `begin_link` is what learns the peer's id from the one it was actually given.
     #[test]
@@ -1101,6 +1152,7 @@ mod tests {
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
         host.net.set_active(true);
+        host.net_peer = Some(1); // I4: a peer has to be on record to deliver at all now
         host.net.push_inbound(b"queued".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -1117,6 +1169,7 @@ mod tests {
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
         host.net.set_active(true);
+        host.net_peer = Some(1); // I4: a peer has to be on record to deliver at all now
         {
             let _active = Active::bind(&mut host);
             unsafe { drain_link() };
@@ -1134,6 +1187,7 @@ mod tests {
             ..test_netpacket_callback()
         });
         host.net.set_active(true);
+        host.net_peer = Some(1); // I4: a peer has to be on record to deliver at all now
         host.net.push_inbound(b"still delivered".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -1188,6 +1242,40 @@ mod tests {
         );
     }
 
+    /// I4: `drain_link`'s half of the same fix `netpacket_poll_receive` gets above — see that
+    /// test's own doc comment for the reentrant-`stop` window this stands in for.
+    #[test]
+    fn drain_link_does_nothing_without_a_recorded_peer() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        host.net.set_active(true);
+        host.net.push_inbound(b"orphaned".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| {
+            assert!(
+                r.borrow().is_empty(),
+                "a packet must not be delivered with no peer to tag it"
+            )
+        });
+        TEST_POLLS.with(|p| {
+            assert_eq!(
+                p.get(),
+                0,
+                "must not even poll with no peer to tag a receive"
+            )
+        });
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"orphaned"[..]),
+            "the packet must be left queued, not delivered mislabelled as our own id"
+        );
+    }
+
     /// C2: `drain_link`'s half of the same client-id fix `netpacket_poll_receive` gets above.
     #[test]
     fn drain_link_tags_packets_with_the_peers_client_id() {
@@ -1232,6 +1320,7 @@ mod tests {
             ..test_netpacket_callback()
         });
         host.net.set_active(true);
+        host.net_peer = Some(1); // I4: a peer has to be on record to deliver at all now
         host.net.push_inbound(b"queued".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -1258,6 +1347,7 @@ mod tests {
             ..test_netpacket_callback()
         });
         host.net.set_active(true);
+        host.net_peer = Some(1); // I4: a peer has to be on record to deliver at all now
         host.net.push_inbound(b"queued".to_vec());
         {
             let _active = Active::bind(&mut host);
