@@ -133,6 +133,45 @@ pub fn clean_label(stem: &str) -> String {
     }
 }
 
+/// The bracketed groups `clean_label` throws away, in the order they appeared. A dump's
+/// filename carries them as one run of parentheses — `(USA, Europe) (Rev 1)` — and each group
+/// is one fact about this dump rather than about the game, which is why they are worth
+/// keeping apart from the title instead of inside it.
+///
+/// One tag per group, not per comma: `(USA, Europe)` is a single release in two regions, and
+/// splitting it would claim two.
+pub fn label_tags(stem: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0u32;
+    let mut cur = String::new();
+    for ch in stem.chars() {
+        match ch {
+            '(' | '[' => {
+                depth += 1;
+                if depth == 1 {
+                    cur.clear();
+                    continue;
+                }
+            }
+            ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let t = cur.trim();
+                    if !t.is_empty() {
+                        out.push(t.to_string());
+                    }
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        if depth >= 1 {
+            cur.push(ch);
+        }
+    }
+    out
+}
+
 fn shell_face(shell: &Shell) -> CartFace {
     let mut rgba = Vec::with_capacity((CART_W * CART_H * 4) as usize);
     let edge = rim_colour(shell.colour);

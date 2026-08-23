@@ -901,3 +901,77 @@ fn the_picker_says_what_the_rows_are_for() {
         "expected name, then caption, then cores; got {title_y}, {caption_y}, {first_row}"
     );
 }
+
+/// The brackets in a dump's filename are facts about the dump, not part of the game's name,
+/// so they come out of the title and sit under it as blocks. Each keeps a ground of its own:
+/// one continuous strip would read as a sentence rather than as separate facts.
+#[test]
+fn the_picker_sets_the_dumps_tags_under_the_title_not_inside_it() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = fake_core_faces(&mut app);
+    let title = (TexId::from_raw(999), 300, 40);
+    let tags = vec![
+        (TexId::from_raw(990), 90, 24),
+        (TexId::from_raw(991), 60, 24),
+    ];
+    app.set_core_picker_title_face(Some(title));
+    app.set_core_picker_tag_faces(tags.clone());
+    app.apply(Action::GbaDown(Btn::Start));
+
+    let mut out = Vec::new();
+    app.draw(&mut out);
+
+    let placed: Vec<(f32, f32)> = tags
+        .iter()
+        .map(|(want, ..)| {
+            out.iter()
+                .find_map(|d| match *d {
+                    Draw::Tex { x, y, tex, .. } if tex == *want => Some((x, y)),
+                    _ => None,
+                })
+                .expect("a tag block never reached the screen")
+        })
+        .collect();
+
+    let title_y = out
+        .iter()
+        .find_map(|d| match *d {
+            Draw::Tex { y, tex, .. } if tex == title.0 => Some(y),
+            _ => None,
+        })
+        .expect("no title");
+    let first_row = core_rows(&out, &faces)
+        .first()
+        .map(|(_, _, y)| *y)
+        .expect("no core rows");
+
+    for (_, y) in &placed {
+        assert!(
+            title_y < *y && *y < first_row,
+            "a tag landed outside the gap between the title and the cores"
+        );
+    }
+    assert!(
+        placed[0].0 < placed[1].0,
+        "tags must keep filename order left to right"
+    );
+    assert_eq!(placed[0].1, placed[1].1, "tags share one line");
+
+    // Each block carries its own ground, sized to itself.
+    for (tex, w, h) in &tags {
+        let (x, y) = out
+            .iter()
+            .find_map(|d| match *d {
+                Draw::Tex { x, y, tex: t, .. } if t == *tex => Some((x, y)),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            out.iter().any(
+                |d| matches!(*d, Draw::Rect { x: rx, y: ry, w: rw, h: rh, .. }
+                if rx == x && ry == y && rw == *w as f32 && rh == *h as f32)
+            ),
+            "a tag block has no ground behind it"
+        );
+    }
+}

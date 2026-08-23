@@ -8,10 +8,10 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    cart_face, cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face, picker_caption_face,
-    picker_title_face, set_clock_hint_face, sticker_face, title_face, toast_face, wallpaper_face,
-    word_face, Icon, PowerChoice, StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK,
-    LEGEND,
+    cart_face, cart_shadow, clean_label, hhmm, hint_face, icon_face, label_tags, menu_face,
+    photo_face, picker_caption_face, picker_title_face, set_clock_hint_face, sticker_face,
+    tag_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice, StickerFields,
+    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, Phase};
@@ -428,12 +428,25 @@ fn sync_core_picker(
     *titled = want.clone();
     match want {
         Some(stem) => {
-            let face = picker_title_face(&stem);
+            // The title is the game; the brackets are facts about this dump of it. Cut here
+            // rather than in the rasteriser so the two are laid out as separate things.
+            let face = picker_title_face(&clean_label(&stem));
             let (w, h) = (face.w, face.h);
             let id = upload(compositor, slot, face);
             app.set_core_picker_title_face(Some((id, w, h)));
+            let tags = label_tags(&stem)
+                .iter()
+                .map(|t| {
+                    let f = tag_face(t);
+                    (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+                })
+                .collect();
+            app.set_core_picker_tag_faces(tags);
         }
-        None => app.set_core_picker_title_face(None),
+        None => {
+            app.set_core_picker_title_face(None);
+            app.set_core_picker_tag_faces(Vec::new());
+        }
     }
 }
 

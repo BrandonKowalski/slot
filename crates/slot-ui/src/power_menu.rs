@@ -118,3 +118,28 @@ pub fn picker_caption_face(label: &str) -> UndoFace {
         h: CAPTION_H,
     }
 }
+
+/// One bracketed fact from the filename, set as a block under the title. Sized to its own
+/// text like `menu_face`, so a row of them reads as separate chips rather than one ruled
+/// band; the caller draws the ground behind each from the width returned here.
+const TAG_PX: f32 = 15.0;
+const TAG_MIN_PX: f32 = 11.0;
+const TAG_H: u32 = 24;
+pub const TAG_PAD: u32 = 10;
+const TAG_INK: [u8; 3] = [0xc8, 0xc3, 0xbb];
+
+pub fn tag_face(label: &str) -> UndoFace {
+    let Some(font) = text::label_font() else {
+        return UndoFace {
+            rgba: Vec::new(),
+            w: 0,
+            h: 0,
+        };
+    };
+    let ink = text::line_width(font, label, TAG_PX, 0.0).ceil() as u32;
+    let w = ink + 2 * TAG_PAD;
+    let mut rgba = vec![0u8; (w * TAG_H * 4) as usize];
+    let layout = text::fit(font, label, w as f32, 1, TAG_PX, TAG_MIN_PX);
+    text::draw_centred(&mut rgba, w, TAG_H, &layout, TAG_INK);
+    UndoFace { rgba, w, h: TAG_H }
+}

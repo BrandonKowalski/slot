@@ -93,6 +93,10 @@ const POWER_MENU_PITCH: f32 = 44.0;
 /// stay separate things rather than one continuous block when the selection moves.
 /// Between the cart's name and the first core row.
 const CORE_PICKER_TITLE_GAP: f32 = 10.0;
+/// Between the title and its tag blocks, and between those and the caption.
+const CORE_PICKER_TAG_GAP: f32 = 14.0;
+/// Between one tag block and the next.
+const CORE_PICKER_TAG_SPACING: f32 = 8.0;
 /// Between the caption and the first core row.
 const CORE_PICKER_CAPTION_GAP: f32 = 14.0;
 const POWER_MENU_BAR_INSET: f32 = 4.0;
@@ -205,6 +209,8 @@ pub struct App {
     /// The word "Core" between the name and the rows. Static text, so it is rastered once at
     /// boot rather than with the title.
     core_picker_caption_face: Option<(TexId, u32, u32)>,
+    /// The bracketed groups cut from the title, one block each.
+    core_picker_tag_faces: Vec<(TexId, u32, u32)>,
     /// One per `Core::ALL`, in that order, with the size each was rastered at. Uploaded at
     /// startup beside the power menu's, for a quieter version of the same reason: the faces
     /// never change, so rastering them the moment a button opens the menu would put a font
@@ -319,6 +325,7 @@ impl App {
             core_picker: None,
             core_picker_title_face: None,
             core_picker_caption_face: None,
+            core_picker_tag_faces: Vec::new(),
             core_picker_faces: Vec::new(),
             restarting: false,
             act_at: 0,
@@ -1431,6 +1438,10 @@ impl App {
         self.core_picker_caption_face = face;
     }
 
+    pub fn set_core_picker_tag_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.core_picker_tag_faces = faces;
+    }
+
     pub fn set_core_picker_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
         self.core_picker_faces = faces;
     }
@@ -1515,18 +1526,16 @@ impl App {
         let title_h = self
             .core_picker_title_face
             .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_TITLE_GAP);
+        let tags_h = self
+            .core_picker_tag_faces
+            .first()
+            .map_or(0.0, |(_, _, h)| *h as f32 + CORE_PICKER_TAG_GAP);
         let caption_h = self
             .core_picker_caption_face
             .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_CAPTION_GAP);
-        let head = title_h + caption_h;
+        let head = title_h + tags_h + caption_h;
         let mut y = (OUT_H as f32 - (pitch * rows as f32 + head)) / 2.0;
-        for (face, gap) in [
-            (self.core_picker_title_face, CORE_PICKER_TITLE_GAP),
-            (self.core_picker_caption_face, CORE_PICKER_CAPTION_GAP),
-        ] {
-            let Some((tex, w, h)) = face else {
-                continue;
-            };
+        if let Some((tex, w, h)) = self.core_picker_title_face {
             out.push(Draw::Tex {
                 x: ((OUT_W as f32 - w as f32) / 2.0).round(),
                 y,
@@ -1535,7 +1544,51 @@ impl App {
                 tex,
                 alpha: 1.0,
             });
-            y += h as f32 + gap;
+            y += h as f32 + CORE_PICKER_TITLE_GAP;
+        }
+        // The dump's own facts, as separate blocks rather than one band: each parenthesis in
+        // the filename was one fact, and a single strip would read as a sentence.
+        if !self.core_picker_tag_faces.is_empty() {
+            let gaps = CORE_PICKER_TAG_SPACING * (self.core_picker_tag_faces.len() - 1) as f32;
+            let span: f32 = self
+                .core_picker_tag_faces
+                .iter()
+                .map(|(_, w, _)| *w as f32)
+                .sum::<f32>()
+                + gaps;
+            let mut x = ((OUT_W as f32 - span) / 2.0).round();
+            let mut tag_h = 0.0;
+            for (tex, w, h) in self.core_picker_tag_faces.iter().copied() {
+                out.push(Draw::Rect {
+                    x,
+                    y,
+                    w: w as f32,
+                    h: h as f32,
+                    colour: [1.0, 1.0, 1.0, 0.10],
+                });
+                out.push(Draw::Tex {
+                    x,
+                    y,
+                    w: w as f32,
+                    h: h as f32,
+                    tex,
+                    alpha: 1.0,
+                });
+                x += w as f32 + CORE_PICKER_TAG_SPACING;
+                tag_h = h as f32;
+            }
+            y += tag_h + CORE_PICKER_TAG_GAP;
+        }
+        if let Some((tex, w, h)) = self.core_picker_caption_face {
+            out.push(Draw::Tex {
+                x: ((OUT_W as f32 - w as f32) / 2.0).round(),
+                y,
+                w: w as f32,
+                h: h as f32,
+                tex,
+                alpha: 1.0,
+            });
+            y += h as f32 + CORE_PICKER_CAPTION_GAP;
         }
         let top = y;
         for (row, (tex, w, h)) in self.core_picker_faces.iter().copied().enumerate() {

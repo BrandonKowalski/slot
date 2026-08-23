@@ -24,8 +24,8 @@ pub use backdrop::{draw_backdrop, wallpaper_face};
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
 pub use cart::{
-    cart_face, cart_shadow, clean_label, label_colour, label_panel, label_text, CartFace, CART_H,
-    CART_W, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
+    cart_face, cart_shadow, clean_label, label_colour, label_panel, label_tags, label_text,
+    CartFace, CART_H, CART_W, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
 };
 pub use clock::{clock_label, hhmm, set_clock_hint_face, ClockPicker, Field};
 pub use draw::{Draw, TexId, OUT_H, OUT_W};
@@ -37,7 +37,9 @@ pub use plate::{
     UndoFace, CAP_GAP, HINT_GAP, HINT_H, TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
-pub use power_menu::{menu_face, picker_caption_face, picker_title_face, PowerChoice, MENU_PAD};
+pub use power_menu::{
+    menu_face, picker_caption_face, picker_title_face, tag_face, PowerChoice, MENU_PAD, TAG_PAD,
+};
 pub use refusal::Refusal;
 pub use shelf::Shelf;
 pub use shell::{
