@@ -505,3 +505,119 @@ fn both_b_and_menu_close_the_about_screen() {
         );
     }
 }
+
+/// A booted app sitting on the shelf, beside the card it reads and writes. Two carts at
+/// least: one cart is a dedicated device, and `App::boot` seats it rather than leaving a
+/// shelf to press anything on. `clock_set` because a card that has never been asked the
+/// time opens on the clock screen, which owns every button.
+fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
+    let d = common::tmp_root_with_carts(stems);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            clock_set: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let app = App::boot(d.path());
+    (d, app)
+}
+
+/// Opening on row zero would be a menu that says every cart runs mGBA, which is a lie the
+/// moment one of them does not.
+#[test]
+fn select_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    assert_eq!(app.selected_stem(), Some("Emerald"));
+
+    app.apply(Action::GbaDown(Btn::Select));
+    assert_eq!(
+        app.core_picker(),
+        Some(0),
+        "a cart with no line of its own runs the default core"
+    );
+    app.apply(Action::GbaDown(Btn::B));
+
+    slot_store::write_selected_core(d.path(), "Emerald", slot_store::Core::Gpsp).unwrap();
+    app.apply(Action::GbaDown(Btn::Select));
+    assert_eq!(
+        app.core_picker(),
+        Some(1),
+        "the picker should open on the core the cart already uses, not on row zero"
+    );
+}
+
+#[test]
+fn choosing_a_core_writes_it_and_closes() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Down));
+    app.apply(Action::GbaDown(Btn::A));
+
+    assert_eq!(
+        app.core_picker(),
+        None,
+        "the picker stayed open after a choice"
+    );
+    assert_eq!(
+        slot_store::core_for(d.path(), "Emerald"),
+        slot_store::Core::Gpsp
+    );
+    assert_eq!(
+        slot_store::core_for(d.path(), "Zzz"),
+        slot_store::Core::Mgba,
+        "the choice landed on a cart the shelf was not on"
+    );
+}
+
+#[test]
+fn b_closes_the_picker_without_writing() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Down));
+    app.apply(Action::GbaDown(Btn::B));
+
+    assert_eq!(app.core_picker(), None);
+    assert_eq!(
+        slot_store::core_for(d.path(), "Emerald"),
+        slot_store::Core::Mgba,
+        "backing out of the picker still changed the cart"
+    );
+}
+
+/// A menu that let the thing behind it move would act on a different cart than the one it
+/// named when it opened.
+#[test]
+fn the_picker_swallows_the_shelf_arrows() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion"]);
+    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaDown(Btn::B));
+    assert_eq!(
+        app.selected_stem(),
+        Some("Emerald"),
+        "the shelf moved underneath an open picker"
+    );
+}
+
+/// Nothing to configure with no cart under the highlight, and a picker that wrote to an
+/// empty stem would leave a line for a cart that is not there.
+#[test]
+fn the_picker_does_not_open_on_an_empty_shelf() {
+    let (_d, mut app) = on_shelf(&[]);
+    app.apply(Action::GbaDown(Btn::Select));
+    assert_eq!(app.core_picker(), None);
+}
+
+/// Up from the top and down from the bottom wrap. Two rows makes either arrow the other's
+/// undo, and a picker that stuck at an end would need the player to know which.
+#[test]
+fn the_picker_wraps_at_both_ends() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaDown(Btn::Up));
+    assert_eq!(app.core_picker(), Some(slot_store::Core::ALL.len() - 1));
+    app.apply(Action::GbaDown(Btn::Down));
+    assert_eq!(app.core_picker(), Some(0));
+}

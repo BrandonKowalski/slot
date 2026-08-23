@@ -189,6 +189,11 @@ pub struct App {
     power_menu: Option<usize>,
     /// One per `PowerChoice::ALL`, in that order, with the size each was rastered at.
     power_menu_faces: Vec<(TexId, u32, u32)>,
+    /// Which core row is highlighted, and `None` when the picker is closed. The cart it acts
+    /// on is whichever the shelf has, read when it opens rather than held here: the shelf
+    /// cannot move while it is up, so there is only ever one answer and no way for a
+    /// remembered one to go stale against it.
+    core_picker: Option<usize>,
     /// Set when the menu's Restart is chosen. The binary acts on it, like `powering_off`.
     restarting: bool,
     /// When the binary is allowed to act. The screen is drawn from the instant the choice is
@@ -295,6 +300,7 @@ impl App {
             shutdown_faces: Vec::new(),
             power_menu: None,
             power_menu_faces: Vec::new(),
+            core_picker: None,
             restarting: false,
             act_at: 0,
             root: None,
@@ -636,6 +642,20 @@ impl App {
         self.power_menu
     }
 
+    /// Which core row the picker is on, and `None` while it is closed. The chrome draws from
+    /// it, exactly as it does from `power_menu`.
+    pub fn core_picker(&self) -> Option<usize> {
+        self.core_picker
+    }
+
+    /// The cart under the highlight, and `None` on an empty shelf.
+    pub fn selected_stem(&self) -> Option<&str> {
+        self.shelf
+            .carts
+            .get(self.shelf.index)
+            .map(|c| c.stem.as_str())
+    }
+
     /// The cached reading. `None` until the first slow tick, and on any device with no gauge.
     pub fn battery(&self) -> Option<Battery> {
         self.battery
@@ -711,6 +731,12 @@ impl App {
         let now = self.now();
         match self.phase {
             Phase::Shelf => match action {
+                Action::GbaDown(Btn::Select) if self.core_picker.is_none() => {
+                    self.open_core_picker()
+                }
+                // Ahead of the shelf's own movement, so an open picker takes the arrows
+                // before the row of carts underneath it does.
+                _ if self.core_picker.is_some() => self.core_picker_input(action),
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf.hold_left(now),
                 Action::ShelfRight | Action::GbaDown(Btn::Right) => self.shelf.hold_right(now),
                 Action::OpenAbout => self.phase = Phase::About,
@@ -1664,6 +1690,59 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// SELECT on the shelf offers the highlighted cart's core, opening on the one it already
+    /// uses so the menu answers "which is this?" before it asks "which do you want?".
+    ///
+    /// Both the read that positions the highlight and the write that follows need the card.
+    /// Without one there is nothing to configure and nowhere to put an answer, so the button
+    /// stays inert rather than raising a menu whose choice would evaporate.
+    fn open_core_picker(&mut self) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        // Nothing to configure with no cart under the highlight, and a picker that wrote to
+        // an empty stem would leave a line for a cart that is not there.
+        let Some(cart) = self.shelf.carts.get(self.shelf.index) else {
+            return;
+        };
+        self.core_picker = Some(slot_store::core_for(&root, &cart.stem).index());
+    }
+
+    /// The picker owns every button while it is up, including the arrows the shelf uses: a
+    /// menu that let the thing behind it move would act on a different cart than the one it
+    /// named. Up and down wrap, because with two rows either arrow is the other's undo and
+    /// an end that stuck would need the player to know which one they were against.
+    fn core_picker_input(&mut self, action: Action) {
+        let Some(row) = self.core_picker else {
+            return;
+        };
+        let rows = Core::ALL.len();
+        match action {
+            Action::GbaDown(Btn::Up) => self.core_picker = Some((row + rows - 1) % rows),
+            Action::GbaDown(Btn::Down) => self.core_picker = Some((row + 1) % rows),
+            Action::GbaDown(Btn::A) => {
+                self.write_core(Core::ALL[row]);
+                self.core_picker = None;
+            }
+            Action::GbaDown(Btn::B) => self.core_picker = None,
+            _ => {}
+        }
+    }
+
+    /// The choice, onto the card. Best effort, like every other card write here: a read only
+    /// or absent card is a shelf that still works, not a boot failure. Nothing else in the
+    /// app is told — `self.core` is the seated cart's, set when a core is actually spawned,
+    /// and the shelf has none seated.
+    fn write_core(&self, core: Core) {
+        let (Some(root), Some(cart)) = (self.root.clone(), self.shelf.carts.get(self.shelf.index))
+        else {
+            return;
+        };
+        if let Err(e) = slot_store::write_selected_core(&root, &cart.stem, core) {
+            eprintln!("slot: core: could not write selected_core.ini: {e}");
         }
     }
 

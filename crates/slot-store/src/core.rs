@@ -26,6 +26,21 @@ impl Core {
         }
     }
 
+    /// Position in `ALL`, which is the order the picker's rows and their faces are in.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// What the picker calls it. Not `as_str`: that is the ini's spelling, meant to be typed
+    /// by hand into a text editor on a computer, and this is the player's, meant to be read
+    /// off a panel. The two are free to differ, and already do.
+    pub fn text(self) -> &'static str {
+        match self {
+            Core::Mgba => "mGBA",
+            Core::Gpsp => "gpSP",
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Core> {
         match s.trim().to_ascii_lowercase().as_str() {
             "mgba" => Some(Core::Mgba),
