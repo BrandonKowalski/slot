@@ -866,3 +866,38 @@ fn the_picker_lays_down_an_opaque_ground_under_its_own_title() {
         .expect("the picker laid down no ground at all");
     assert_eq!(ground, 1.0, "the ground under the picker is see-through");
 }
+
+/// A game's name over two proper nouns is a menu with no verb: whether picking one runs the
+/// cart, deletes it or changes what runs it is left to the player to guess. The caption is
+/// the word that says which, so it has to be on screen and between the two.
+#[test]
+fn the_picker_says_what_the_rows_are_for() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = fake_core_faces(&mut app);
+    let title = (TexId::from_raw(999), 200, 30);
+    let caption = (TexId::from_raw(998), 100, 20);
+    app.set_core_picker_title_face(Some(title));
+    app.set_core_picker_caption_face(Some(caption));
+    app.apply(Action::GbaDown(Btn::Start));
+
+    let mut out = Vec::new();
+    app.draw(&mut out);
+
+    let at = |want: TexId| {
+        out.iter().find_map(|d| match *d {
+            Draw::Tex { y, tex, .. } if tex == want => Some(y),
+            _ => None,
+        })
+    };
+    let title_y = at(title.0).expect("no cart name");
+    let caption_y = at(caption.0).expect("the picker never says what it is choosing");
+    let first_row = core_rows(&out, &faces)
+        .first()
+        .map(|(_, _, y)| *y)
+        .expect("no core rows");
+
+    assert!(
+        title_y < caption_y && caption_y < first_row,
+        "expected name, then caption, then cores; got {title_y}, {caption_y}, {first_row}"
+    );
+}

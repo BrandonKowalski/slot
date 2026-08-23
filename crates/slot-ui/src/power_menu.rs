@@ -63,3 +63,58 @@ pub fn menu_face(label: &str) -> UndoFace {
     text::draw_centred(&mut rgba, w, MENU_H, &layout, MENU_INK);
     UndoFace { rgba, w, h: MENU_H }
 }
+
+/// The cart's name over the core picker. Set above the rows it labels rather than under
+/// them: the rows are two short words the eye already knows, and the name is the long
+/// unfamiliar one doing the actual identifying, so it is the thing that has to be legible
+/// first. Wide enough for a full "Pokemon - LeafGreen Version (USA, Europe) (Rev 1)" before
+/// the fitter starts shrinking, which is the shape a real ROM filename takes.
+const PICKER_TITLE_PX: f32 = 36.0;
+const PICKER_TITLE_MIN_PX: f32 = 18.0;
+const PICKER_TITLE_W: u32 = 640;
+const PICKER_TITLE_H: u32 = 48;
+
+pub fn picker_title_face(label: &str) -> UndoFace {
+    let mut rgba = vec![0u8; (PICKER_TITLE_W * PICKER_TITLE_H * 4) as usize];
+    if let Some(font) = text::label_font() {
+        let layout = text::fit(
+            font,
+            label,
+            PICKER_TITLE_W as f32,
+            1,
+            PICKER_TITLE_PX,
+            PICKER_TITLE_MIN_PX,
+        );
+        text::draw_centred(&mut rgba, PICKER_TITLE_W, PICKER_TITLE_H, &layout, MENU_INK);
+    }
+    UndoFace {
+        rgba,
+        w: PICKER_TITLE_W,
+        h: PICKER_TITLE_H,
+    }
+}
+
+/// The word between the cart's name and the cores, saying what the two rows underneath are.
+/// Without it the menu is a game's name over two proper nouns and no verb: whether picking
+/// one runs it, deletes it or renames it is left to the player to guess.
+///
+/// Dimmer and much smaller than either — it is a label, and a label that competes with the
+/// thing it labels has failed at being one.
+const CAPTION_PX: f32 = 16.0;
+const CAPTION_MIN_PX: f32 = 12.0;
+const CAPTION_H: u32 = 22;
+const CAPTION_W: u32 = 360;
+const CAPTION_INK: [u8; 3] = [0x8e, 0x8a, 0x84];
+
+pub fn picker_caption_face(label: &str) -> UndoFace {
+    let mut rgba = vec![0u8; (CAPTION_W * CAPTION_H * 4) as usize];
+    if let Some(font) = text::label_font() {
+        let layout = text::fit(font, label, CAPTION_W as f32, 1, CAPTION_PX, CAPTION_MIN_PX);
+        text::draw_centred(&mut rgba, CAPTION_W, CAPTION_H, &layout, CAPTION_INK);
+    }
+    UndoFace {
+        rgba,
+        w: CAPTION_W,
+        h: CAPTION_H,
+    }
+}

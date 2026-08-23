@@ -92,7 +92,9 @@ const POWER_MENU_PITCH: f32 = 44.0;
 /// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
 /// stay separate things rather than one continuous block when the selection moves.
 /// Between the cart's name and the first core row.
-const CORE_PICKER_TITLE_GAP: f32 = 18.0;
+const CORE_PICKER_TITLE_GAP: f32 = 10.0;
+/// Between the caption and the first core row.
+const CORE_PICKER_CAPTION_GAP: f32 = 14.0;
 const POWER_MENU_BAR_INSET: f32 = 4.0;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
@@ -200,6 +202,9 @@ pub struct App {
     /// picker's own rows say only "mGBA" and "gpSP", so without this the screen never names
     /// the cart it is about to change.
     core_picker_title_face: Option<(TexId, u32, u32)>,
+    /// The word "Core" between the name and the rows. Static text, so it is rastered once at
+    /// boot rather than with the title.
+    core_picker_caption_face: Option<(TexId, u32, u32)>,
     /// One per `Core::ALL`, in that order, with the size each was rastered at. Uploaded at
     /// startup beside the power menu's, for a quieter version of the same reason: the faces
     /// never change, so rastering them the moment a button opens the menu would put a font
@@ -313,6 +318,7 @@ impl App {
             power_menu_faces: Vec::new(),
             core_picker: None,
             core_picker_title_face: None,
+            core_picker_caption_face: None,
             core_picker_faces: Vec::new(),
             restarting: false,
             act_at: 0,
@@ -1421,6 +1427,10 @@ impl App {
         self.core_picker_title_face = face;
     }
 
+    pub fn set_core_picker_caption_face(&mut self, face: Option<(TexId, u32, u32)>) {
+        self.core_picker_caption_face = face;
+    }
+
     pub fn set_core_picker_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
         self.core_picker_faces = faces;
     }
@@ -1499,23 +1509,35 @@ impl App {
             colour: slot_ui::opening(),
         });
         let pitch = POWER_MENU_PITCH;
-        // Title and rows are centred as one block, not the rows alone with a caption pushed
-        // above them: a menu that names the cart it is about has the name as part of it.
-        let head = self
+        // Title, caption and rows centre as one block, not the rows alone with the other two
+        // pushed above them: a menu that names its cart and says what it is choosing has both
+        // as part of it.
+        let title_h = self
             .core_picker_title_face
             .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_TITLE_GAP);
-        let top = (OUT_H as f32 - (pitch * rows as f32 + head)) / 2.0;
-        if let Some((tex, w, h)) = self.core_picker_title_face {
+        let caption_h = self
+            .core_picker_caption_face
+            .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_CAPTION_GAP);
+        let head = title_h + caption_h;
+        let mut y = (OUT_H as f32 - (pitch * rows as f32 + head)) / 2.0;
+        for (face, gap) in [
+            (self.core_picker_title_face, CORE_PICKER_TITLE_GAP),
+            (self.core_picker_caption_face, CORE_PICKER_CAPTION_GAP),
+        ] {
+            let Some((tex, w, h)) = face else {
+                continue;
+            };
             out.push(Draw::Tex {
                 x: ((OUT_W as f32 - w as f32) / 2.0).round(),
-                y: top,
+                y,
                 w: w as f32,
                 h: h as f32,
                 tex,
                 alpha: 1.0,
             });
+            y += h as f32 + gap;
         }
-        let top = top + head;
+        let top = y;
         for (row, (tex, w, h)) in self.core_picker_faces.iter().copied().enumerate() {
             let y = top + pitch * row as f32;
             let x = ((OUT_W as f32 - w as f32) / 2.0).round();

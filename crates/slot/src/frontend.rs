@@ -8,9 +8,10 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    cart_face, cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face, set_clock_hint_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice,
-    StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    cart_face, cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face, picker_caption_face,
+    picker_title_face, set_clock_hint_face, sticker_face, title_face, toast_face, wallpaper_face,
+    word_face, Icon, PowerChoice, StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK,
+    LEGEND,
 };
 
 use crate::app::{App, Phase};
@@ -167,6 +168,16 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_core_picker_faces(cores);
+        // Static text, so it goes up with everything else at boot rather than on every open.
+        let cap = picker_caption_face("Core");
+        let cap = (
+            compositor.create_texture(cap.w, cap.h, &cap.rgba),
+            cap.w,
+            cap.h,
+        );
+        self.session
+            .app_mut()
+            .set_core_picker_caption_face(Some(cap));
         let toasts = Toast::ALL
             .iter()
             .map(|t| {
@@ -417,7 +428,7 @@ fn sync_core_picker(
     *titled = want.clone();
     match want {
         Some(stem) => {
-            let face = title_face(&stem);
+            let face = picker_title_face(&stem);
             let (w, h) = (face.w, face.h);
             let id = upload(compositor, slot, face);
             app.set_core_picker_title_face(Some((id, w, h)));
