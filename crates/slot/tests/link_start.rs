@@ -230,3 +230,60 @@ fn a_worker_that_dies_is_reported_rather_than_polled_forever() {
         LinkProgress::Failed(LinkFail::PeerVanished)
     ));
 }
+
+/// The gap between the socket coming up and the screen still being there to take it.
+///
+/// A joiner reaches this even after a cancel: `TcpLink::join` is a plain `connect` and never
+/// looks at the flag, so the connection completes regardless. If the player has already left,
+/// the `Ready` lands in a dropped receiver — and handing the link over is what transfers the
+/// radio with it, so nobody is left owning the network. Without the send's result being
+/// checked, the device sits on a link network with nothing on the other end and no way back
+/// but a reboot.
+#[test]
+fn a_link_that_comes_up_after_the_player_left_puts_the_radio_back() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let peer = std::thread::spawn(move || {
+        let accepted = listener.accept();
+        // Held open long enough for the worker's side to be a real, connected link rather
+        // than one that failed for an unrelated reason.
+        std::thread::sleep(Duration::from_millis(300));
+        drop(accepted);
+    });
+
+    let downs = Arc::new(AtomicUsize::new(0));
+    let count = downs.clone();
+    let gate = Arc::new(AtomicBool::new(false));
+    let open = gate.clone();
+
+    let starter = LinkStarter::spawn_with(
+        Box::new(|_| Ok(())),
+        Box::new(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        }),
+        LinkRole::Join,
+        port,
+        // Waits for the test to say the player has gone, so the race this is about is the
+        // one that actually happens rather than one the scheduler has to be lucky to produce.
+        Box::new(move |p, _| {
+            while !open.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            TcpLink::join("127.0.0.1", p)
+        }),
+    );
+
+    drop(starter);
+    gate.store(true, Ordering::SeqCst);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while downs.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        downs.load(Ordering::SeqCst),
+        1,
+        "a link nobody was left to receive must still put the radio back"
+    );
+    let _ = peer.join();
+}

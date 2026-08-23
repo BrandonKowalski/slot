@@ -198,7 +198,15 @@ impl LinkStarter {
                 // No teardown here, and that is the point of the whole module: the session
                 // this just handed over runs over that network.
                 Ok(link) => {
-                    let _ = tx.send(LinkProgress::Ready(link));
+                    // Handing the link over is what transfers the radio with it, so the send
+                    // failing means there is nobody to transfer it to: the player left between
+                    // the socket coming up and this line, and the receiver went with them. A
+                    // joiner reaches here even after a cancel, because `TcpLink::join` is a
+                    // plain `connect` that never looks at the flag. Nothing else owns the
+                    // network at that point, so this thread is the one that has to put it back.
+                    if tx.send(LinkProgress::Ready(link)).is_err() {
+                        radio_down();
+                    }
                 }
                 Err(e) => {
                     // Down before the message, on this path and the one above it. The
