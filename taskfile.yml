@@ -332,13 +332,12 @@ tasks:
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
       - cp vendor/gpsp_libretro.so {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
-      # GPL-2.0 section 3(a): gpSP's corresponding source travels with the binary rather than
-      # being promised to anyone who asks. It lands inside licenses/ itself, next to the
-      # license text that explains it, named for the commit core:gpsp
-      # resolved so the file identifies its own source with no release page to point back to
-      # — the exact thing a hand-built SD card does not have. The .meta file travels with it,
-      # named to match, so the anchor timestamp and resolution method core:gpsp recorded ship
-      # on the card too, not only in a GitHub release's notes.
+      # GPL-2.0 section 3(a): gpSP's corresponding source travels with the binary. It lands
+      # inside licenses/ itself, next to the license text that explains it, named for the
+      # commit core:gpsp resolved so the file identifies its own source with no release page
+      # to point back to — the exact thing a hand-built SD card does not have. The .meta file
+      # travels with it, named to match, so the anchor timestamp and resolution method
+      # core:gpsp recorded ship on the card too, not only in a GitHub release's notes.
       - |
         set -euo pipefail
         sha="$(cat vendor/gpsp-src.sha)"
