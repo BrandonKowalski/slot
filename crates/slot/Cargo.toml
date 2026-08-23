@@ -28,4 +28,8 @@ lz4_flex = { workspace = true }
 png = { workspace = true }
 
 [dev-dependencies]
+# `TexId::from_raw`, so a draw test can name the faces the binary uploads at boot without a
+# live GL context to upload them with. A dev-dependency only: the feature must not reach the
+# device build, where a forged handle would alias whatever real texture sits at that index.
+slot-gfx = { path = "../slot-gfx", default-features = false, features = ["test-support"] }
 tempfile = { workspace = true }

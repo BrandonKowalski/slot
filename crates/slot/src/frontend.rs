@@ -151,6 +151,18 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_power_menu_faces(menu);
+        // The same rasteriser and the same trip to the GPU as the row above, in `Core::ALL`
+        // order so a row index is a core without a lookup. Uploaded here rather than when
+        // the picker opens because these words never change either, and a menu that
+        // rasterised on the way up would spend its first frame doing it.
+        let cores = slot_store::Core::ALL
+            .iter()
+            .map(|c| {
+                let f = menu_face(c.text());
+                (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+            })
+            .collect();
+        self.session.app_mut().set_core_picker_faces(cores);
         let toasts = Toast::ALL
             .iter()
             .map(|t| {

@@ -194,6 +194,11 @@ pub struct App {
     /// cannot move while it is up, so there is only ever one answer and no way for a
     /// remembered one to go stale against it.
     core_picker: Option<usize>,
+    /// One per `Core::ALL`, in that order, with the size each was rastered at. Uploaded at
+    /// startup beside the power menu's, for a quieter version of the same reason: the faces
+    /// never change, so rastering them the moment a button opens the menu would put a font
+    /// pass in front of a press that has nothing to gain by it.
+    core_picker_faces: Vec<(TexId, u32, u32)>,
     /// Set when the menu's Restart is chosen. The binary acts on it, like `powering_off`.
     restarting: bool,
     /// When the binary is allowed to act. The screen is drawn from the instant the choice is
@@ -301,6 +306,7 @@ impl App {
             power_menu: None,
             power_menu_faces: Vec::new(),
             core_picker: None,
+            core_picker_faces: Vec::new(),
             restarting: false,
             act_at: 0,
             root: None,
@@ -1312,6 +1318,13 @@ impl App {
                 return;
             }
         }
+        // After the shelf, never before it: drawn first it would be painted over by the very
+        // row of carts it is a menu for, and START would look like a button that does
+        // nothing. Only the shelf can raise it, so no phase needs excluding here — the
+        // phases that own the whole panel have already returned.
+        if let Some(index) = self.core_picker {
+            self.draw_core_picker(index, out);
+        }
         // Over everything, in every phase. The bar is never what the user is looking at.
         self.hud.draw(self.now(), out);
     }
@@ -1397,6 +1410,10 @@ impl App {
         self.power_menu_faces = faces;
     }
 
+    pub fn set_core_picker_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.core_picker_faces = faces;
+    }
+
     /// Black, the rows, and a bar behind the one in hand. The highlight is a rect rather than
     /// a second face per row: the labels are rastered once at boot and never again, and a
     /// device about to lose its GPU is not the place to be uploading textures.
@@ -1426,6 +1443,53 @@ impl App {
         let pitch = POWER_MENU_PITCH;
         let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
         for (row, (tex, w, h)) in self.power_menu_faces.iter().copied().enumerate() {
+            let y = top + pitch * row as f32;
+            let x = ((OUT_W as f32 - w as f32) / 2.0).round();
+            if row == index {
+                out.push(Draw::Rect {
+                    x,
+                    y: y + POWER_MENU_BAR_INSET,
+                    w: w as f32,
+                    h: pitch - 2.0 * POWER_MENU_BAR_INSET,
+                    colour: slot_ui::edge(),
+                });
+            }
+            out.push(Draw::Tex {
+                x,
+                y: y + (pitch - h as f32) / 2.0,
+                w: w as f32,
+                h: h as f32,
+                tex,
+                alpha: 1.0,
+            });
+        }
+    }
+
+    /// The power menu's rows, at the power menu's pitch, in the power menu's materials —
+    /// they are the same kind of object and there is no reason for a device this small to
+    /// have two menu idioms.
+    ///
+    /// What differs is where it goes in the frame. The power menu is the first thing `draw`
+    /// does and it returns straight after: it ends the session, so nothing else on the panel
+    /// is still true. This is a property of one cart on a shelf the player is still standing
+    /// in front of, so it goes over the shelf rather than in place of it, and the HUD still
+    /// lands on top — brightness and blue light are answered while it is up, and their level
+    /// bars have to be visible when they are.
+    fn draw_core_picker(&self, index: usize, out: &mut Vec<Draw>) {
+        let rows = self.core_picker_faces.len();
+        if rows == 0 {
+            return;
+        }
+        out.push(Draw::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: OUT_W as f32,
+            h: OUT_H as f32,
+            colour: slot_ui::opening(),
+        });
+        let pitch = POWER_MENU_PITCH;
+        let top = (OUT_H as f32 - pitch * rows as f32) / 2.0;
+        for (row, (tex, w, h)) in self.core_picker_faces.iter().copied().enumerate() {
             let y = top + pitch * row as f32;
             let x = ((OUT_W as f32 - w as f32) / 2.0).round();
             if row == index {

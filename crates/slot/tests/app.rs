@@ -7,7 +7,7 @@ use slot::audio::Sfx;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, SlotState};
-use slot_ui::{opening, Draw, CART_W};
+use slot_ui::{edge, opening, Draw, TexId, CART_W, OUT_W};
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
 /// start the cart clean, and the app cannot know which until the finger comes off.
@@ -641,4 +641,170 @@ fn select_on_the_shelf_leaves_the_picker_shut_so_it_can_still_chord() {
     // That SELECT+Up actually yields BrightnessUp is the gesture layer's to prove, and it
     // does: see the chord table test in slot-input/tests/gesture.rs. What this layer owes is
     // only that the shelf does not intercept SELECT before the chord can form.
+}
+
+/// The faces the binary uploads at boot, without a compositor to upload them with: one per
+/// core, in `Core::ALL` order, each a different width so a test can tell which row a bar the
+/// width of its own words is sitting behind.
+fn fake_core_faces(app: &mut App) -> Vec<(TexId, u32, u32)> {
+    let faces: Vec<(TexId, u32, u32)> = slot_store::Core::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, _)| (TexId::from_raw(900 + i), 120 + 40 * i as u32, 40))
+        .collect();
+    app.set_core_picker_faces(faces.clone());
+    faces
+}
+
+/// Every row's face, in the order they were uploaded in, wherever they landed in the frame.
+fn core_rows(out: &[Draw], faces: &[(TexId, u32, u32)]) -> Vec<(usize, f32, f32)> {
+    out.iter()
+        .enumerate()
+        .filter_map(|(i, d)| match *d {
+            Draw::Tex { x, y, tex, .. } => faces.iter().position(|f| f.0 == tex).map(|_| (i, x, y)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The bar behind the row in hand. Matched on the row's own geometry as well as its colour:
+/// the footer is drawn in `edge` too, in dozens of one and two pixel slivers, so colour
+/// alone would count the clock's glyphs as menu bars.
+fn highlight_bars(out: &[Draw], faces: &[(TexId, u32, u32)]) -> Vec<(f32, f32, f32)> {
+    out.iter()
+        .filter_map(|d| match *d {
+            Draw::Rect {
+                x, y, w, colour, ..
+            } if colour == edge()
+                && faces.iter().any(|f| {
+                    w == f.1 as f32 && x == ((OUT_W as f32 - f.1 as f32) / 2.0).round()
+                }) =>
+            {
+                Some((x, y, w))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The picker changing `core_picker()` and nothing else is a menu that does not exist: on a
+/// device it reads as START swallowing the arrows and drawing nothing. A row per core has to
+/// reach the frame.
+///
+/// Over the shelf and not instead of it, which is why this asserts on where the picker's
+/// draws land as well as that they are there. Copying the power menu's call site — first
+/// thing in `draw`, then `return` — would put the menu under the very shelf it is a menu
+/// for, and leave the frame looking exactly as broken as it does with no picker at all.
+#[test]
+fn the_open_picker_draws_a_row_per_core_on_top_of_the_shelf() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = fake_core_faces(&mut app);
+
+    let mut shut = Vec::new();
+    app.draw(&mut shut);
+    assert!(
+        core_rows(&shut, &faces).is_empty(),
+        "the picker drew its rows with no picker open"
+    );
+
+    app.apply(Action::GbaDown(Btn::Start));
+    let mut open = Vec::new();
+    app.draw(&mut open);
+
+    let rows = core_rows(&open, &faces);
+    assert_eq!(
+        rows.len(),
+        slot_store::Core::ALL.len(),
+        "expected one row per core, got {rows:?}"
+    );
+    // Distinct rows down the panel, in upload order, rather than two faces stacked on the
+    // same line.
+    assert!(
+        rows[0].2 < rows[1].2,
+        "the rows are not stacked down the panel: {rows:?}"
+    );
+    // Centred on the panel, each to its own width, the way the power menu's are.
+    for ((_, x, _), (_, w, _)) in rows.iter().zip(faces.iter()) {
+        assert_eq!(*x, ((OUT_W as f32 - *w as f32) / 2.0).round());
+    }
+
+    // And the shelf is still under it. The two frames agree until the picker starts, which
+    // is what puts the picker on top of the carts rather than beneath them: copied to the
+    // power menu's call site — first in `draw`, then `return` — it would be painted over by
+    // the very row of carts it is a menu for, and START would look inert.
+    let split = shut
+        .iter()
+        .zip(open.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    assert!(
+        split > 0,
+        "the picker is the first thing in the frame, so the shelf is drawn over it"
+    );
+    assert!(
+        split < rows[0].0,
+        "the picker's rows land inside the shelf's own draws rather than after them"
+    );
+}
+
+/// Which core the cart runs is the whole question the menu asks, and the bar is the only
+/// thing on screen that answers it. A menu that highlighted row zero whatever the player
+/// pressed would look identical on both cores and write the wrong one.
+#[test]
+fn the_bar_sits_behind_the_row_the_player_is_on() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = fake_core_faces(&mut app);
+
+    app.apply(Action::GbaDown(Btn::Start));
+    let mut top = Vec::new();
+    app.draw(&mut top);
+    let bars = highlight_bars(&top, &faces);
+    assert_eq!(bars.len(), 1, "expected one bar, got {bars:?}");
+    let rows = core_rows(&top, &faces);
+    assert_eq!(
+        bars[0].2, faces[0].1 as f32,
+        "the bar is not the width of the first row's own words"
+    );
+    assert!(
+        (bars[0].1 - rows[0].2).abs() < (bars[0].1 - rows[1].2).abs(),
+        "the bar is nearer the second row than the first: bar {bars:?}, rows {rows:?}"
+    );
+
+    app.apply(Action::GbaDown(Btn::Down));
+    assert_eq!(app.core_picker(), Some(1));
+    let mut moved = Vec::new();
+    app.draw(&mut moved);
+    let bars = highlight_bars(&moved, &faces);
+    assert_eq!(bars.len(), 1, "expected one bar, got {bars:?}");
+    let rows = core_rows(&moved, &faces);
+    assert_eq!(
+        bars[0].2, faces[1].1 as f32,
+        "the bar did not follow the highlight down to the second row"
+    );
+    assert!(
+        (bars[0].1 - rows[1].2).abs() < (bars[0].1 - rows[0].2).abs(),
+        "the bar stayed nearer the first row: bar {bars:?}, rows {rows:?}"
+    );
+}
+
+/// Backing out has to take the menu off the panel, not just out of the state. A picker that
+/// closed but kept drawing would be a shelf the player could no longer see.
+#[test]
+fn closing_the_picker_takes_it_off_the_screen() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = fake_core_faces(&mut app);
+
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::B));
+    let mut out = Vec::new();
+    app.draw(&mut out);
+
+    assert!(
+        core_rows(&out, &faces).is_empty(),
+        "the picker's rows survived it closing"
+    );
+    assert!(
+        highlight_bars(&out, &faces).is_empty(),
+        "the bar behind a row survived the picker closing"
+    );
 }
