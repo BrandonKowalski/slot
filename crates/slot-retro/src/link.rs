@@ -91,9 +91,19 @@ impl Link {
         self.0.active.load(Ordering::Relaxed)
     }
 
-    /// Mark the session live or ended. Ending it does not clear either queue: a transport
-    /// that is winding down may still want to flush what is left.
+    /// Mark the session live or ended. Ending it does not clear either queue itself — see
+    /// `clear` for that — so a transport that is winding down may still flush what is left
+    /// before its caller gets around to calling it.
     pub fn set_active(&self, active: bool) {
         self.0.active.store(active, Ordering::Relaxed);
+    }
+
+    /// Empties both queues. A packet that arrived — or was produced — before a session ended
+    /// must not be sitting here waiting for the next one: `Cmd::EndLink` (`slot`'s `emu.rs`)
+    /// is the only caller, right after it marks the session inactive, so a stale packet from
+    /// session one is never mistaken for traffic belonging to session two.
+    pub fn clear(&self) {
+        self.0.inbound.lock().unwrap().clear();
+        self.0.outbound.lock().unwrap().clear();
     }
 }

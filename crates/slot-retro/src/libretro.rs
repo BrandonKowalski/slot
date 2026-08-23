@@ -47,6 +47,13 @@ struct Host {
     /// above, so `net()` always hands back something valid whether or not this core ever
     /// registers netpacket.
     net: Link,
+    /// The peer's own libretro client id — `1 - client_id` for the two parties this product
+    /// has — set by `begin_link` from the id it was actually given, and read by
+    /// `netpacket_poll_receive`/`drain_link` so every packet handed to the core is tagged
+    /// with who it is really from. Without this both trampolines hardcoded client 0, so the
+    /// host told the core every packet — including the joiner's — came from itself. `None`
+    /// before a session starts and once `halt_link` has read it back out for `disconnected`.
+    net_peer: Option<u16>,
     /// Core options, keyed as libretro names them. Values are kept as CStrings because the
     /// pointer handed back to the core has to stay valid after the callback returns.
     options: std::collections::HashMap<String, std::ffi::CString>,
@@ -218,33 +225,72 @@ unsafe extern "C" fn netpacket_send(
 ///
 /// Same story as `netpacket_send`: live only once `cb.start` has been called with this
 /// pointer, which `begin_link` now does.
+///
+/// gpSP documents `receive` as able to reenter this same thread before it returns —
+/// `rfu.c:879-882`: `receive -> rfu_net_receive -> netpacket_send`, and `netpacket_send`
+/// reaches the host through `with_host` too, deriving a *second* `&mut Host` from the same
+/// raw pointer while this function's own borrow would still be alive if it called `receive`
+/// from inside `with_host`'s closure. Miri confirms that as a Stacked Borrows violation, so
+/// everything needed from the host — the function pointer, the peer's client id, and a
+/// `Link` handle (`Arc`-backed, cheap to clone) — is copied out and the borrow dropped
+/// before `receive` is ever called.
 unsafe extern "C" fn netpacket_poll_receive() {
-    with_host(|h| {
-        let Some(receive) = h.netpacket.as_ref().and_then(|cb| cb.receive) else {
-            return;
-        };
-        while let Some(packet) = h.net.take_inbound() {
-            receive(packet.as_ptr() as *const c_void, packet.len(), 0);
-        }
-    });
+    let Some((receive, net, client_id)) = with_host(|h| {
+        let receive = h.netpacket.as_ref().and_then(|cb| cb.receive)?;
+        Some((receive, h.net.clone(), h.net_peer.unwrap_or(0)))
+    })
+    .flatten() else {
+        return;
+    };
+    // Asked on the cloned handle rather than back through `with_host`: a plain atomic load
+    // on `Arc`-shared state needs no host borrow at all. A session that has already ended —
+    // `Cmd::EndLink` marks this false before the transport is dropped — must not hand the
+    // core a packet that arrived for a session that is no longer live; see `Link::clear` for
+    // the queue's own half of that guarantee.
+    if !net.is_active() {
+        return;
+    }
+    while let Some(packet) = net.take_inbound() {
+        receive(packet.as_ptr() as *const c_void, packet.len(), client_id);
+    }
 }
 
 /// The logic behind `RetroCore::start_link` on `LibretroCore`, factored out to a free
 /// function the same way `drain_link` is behind `pump_link` below — so it can be driven
 /// directly against a bare `Host` in tests, with no dylib to open. `client_id` 0 is the
-/// host, 1 the joiner, the only two this product has.
+/// host, 1 the joiner, the only two this product has — so the peer is always the other one.
 ///
 /// Marks the link active only once there is actually somewhere for `start` to have gone: a
 /// core that never registered netpacket has no session to begin, and reporting one active
 /// with nobody to carry it would be a lie the interlocks elsewhere would believe.
+///
+/// `start`, like `receive` above, is documented as able to reenter this thread, so it is
+/// called with no `&mut Host` borrow alive — the same fix, the same Miri-confirmed hazard.
+/// `connected` gets the identical treatment for the identical reason.
 unsafe fn begin_link(client_id: u16) {
-    with_host(|h| {
-        let Some(start) = h.netpacket.as_ref().and_then(|cb| cb.start) else {
-            return;
-        };
-        start(client_id, netpacket_send, netpacket_poll_receive);
+    let Some(start) = with_host(|h| h.netpacket.as_ref().and_then(|cb| cb.start)).flatten() else {
+        return;
+    };
+    start(client_id, netpacket_send, netpacket_poll_receive);
+
+    let peer = 1u16.wrapping_sub(client_id);
+    let connected = with_host(|h| {
         h.net.set_active(true);
-    });
+        h.net_peer = Some(peer);
+        h.netpacket.as_ref().and_then(|cb| cb.connected)
+    })
+    .flatten();
+    // gpSP's serial IRQ timing counts connected peers — `serial_irq_cycles = tim[...] *
+    // (netplay_num_clients + 1)` (`serial.c:175`) — and `netplay_num_clients` is what this
+    // call is what feeds. Never calling it left the host computing half the transfer time
+    // RetroArch would. Optional and null-checked like every other netpacket callback:
+    // libretro guarantees only `start`/`receive`. Its `bool` return is peer admission for a
+    // session with more than two participants, which this product does not model — see
+    // `NetpacketCallback`'s own doc comment — so it is read for nothing here; a handshake
+    // that could actually refuse a peer is the larger design question I6 defers.
+    if let Some(connected) = connected {
+        connected(peer);
+    }
 }
 
 /// The logic behind `RetroCore::stop_link`, mirroring `begin_link` immediately above: a free
@@ -256,13 +302,27 @@ unsafe fn begin_link(client_id: u16) {
 /// `h.net`'s active flag: that is `Link::set_active`'s job, called by whoever is ending the
 /// session (see `Cmd::EndLink` in `slot`'s `emu.rs`) whether or not the core had a `stop` to
 /// hear it through — a core with no `stop` still needs its session marked over.
+///
+/// Calls `disconnected` first, `start`/`connected`'s counterpart — with the same peer id
+/// `begin_link` derived and the same borrow-dropped-before-the-call treatment, on the
+/// (unproven but cheap-to-apply) chance `stop` can reenter the same way `start` does. `None`
+/// peer means `begin_link` never actually started a session, so there is no `disconnected`
+/// to send — `halt_link` is safe to call whether or not one was ever begun.
 unsafe fn halt_link() {
-    with_host(|h| {
-        let Some(stop) = h.netpacket.as_ref().and_then(|cb| cb.stop) else {
-            return;
-        };
+    let Some((stop, peer, disconnected)) = with_host(|h| {
+        let stop = h.netpacket.as_ref().and_then(|cb| cb.stop);
+        let peer = h.net_peer.take();
+        let disconnected = h.netpacket.as_ref().and_then(|cb| cb.disconnected);
+        (stop, peer, disconnected)
+    }) else {
+        return;
+    };
+    if let (Some(peer), Some(disconnected)) = (peer, disconnected) {
+        disconnected(peer);
+    }
+    if let Some(stop) = stop {
         stop();
-    });
+    }
 }
 
 /// The logic behind `LibretroCore::pump_link`, factored out to a free function that reaches
@@ -270,20 +330,30 @@ unsafe fn halt_link() {
 /// against a bare `Host` in tests the same way the `GET_VARIABLE` tests below drive
 /// `environment` — this repo has no gpSP dylib to load on macOS, and gpSP is the only core
 /// that will ever exercise this for real.
+///
+/// Same reentrancy hazard as `netpacket_poll_receive`, same fix: `receive` and `poll` are
+/// plain `Copy` function pointers, cheap to take out of the borrow alongside the cloned
+/// `Link`, so nothing here calls into the core while still holding `&mut Host`. Same
+/// `is_active` guard too, for the same stale-packet reason.
 unsafe fn drain_link() {
-    with_host(|h| {
-        let Some(cb) = h.netpacket.as_ref() else {
-            return;
-        };
-        if let Some(receive) = cb.receive {
-            while let Some(packet) = h.net.take_inbound() {
-                receive(packet.as_ptr() as *const c_void, packet.len(), 0);
-            }
+    let Some((receive, poll, net, client_id)) = with_host(|h| {
+        let cb = h.netpacket.as_ref()?;
+        Some((cb.receive, cb.poll, h.net.clone(), h.net_peer.unwrap_or(0)))
+    })
+    .flatten() else {
+        return;
+    };
+    if !net.is_active() {
+        return;
+    }
+    if let Some(receive) = receive {
+        while let Some(packet) = net.take_inbound() {
+            receive(packet.as_ptr() as *const c_void, packet.len(), client_id);
         }
-        if let Some(poll) = cb.poll {
-            poll();
-        }
-    });
+    }
+    if let Some(poll) = poll {
+        poll();
+    }
 }
 
 unsafe extern "C" fn video_refresh(
@@ -447,6 +517,7 @@ impl LibretroCore {
             asked_for_rumble: false,
             netpacket: None,
             net: Link::default(),
+            net_peer: None,
             options: std::collections::HashMap::new(),
             options_dirty: false,
         });
@@ -662,6 +733,7 @@ mod tests {
             asked_for_rumble: false,
             netpacket: None,
             net: Link::default(),
+            net_peer: None,
             options,
             options_dirty,
         })
@@ -755,6 +827,10 @@ mod tests {
 
     thread_local! {
         static TEST_RECEIVED: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+        /// The `client_id` each `test_receive` call landed with, in the same order as
+        /// `TEST_RECEIVED` — this is what proves C2: the host must stop tagging every packet
+        /// with its own id and tag it with the peer's instead.
+        static TEST_RECEIVED_CLIENT_IDS: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
         static TEST_POLLS: Cell<u32> = const { Cell::new(0) };
         /// What `test_start` was last called with, so `begin_link` can be proven to have
         /// actually reached the core rather than merely not panicked.
@@ -762,6 +838,10 @@ mod tests {
         /// How many times `test_stop` fired, so `halt_link` can be proven to have actually
         /// reached the core rather than merely not panicked.
         static TEST_STOP_CALLS: Cell<u32> = const { Cell::new(0) };
+        /// What `test_connected` was last called with.
+        static TEST_CONNECTED_CLIENT: Cell<Option<u16>> = const { Cell::new(None) };
+        /// What `test_disconnected` was last called with.
+        static TEST_DISCONNECTED_CLIENT: Cell<Option<u16>> = const { Cell::new(None) };
     }
 
     /// Thread-local recorders persist across tests that land on the same worker thread in
@@ -769,14 +849,42 @@ mod tests {
     /// test. Each test that reads them must reset first.
     fn reset_test_netpacket_recorders() {
         TEST_RECEIVED.with(|r| r.borrow_mut().clear());
+        TEST_RECEIVED_CLIENT_IDS.with(|c| c.borrow_mut().clear());
         TEST_POLLS.with(|p| p.set(0));
         TEST_START_CLIENT.with(|c| c.set(None));
         TEST_STOP_CALLS.with(|c| c.set(0));
+        TEST_CONNECTED_CLIENT.with(|c| c.set(None));
+        TEST_DISCONNECTED_CLIENT.with(|c| c.set(None));
     }
 
-    unsafe extern "C" fn test_receive(buf: *const c_void, len: usize, _client_id: u16) {
+    unsafe extern "C" fn test_receive(buf: *const c_void, len: usize, client_id: u16) {
         let bytes = std::slice::from_raw_parts(buf as *const u8, len).to_vec();
         TEST_RECEIVED.with(|r| r.borrow_mut().push(bytes));
+        TEST_RECEIVED_CLIENT_IDS.with(|c| c.borrow_mut().push(client_id));
+    }
+
+    /// I1: reproduces the exact reentrancy gpSP's own source documents (`rfu.c:879-882`) —
+    /// `receive -> rfu_net_receive -> netpacket_send`, all on this same thread before
+    /// `receive` returns. Nothing about this needs a real dylib: Miri can run entirely
+    /// against these hand-built trampolines standing in for what the core does, which is
+    /// what proves the fix without a gpSP binary anywhere in this tree.
+    unsafe extern "C" fn test_receive_reentrant(buf: *const c_void, len: usize, client_id: u16) {
+        test_receive(buf, len, client_id);
+        let reentrant = b"reentrant";
+        netpacket_send(0, reentrant.as_ptr() as *const c_void, reentrant.len(), 0);
+    }
+
+    /// I1's other shape: `begin_link` has the same hazard across `start(...)`, so this lets
+    /// a test simulate a core that turns around and calls back into the frontend — here,
+    /// `netpacket_poll_receive`, the pointer `start` was just handed — before `start` itself
+    /// returns.
+    unsafe extern "C" fn test_start_reentrant(
+        client_id: u16,
+        _send: NetpacketSend,
+        poll_receive: NetpacketPollReceive,
+    ) {
+        TEST_START_CLIENT.with(|c| c.set(Some(client_id)));
+        poll_receive();
     }
 
     unsafe extern "C" fn test_poll() {
@@ -793,6 +901,15 @@ mod tests {
 
     unsafe extern "C" fn test_stop() {
         TEST_STOP_CALLS.with(|c| c.set(c.get() + 1));
+    }
+
+    unsafe extern "C" fn test_connected(client_id: u16) -> bool {
+        TEST_CONNECTED_CLIENT.with(|c| c.set(Some(client_id)));
+        true
+    }
+
+    unsafe extern "C" fn test_disconnected(client_id: u16) {
+        TEST_DISCONNECTED_CLIENT.with(|c| c.set(Some(client_id)));
     }
 
     /// `start` and `receive` are the two fields libretro guarantees a core fills in; the
@@ -890,6 +1007,7 @@ mod tests {
         reset_test_netpacket_recorders();
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
+        host.net.set_active(true);
         host.net.push_inbound(b"first".to_vec());
         host.net.push_inbound(b"second".to_vec());
         {
@@ -912,6 +1030,7 @@ mod tests {
         reset_test_netpacket_recorders();
         let mut host = host_with(HashMap::new(), false);
         // No callback registered at all.
+        host.net.set_active(true);
         host.net.push_inbound(b"stranded".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -926,11 +1045,62 @@ mod tests {
         );
     }
 
+    /// I2: a packet that arrived after `Cmd::EndLink` marked the session inactive — but
+    /// before the transport carrying it was actually dropped — must not reach a core that no
+    /// longer has a session to receive it into.
+    #[test]
+    fn netpacket_poll_receive_does_nothing_once_the_session_is_no_longer_active() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        // Never marked active — this is what a stale packet after `Cmd::EndLink` looks like.
+        host.net.push_inbound(b"stale".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        TEST_RECEIVED.with(|r| assert!(r.borrow().is_empty(), "an ended session reached the core"));
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"stale"[..]),
+            "the packet must be left queued, not delivered to a session that already ended"
+        );
+    }
+
+    /// C2: the host must tag an incoming packet with the peer's client id, not its own —
+    /// `begin_link` is what learns the peer's id from the one it was actually given.
+    #[test]
+    fn netpacket_poll_receive_tags_packets_with_the_peers_client_id() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { begin_link(0) }; // we are the host, client 0; the peer is client 1
+        }
+        reset_test_netpacket_recorders(); // begin_link's own start() call is not the proof
+        host.net.push_inbound(b"from the peer".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        TEST_RECEIVED_CLIENT_IDS.with(|c| {
+            assert_eq!(
+                c.borrow().as_slice(),
+                &[1],
+                "packets must be tagged with the peer's id, not the host's own"
+            );
+        });
+    }
+
     #[test]
     fn drain_link_hands_the_core_everything_waiting_then_polls() {
         reset_test_netpacket_recorders();
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
+        host.net.set_active(true);
         host.net.push_inbound(b"queued".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -946,6 +1116,7 @@ mod tests {
         reset_test_netpacket_recorders();
         let mut host = host_with(HashMap::new(), false);
         host.netpacket = Some(test_netpacket_callback());
+        host.net.set_active(true);
         {
             let _active = Active::bind(&mut host);
             unsafe { drain_link() };
@@ -962,6 +1133,7 @@ mod tests {
             poll: None,
             ..test_netpacket_callback()
         });
+        host.net.set_active(true);
         host.net.push_inbound(b"still delivered".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -978,6 +1150,7 @@ mod tests {
     fn drain_link_is_a_noop_when_the_core_never_registered_netpacket() {
         reset_test_netpacket_recorders();
         let mut host = host_with(HashMap::new(), false);
+        host.net.set_active(true);
         host.net.push_inbound(b"nobody asked".to_vec());
         {
             let _active = Active::bind(&mut host);
@@ -993,7 +1166,129 @@ mod tests {
         );
     }
 
+    /// I2: the same stale-packet guarantee `netpacket_poll_receive` above gets, for the
+    /// path `pump_link` actually drives every present.
+    #[test]
+    fn drain_link_does_nothing_once_the_session_is_no_longer_active() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        host.net.push_inbound(b"stale".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| assert!(r.borrow().is_empty(), "an ended session reached the core"));
+        TEST_POLLS.with(|p| assert_eq!(p.get(), 0, "an ended session must not be polled either"));
+        assert_eq!(
+            host.net.take_inbound().as_deref(),
+            Some(&b"stale"[..]),
+            "the packet must be left queued, not delivered to a session that already ended"
+        );
+    }
+
+    /// C2: `drain_link`'s half of the same client-id fix `netpacket_poll_receive` gets above.
+    #[test]
+    fn drain_link_tags_packets_with_the_peers_client_id() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback());
+        {
+            let _active = Active::bind(&mut host);
+            // We are the host, client 0, so the peer is client 1 — deliberately not 0, the
+            // hardcoded value C2 is about: a mutation back to that constant would otherwise
+            // pass this test by coincidence whenever our own id happens to be 1.
+            unsafe { begin_link(0) };
+        }
+        reset_test_netpacket_recorders();
+        host.net.push_inbound(b"from the peer".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED_CLIENT_IDS.with(|c| {
+            assert_eq!(
+                c.borrow().as_slice(),
+                &[1],
+                "packets must be tagged with the peer's id, not our own"
+            );
+        });
+    }
+
+    /// I1: `receive` reentering through `netpacket_send` — gpSP's own documented shape —
+    /// must not leave a `&mut Host` borrow live across the reentrant call. This assertion is
+    /// the ordinary proof (the reentrant send actually landed, so the call completed rather
+    /// than being skipped); the Miri-confirmed proof is that this test runs clean at all
+    /// under `cargo +nightly miri test -p slot-retro`, which a live borrow across the
+    /// reentrant call reports as a Stacked Borrows violation.
+    #[test]
+    fn drain_link_survives_the_reentrancy_gpsp_documents() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            receive: Some(test_receive_reentrant),
+            ..test_netpacket_callback()
+        });
+        host.net.set_active(true);
+        host.net.push_inbound(b"queued".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { drain_link() };
+        }
+
+        TEST_RECEIVED.with(|r| assert_eq!(r.borrow().as_slice(), &[b"queued".to_vec()]));
+        assert_eq!(
+            host.net.take_outbound().as_deref(),
+            Some(&b"reentrant"[..]),
+            "the reentrant netpacket_send call must still reach outbound"
+        );
+    }
+
+    /// `netpacket_poll_receive` is driven the exact same way `pump_link` drives `drain_link`
+    /// — `RetroCore::pump_link` calls it too (see `netpacket_poll_receive`'s own doc comment)
+    /// — so it carries the identical reentrancy hazard and the identical fix.
+    #[test]
+    fn netpacket_poll_receive_survives_the_reentrancy_gpsp_documents() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            receive: Some(test_receive_reentrant),
+            ..test_netpacket_callback()
+        });
+        host.net.set_active(true);
+        host.net.push_inbound(b"queued".to_vec());
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { netpacket_poll_receive() };
+        }
+
+        assert_eq!(host.net.take_outbound().as_deref(), Some(&b"reentrant"[..]));
+    }
+
     // --- begin_link (the logic behind `RetroCore::start_link`) ---------------------------
+
+    /// I1: `begin_link` has the same reentrancy hazard across `start(...)` that `drain_link`
+    /// has across `receive` — a core calling back into the frontend before `start` itself
+    /// returns must not find a `&mut Host` borrow still live. Proven the same way: clean
+    /// under Miri, not just under an ordinary run.
+    #[test]
+    fn begin_link_survives_a_core_that_reenters_from_start() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            start: Some(test_start_reentrant),
+            ..test_netpacket_callback()
+        });
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { begin_link(0) };
+        }
+
+        TEST_START_CLIENT.with(|c| assert_eq!(c.get(), Some(0)));
+        assert!(host.net.is_active());
+    }
 
     #[test]
     fn begin_link_hands_the_core_its_client_id_and_marks_the_session_active() {
@@ -1032,6 +1327,50 @@ mod tests {
         assert!(!host.net.is_active());
     }
 
+    /// I5: gpSP's serial IRQ timing counts connected peers, so a session that never calls
+    /// `connected` leaves it computing half the transfer time RetroArch would.
+    #[test]
+    fn begin_link_calls_connected_with_the_peers_client_id() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            connected: Some(test_connected),
+            ..test_netpacket_callback()
+        });
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { begin_link(0) }; // we are client 0; the peer is client 1
+        }
+
+        TEST_CONNECTED_CLIENT.with(|c| {
+            assert_eq!(
+                c.get(),
+                Some(1),
+                "connected was not called with the peer's id"
+            )
+        });
+    }
+
+    /// `connected` is documented OPTIONAL, like `stop` — a core that never offered one must
+    /// not stop a session from starting, and calling through a null pointer would crash the
+    /// frontend rather than the core that left it unset.
+    #[test]
+    fn begin_link_is_fine_with_no_connected_callback() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(test_netpacket_callback()); // connected: None
+
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { begin_link(0) };
+        }
+
+        assert!(
+            host.net.is_active(),
+            "a missing connected callback must not stop the session from starting"
+        );
+    }
+
     // --- halt_link (the logic behind `RetroCore::stop_link`) -----------------------------
 
     #[test]
@@ -1065,5 +1404,52 @@ mod tests {
         }
 
         TEST_STOP_CALLS.with(|c| assert_eq!(c.get(), 0));
+    }
+
+    /// I5's other half: `disconnected` is `connected`'s counterpart, called with the same
+    /// peer id `begin_link` derived when the session it was told about actually ends.
+    #[test]
+    fn halt_link_calls_disconnected_with_the_peers_client_id() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            disconnected: Some(test_disconnected),
+            ..test_netpacket_callback()
+        });
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { begin_link(1) }; // we are client 1; the peer is client 0
+        }
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { halt_link() };
+        }
+
+        TEST_DISCONNECTED_CLIENT.with(|c| {
+            assert_eq!(
+                c.get(),
+                Some(0),
+                "disconnected was not called with the peer's id"
+            )
+        });
+    }
+
+    /// `halt_link` is documented safe to call whether or not a session was ever begun — a
+    /// core that never started one has no peer to report as having left.
+    #[test]
+    fn halt_link_does_not_call_disconnected_when_no_session_ever_started() {
+        reset_test_netpacket_recorders();
+        let mut host = host_with(HashMap::new(), false);
+        host.netpacket = Some(NetpacketCallback {
+            disconnected: Some(test_disconnected),
+            ..test_netpacket_callback()
+        });
+
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { halt_link() }; // no begin_link first
+        }
+
+        TEST_DISCONNECTED_CLIENT.with(|c| assert_eq!(c.get(), None, "nothing was ever connected"));
     }
 }
