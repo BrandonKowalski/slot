@@ -15,7 +15,7 @@ use slot_ui::{
 
 use crate::audio::Sfx;
 use crate::link_radio::LinkRole;
-use crate::link_start::{LinkFail, LinkProgress, LinkStarter, LinkStep, LINK_PORT};
+use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
 
 /// A floor, not a delay. The animation is where the core load hides, so a slow load
@@ -2182,7 +2182,7 @@ impl App {
                     Action::GbaDown(Btn::A) => {
                         if let Some(pick) = LinkRow::ALL.get(row).copied() {
                             self.start_link(
-                                LinkStarter::spawn(pick.role(), LINK_PORT),
+                                LinkStarter::spawn(pick.role(), link_port()),
                                 pick.client_id(),
                             );
                         }

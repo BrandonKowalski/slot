@@ -147,7 +147,10 @@ tasks:
       - 'echo "content root ready at {{.ROOT}}: roms in Games, labels in Labels, gba_bios.bin in BIOS, pngs in Wallpapers, palette in System/theme.txt"'
 
   run:
-    desc: Run slot. against SLOT_ROOT, defaults to ./sdcard
+    desc: >-
+      Run slot. against SLOT_ROOT, defaults to ./sdcard. SLOT_LINK_PORT moves the link
+      session off 7211, which is what lets two copies on one machine link to each other -
+      off-device both are on loopback, so the port is all that separates them
     deps: [core]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'

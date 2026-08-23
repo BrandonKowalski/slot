@@ -30,10 +30,45 @@ pub const HOST_ADDR: &str = "10.42.0.1";
 #[cfg(not(feature = "device"))]
 pub const HOST_ADDR: &str = "127.0.0.1";
 
-/// The port a link session meets on. Fixed rather than negotiated: there is no discovery
-/// protocol on this network and nothing to negotiate over. Chosen below the ephemeral range
-/// so an outgoing connection on either device can never already be holding it.
-pub const LINK_PORT: u16 = 7211;
+/// The port a link session meets on. Not negotiated: there is no discovery protocol on this
+/// network and nothing to negotiate over, so both ends have to arrive at the same number
+/// independently. Chosen below the ephemeral range so an outgoing connection on either device
+/// can never already be holding it.
+pub const DEFAULT_LINK_PORT: u16 = 7211;
+
+/// Overrides it. Two devices only ever meet on the default; this exists because off-device
+/// `HOST_ADDR` is loopback, so two copies of slot on one machine differ in nothing but the
+/// port — and without a way to move one of them, a live link cannot be driven anywhere but on
+/// hardware.
+const PORT_ENV: &str = "SLOT_LINK_PORT";
+
+/// Both ends read this, so anything that makes them disagree makes the link fail as "nobody
+/// arrived" — the one failure that reads as the other player's fault. A value that will not
+/// serve is therefore refused out loud and the default used, rather than quietly halving the
+/// pair.
+pub fn link_port() -> u16 {
+    let Some(raw) = std::env::var_os(PORT_ENV) else {
+        return DEFAULT_LINK_PORT;
+    };
+    // `export SLOT_LINK_PORT=` is how a shell clears one, so an empty value is an unset value
+    // and not worth a complaint.
+    if raw.to_str().is_some_and(|s| s.trim().is_empty()) {
+        return DEFAULT_LINK_PORT;
+    }
+    match raw.to_str().and_then(|s| s.trim().parse::<u16>().ok()) {
+        // 0 asks the OS for whatever is free. Everywhere else that is the useful answer; here
+        // it is exactly wrong, because the joiner has to name the port from its own side and
+        // cannot be told one the host only learns after binding.
+        None | Some(0) => {
+            eprintln!(
+                "slot: {PORT_ENV}={:?} is not a port a link can meet on, using {DEFAULT_LINK_PORT}",
+                raw.to_string_lossy()
+            );
+            DEFAULT_LINK_PORT
+        }
+        Some(port) => port,
+    }
+}
 
 /// Which slow step the worker is on. The screen says a different sentence for each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,5 +288,76 @@ impl LinkStarter {
     /// joined.
     pub fn cancel(&mut self) {
         self.cancel.cancel();
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn unset_means_the_number_both_devices_already_agree_on() {
+        let _g = lock();
+        std::env::remove_var(PORT_ENV);
+        assert_eq!(link_port(), DEFAULT_LINK_PORT);
+    }
+
+    #[test]
+    fn a_port_in_the_environment_wins() {
+        let _g = lock();
+        std::env::set_var(PORT_ENV, "7300");
+        assert_eq!(link_port(), 7300);
+        std::env::remove_var(PORT_ENV);
+    }
+
+    /// Surrounding whitespace is what a shell export picks up by accident, and it is not a
+    /// reason to send the two ends to different ports.
+    #[test]
+    fn a_padded_port_is_still_a_port() {
+        let _g = lock();
+        std::env::set_var(PORT_ENV, "  7300 ");
+        assert_eq!(link_port(), 7300);
+        std::env::remove_var(PORT_ENV);
+    }
+
+    /// Falling back rather than failing: the pair still meets, just not where it was asked to.
+    #[test]
+    fn a_value_that_is_not_a_port_falls_back() {
+        let _g = lock();
+        for bad in ["banana", "-1", "70000", "7300x"] {
+            std::env::set_var(PORT_ENV, bad);
+            assert_eq!(
+                link_port(),
+                DEFAULT_LINK_PORT,
+                "{bad:?} should not be taken"
+            );
+        }
+        std::env::remove_var(PORT_ENV);
+    }
+
+    /// 0 parses and is a legal u16, so it slips past a plain parse check. It cannot serve
+    /// here: the host would bind whatever is free and the joiner has no way to learn it.
+    /// The way a shell clears a variable, which is a request for the default rather than a
+    /// mistake worth printing about.
+    #[test]
+    fn an_empty_value_is_an_unset_value() {
+        let _g = lock();
+        std::env::set_var(PORT_ENV, "   ");
+        assert_eq!(link_port(), DEFAULT_LINK_PORT);
+        std::env::remove_var(PORT_ENV);
+    }
+
+    #[test]
+    fn zero_is_refused_even_though_it_parses() {
+        let _g = lock();
+        std::env::set_var(PORT_ENV, "0");
+        assert_eq!(link_port(), DEFAULT_LINK_PORT);
+        std::env::remove_var(PORT_ENV);
     }
 }
