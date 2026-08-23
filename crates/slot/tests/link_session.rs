@@ -762,3 +762,42 @@ fn a_live_session_refuses_fast_forward() {
         "fast forward must be refused while a session is live"
     );
 }
+
+/// I6: `sync_ff_hud` did not consult `may_fast_forward()`, so the badge kept reading Held or
+/// Latched during a live session even though `sync_speed` — proven above — was already
+/// withholding the speed underneath it. `sync_rewind_hud`'s own `actually_rewinding` already
+/// guards the rewind bar against exactly this; showing a player their input landed when a
+/// session actually withheld it is the specific lie that comment warns about, and this is the
+/// fast forward badge's turn to make the same promise.
+#[test]
+fn a_live_session_hides_the_fast_forward_badge() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.app_mut().begin_link(0);
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::R2)));
+
+    assert_eq!(
+        s.app().ff_badge(),
+        None,
+        "the badge must not claim fast forward is happening while a session withholds it"
+    );
+}

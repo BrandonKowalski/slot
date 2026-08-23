@@ -258,10 +258,13 @@ impl Session {
         self.rumble(want);
     }
 
-    /// The badge tracks the speed the game is actually running at, so a cart on its way in or
-    /// a paused switcher takes it down even with R2 still latched.
+    /// The badge tracks the speed the game is actually running at, so a cart on its way in, a
+    /// paused switcher, or a live link session refusing the hold all take it down even with
+    /// R2 still latched — a badge that kept showing Held or Latched over a session withholding
+    /// the speed would be telling the player their input landed when it did not, the exact
+    /// lie `sync_rewind_hud`'s own `actually_rewinding` guards against for the rewind bar.
     fn sync_ff_hud(&mut self) {
-        let ff = match (self.fast && self.playing(), self.gestures.ff_latched()) {
+        let ff = match (self.actually_fast_forwarding(), self.gestures.ff_latched()) {
             (false, _) => FfState::Off,
             (true, false) => FfState::Held,
             (true, true) => FfState::Latched,
@@ -289,6 +292,14 @@ impl Session {
     /// so the two can never drift into disagreeing about whether a rewind is really underway.
     fn actually_rewinding(&self) -> bool {
         self.rewinding && self.playing() && self.app.may_rewind()
+    }
+
+    /// R2's counterpart to `actually_rewinding`, for the identical reason: shared between
+    /// `sync_speed` (which acts on it) and `sync_ff_hud` (which shows it), so the badge and
+    /// the speed the core is actually run at can never drift into disagreeing about whether
+    /// fast forward is really underway.
+    fn actually_fast_forwarding(&self) -> bool {
+        self.fast && self.playing() && self.app.may_fast_forward()
     }
 
     fn inserting(&self) -> bool {
@@ -345,7 +356,7 @@ impl Session {
                     || self.held()
                 {
                     Speed::Paused
-                } else if self.fast && self.playing() && self.app.may_fast_forward() {
+                } else if self.actually_fast_forwarding() {
                     // A live link session forbids fast forward the same way it forbids
                     // rewind: running this device's machine out ahead of what the peer has
                     // actually been sent is a desync with no way back, and libretro's
