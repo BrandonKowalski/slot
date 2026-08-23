@@ -90,7 +90,19 @@ pub fn open_core_for(root: &Path, core: Core, paths: &[PathBuf]) -> Box<dyn Retr
             Err(e) => eprintln!("slot: {}: {e}", path.display()),
         }
     }
-    eprintln!("slot: no core vendored, running the mock");
+    // Name the core and every path that was tried. The mock renders a rainbow test pattern
+    // and a sine tone, which on screen reads as "this core is broken" rather than "this core
+    // is missing" — the one time that happened it cost an afternoon, so the log says which
+    // file was wanted and where it was looked for.
+    eprintln!(
+        "slot: no {} core found, running the mock test pattern instead. Looked in: {}",
+        core.as_str(),
+        paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     Box::new(MockCore::new())
 }
 

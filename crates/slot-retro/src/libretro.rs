@@ -337,8 +337,10 @@ unsafe fn halt_link() {
 /// The logic behind `LibretroCore::pump_link`, factored out to a free function that reaches
 /// the host through the thread-local instead of `&mut self`, so it can be driven directly
 /// against a bare `Host` in tests the same way the `GET_VARIABLE` tests below drive
-/// `environment` — this repo has no gpSP dylib to load on macOS, and gpSP is the only core
-/// that will ever exercise this for real.
+/// `environment` — gpSP is the only core that will ever exercise this for real, and driving
+/// it through a bare `Host` keeps these tests off the dylib entirely. (`task core` does
+/// vendor a host gpSP build now, but a test that needs a real core is a test that cannot run
+/// on a machine that has not fetched one.)
 ///
 /// Same reentrancy hazard as `netpacket_poll_receive`, same fix: `receive` and `poll` are
 /// plain `Copy` function pointers, cheap to take out of the borrow alongside the cloned

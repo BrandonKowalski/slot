@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   CORE: vendor/mgba_libretro.dylib
+  GPSP_HOST: vendor/gpsp_libretro.dylib
 
 tasks:
   default:
@@ -62,6 +63,15 @@ tasks:
       - task: test
 
   core:
+    desc: >-
+      Fetch both host cores. gpSP is selectable per game, so a host that only has mGBA
+      silently runs the mock instead - a rainbow test pattern and a sine tone, which reads
+      as "gpSP is broken" rather than "gpSP is missing"
+    cmds:
+      - task: core:mgba:host
+      - task: core:gpsp:host
+
+  core:mgba:host:
     desc: Fetch mgba_libretro from the libretro buildbot
     status:
       - test -f {{.CORE}}
@@ -81,10 +91,33 @@ tasks:
         file {{.CORE}} | grep -q Mach-O
         echo "fetched {{.CORE}}"
 
-  core:update:
-    desc: Re-fetch the core even if one is already vendored
+  core:gpsp:host:
+    desc: Fetch the host gpSP core from the libretro buildbot
+    # No source archive alongside it, unlike core:gpsp. That task ships its binary to a
+    # device, which is what makes GPL-2.0 section 3(a) apply; this one lands in vendor/,
+    # which is gitignored and never leaves the machine that fetched it.
+    status:
+      - test -f {{.GPSP_HOST}}
     cmds:
-      - rm -f {{.CORE}}
+      - |
+        set -euo pipefail
+        case "$(uname -m)" in
+          arm64)  arch=arm64 ;;
+          x86_64) arch=x86_64 ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p vendor
+        curl -fsSL -o vendor/gpsp-host.zip \
+          "https://buildbot.libretro.com/nightly/apple/osx/${arch}/latest/gpsp_libretro.dylib.zip"
+        unzip -o -q vendor/gpsp-host.zip -d vendor
+        rm -f vendor/gpsp-host.zip
+        file {{.GPSP_HOST}} | grep -q Mach-O
+        echo "fetched {{.GPSP_HOST}}"
+
+  core:update:
+    desc: Re-fetch the host cores even if they are already vendored
+    cmds:
+      - rm -f {{.CORE}} {{.GPSP_HOST}}
       - task: core
 
   icons:
@@ -152,7 +185,7 @@ tasks:
       - rm -rf {{.OUT}}
       - ./target/release/slot --init-root {{.OUT}}
       - cp target/release/slot {{.OUT}}/System/slot
-      - cp {{.CORE}} {{.OUT}}/System/
+      - cp {{.CORE}} {{.GPSP_HOST}} {{.OUT}}/System/
       - 'echo "dist ready at {{.OUT}}, copy its contents to SD2"'
 
   core:device:
