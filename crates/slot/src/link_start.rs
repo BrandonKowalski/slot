@@ -221,7 +221,8 @@ impl LinkStarter {
             // asked for this is already gone, which is not this thread's problem to report —
             // but finishing the teardown still is.
             let _ = tx.send(LinkProgress::At(LinkStep::Radio));
-            if radio_up(role).is_err() {
+            if let Err(e) = radio_up(role) {
+                eprintln!("slot: link: {role:?} could not bring the radio up: {e}");
                 // `up` failing is no promise that nothing came up: `ags-net link` can get an
                 // interface as far as configured and still exit non-zero.
                 radio_down();
@@ -229,6 +230,11 @@ impl LinkStarter {
                 return;
             }
             let _ = tx.send(LinkProgress::At(LinkStep::Waiting));
+            // Which end, where, and on what port — printed before the attempt rather than
+            // after it, so a hang shows the address it is hanging on. The two ends must agree
+            // on this port and nothing reconciles them if they do not, so it is the first
+            // thing worth being able to compare between two logs.
+            eprintln!("slot: link: {role:?} using {HOST_ADDR}:{port}");
             match socket(port, &flag) {
                 // No teardown here, and that is the point of the whole module: the session
                 // this just handed over runs over that network.
@@ -239,11 +245,21 @@ impl LinkStarter {
                     // joiner reaches here even after a cancel, because `TcpLink::join` is a
                     // plain `connect` that never looks at the flag. Nothing else owns the
                     // network at that point, so this thread is the one that has to put it back.
+                    eprintln!("slot: link: {role:?} connected on {HOST_ADDR}:{port}");
                     if tx.send(LinkProgress::Ready(link)).is_err() {
+                        eprintln!("slot: link: nobody left to hand it to, radio back down");
                         radio_down();
                     }
                 }
                 Err(e) => {
+                    // `LinkFail` has three words for every way this can go wrong, and the
+                    // screen only has room for those three. The kind is what separates
+                    // "nothing was listening" from "it went away mid-handshake", and both
+                    // arrive on screen as PeerVanished.
+                    eprintln!(
+                        "slot: link: {role:?} failed on {HOST_ADDR}:{port}: {e} (kind {:?})",
+                        e.kind()
+                    );
                     // Down before the message, on this path and the one above it. The
                     // message is what unblocks whoever is watching, so anything after it can
                     // be observed as not having happened — and a failed link that leaves the
