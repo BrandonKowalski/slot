@@ -174,9 +174,13 @@ fn the_host_is_client_zero_and_the_joiner_client_one() {
     assert_eq!(LinkRow::Join.role(), LinkRole::Join);
 }
 
-/// Picking a row has to actually start something. The joiner is the safe one to run for
-/// real: it fails in milliseconds against a host that is not there, where a host would sit
-/// on the port for thirty seconds.
+/// Picking a row has to actually start something.
+///
+/// This used to lean on the joiner failing in milliseconds against a host that is not there.
+/// It no longer does — a joiner retries for the same thirty seconds a host waits, so that the
+/// order the two players press their buttons in stops mattering — so the pick is cancelled
+/// here instead. Cancelling is the honest way to end it anyway: it is what the player has,
+/// and it exercises the path B takes out of `Working`.
 #[test]
 fn picking_a_row_puts_the_screen_on_the_working_step() {
     let (mut app, _d) = playing_on(Core::Gpsp);
@@ -189,6 +193,9 @@ fn picking_a_row_puts_the_screen_on_the_working_step() {
         matches!(app.game_menu(), Some(GameMenu::Working(_))),
         "the pick did nothing at all"
     );
+    // B does not close the overlay on the spot — the radio step cannot be interrupted — so
+    // this is a cancel followed by a wait for the worker to answer, not an instant exit.
+    app.apply(Action::GbaDown(Btn::B));
     settle(&mut app);
 }
 

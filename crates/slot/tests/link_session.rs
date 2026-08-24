@@ -885,3 +885,83 @@ fn a_bounded_host_still_accepts_a_peer_that_does_arrive() {
         "the accepted socket must be blocking again, or the host never hears its peer"
     );
 }
+
+/// The order the two players press their buttons in must not decide whether they meet. The
+/// host has a radio to bring up — one to five seconds on device — before it binds anything,
+/// and its player pressed a button the joiner's player never saw.
+#[test]
+fn a_joiner_waits_for_a_host_that_is_not_listening_yet() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let cancel = Cancel::new();
+    let started = Instant::now();
+    // The host arrives well after the joiner has already given up under the old one-shot
+    // connect, which failed in milliseconds.
+    let host = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        TcpLink::host("127.0.0.1", port)
+    });
+
+    let mut joiner = TcpLink::join_until("127.0.0.1", port, Duration::from_secs(10), &cancel)
+        .expect("the joiner must wait for a host that is merely late");
+    let mut hosted = host.join().unwrap().expect("host bound");
+    assert!(
+        started.elapsed() >= Duration::from_millis(400),
+        "connected before the host existed, so this proves nothing"
+    );
+
+    // A real link, not merely a connect that returned: both directions, as with the host.
+    joiner.send(0, b"up");
+    assert_eq!(wait_for(&mut hosted), Some(b"up".to_vec()));
+    hosted.send(0, b"down");
+    assert_eq!(wait_for(&mut joiner), Some(b"down".to_vec()));
+}
+
+/// A host that never comes has to become an answer rather than a wait with no end.
+#[test]
+fn a_joiner_gives_up_when_no_host_ever_appears() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let cancel = Cancel::new();
+    let started = Instant::now();
+    let Err(e) = TcpLink::join_until("127.0.0.1", port, Duration::from_millis(300), &cancel) else {
+        panic!("connected to a host that does not exist");
+    };
+    assert_eq!(
+        e.kind(),
+        std::io::ErrorKind::TimedOut,
+        "a host that never came is `nobody arrived`, not a peer that vanished"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "waited past its bound"
+    );
+}
+
+/// The joiner spends its wait asleep between attempts, so B has to reach it there too.
+#[test]
+fn a_joiner_can_be_cancelled_while_it_is_retrying() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let cancel = Cancel::new();
+    let flag = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        flag.cancel();
+    });
+    let started = Instant::now();
+    let Err(e) = TcpLink::join_until("127.0.0.1", port, Duration::from_secs(60), &cancel) else {
+        panic!("cancelled, so this must not succeed");
+    };
+    assert_eq!(e.kind(), std::io::ErrorKind::Interrupted);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the bound was a minute; cancellation is what ended this"
+    );
+}

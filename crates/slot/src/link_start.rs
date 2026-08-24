@@ -196,10 +196,11 @@ impl LinkStarter {
             role,
             port,
             Box::new(move |port, cancel| match role {
-                // Bounded and cancellable; the joiner's `connect` needs neither, because it
-                // fails in milliseconds against a host that is not there.
+                // Both bounded, both cancellable, and on the same bound: whichever player
+                // presses first is the one that waits, and neither should give up while the
+                // other is still there.
                 LinkRole::Host => TcpLink::host_until(HOST_ADDR, port, HOST_BOUND, cancel),
-                LinkRole::Join => TcpLink::join(HOST_ADDR, port),
+                LinkRole::Join => TcpLink::join_until(HOST_ADDR, port, HOST_BOUND, cancel),
             }),
         )
     }

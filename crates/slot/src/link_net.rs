@@ -129,7 +129,56 @@ impl TcpLink {
         TcpLink::host_until(addr, port, HOST_BOUND, &Cancel::new())
     }
 
-    /// Connect to a host that is already waiting.
+    /// Reach a host, retrying until it is there, the player gives up, or the bound passes.
+    ///
+    /// A single `connect` is what this used to be, justified by "it fails in milliseconds
+    /// against a host that is not there". That is true and it is the problem: it fails in
+    /// milliseconds against a host that is not there *yet*. The host has to finish bringing
+    /// its radio up — one to five seconds on device — and then bind, all after its player
+    /// pressed a button that the joiner's player cannot see. A joiner with one attempt only
+    /// works if the two presses happen in the right order, close together, and it reports
+    /// the failure as `ConnectionRefused`, which the screen shows as the peer vanishing —
+    /// blaming the other player for being early.
+    ///
+    /// Retrying makes the order of the two presses stop mattering, which is the whole of it.
+    /// The same `bound` as the host's wait, deliberately: a joiner that gave up while the
+    /// host was still listening would be a pair that never meets for no reason either player
+    /// could see.
+    pub fn join_until(
+        addr: &str,
+        port: u16,
+        bound: Duration,
+        cancel: &Cancel,
+    ) -> std::io::Result<TcpLink> {
+        let deadline = Instant::now() + bound;
+        loop {
+            if cancel.is_cancelled() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "cancelled while reaching for the host",
+                ));
+            }
+            // Every error is worth another try, which is why none of them is inspected: the
+            // host may not have bound yet (`ConnectionRefused`), its interface may not be
+            // configured yet (`NetworkUnreachable`, and on some systems a plain `Other`), or
+            // the address may not be assigned yet (`AddrNotAvailable`). None of those tells
+            // "not yet" from "never" at the moment it happens. The deadline below is what
+            // turns that difference into an answer.
+            if let Ok(stream) = TcpStream::connect((addr, port)) {
+                return TcpLink::wrap(stream);
+            }
+            if Instant::now() >= deadline {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "never reached the host",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(POLL_MS));
+        }
+    }
+
+    /// Connect to a host that is already waiting, once. Kept for tests that stand their own
+    /// listener up first and have nothing to wait for.
     pub fn join(addr: &str, port: u16) -> std::io::Result<TcpLink> {
         TcpLink::wrap(TcpStream::connect((addr, port))?)
     }
