@@ -26,7 +26,7 @@ fn the_host_keymap_matches_the_documented_layout() {
         (KeyCode::Tab, Btn::Menu),
         (KeyCode::Equal, Btn::VolUp),
         (KeyCode::Minus, Btn::VolDown),
-        (KeyCode::Escape, Btn::Power),
+        (KeyCode::Backslash, Btn::Power),
     ];
     let mut h = HostInput::new();
     for (code, btn) in map {
@@ -55,16 +55,32 @@ fn key_repeat_does_not_re_press_the_button() {
 fn the_lid_key_toggles_because_the_host_has_no_hinge() {
     let mut h = HostInput::new();
     assert_eq!(
-        edge(&mut h, KeyCode::KeyL, true),
+        edge(&mut h, KeyCode::BracketRight, true),
         vec![RawEvent::Down(Btn::Lid)]
     );
-    assert!(edge(&mut h, KeyCode::KeyL, false).is_empty());
+    assert!(edge(&mut h, KeyCode::BracketRight, false).is_empty());
     assert_eq!(
-        edge(&mut h, KeyCode::KeyL, true),
+        edge(&mut h, KeyCode::BracketRight, true),
         vec![RawEvent::Up(Btn::Lid)]
     );
     assert_eq!(
-        edge(&mut h, KeyCode::KeyL, true),
+        edge(&mut h, KeyCode::BracketRight, true),
         vec![RawEvent::Down(Btn::Lid)]
     );
+}
+
+/// Escape and L used to be power and the lid. They are the two buttons that end a live link
+/// session, and a session that ends cannot be resumed — so the cost of a stray press went up
+/// sharply when linking landed, while the bindings did not. Escape is the key every player
+/// reaches for to back out of something; L is a letter. Both are now bound to nothing, and
+/// this is what stops either quietly coming back.
+#[test]
+fn the_two_reflex_keys_no_longer_end_a_session() {
+    let mut h = HostInput::new();
+    for reflex in [KeyCode::Escape, KeyCode::KeyL] {
+        assert!(
+            edge(&mut h, reflex, true).is_empty(),
+            "{reflex:?} is bound again, and it can end a live link"
+        );
+    }
 }
