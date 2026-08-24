@@ -513,16 +513,9 @@ impl Worker {
                 drain_transport(t.as_mut(), &link, MAX_LINK_PACKETS_PER_PRESENT);
             }
             core.pump_link();
-            if let Some(t) = transport.as_mut() {
-                while let Some(packet) = link.take_outbound() {
-                    // The flag `netpacket_send` was called with never reaches this queue —
-                    // only the bytes do — so this asks every transport for reliable delivery.
-                    // Safe for `TcpLink`, which is reliable regardless of what is asked: TCP
-                    // cannot honour "unreliable" any other way, and `LinkChannel::send`'s own
-                    // contract is to fall back to reliable when a flag cannot be honoured.
-                    t.send(NETPACKET_RELIABLE, &packet);
-                }
-            }
+            // A `poll` can make the core send, so this catches anything it just queued. The
+            // send that matters is the one after the frame runs, below.
+            flush_outbound(&mut transport, &link);
 
             let speed = self.speed();
             // Published before anything below acts on it, and with `Release`: a reader who
@@ -580,6 +573,14 @@ impl Worker {
                 for _ in 0..steps {
                     core.run_frame(input);
                 }
+                // Immediately, and this is the one that decides whether a link is playable.
+                // The emulated serial hardware only executes inside `run_frame`, so every
+                // packet a session actually produces is born here. Sending them from the top
+                // of the loop instead means each one waits for the next present: a whole
+                // frame, 16.7 ms, added to a wire measured at about 2 ms, in both directions
+                // and on both devices. A GBA that asked a question and heard nothing for four
+                // frames reports a communication error, which is what it should do.
+                flush_outbound(&mut transport, &link);
                 self.publish(core.video_xrgb8888());
 
                 // Counted per present rather than per frame, so a fast forward pays the
@@ -671,6 +672,22 @@ impl Worker {
 /// directly against a fake transport in a test with no worker thread and no real timing
 /// involved (`MAX_LINK_PACKETS_PER_PRESENT`'s own point is to bound work in one present,
 /// which a test racing a real 60 Hz loop could never pin down deterministically).
+/// Everything the core has queued for its peer, onto the wire.
+///
+/// The flag `netpacket_send` was called with never reaches this queue — only the bytes do —
+/// so this asks every transport for reliable delivery. Safe for `TcpLink`, which is reliable
+/// regardless of what is asked: TCP cannot honour "unreliable" any other way, and
+/// `LinkChannel::send`'s own contract is to fall back to reliable when a flag cannot be
+/// honoured.
+fn flush_outbound(transport: &mut Option<Box<dyn LinkChannel>>, link: &Link) {
+    let Some(t) = transport.as_deref_mut() else {
+        return;
+    };
+    while let Some(packet) = link.take_outbound() {
+        t.send(NETPACKET_RELIABLE, &packet);
+    }
+}
+
 fn drain_transport(transport: &mut dyn LinkChannel, link: &Link, cap: u32) {
     for _ in 0..cap {
         let Some(packet) = transport.try_recv() else {
