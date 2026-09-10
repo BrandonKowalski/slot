@@ -326,7 +326,9 @@ fn a_cart_in_flight_is_not_also_left_standing_on_the_shelf() {
     let carts = out
         .iter()
         .filter(|d| match **d {
-            Draw::Rect { w, .. } | Draw::Tex { w, .. } => (w - CART_W as f32).abs() < 0.01,
+            Draw::Rect { w, .. } | Draw::Tex { w, .. } | Draw::Turned { w, .. } => {
+                (w - CART_W as f32).abs() < 0.01
+            }
             Draw::Game | Draw::Shot { .. } => false,
         })
         .count();

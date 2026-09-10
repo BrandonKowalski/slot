@@ -1,5 +1,5 @@
 use crate::quad::Quad;
-use crate::shaders::{RECT_VERT, SPRITE_FRAG};
+use crate::shaders::{SPRITE_FRAG, SPRITE_VERT};
 use crate::surface::{GfxError, OUT_H, OUT_W};
 
 /// Handle to a texture the compositor owns. UI code never sees a GL name.
@@ -35,6 +35,18 @@ pub enum Draw {
         tex: TexId,
         alpha: f32,
     },
+    /// `Tex` turned about its own centre by `turn` radians, clockwise on the panel since y
+    /// runs down. For the few faces that tilt: the lid over the core picker and its chip in
+    /// flight. A variant rather than a field on `Tex`, so no existing draw had to change.
+    Turned {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        tex: TexId,
+        alpha: f32,
+        turn: f32,
+    },
     /// Where the game layer goes. It carries no geometry: the pass owns its own rect, since
     /// the power on squeezes it. A marker rather than a pass of its own before the list,
     /// because the panel is the front surface of the device and has to be able to come up
@@ -54,11 +66,12 @@ pub struct Sprites {
     textures: Vec<gl::types::GLuint>,
     u_rect: gl::types::GLint,
     u_colour: gl::types::GLint,
+    u_turn: gl::types::GLint,
 }
 
 impl Sprites {
     pub fn new() -> Result<Self, GfxError> {
-        let prog = crate::shaders::program(RECT_VERT, SPRITE_FRAG)?;
+        let prog = crate::shaders::program(SPRITE_VERT, SPRITE_FRAG)?;
         let white = crate::gl::texture(
             1,
             1,
@@ -67,7 +80,7 @@ impl Sprites {
             gl::RGBA,
             Some(&[255u8; 4]),
         );
-        let (u_rect, u_colour);
+        let (u_rect, u_colour, u_turn);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_tex"), 0);
@@ -78,6 +91,7 @@ impl Sprites {
             );
             u_rect = crate::gl::uniform_location(prog, "u_rect");
             u_colour = crate::gl::uniform_location(prog, "u_colour");
+            u_turn = crate::gl::uniform_location(prog, "u_turn");
         }
         Ok(Sprites {
             prog,
@@ -85,6 +99,7 @@ impl Sprites {
             textures: Vec::new(),
             u_rect,
             u_colour,
+            u_turn,
         })
     }
 
@@ -145,8 +160,8 @@ impl Sprites {
             gl::ActiveTexture(gl::TEXTURE0);
         }
         for item in items {
-            let (x, y, w, h, tex, colour) = match *item {
-                Draw::Rect { x, y, w, h, colour } => (x, y, w, h, self.white, colour),
+            let (x, y, w, h, tex, colour, turn) = match *item {
+                Draw::Rect { x, y, w, h, colour } => (x, y, w, h, self.white, colour, 0.0),
                 Draw::Tex {
                     x,
                     y,
@@ -155,15 +170,35 @@ impl Sprites {
                     tex,
                     alpha,
                 } => match self.textures.get(tex.0) {
-                    Some(t) => (x, y, w, h, *t, [1.0, 1.0, 1.0, alpha]),
+                    Some(t) => (x, y, w, h, *t, [1.0, 1.0, 1.0, alpha], 0.0),
+                    None => continue,
+                },
+                Draw::Turned {
+                    x,
+                    y,
+                    w,
+                    h,
+                    tex,
+                    alpha,
+                    turn,
+                } => match self.textures.get(tex.0) {
+                    Some(t) => (x, y, w, h, *t, [1.0, 1.0, 1.0, alpha], turn),
                     None => continue,
                 },
                 // The compositor splits the list on these and draws the game pass itself.
                 Draw::Game | Draw::Shot { .. } => continue,
             };
+            // Exactly (1, 0) for anything unturned rather than cos and sin of zero, so the
+            // shader's correction term is zero by construction and not by rounding.
+            let (cos, sin) = if turn == 0.0 {
+                (1.0, 0.0)
+            } else {
+                (turn.cos(), turn.sin())
+            };
             unsafe {
                 gl::BindTexture(gl::TEXTURE_2D, tex);
                 gl::Uniform4f(self.u_rect, x, y, w, h);
+                gl::Uniform2f(self.u_turn, cos, sin);
                 gl::Uniform4f(self.u_colour, colour[0], colour[1], colour[2], colour[3]);
             }
             quad.draw();

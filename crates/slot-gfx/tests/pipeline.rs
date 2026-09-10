@@ -262,3 +262,80 @@ fn blue_light_warms_monotonically_and_clamps_at_the_last_step() {
         assert!(b[2] < b[1], "blue must fall faster than green");
     }
 }
+
+/// A turn of nothing is the image as it was. The rotation is extra arithmetic in the vertex
+/// shader every sprite goes through, so this is what proves the rest of the chrome did not
+/// move by a single value.
+#[test]
+fn an_unturned_image_draws_exactly_as_a_plain_one() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let rgba: Vec<u8> = (0..16u32 * 8)
+        .flat_map(|i| [(i * 7) as u8, (i * 13) as u8, (i * 29) as u8, 255])
+        .collect();
+    let tex = c.create_texture(16, 8, &rgba);
+
+    c.begin_frame();
+    c.draw_list(&[Draw::Tex {
+        x: 101.3,
+        y: 57.6,
+        w: 37.0,
+        h: 19.0,
+        tex,
+        alpha: 0.8,
+    }]);
+    let plain = c.read_frame();
+
+    c.begin_frame();
+    c.draw_list(&[Draw::Turned {
+        x: 101.3,
+        y: 57.6,
+        w: 37.0,
+        h: 19.0,
+        tex,
+        alpha: 0.8,
+        turn: 0.0,
+    }]);
+    let turned = c.read_frame();
+
+    assert!(plain == turned, "a turn of zero moved something");
+}
+
+/// Positive is clockwise on the panel, since y runs down. A quarter turn about the centre
+/// takes the texture's top left corner to the top right.
+#[test]
+fn a_quarter_turn_takes_the_top_left_corner_to_the_top_right() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    // Four by two, each texel 10 px once drawn: the top left red, the rest blue.
+    let mut rgba = [0u8, 0, 255, 255].repeat(8);
+    rgba[0..4].copy_from_slice(&[255, 0, 0, 255]);
+    let tex = c.create_texture_nearest(4, 2, &rgba);
+
+    c.begin_frame();
+    c.draw_list(&[Draw::Turned {
+        x: 100.0,
+        y: 100.0,
+        w: 40.0,
+        h: 20.0,
+        tex,
+        alpha: 1.0,
+        turn: std::f32::consts::FRAC_PI_2,
+    }]);
+    let frame = c.read_frame();
+
+    // Turned, the quad stands 20 wide and 40 tall about the same centre, (120, 110).
+    assert_eq!(
+        px(&frame, 127, 93),
+        [255, 0, 0],
+        "the red texel is not top right"
+    );
+    assert_eq!(
+        px(&frame, 113, 93),
+        [0, 0, 255],
+        "the top left did not move"
+    );
+    assert_eq!(px(&frame, 113, 127), [0, 0, 255]);
+}
