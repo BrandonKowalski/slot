@@ -266,3 +266,29 @@ fn the_shadow_is_darkest_in_the_middle_and_gone_at_the_corners() {
     assert!(alpha(&s, SHADOW_W / 2, SHADOW_H / 2) > alpha(&s, SHADOW_W / 8, SHADOW_H / 2));
     assert_eq!(alpha(&s, 0, 0), 0);
 }
+
+/// The seated chip's name sits on the chip's own opaque black body, not on nothing, so its
+/// edges have to blend toward the body colour instead of snapping straight to full ink. Diffed
+/// against the blank chip, which carries the same body art, so only the name's own pixels are
+/// in play — not the legs, the pin-1 dot or the body's rounded corners, which are antialiased
+/// on both chips already.
+#[test]
+fn the_seated_chips_name_is_antialiased_against_the_body() {
+    let red = |face: &CartFace, x: u32, y: u32| face.rgba[((y * face.w + x) * 4) as usize];
+    for core in [Core::Mgba, Core::Gpsp] {
+        let named = chip_face(Some(core));
+        let blank = chip_face(None);
+        let soft = (0..named.h)
+            .flat_map(|y| (0..named.w).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                alpha(&named, x, y) == 255
+                    && red(&named, x, y) != red(&blank, x, y)
+                    && (0x40..0xc0).contains(&red(&named, x, y))
+            })
+            .count();
+        assert!(
+            soft > 5,
+            "{core:?}'s name has only {soft} antialiased pixels"
+        );
+    }
+}

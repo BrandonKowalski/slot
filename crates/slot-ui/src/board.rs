@@ -124,8 +124,10 @@ pub fn board_face(cart: &Cart) -> CartFace {
 }
 
 /// One line of type, centred across the face, in `band` rows from `top`, its coverage scaled by
-/// `strength`. Ink colour with the coverage as alpha, so the face composites as straight alpha
-/// like every other face here.
+/// `strength`. Composited straight-over whatever is already there: on a transparent pixel that
+/// is ink colour at the coverage's own alpha, same as writing it outright, but on an opaque one
+/// — the chip's body — the glyph's antialiased edge blends toward what was under it instead of
+/// snapping to full ink.
 fn ink_band(
     face: &mut CartFace,
     top: u32,
@@ -141,8 +143,14 @@ fn ink_band(
             continue;
         }
         let at = ((top * face.w) as usize + i) * 4;
-        face.rgba[at..at + 3].copy_from_slice(&ink);
-        face.rgba[at + 3] = face.rgba[at + 3].max(a);
+        let (a, d_a) = (a as f32 / 255.0, face.rgba[at + 3] as f32 / 255.0);
+        let out_a = a + d_a * (1.0 - a);
+        for (k, &c) in ink.iter().enumerate() {
+            let d_rgb = face.rgba[at + k] as f32 / 255.0;
+            let out_rgb = (c as f32 / 255.0 * a + d_rgb * d_a * (1.0 - a)) / out_a;
+            face.rgba[at + k] = (out_rgb * 255.0).round() as u8;
+        }
+        face.rgba[at + 3] = (out_a * 255.0).round() as u8;
     }
 }
 
