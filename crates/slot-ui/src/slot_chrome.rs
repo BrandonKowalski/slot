@@ -333,6 +333,6 @@ fn travel(seat: f32) -> f32 {
 
 /// Smootherstep. Zero velocity at both ends, so the two halves of the travel meet the catch
 /// without a step in speed.
-fn ease(u: f32) -> f32 {
+pub fn ease(u: f32) -> f32 {
     u * u * u * (u * (u * 6.0 - 15.0) + 10.0)
 }

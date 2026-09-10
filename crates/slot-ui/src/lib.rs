@@ -56,7 +56,7 @@ pub use shell::{
 };
 pub use silhouette::silhouette;
 pub use slot_chrome::{
-    draw_empty_slot, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
+    draw_empty_slot, ease, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
     MOUTH_H, MOUTH_W,
 };
 pub use sticker::{
