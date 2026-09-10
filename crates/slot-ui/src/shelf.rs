@@ -13,7 +13,7 @@ const PITCH: f32 = 240.0;
 const SIDE_SCALE: f32 = 0.78;
 const SIDE_ALPHA: f32 = 0.55;
 /// Carts stand on the row rather than float: the foot stays put as a cart shrinks away.
-const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
+pub(crate) const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
 /// Critically damped, so a flick lands on a cart instead of bouncing past and returning.
 const OMEGA: f32 = 16.0;
 /// How far the cart next to the selection is pushed aside as the chosen one goes in. Enough

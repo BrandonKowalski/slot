@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 26.8" width="38" height="26.8">
+  <!-- The chip: legs above and below a black body, and the pin-1 dot. Its name is set by
+       board.rs, and the blank one in flight has none. -->
+  <defs>
+    <pattern id="pins" width="3" height="3" patternUnits="userSpaceOnUse">
+      <rect x=".7" width="1.6" height="3" fill="#b3b3b8"/>
+    </pattern>
+  </defs>
+  <rect x="1" y="0" width="36" height="2.4" fill="url(#pins)"/>
+  <rect x="1" y="24.4" width="36" height="2.4" fill="url(#pins)"/>
+  <rect x="0" y="2.4" width="38" height="22" rx="1" fill="#1a1a1a"/>
+  <circle cx="3.5" cy="20.9" r="1.2" fill="#333333"/>
+</svg>

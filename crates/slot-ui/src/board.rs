@@ -4,10 +4,12 @@
 //! Drawn from `board.svg` and not from rects: the notch round the centre post, the patterned
 //! legs and contacts and the 45° traces are drawings, not a layout.
 
-use slot_store::Cart;
+use slot_gfx::OUT_W;
+use slot_store::{Cart, Core};
 
 use crate::art;
-use crate::cart::{clean_label, label_tags, CartFace};
+use crate::cart::{clean_label, label_tags, CartFace, CART_H, CART_W};
+use crate::shelf::FOOT_Y;
 use crate::shell::shell_for;
 use crate::text;
 
@@ -93,12 +95,12 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
     let mut top = ROM_H.saturating_sub(line_h * mark.title.len() as u32 + tag_h) / 2;
     for line in &mark.title {
         let layout = text::fit(font, line, max_w, 1, MARK_PX, MARK_MIN_PX);
-        ink_band(&mut face, top, line_h, &layout, MARK_INK);
+        ink_band(&mut face, top, line_h, &layout, MARK_INK, 1.0);
         top += line_h;
     }
     if let Some(tags) = &mark.tags {
         let layout = text::fit(font, tags, max_w, 1, TAG_PX, TAG_MIN_PX);
-        ink_band(&mut face, top, tag_h, &layout, TAG_INK);
+        ink_band(&mut face, top, tag_h, &layout, TAG_INK, 1.0);
     }
     face
 }
@@ -121,11 +123,20 @@ pub fn board_face(cart: &Cart) -> CartFace {
     face
 }
 
-/// One line of type, centred across the face, in `band` rows from `top`. Ink colour with the
-/// coverage as alpha, so the face composites as straight alpha like every other face here.
-fn ink_band(face: &mut CartFace, top: u32, band: u32, layout: &text::Layout, ink: [u8; 3]) {
+/// One line of type, centred across the face, in `band` rows from `top`, its coverage scaled by
+/// `strength`. Ink colour with the coverage as alpha, so the face composites as straight alpha
+/// like every other face here.
+fn ink_band(
+    face: &mut CartFace,
+    top: u32,
+    band: u32,
+    layout: &text::Layout,
+    ink: [u8; 3],
+    strength: f32,
+) {
     let band = band.min(face.h.saturating_sub(top));
     for (i, a) in text::coverage(face.w, band, layout).into_iter().enumerate() {
+        let a = (a as f32 * strength).round() as u8;
         if a == 0 {
             continue;
         }
@@ -147,7 +158,7 @@ fn print_cell(face: &mut CartFace) {
         h,
     };
     let layout = text::fit(font, "CR1616", w as f32, 1, 6.0, 4.0);
-    ink_band(&mut cell, 0, h, &layout, CELL_INK);
+    ink_band(&mut cell, 0, h, &layout, CELL_INK, 1.0);
     over(face, &cell, 316 - w / 2, 59 - h / 2);
 }
 
@@ -177,4 +188,193 @@ fn hex(c: [u8; 3]) -> String {
 
 fn shade(c: [u8; 3], f: f32) -> [u8; 3] {
     c.map(|v| (v as f32 * f).round().clamp(0.0, 255.0) as u8)
+}
+
+const SOCKET_SVG: &str = include_str!("../assets/socket.svg");
+const CHIP_SVG: &str = include_str!("../assets/chip.svg");
+
+/// Where the open cart rests.
+pub const BOARD_X: f32 = 174.0;
+pub const BOARD_Y: f32 = 150.0;
+
+/// Transparent border on every face that is drawn turned. A turned quad's own edge is not
+/// antialiased; inside the texture, the linear filter softens it.
+pub const TURN_PAD: u32 = 2;
+
+/// The lid's tilt at rest, and the most the chip tips in flight.
+pub const LID_TURN: f32 = -5.0 * std::f32::consts::PI / 180.0;
+pub const CHIP_TIP: f32 = 4.0 * std::f32::consts::PI / 180.0;
+/// How far the chip rises at mid-flight, in board units.
+pub const HOP_LIFT: f32 = 10.0;
+
+/// Each socket's face, in `Core::ALL` order: board units of its top left, and its size.
+pub const SOCKET_U: [f32; 2] = [99.5, 171.5];
+pub const SOCKET_V: f32 = 59.1;
+pub const SOCKET_W: u32 = 64;
+pub const SOCKET_H: u32 = 46;
+
+/// The chip seated in each socket, unpadded: board units of its top left, and its size.
+pub const CHIP_U: [f32; 2] = [101.0, 173.0];
+pub const CHIP_V: f32 = 60.6;
+pub const CHIP_W: u32 = 59;
+pub const CHIP_H: u32 = 41;
+
+pub const SHADOW_W: u32 = 66;
+pub const SHADOW_H: u32 = 12;
+
+/// 11 board units, the socket names' size in the mockup.
+const NAME_PX: f32 = 17.0;
+const NAME_MIN_PX: f32 = 8.0;
+const SOCKET_INK: [u8; 3] = [0xee, 0xf5, 0xe6];
+const CHIP_INK: [u8; 3] = [0xf2, 0xf2, 0xf2];
+
+const LID_REST: Placed = Placed {
+    x: 288.0,
+    y: 30.0,
+    w: 144.0,
+    h: 81.0,
+};
+
+/// A rect on the panel.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Placed {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// The highlighted cart as the shelf stands it, once the row has settled.
+pub fn shelf_cart() -> Placed {
+    Placed {
+        x: (OUT_W - CART_W) as f32 / 2.0,
+        y: FOOT_Y - CART_H as f32,
+        w: CART_W as f32,
+        h: CART_H as f32,
+    }
+}
+
+/// The open cart, `open` of the way from the shelf cart to its rest.
+pub fn board_at(open: f32) -> Placed {
+    let rest = Placed {
+        x: BOARD_X,
+        y: BOARD_Y,
+        w: BOARD_W as f32,
+        h: BOARD_H as f32,
+    };
+    lerp(shelf_cart(), rest, open.clamp(0.0, 1.0))
+}
+
+/// The lid, `open` of the way from level on the shelf to turned at its rest, and its turn.
+pub fn lid_at(open: f32) -> (Placed, f32) {
+    let t = open.clamp(0.0, 1.0);
+    (lerp(shelf_cart(), LID_REST, t), LID_TURN * t)
+}
+
+/// A board unit on the panel, wherever the open cart currently is.
+pub fn on_board(board: Placed, u: f32, v: f32) -> (f32, f32) {
+    (
+        board.x + u * board.w / CART_W as f32,
+        board.y + v * board.h / CART_H as f32,
+    )
+}
+
+/// How much bigger or smaller than its own size a board face is drawn right now.
+pub fn board_zoom(board: Placed) -> f32 {
+    board.w / BOARD_W as f32
+}
+
+/// `p` with `by` more on every side.
+pub fn grown(p: Placed, by: f32) -> Placed {
+    Placed {
+        x: p.x - by,
+        y: p.y - by,
+        w: p.w + 2.0 * by,
+        h: p.h + 2.0 * by,
+    }
+}
+
+fn lerp(a: Placed, b: Placed, t: f32) -> Placed {
+    Placed {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        w: a.w + (b.w - a.w) * t,
+        h: a.h + (b.h - a.h) * t,
+    }
+}
+
+/// A copy with `pad` transparent pixels on every side.
+pub fn padded(face: &CartFace, pad: u32) -> CartFace {
+    let (w, h) = (face.w + 2 * pad, face.h + 2 * pad);
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    let stride = (face.w * 4) as usize;
+    for row in 0..face.h {
+        let from = (row * face.w * 4) as usize;
+        let to = (((row + pad) * w + pad) * 4) as usize;
+        rgba[to..to + stride].copy_from_slice(&face.rgba[from..from + stride]);
+    }
+    CartFace { rgba, w, h }
+}
+
+/// An empty socket: pads, outline, and the name of the core it is for at half strength.
+pub fn socket_face(core: Core) -> CartFace {
+    let rgba = art::render_svg(SOCKET_SVG, SOCKET_W, SOCKET_H)
+        .unwrap_or_else(|| vec![0; (SOCKET_W * SOCKET_H * 4) as usize]);
+    let mut face = CartFace {
+        rgba,
+        w: SOCKET_W,
+        h: SOCKET_H,
+    };
+    if let Some(layout) = name_layout(core, (SOCKET_W - 12) as f32) {
+        // Inside the outline, which runs from 2.9 to 26.9 units down the face.
+        ink_band(&mut face, 4, 37, &layout, SOCKET_INK, 0.5);
+    }
+    face
+}
+
+/// The chip, named for the socket it is seated in, or blank in flight. Padded, since it tips.
+pub fn chip_face(core: Option<Core>) -> CartFace {
+    let rgba = art::render_svg(CHIP_SVG, CHIP_W, CHIP_H)
+        .unwrap_or_else(|| vec![0; (CHIP_W * CHIP_H * 4) as usize]);
+    let mut face = CartFace {
+        rgba,
+        w: CHIP_W,
+        h: CHIP_H,
+    };
+    if let Some(layout) = core.and_then(|c| name_layout(c, (CHIP_W - 8) as f32)) {
+        // The body, between the two rows of legs.
+        ink_band(&mut face, 4, 34, &layout, CHIP_INK, 1.0);
+    }
+    padded(&face, TURN_PAD)
+}
+
+/// A soft dark oval, for under the chip while it is off the board.
+pub fn chip_shadow_face() -> CartFace {
+    let (w, h) = (SHADOW_W, SHADOW_H);
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let dx = (x as f32 + 0.5 - w as f32 / 2.0) / (w as f32 / 2.0);
+            let dy = (y as f32 + 0.5 - h as f32 / 2.0) / (h as f32 / 2.0);
+            let fall = (1.0 - (dx * dx + dy * dy)).max(0.0);
+            rgba.extend_from_slice(&[0, 0, 0, (fall * fall * 255.0) as u8]);
+        }
+    }
+    CartFace { rgba, w, h }
+}
+
+/// A core's name exactly as the player reads it — `mGBA`, not `MGBA`. `text::fit` capitalises
+/// everything it lays out, so this builds the layout itself, shrinking only if it must.
+fn name_layout(core: Core, max_w: f32) -> Option<text::Layout> {
+    let font = text::label_font()?;
+    let tracking = |px: f32| (px * 0.10).round();
+    let mut px = NAME_PX;
+    while px > NAME_MIN_PX && text::line_width(font, core.text(), px, tracking(px)) > max_w {
+        px -= 1.0;
+    }
+    Some(text::Layout {
+        lines: vec![core.text().to_string()],
+        px,
+        tracking: tracking(px),
+    })
 }
