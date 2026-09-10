@@ -69,16 +69,16 @@ pub struct StickerFields<'a> {
 ///
 /// This is what README.md credits, in the space a label has for it.
 pub const CREDITS: [&str; 10] = [
-    "EMULATION BY MGBA, THROUGH",
-    "LIBRETRO. AGS-102 IS A FORK OF",
+    "EMULATION POWERED BY MGA",
+    "AND GPSP. AGS-102 IS A FORK OF",
     "BASEOS BY PVAIBHAV. TYPE IS",
     "OPEN SANS AND NERD FONTS",
     "SYMBOLS BY RYAN L MCINTYRE.",
     "THE PANEL MASK IS DERIVED",
     "FROM GIGAHERZ'S LCD3X. THE",
-    "SOUNDS ARE MY CHILDHOOD",
+    "CART SOUNDS ARE MY CHILDHOOD",
     "GAMEBOY. I WASTED WATER",
-    "WITH CLAUDE CODE.",
+    "BUILDING THIS WITH CLAUDE.",
 ];
 
 /// The article's own origin row, kept word for word. It is the one place the joke is funnier

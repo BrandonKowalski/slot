@@ -327,6 +327,9 @@ kbd{
   color:var(--ink);
   white-space:nowrap;
 }
+/* A chord in running text is one instruction. Chips are inline blocks, which the line
+   breaker will split around even with no-break spaces between them. */
+.chord{white-space:nowrap}
 
 
 
@@ -335,16 +338,14 @@ kbd{
 
 /* ---------------------------------------------------------- reference --- */
 
-/* The full control set, both groups in one section. Two columns where there is room: the
-   inputs form a left rail you can run your eye down, and the actions read across from
-   them. No rules between rows — the chips carry the structure on their own.
-
-   It runs taller than the screen it snaps into, which is fine: an oversized snap area is
-   valid at any offset that keeps the viewport inside it, so every row is reachable. It is
-   a table you look things up in, not a composition that has to land. */
+/* The full control set, one section per list: anywhere, on the carousel, in game. Each is
+   a screen of its own; the longest, in game, still fits a 720px window with its heading on
+   screen once snapped. Two columns where there is room: the inputs form a left rail you can
+   run your eye down, and the actions read across from them. No rules between rows — the
+   chips carry the structure on their own. */
 .reference{padding:clamp(56px,9vh,110px) 0}
 .reference h2{margin-bottom:28px}
-.reference h3{
+.reference h3,.faq h3{
   font-size:16px;
   font-weight:700;
   letter-spacing:.09em;
@@ -352,7 +353,7 @@ kbd{
   color:var(--muted);
   margin:36px 0 14px;
 }
-.reference h3:first-of-type{margin-top:0}
+.reference h3:first-of-type,.faq h3:first-of-type{margin-top:0}
 /* The chips set small next to 19px text; the guide's own are read one at a time, these in
    a column you scan. */
 .reference kbd{font-size:15px;padding:3px 8px}
@@ -696,9 +697,9 @@ footer a{color:var(--ink)}
   html{scroll-snap-type:y mandatory}
   .hero,.step,.reference,.faq,.endnote{scroll-snap-align:center}
   /* A screen each, with the content centred in it, so what snap comes to rest on is a
-     composed thing rather than wherever the section happened to start. The questions are
-     taller than that on a short window and stay an oversized snap area, which is fine —
-     you can still rest anywhere inside one. */
+     composed thing rather than wherever the section happened to start. The reference and
+     the questions are split into pages for this: at 1280x720 each still lands with its
+     heading on screen. */
   .reference,.faq,.endnote{min-height:100vh;display:flex;align-items:center}
   .reference>.wrap,.faq>.wrap,.endnote>.wrap{width:100%}
 }

@@ -23,8 +23,12 @@
   <a href="#save-states" aria-label="Save States"></a>
   <a href="#fast-forward" aria-label="Fast-Forward and Rewind"></a>
   <a href="#lid-detection" aria-label="Lid Detection"></a>
-  <a href="#controls" aria-label="Button Reference"></a>
-  <a href="#faq" aria-label="Anticipated Questions Answered"></a>
+  <a href="#controls" aria-label="Button Reference: Anywhere"></a>
+  <a href="#controls-carousel" aria-label="Button Reference: On the Carousel"></a>
+  <a href="#controls-in-game" aria-label="Button Reference: In Game"></a>
+  <a href="#faq" aria-label="Anticipated Questions Answered: The Basics"></a>
+  <a href="#faq-carts" aria-label="Anticipated Questions Answered: Your Carts"></a>
+  <a href="#faq-linking" aria-label="Anticipated Questions Answered: Linking"></a>
   <a href="#credits" aria-label="Credits"></a>
   <a href="#disclosure" aria-label="AI Disclosure"></a>
 </nav>
@@ -149,7 +153,7 @@
              what the copy under it says happens. -->
         <div class="step-panel" aria-hidden="true"></div>
         <h2>Lid Detection</h2>
-        <p>Closing the lid writes a save state and turns off the display. Open it again and you're back in the game. Leave it shut for three minutes and slot powers off, resuming from that save state on the next boot.</p>
+        <p>Closing the lid writes a save state and turns off the display. Open it again and you're back in the game. Leave it shut for three minutes and slot powers off. It will resume with that save state on the next boot.</p>
       </article>
   </div>
 </section>
@@ -158,10 +162,38 @@
   <div class="wrap">
     <h2>Button Reference</h2>
 
+    <h3>Anywhere</h3>
+    <dl class="keys">
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd></dt>
+        <dd>Adjust brightness</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd></dt>
+        <dd>Adjust blue light</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>VOL+</kbd> / <kbd>VOL&minus;</kbd></dt>
+        <dd>Change the volume</dd>
+      </div>
+      <div class="key">
+        <dt><kbd>VOL+</kbd> + <kbd>VOL&minus;</kbd></dt>
+        <dd>Mute, remembering the level</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<!-- One page per list, each carrying the heading, so whichever one snap lands on reads as
+     complete on its own. -->
+<section class="reference" id="controls-carousel">
+  <div class="wrap">
+    <h2>Button Reference</h2>
+
     <h3>On the carousel</h3>
     <dl class="keys">
       <div class="key">
-        <dt><kbd>L</kbd> <kbd>R</kbd></dt>
+        <dt><kbd>L</kbd> / <kbd>R</kbd></dt>
         <dd>Browse the carousel</dd>
       </div>
       <div class="key">
@@ -176,7 +208,17 @@
         <dt><kbd>MENU</kbd></dt>
         <dd>Open the about screen</dd>
       </div>
+      <div class="key">
+        <dt><kbd>START</kbd></dt>
+        <dd>Choose which emulator runs the cart</dd>
+      </div>
     </dl>
+  </div>
+</section>
+
+<section class="reference" id="controls-in-game">
+  <div class="wrap">
+    <h2>Button Reference</h2>
 
     <h3>In game</h3>
     <dl class="keys">
@@ -190,20 +232,16 @@
             load within 30 seconds</dd>
       </div>
       <div class="key">
+        <dt><kbd>SELECT</kbd> + <kbd>MENU</kbd></dt>
+        <dd>Link with another RG SP. Need to be using gpSP.</dd>
+      </div>
+      <div class="key">
         <dt><kbd>SELECT</kbd> + <kbd>R1</kbd></dt>
         <dd>Save state</dd>
       </div>
       <div class="key">
         <dt><kbd>SELECT</kbd> + <kbd>L1</kbd></dt>
         <dd>Load the most recent save state</dd>
-      </div>
-      <div class="key">
-        <dt><kbd>SELECT</kbd> + <kbd>Up</kbd> <kbd>Down</kbd></dt>
-        <dd>Adjust brightness</dd>
-      </div>
-      <div class="key">
-        <dt><kbd>SELECT</kbd> + <kbd>Left</kbd> <kbd>Right</kbd></dt>
-        <dd>Adjust blue light</dd>
       </div>
       <div class="key">
         <dt>Hold <kbd>L2</kbd></dt>
@@ -217,14 +255,6 @@
         <dt>Double tap <kbd>R2</kbd></dt>
         <dd>Lock fast-forward on. Press again to unlock.</dd>
       </div>
-      <div class="key">
-        <dt><kbd>VOL+</kbd> <kbd>VOL&minus;</kbd></dt>
-        <dd>Change the volume</dd>
-      </div>
-      <div class="key">
-        <dt><kbd>VOL+</kbd> + <kbd>VOL&minus;</kbd></dt>
-        <dd>Mute, remembering the level</dd>
-      </div>
     </dl>
   </div>
 </section>
@@ -232,6 +262,7 @@
 <section class="faq" id="faq">
   <div class="wrap">
     <h2>Anticipated Questions Answered</h2>
+    <h3>The basics</h3>
     <dl>
       <div class="qa">
         <dt>Will slot run anything other than GBA?</dt>
@@ -246,9 +277,22 @@
         <dd>No. Use the headphone jack.</dd>
       </div>
       <div class="qa">
-        <dt>Where do the games come from?</dt>
-        <dd>Your own legally obtained backups.</dd>
+        <dt>Is there a GBA boot animation on game start?</dt>
+        <dd>Yes! Drop <code>gba_bios.bin</code> into <code>BIOS/</code>.</dd>
       </div>
+      <div class="qa">
+        <dt>Why are there two emulators?</dt>
+        <dd>mGBA is the default for accuracy. gpSP is for link cable / wireless adapter support. Save states don't carry between them; in-game saves do.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<section class="faq" id="faq-carts">
+  <div class="wrap">
+    <h2>Anticipated Questions Answered</h2>
+    <h3>Your carts</h3>
+    <dl>
       <div class="qa">
         <dt>How do I add cart labels?</dt>
         <dd>Drop a <code>.png</code> into <code>Labels/</code> with the same name as the ROM file.<br>For example, <code>Metroid Fusion.png</code> matches <code>Metroid Fusion.gba</code>.</dd>
@@ -258,8 +302,25 @@
         <dd>196x86 pixels, or about 2.28:1. Anything else is scaled to cover that box and centre cropped, so a square or portrait image loses its top and bottom.</dd>
       </div>
       <div class="qa">
-        <dt>Is there a GBA boot animation on game start?</dt>
-        <dd>Yes! Drop <code>gba_bios.bin</code> into <code>BIOS/</code>.</dd>
+        <dt>Where do the games come from?</dt>
+        <dd>Your own legally obtained backups.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<section class="faq" id="faq-linking">
+  <div class="wrap">
+    <h2>Anticipated Questions Answered</h2>
+    <h3>Linking</h3>
+    <dl>
+      <div class="qa">
+        <dt>Can I trade Pokémon with a friend?</dt>
+        <dd>Yes, with a second RG SP. First navigate to the game and press <kbd>START</kbd> to open the core selection menu. Pick <code>gpSP</code>.<br><br>While in game press <span class="chord"><kbd>SELECT</kbd> + <kbd>MENU</kbd></span> and choose <code>LINK</code>. One player needs to pick <code>HOST</code> while the other chooses <code>JOIN</code>.</dd>
+      </div>
+      <div class="qa">
+        <dt>Which games can link?</dt>
+        <dd>Pokémon Ruby through LeafGreen, both Advance Wars, and a handful of wireless adapter games.</dd>
       </div>
       <div class="qa">
         <dt>I have another question that isn't answered here.</dt>
@@ -276,9 +337,9 @@
   <section class="endnote" id="credits">
   <div class="wrap">
     <h2>Credits</h2>
-    <p>Emulation is <a href="https://mgba.io">mGBA</a> by endrift, through <a href="https://www.libretro.com">libretro</a>. The device boots <a href="https://github.com/BrandonKowalski/AGS-102">AGS-102</a>, a purpose-made fork of <a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by @pvaibhav.</p>
+    <p>Emulation is handled by <a href="https://mgba.io">mGBA</a> and <a href="https://github.com/libretro/gpsp">gpSP</a>, both through <a href="https://www.libretro.com">libretro</a>. The device boots <a href="https://github.com/BrandonKowalski/AGS-102">AGS-102</a>, a purpose-made fork of <a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by @pvaibhav.</p>
     <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L. McIntyre, under MIT. The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro shader collection.</p>
-    <p>The sounds are a recording of me shoving a cartridge into my childhood GBA.</p>
+    <p>The cart sounds are a recording of me shoving a cartridge into my childhood GBA.</p>
   </div>
   </section>
 
@@ -287,7 +348,7 @@
     <h2>AI Disclosure</h2>
     <p>The Rust frontend was put together by Claude Opus. I reviewed everything that was produced. The RG SP SVGs on this page were also generated by Claude. This documentation is 100% free-range, meatbag prose.</p>
     <p>The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought that something this focused on GBA would be kind of neat.</p>
-    <p>This is just a glorified wrapper around mGBA, which is the real star of the show.</p>
+    <p>This is just a glorified wrapper around mGBA and gpSP. Both are the real stars of this show.</p>
     <p>Use it, don't use it, I don't care.</p>
     <p>Figured I should share the end result of all the wasted water. ✌🏻</p>
   </div>

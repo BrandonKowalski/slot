@@ -4,14 +4,24 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 
 ## Controls
 
+### Anywhere
+
+| Input                       | Action                      |
+|-----------------------------|-----------------------------|
+| `SELECT` + `Up` / `Down`    | Adjust brightness           |
+| `SELECT` + `Left` / `Right` | Adjust blue light           |
+| `VOL+` / `VOL-`             | Change the volume           |
+| `VOL+` + `VOL-`             | Mute, remembering the level |
+
 ### On the carousel
 
-| Input    | Action                     |
-|----------|----------------------------|
-| `L` `R`  | Browse the carousel        |
-| Tap `A`  | Resume the last save state |
-| Hold `A` | Start the game fresh       |
-| `MENU`   | Open the about screen      |
+| Input     | Action                              |
+|-----------|-------------------------------------|
+| `L` / `R` | Browse the carousel                 |
+| Tap `A`   | Resume the last save state          |
+| Hold `A`  | Start the game fresh                |
+| `MENU`    | Open the about screen               |
+| `START`   | Choose which emulator runs the cart |
 
 ### In game
 
@@ -19,17 +29,14 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 |---------------------------|--------------------------------------------------------------------------------------------------|
 | Hold `MENU`               | Save state, eject the cart, back to the carousel                                                 |
 | Double tap `MENU`         | Save state switcher: pick one to load or delete, or undo the last save or load within 30 seconds |
+| `SELECT` + `MENU`         | Link with another RG SP. gpSP carts only                                                         |
 | `SELECT` + `R1`           | Save state                                                                                       |
 | `SELECT` + `L1`           | Load the most recent save state                                                                  |
-| `SELECT` + `Up` `Down`    | Adjust brightness                                                                                |
-| `SELECT` + `Left` `Right` | Adjust blue light                                                                                |
 | Hold `L2`                 | Rewind                                                                                           |
 | Hold `R2`                 | Fast-forward                                                                                     |
 | Double tap `R2`           | Lock fast-forward on. Press again to unlock                                                      |
-| `VOL+` `VOL-`             | Change the volume                                                                                |
-| `VOL+` + `VOL-`           | Mute, remembering the level                                                                      |
 
-Buttons side by side mean either one. A `+` means both together.
+A `/` means either one. A `+` means both together.
 
 Closing the lid writes a save state and turns off the display. Open it again and you're
 back in the game. Leave it shut for three minutes and slot powers off, resuming from that
@@ -116,7 +123,7 @@ The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the 
 shader collection. At exactly 3x it reduces to a 3 by 3 table, which is what ships here
 rather than the shader.
 
-The sounds are a recording of me shoving a cartridge into my childhood GBA.
+The cart sounds are a recording of me shoving a cartridge into my childhood GBA.
 
 ## AI Disclosure
 
