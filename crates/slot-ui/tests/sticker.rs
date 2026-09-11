@@ -77,3 +77,36 @@ fn every_line_is_already_upper_case() {
         assert_eq!(line, line.to_uppercase(), "{line}");
     }
 }
+
+/// `Canvas::blit` composites the wordmark's own SVG raster onto the label, and used to assume
+/// that raster was premultiplied — correct while `render_svg` handed back premultiplied pixels,
+/// wrong now that it hands back straight alpha (see the `art.rs` fix). A premultiplied-shaped
+/// blend on straight alpha clips every partly covered edge pixel toward the full ink colour, so
+/// the wordmark's top edge collapsed from a ramp to a single hard step. This scans the columns
+/// where that top edge sits (in the sticker's own coordinate space) and asks for at least one
+/// column whose edge pixel is neither the ground nor the ink outright: proof the edge is still
+/// antialiased.
+#[test]
+fn the_wordmarks_top_edge_is_antialiased_not_a_hard_step() {
+    use slot_ui::sticker_face;
+    const GROUND: [u8; 3] = [0x23, 0x1f, 0x20];
+    const INK: [u8; 3] = [0xff, 0xff, 0xff];
+    let face = sticker_face(&fields());
+    let get = |x: u32, y: u32| -> [u8; 3] {
+        let i = ((y * face.w + x) * 4) as usize;
+        [face.rgba[i], face.rgba[i + 1], face.rgba[i + 2]]
+    };
+    let edges: Vec<[u8; 3]> = (400..413)
+        .filter_map(|x| {
+            (129..142).find_map(|y| {
+                let above = get(x, y - 1);
+                let here = get(x, y);
+                (above == GROUND && here != GROUND).then_some(here)
+            })
+        })
+        .collect();
+    assert!(
+        edges.iter().any(|&e| e != GROUND && e != INK),
+        "every sampled column's top edge jumps straight from the ground to the ink: {edges:?}"
+    );
+}

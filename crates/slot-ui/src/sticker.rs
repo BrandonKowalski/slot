@@ -193,7 +193,11 @@ impl Canvas {
         bar_w
     }
 
-    /// Rasterised artwork composited at a position, over whatever is already there.
+    /// Rasterised artwork composited at a position, over whatever is already there. `src` is
+    /// straight alpha, the same as everything else this file blends onto the canvas — `render_svg`
+    /// used to hand back tiny_skia's own premultiplied pixels, which this could take as though
+    /// already scaled by `a`, but it hands back straight alpha now, so `src` has to be scaled by
+    /// `a` here instead.
     fn blit(&mut self, x: u32, y: u32, src: &[u8], sw: u32, sh: u32) {
         for row in 0..sh {
             for col in 0..sw {
@@ -209,8 +213,7 @@ impl Canvas {
                 let d = ((dy * self.w + dx) * 4) as usize;
                 for k in 0..3 {
                     let under = self.px[d + k] as u32;
-                    self.px[d + k] =
-                        ((src[s + k] as u32 * 255 + under * (255 - a)) / 255).min(255) as u8;
+                    self.px[d + k] = ((src[s + k] as u32 * a + under * (255 - a)) / 255) as u8;
                 }
                 self.px[d + 3] = 255;
             }
