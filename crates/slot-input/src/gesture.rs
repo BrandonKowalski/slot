@@ -57,9 +57,6 @@ pub enum Action {
     /// Not START, which in a game is the GBA's own and the game needs it; not a bare MENU
     /// tap, which the about screen already has.
     GameMenu,
-    /// SELECT + START on the shelf: the core picker. Only there — in a game both keys are the
-    /// game's, and A+B+SELECT+START is how most GBA games reset.
-    ChooseCore,
     MuteToggle,
     /// The press itself. Nothing visible hangs off it — it exists so the save state is
     /// flushed before a hold can reach the PMIC's own cutoff, which takes the rails away
@@ -118,10 +115,6 @@ pub struct Gestures {
     ff_latching_press: bool,
     r2_last_release: Option<Millis>,
     rewinding: bool,
-    /// Whether the shelf is the screen. SELECT + START is only a chord there.
-    shelf: bool,
-    /// The START press that made the chord, so its release is swallowed too.
-    start_chorded: bool,
 }
 
 /// Whether a held key owes a step at `now`. The wait before the first is longer than the gap
@@ -145,11 +138,6 @@ impl Gestures {
     /// established by a release that emits nothing, and only this machine knows it happened.
     pub fn ff_latched(&self) -> bool {
         self.ff_latched
-    }
-
-    /// Told by the session before each batch of input: the gesture layer cannot see phases.
-    pub fn set_shelf(&mut self, on: bool) {
-        self.shelf = on;
     }
 
     pub fn feed(&mut self, ev: RawEvent, now: Millis) -> Vec<Action> {
@@ -218,14 +206,6 @@ impl Gestures {
             Btn::VolUp | Btn::VolDown => self.volume_press(b, now),
             Btn::L2 => self.rewind_start(),
             Btn::R2 => self.ff_down(now),
-            Btn::Start
-                if self.shelf && matches!(self.select, Select::Pending(_) | Select::Consumed) =>
-            {
-                // So `select_up` emits no stray press for a SELECT nothing got.
-                self.select = Select::Consumed;
-                self.start_chorded = true;
-                vec![Action::ChooseCore]
-            }
             _ => {
                 let chording = matches!(self.select, Select::Pending(_) | Select::Consumed);
                 if let (true, Some((bit, action))) = (chording, chord(b)) {
@@ -247,10 +227,6 @@ impl Gestures {
             Btn::VolUp | Btn::VolDown => self.volume_release(b),
             Btn::L2 => self.rewind_stop(),
             Btn::R2 => self.ff_up(now),
-            Btn::Start if self.start_chorded => {
-                self.start_chorded = false;
-                Vec::new()
-            }
             _ => {
                 if let Some((bit, _)) = chord(b) {
                     if self.chord_held & bit != 0 {

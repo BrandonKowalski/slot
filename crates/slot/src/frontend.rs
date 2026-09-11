@@ -528,9 +528,9 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
 }
 
 /// The open cart's faces, asked for as soon as the caret lands on a cart and uploaded when the
-/// worker hands them back, so they are normally on the GPU before SELECT + START. The worker is
-/// the only place they are built: rasterised on the frame loop, a board freezes the shelf for
-/// the better part of half a second on the H700.
+/// worker hands them back, so they are normally on the GPU before START. The worker is the only
+/// place they are built: rasterised on the frame loop, a board freezes the shelf for the better
+/// part of half a second on the H700.
 fn sync_core_picker(
     app: &mut App,
     compositor: &mut Compositor,
