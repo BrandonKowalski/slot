@@ -5,11 +5,13 @@
 use slot_store::Core;
 use slot_ui::{ease, Millis, Refusal, CHIP_TIP};
 
-/// Lid off, chip across, lid back on. The close is the quicker movement: the player has already
-/// decided, and putting a thing back is not something to watch.
-pub const OPEN_MS: Millis = 260;
+/// The front half slides off the back, then lifts away; the close runs the same progress back,
+/// quicker. `slot_ui::SLIDE_SHARE` is the slide's share of the open, held to these by a test.
+pub const SLIDE_MS: Millis = 160;
+pub const LIFT_MS: Millis = 260;
+pub const OPEN_MS: Millis = SLIDE_MS + LIFT_MS;
+pub const CLOSE_MS: Millis = 320;
 pub const HOP_MS: Millis = 180;
-pub const CLOSE_MS: Millis = 200;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Press {
@@ -58,7 +60,10 @@ struct Close {
 #[derive(Copy, Clone)]
 pub struct CorePicker {
     seat: Core,
+    /// When START was pressed.
     opened: Millis,
+    /// When the open's clock began, once the cart's faces were ready.
+    started: Option<Millis>,
     hop: Option<Hop>,
     close: Option<Close>,
     /// The chip's own. The shelf does not shake while the picker is up.
@@ -70,10 +75,26 @@ impl CorePicker {
         CorePicker {
             seat,
             opened: now,
+            started: None,
             hop: None,
             close: None,
             refusal: None,
         }
+    }
+
+    /// Starts the open's clock. The first start is the one that counts.
+    pub fn start(&mut self, now: Millis) {
+        self.started.get_or_insert(now);
+    }
+
+    /// Up, but not yet moving: the cart's faces are not on the GPU yet.
+    pub fn waiting(&self) -> bool {
+        self.started.is_none()
+    }
+
+    /// How long ago START was pressed.
+    pub fn waited(&self, now: Millis) -> Millis {
+        now.saturating_sub(self.opened)
     }
 
     /// Where the chip is, or where it is going: the core `A` writes.
@@ -85,19 +106,16 @@ impl CorePicker {
         self.close.is_some()
     }
 
-    /// 0.0 is the cart standing on the shelf, 1.0 open at rest.
+    /// 0.0 is the cart standing on the shelf, 1.0 open at rest. Linear progress through both
+    /// beats, which `slot_ui::slide_of` and `lift_of` ease on their own shares.
     pub fn openness(&self, now: Millis) -> f32 {
-        match self.close {
-            Some(Close { started, from }) => {
-                // Reversed from wherever the open had got to, at the close's speed.
-                let span = CLOSE_MS as f32 * from;
-                let u = match span > 0.0 {
-                    true => (now.saturating_sub(started) as f32 / span).min(1.0),
-                    false => 1.0,
-                };
-                from * (1.0 - ease(u))
+        match (self.close, self.started) {
+            // Reversed from wherever the open had got to, at the close's speed.
+            (Some(Close { started, from }), _) => {
+                (from - now.saturating_sub(started) as f32 / CLOSE_MS as f32).max(0.0)
             }
-            None => ease((now.saturating_sub(self.opened) as f32 / OPEN_MS as f32).min(1.0)),
+            (None, Some(started)) => (now.saturating_sub(started) as f32 / OPEN_MS as f32).min(1.0),
+            (None, None) => 0.0,
         }
     }
 

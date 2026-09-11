@@ -1,9 +1,9 @@
 use slot_store::{Cart, Core};
 use slot_ui::{
-    board_at, board_face, chip_face, chip_shadow_face, lid_at, on_board, padded, rom_marking,
-    rom_marking_face, shelf_cart, shell_for, socket_face, CartFace, Placed, BOARD_H, BOARD_W,
-    CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_W,
-    TURN_PAD,
+    board_at, board_face, chip_face, chip_shadow_face, lid_at, lift_of, on_board, padded,
+    rom_marking, rom_marking_face, shelf_cart, shell_for, slide_of, socket_face, CartFace, Placed,
+    BOARD_H, BOARD_W, CART_H, CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H,
+    SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_W, TURN_PAD,
 };
 
 fn cart(stem: &str, code: &str) -> Cart {
@@ -174,6 +174,48 @@ fn the_lid_leaves_level_and_rests_turned() {
         "{}",
         LID_TURN.to_degrees()
     );
+}
+
+#[test]
+fn the_beats_split_one_progress() {
+    assert_eq!((slide_of(0.0), lift_of(0.0)), (0.0, 0.0));
+    assert_eq!((slide_of(SLIDE_SHARE), lift_of(SLIDE_SHARE)), (1.0, 0.0));
+    assert_eq!((slide_of(1.0), lift_of(1.0)), (1.0, 1.0));
+    assert!((slide_of(SLIDE_SHARE / 2.0) - 0.5).abs() < 1e-5);
+}
+
+/// The back half is the cart that was standing there; it does not move until the front is off it.
+#[test]
+fn the_back_half_stays_on_the_shelf_while_the_front_slides() {
+    for p in [0.0, 0.1, 0.25, SLIDE_SHARE] {
+        assert_eq!(board_at(p), shelf_cart(), "the back moved at progress {p}");
+    }
+}
+
+/// A third of the cart, level: the travel that unhooks a real shell once its screw is out.
+#[test]
+fn the_front_slides_up_a_third_before_it_lifts() {
+    assert_eq!(SLIDE_UP, CART_H as f32 / 3.0);
+    let shelf = shelf_cart();
+    let (slid, turn) = lid_at(SLIDE_SHARE);
+    assert_eq!(
+        slid,
+        Placed {
+            y: shelf.y - SLIDE_UP,
+            ..shelf
+        }
+    );
+    assert_eq!(turn, 0.0);
+    let (half, turn) = lid_at(SLIDE_SHARE / 2.0);
+    assert!(half.y < shelf.y && half.y > slid.y && turn == 0.0 && half.w == shelf.w);
+}
+
+/// The lift picks the lid up from where the slide left it rather than from the shelf.
+#[test]
+fn the_lift_starts_where_the_slide_ends() {
+    let (slid, _) = lid_at(SLIDE_SHARE);
+    let (next, _) = lid_at(SLIDE_SHARE + 0.001);
+    assert!((next.y - slid.y).abs() < 0.5 && (next.w - slid.w).abs() < 0.5);
 }
 
 #[test]

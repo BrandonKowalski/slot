@@ -11,6 +11,7 @@ use crate::art;
 use crate::cart::{clean_label, label_tags, CartFace, CART_H, CART_W};
 use crate::shelf::FOOT_Y;
 use crate::shell::shell_for;
+use crate::slot_chrome::ease;
 use crate::text;
 
 const BOARD_SVG: &str = include_str!("../assets/board.svg");
@@ -218,6 +219,23 @@ pub const CHIP_TIP: f32 = 4.0 * std::f32::consts::PI / 180.0;
 /// How far the chip rises at mid-flight, in board units.
 pub const HOP_LIFT: f32 = 10.0;
 
+/// The open is one progress in two beats, and this is the slide's share of it: 160 ms of the
+/// 420 ms in `slot::core_picker`, which a test there holds to its own constants.
+pub const SLIDE_SHARE: f32 = 160.0 / 420.0;
+/// How far the front half slides up off the back before it lifts: a third of the cart, the
+/// travel that unhooks a real shell once its screw is out.
+pub const SLIDE_UP: f32 = CART_H as f32 / 3.0;
+
+/// The slide, eased on its own share of the progress: 0.0 closed, 1.0 unhooked.
+pub fn slide_of(progress: f32) -> f32 {
+    ease((progress / SLIDE_SHARE).clamp(0.0, 1.0))
+}
+
+/// The lift, eased on the rest of the progress: 0.0 still over the back, 1.0 at rest.
+pub fn lift_of(progress: f32) -> f32 {
+    ease(((progress - SLIDE_SHARE) / (1.0 - SLIDE_SHARE)).clamp(0.0, 1.0))
+}
+
 /// Each socket's face, in `Core::ALL` order: board units of its top left, and its size.
 pub const SOCKET_U: [f32; 2] = [99.5, 171.5];
 pub const SOCKET_V: f32 = 59.1;
@@ -265,21 +283,26 @@ pub fn shelf_cart() -> Placed {
     }
 }
 
-/// The open cart, `open` of the way from the shelf cart to its rest.
-pub fn board_at(open: f32) -> Placed {
+/// The back half: standing where the shelf stood it through the slide, then growing to its rest.
+pub fn board_at(progress: f32) -> Placed {
     let rest = Placed {
         x: BOARD_X,
         y: BOARD_Y,
         w: BOARD_W as f32,
         h: BOARD_H as f32,
     };
-    lerp(shelf_cart(), rest, open.clamp(0.0, 1.0))
+    lerp(shelf_cart(), rest, lift_of(progress))
 }
 
-/// The lid, `open` of the way from level on the shelf to turned at its rest, and its turn.
-pub fn lid_at(open: f32) -> (Placed, f32) {
-    let t = open.clamp(0.0, 1.0);
-    (lerp(shelf_cart(), LID_REST, t), LID_TURN * t)
+/// The front half and its turn: slid up off the back, then lifted from there to its rest.
+pub fn lid_at(progress: f32) -> (Placed, f32) {
+    let shelf = shelf_cart();
+    let slid = Placed {
+        y: shelf.y - SLIDE_UP * slide_of(progress),
+        ..shelf
+    };
+    let lift = lift_of(progress);
+    (lerp(slid, LID_REST, lift), LID_TURN * lift)
 }
 
 /// A board unit on the panel, wherever the open cart currently is.

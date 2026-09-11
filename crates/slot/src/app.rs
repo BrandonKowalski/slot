@@ -9,11 +9,11 @@ use slot_store::{
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, grown, lid_at,
-    on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed, Polaroids,
-    PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W,
-    HINT_GAP, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
-    TURN_PAD,
+    board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
+    lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed,
+    Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U,
+    CHIP_V, CHIP_W, HINT_GAP, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V,
+    SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -117,6 +117,9 @@ const LID_SHADOW_W: f32 = 168.0;
 const LID_SHADOW_H: f32 = 18.0;
 const LID_SHADOW_DROP: f32 = 29.0;
 const LID_SHADOW_ALPHA: f32 = 0.8;
+/// The longest the cart stands on the shelf waiting for its faces before it opens anyway, so a
+/// face that never comes cannot freeze the picker.
+const FACES_WAIT_MS: Millis = 1000;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
@@ -312,6 +315,8 @@ pub struct App {
     /// so it can be turned. Rebuilt by the frontend when the highlighted cart changes.
     core_board_face: Option<TexId>,
     core_lid_face: Option<TexId>,
+    /// The cart the uploaded board and lid were built for.
+    core_faces_stem: Option<String>,
     /// In `Core::ALL` order: each socket empty, and the chip seated and named in each. Uploaded
     /// at boot, since none of them ever changes.
     core_socket_faces: Vec<TexId>,
@@ -453,6 +458,7 @@ impl App {
             core_picker: None,
             core_board_face: None,
             core_lid_face: None,
+            core_faces_stem: None,
             core_socket_faces: Vec::new(),
             core_chip_faces: Vec::new(),
             core_blank_chip_face: None,
@@ -1161,6 +1167,14 @@ impl App {
         // their own.
         self.poll_link();
         let now = self.now();
+        // The cart opens once its board is on the GPU, so a slow build is a pause on the shelf
+        // rather than an animation spent before its first frame.
+        let ready = self.core_faces_ready();
+        if let Some(picker) = &mut self.core_picker {
+            if picker.waiting() && (ready || picker.waited(now) >= FACES_WAIT_MS) {
+                picker.start(now);
+            }
+        }
         // The lid is back on, so the shelf is the shelf again.
         if self.core_picker.is_some_and(|p| p.finished(now)) {
             self.core_picker = None;
@@ -1463,7 +1477,9 @@ impl App {
                     // The highlighted cart is the picker's to draw while its lid is off, and the
                     // rest of the row makes way for it the way it does for a cart going in.
                     (Some(picker), Some(stem)) => {
-                        let open = picker.openness(self.now());
+                        // Eased on the whole progress rather than on either beat: the row makes
+                        // way across the slide and the lift as one movement.
+                        let open = ease(picker.openness(self.now()));
                         // Dimmed by as much of the open as has happened, so the dark arrives
                         // with the lid coming off and leaves with it going back on.
                         let dim = 1.0 + (CORE_PICKER_DIM - 1.0) * open;
@@ -1640,9 +1656,11 @@ impl App {
         self.power_menu_faces = faces;
     }
 
+    /// Recorded against the highlighted cart, since that is the only cart they are ever built for.
     pub fn set_core_board_faces(&mut self, board: TexId, lid: TexId) {
         self.core_board_face = Some(board);
         self.core_lid_face = Some(lid);
+        self.core_faces_stem = self.selected_stem().map(str::to_string);
     }
 
     /// `sockets` and `chips` in `Core::ALL` order.
@@ -1709,14 +1727,18 @@ impl App {
 
     /// The open cart over the shelf that is making way for it: the board growing out of the cart
     /// that stood there, both sockets on it, the chip in one of them or in the air between, the
-    /// lid lifted away with the cart's own face on it, and the legend. Over the shelf and under
-    /// the HUD: brightness and blue light are still answered while it is up.
+    /// lid slid off it and lifted away with the cart's own face on it, and the legend. Over the
+    /// shelf and under the HUD: brightness and blue light are still answered while it is up.
     fn draw_core_picker(&self, picker: &CorePicker, out: &mut Vec<Draw>) {
         let now = self.now();
-        let open = picker.openness(now);
-        let board = board_at(open);
+        let progress = picker.openness(now);
+        // The shadows and the legend come in with the lift, not with the slide.
+        let lift = lift_of(progress);
+        let board = board_at(progress);
         let zoom = board_zoom(board);
 
+        // Opaque from the first frame, and the sockets and the chip with it: the back half was
+        // always there under the front, and the slide only uncovers it.
         if let Some(tex) = self.core_board_face {
             out.push(Draw::Tex {
                 x: board.x,
@@ -1724,7 +1746,7 @@ impl App {
                 w: board.w,
                 h: board.h,
                 tex,
-                alpha: open,
+                alpha: 1.0,
             });
         }
         // A face drawn at its own size is only sharp on whole pixels.
@@ -1736,7 +1758,7 @@ impl App {
                 w: SOCKET_W as f32 * zoom,
                 h: SOCKET_H as f32 * zoom,
                 tex,
-                alpha: open,
+                alpha: 1.0,
             });
         }
 
@@ -1754,7 +1776,7 @@ impl App {
                     w,
                     h,
                     tex,
-                    alpha: 0.6 * chip.lift * open,
+                    alpha: 0.6 * chip.lift * lift,
                 });
             }
         }
@@ -1778,7 +1800,7 @@ impl App {
                 w: at.w,
                 h: at.h,
                 tex,
-                alpha: open,
+                alpha: 1.0,
                 turn: chip.tip,
             });
         }
@@ -1787,7 +1809,7 @@ impl App {
         // backdrop rather than held up off the board. The chip's shadow, stretched: it grows
         // with the lid and comes in as the lid rises.
         if let Some(tex) = self.core_chip_shadow_face {
-            let (lid, _) = lid_at(open);
+            let (lid, _) = lid_at(progress);
             let k = lid.w / lid_at(1.0).0.w;
             let (w, h) = (LID_SHADOW_W * k, LID_SHADOW_H * k);
             out.push(Draw::Tex {
@@ -1796,14 +1818,14 @@ impl App {
                 w,
                 h,
                 tex,
-                alpha: LID_SHADOW_ALPHA * open,
+                alpha: LID_SHADOW_ALPHA * lift,
             });
         }
 
         // Always opaque: at the very start and end of the movement the lid is the cart on the
         // shelf, and a cart there does not fade.
         if let Some(tex) = self.core_lid_face {
-            let (lid, turn) = lid_at(open);
+            let (lid, turn) = lid_at(progress);
             let at = grown(lid, TURN_PAD as f32 * lid.w / CART_W as f32);
             out.push(Draw::Turned {
                 x: at.x,
@@ -1831,7 +1853,7 @@ impl App {
                 w: w as f32,
                 h: HINT_H as f32,
                 tex,
-                alpha: open,
+                alpha: lift,
             });
             x += w as f32 + HINT_GAP;
         }
@@ -2153,12 +2175,24 @@ impl App {
             return;
         };
         let seat = slot_store::core_for(&root, &cart.stem);
-        self.core_picker = Some(CorePicker::open(seat, self.now()));
+        let now = self.now();
+        let mut picker = CorePicker::open(seat, now);
+        if self.core_faces_ready() {
+            picker.start(now);
+        }
+        self.core_picker = Some(picker);
         // Whatever the shelf had armed before START belonged to the shelf that was showing,
         // not to the cart now open over it: a held direction would keep repeating underneath
         // the lid, and a held A would still insert the cart once its 500 ms ran out.
         self.shelf.release_hold();
         self.play_held = None;
+    }
+
+    /// Whether the board and lid on the GPU are the highlighted cart's, so its open can start.
+    fn core_faces_ready(&self) -> bool {
+        self.core_faces_stem
+            .as_deref()
+            .is_some_and(|stem| self.selected_stem() == Some(stem))
     }
 
     /// The picker owns every button while it is up, including the arrows the shelf uses: a

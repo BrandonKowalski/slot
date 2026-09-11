@@ -8,8 +8,9 @@ use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, on_board, opening, Draw, Placed, TexId, BOARD_W, CART_W, CHIP_H,
-    CHIP_U, CHIP_V, CHIP_W, LID_TURN, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
+    TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -531,7 +532,7 @@ fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
 
 /// Long enough for the close to put the lid back, with room to spare.
 fn let_it_close(app: &mut App) {
-    app.update(0.3);
+    app.update(0.4);
 }
 
 /// Long enough for a hop to land.
@@ -898,9 +899,64 @@ fn near(a: [f32; 4], b: [f32; 4]) -> bool {
     a.iter().zip(b).all(|(p, q)| (p - q).abs() < 0.01)
 }
 
+/// How opaque a plain face was drawn.
+fn alpha_of(out: &[Draw], want: TexId) -> Option<f32> {
+    out.iter().find_map(|d| match *d {
+        Draw::Tex { tex, alpha, .. } if tex == want => Some(alpha),
+        _ => None,
+    })
+}
+
+/// The sockets and the chip seated in mGBA ride `board` wherever it is and at whatever size it
+/// is: a missing `* zoom` anywhere in that chain would separate them from it well before the
+/// movement settles.
+fn assert_parts_on_board(out: &[Draw], f: &PickerFaces, board: Placed, when: &str) {
+    let zoom = board.w / BOARD_W as f32;
+    for (i, socket) in f.sockets.iter().enumerate() {
+        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+        let (_, at) = tex_at(out, *socket).unwrap_or_else(|| panic!("a socket is missing {when}"));
+        assert!(
+            near(
+                at,
+                [
+                    x.round(),
+                    y.round(),
+                    SOCKET_W as f32 * zoom,
+                    SOCKET_H as f32 * zoom
+                ]
+            ),
+            "socket {i} at {at:?} {when}"
+        );
+    }
+    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
+    let want_chip = grown(
+        Placed {
+            x: cx,
+            y: cy,
+            w: CHIP_W as f32 * zoom,
+            h: CHIP_H as f32 * zoom,
+        },
+        TURN_PAD as f32 * zoom,
+    );
+    let (_, chip, _) =
+        turned_at(out, f.chips[0]).unwrap_or_else(|| panic!("no seated chip {when}"));
+    assert!(
+        near(
+            chip,
+            [
+                want_chip.x.round(),
+                want_chip.y.round(),
+                want_chip.w,
+                want_chip.h
+            ]
+        ),
+        "the chip is not riding the board {when}: {chip:?}"
+    );
+}
+
 /// Long enough for the lid to come off.
 fn let_it_open(app: &mut App) {
-    app.update(0.4);
+    app.update(0.5);
 }
 
 /// At rest: the board where the mockup has it, both sockets on it, the chip seated in the cart's
@@ -1105,11 +1161,44 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     );
     assert_eq!(turn, 0.0);
 
-    // Halfway up, the lid is between the shelf and its rest and part turned, over a board
-    // that is part grown and part faded in.
-    app.update(0.13);
-    let partway = frame(&app);
-    let (_, lid, turn) = turned_at(&partway, f.lid).expect("the lid vanished mid-open");
+    // Halfway through the slide the front half has come up half its travel, level and still the
+    // shelf cart's width, off a back half standing exactly where the shelf stood the cart, opaque,
+    // with the sockets and the chip already on it. 80.5 ms rather than 80: the app's clock counts
+    // whole milliseconds, and 0.08 s adds up to a hair under 80.
+    app.update(0.0805);
+    let slid = frame(&app);
+    let (_, lid, turn) = turned_at(&slid, f.lid).expect("the lid vanished mid-slide");
+    assert_eq!(turn, 0.0, "the lid turned while it slid");
+    let shelf = shelf_cart();
+    let want = grown(
+        Placed {
+            y: shelf.y - SLIDE_UP * 0.5,
+            ..shelf
+        },
+        TURN_PAD as f32,
+    );
+    assert!(
+        near(lid, [want.x, want.y, want.w, want.h]),
+        "the lid is not half way up its slide: {lid:?}"
+    );
+    let (_, board) = tex_at(&slid, f.board).expect("no board mid-slide");
+    assert_eq!(
+        board,
+        [shelf.x, shelf.y, shelf.w, shelf.h],
+        "the back half moved while the front slid"
+    );
+    assert_eq!(
+        alpha_of(&slid, f.board),
+        Some(1.0),
+        "the back half is not opaque under the front"
+    );
+    assert_parts_on_board(&slid, &f, shelf, "mid-slide");
+
+    // Halfway through the lift, the lid is on its way up and turning, over a back half that is
+    // part grown and still opaque.
+    app.update(0.21);
+    let lifting = frame(&app);
+    let (_, lid, turn) = turned_at(&lifting, f.lid).expect("the lid vanished mid-lift");
     assert!(
         turn < 0.0 && turn > LID_TURN,
         "the lid is not turning: {turn}"
@@ -1118,71 +1207,26 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         lid[1] < lid_at(0.0).0.y && lid[1] > lid_at(1.0).0.y,
         "the lid is not on its way up: {lid:?}"
     );
-    let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("no board mid-open");
+    let (_, [bx, by, bw, bh]) = tex_at(&lifting, f.board).expect("no board mid-lift");
     assert!(
         bw > board_at(0.0).w && bw < board_at(1.0).w,
         "the board is not growing: {bw}"
     );
-    let alpha = partway
-        .iter()
-        .find_map(|d| match *d {
-            Draw::Tex { tex, alpha, .. } if tex == f.board => Some(alpha),
-            _ => None,
-        })
-        .expect("no board mid-open");
-    assert!(
-        alpha > 0.0 && alpha < 1.0,
-        "the board is not fading in: {alpha}"
+    assert_eq!(
+        alpha_of(&lifting, f.board),
+        Some(1.0),
+        "the back half faded mid-lift"
     );
-
-    // The sockets and the seated chip travel with the board rather than staying where the
-    // shelf drew the cart: a missing `* zoom` anywhere in that chain would separate them from
-    // it here, well before the movement settles.
-    let board = Placed {
-        x: bx,
-        y: by,
-        w: bw,
-        h: bh,
-    };
-    let zoom = bw / BOARD_W as f32;
-    for (i, socket) in f.sockets.iter().enumerate() {
-        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
-        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-open");
-        assert!(
-            near(
-                at,
-                [
-                    x.round(),
-                    y.round(),
-                    SOCKET_W as f32 * zoom,
-                    SOCKET_H as f32 * zoom
-                ]
-            ),
-            "socket {i} at {at:?} mid-open"
-        );
-    }
-    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
-    let want_chip = grown(
+    assert_parts_on_board(
+        &lifting,
+        &f,
         Placed {
-            x: cx,
-            y: cy,
-            w: CHIP_W as f32 * zoom,
-            h: CHIP_H as f32 * zoom,
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
         },
-        TURN_PAD as f32 * zoom,
-    );
-    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-open");
-    assert!(
-        near(
-            chip,
-            [
-                want_chip.x.round(),
-                want_chip.y.round(),
-                want_chip.w,
-                want_chip.h
-            ]
-        ),
-        "the chip is not riding the board mid-open: {chip:?}"
+        "mid-lift",
     );
 }
 
@@ -1274,54 +1318,24 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         bw < board_at(1.0).w && bw > board_at(0.0).w,
         "the board is not shrinking: {bw}"
     );
+    assert_eq!(
+        alpha_of(&partway, f.board),
+        Some(1.0),
+        "the back half faded mid-close"
+    );
 
     // The sockets and the seated chip shrink with the board rather than staying put, the same
     // check as mid-open run the other way.
-    let board = Placed {
-        x: bx,
-        y: by,
-        w: bw,
-        h: bh,
-    };
-    let zoom = bw / BOARD_W as f32;
-    for (i, socket) in f.sockets.iter().enumerate() {
-        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
-        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-close");
-        assert!(
-            near(
-                at,
-                [
-                    x.round(),
-                    y.round(),
-                    SOCKET_W as f32 * zoom,
-                    SOCKET_H as f32 * zoom
-                ]
-            ),
-            "socket {i} at {at:?} mid-close"
-        );
-    }
-    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
-    let want_chip = grown(
+    assert_parts_on_board(
+        &partway,
+        &f,
         Placed {
-            x: cx,
-            y: cy,
-            w: CHIP_W as f32 * zoom,
-            h: CHIP_H as f32 * zoom,
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
         },
-        TURN_PAD as f32 * zoom,
-    );
-    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-close");
-    assert!(
-        near(
-            chip,
-            [
-                want_chip.x.round(),
-                want_chip.y.round(),
-                want_chip.w,
-                want_chip.h
-            ]
-        ),
-        "the chip is not riding the board mid-close: {chip:?}"
+        "mid-close",
     );
 
     let_it_close(&mut app);
@@ -1343,4 +1357,65 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         })
         .count();
     assert_eq!(standing, 1, "the cart did not go back on the shelf");
+}
+
+/// Pressed before the cart's faces are up, the cart stands on the shelf until they arrive and
+/// opens from there. An open timed from the press would have spent the wait as animation that
+/// never reached the panel.
+#[test]
+fn the_open_waits_on_the_shelf_for_its_faces() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(0.3);
+    let f = fake_picker_faces(&mut app);
+    app.update(0.016);
+
+    let shelf = grown(shelf_cart(), TURN_PAD as f32);
+    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once the faces arrived");
+    assert!(
+        near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),
+        "the open used up the wait: the lid is at {lid:?}"
+    );
+
+    let_it_open(&mut app);
+    let (rest, _) = lid_at(1.0);
+    let rest = grown(rest, TURN_PAD as f32 * rest.w / CART_W as f32);
+    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once open");
+    assert!(
+        near(lid, [rest.x, rest.y, rest.w, rest.h]),
+        "the lid is not at rest: {lid:?}"
+    );
+}
+
+/// A face that never comes cannot freeze the picker: after a second on the shelf the cart opens
+/// anyway. The faces here were built for the other cart, and do not count for this one.
+#[test]
+fn the_open_starts_anyway_when_the_faces_never_come() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaUp(Btn::Right));
+    assert_eq!(app.selected_stem(), Some("Zzz"));
+    let f = fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Left));
+    app.apply(Action::GbaUp(Btn::Left));
+    assert_eq!(app.selected_stem(), Some("Emerald"));
+
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(0.3);
+    let shelf = grown(shelf_cart(), TURN_PAD as f32);
+    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid while waiting");
+    assert!(
+        near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),
+        "the other cart's faces started the open: the lid is at {lid:?}"
+    );
+
+    app.update(1.1);
+    let_it_open(&mut app);
+    let (rest, _) = lid_at(1.0);
+    let rest = grown(rest, TURN_PAD as f32 * rest.w / CART_W as f32);
+    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once open");
+    assert!(
+        near(lid, [rest.x, rest.y, rest.w, rest.h]),
+        "the cart never opened without its faces: the lid is at {lid:?}"
+    );
 }
