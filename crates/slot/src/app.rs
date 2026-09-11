@@ -99,11 +99,16 @@ const POWER_MENU_PITCH: f32 = 44.0;
 /// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
 /// stay separate things rather than one continuous block when the selection moves.
 const POWER_MENU_BAR_INSET: f32 = 4.0;
-/// How far the row makes way while a cart is open, as `Shelf::draw_row` counts `recede`. One
-/// number moves the neighbours and dims them, so it is set by where they stand: here they come
-/// to rest at -41 and 574, where the mockup frames the open cart with them, and dim to about
-/// two fifths. Parted far enough to dim to a quarter, they left the open cart alone in the frame.
+/// How far the row makes way while a cart is open, as `Shelf::draw_row` counts `recede`. It is
+/// set by where the neighbours stand: here they come to rest at -41 and 574, where the mockup
+/// frames the open cart with them. Parted far enough for the recede alone to dim them to a
+/// quarter, they left the open cart alone in the frame.
 const CORE_PICKER_RECEDE: f32 = 0.26;
+/// How much further the neighbours' faces darken while a cart is open, since the recede that
+/// stands them in place dims them only part of the way. At it a side cart's face is at
+/// `SIDE_ALPHA * (1 - CORE_PICKER_RECEDE)` = 0.55 * 0.74 = 0.407, and the mockup has it at a
+/// quarter: 0.25 / 0.407 = 0.614.
+const CORE_PICKER_DIM: f32 = 0.614;
 /// The legend's line, under the open cart and clear of the case band.
 const CORE_LEGEND_Y: f32 = 386.0;
 /// The soft oval under the resting lid, as the mockup draws it: its size, how far below the
@@ -1459,8 +1464,11 @@ impl App {
                     // rest of the row makes way for it the way it does for a cart going in.
                     (Some(picker), Some(stem)) => {
                         let open = picker.openness(self.now());
+                        // Dimmed by as much of the open as has happened, so the dark arrives
+                        // with the lid coming off and leaves with it going back on.
+                        let dim = 1.0 + (CORE_PICKER_DIM - 1.0) * open;
                         self.shelf
-                            .draw_row(Some(stem), 0.0, CORE_PICKER_RECEDE * open, out);
+                            .draw_row(Some(stem), 0.0, CORE_PICKER_RECEDE * open, dim, out);
                         draw_empty_slot(out);
                     }
                     _ => self.shelf.draw(self.shelf_shake(), out),
@@ -1487,7 +1495,7 @@ impl App {
                 // Spec section 3: a resumed cart shows no shelf, not even one frame of it.
                 if !resumed {
                     draw_backdrop(self.wallpaper, out);
-                    self.shelf.draw_row(Some(cart), 0.0, self.seat(), out);
+                    self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 }
                 self.chrome(cart, self.seat(), out);
             }
@@ -1497,7 +1505,7 @@ impl App {
             // playing the same movement twice rather than reversing it.
             Phase::Ejecting { cart, .. } => {
                 draw_backdrop(self.wallpaper, out);
-                self.shelf.draw_row(Some(cart), 0.0, self.seat(), out);
+                self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 self.chrome(cart, self.seat(), out);
             }
             // The slot stays on screen until the picture behind it has finished arriving,

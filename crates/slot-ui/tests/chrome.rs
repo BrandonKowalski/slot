@@ -222,7 +222,7 @@ fn the_cart_catches_on_the_lip_before_going_in() {
 #[test]
 fn an_unseated_cart_stands_where_the_shelf_left_it() {
     let mut shelf = Vec::new();
-    Shelf::new(vec![cart()]).draw_row(None, 0.0, 0.0, &mut shelf);
+    Shelf::new(vec![cart()]).draw_row(None, 0.0, 0.0, 1.0, &mut shelf);
     let on_shelf = quad(&shelf[cart_at(&shelf)]);
 
     let out = chrome(0.0);

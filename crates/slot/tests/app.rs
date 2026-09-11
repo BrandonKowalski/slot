@@ -968,6 +968,31 @@ fn the_sockets_and_the_seated_chip_rest_on_whole_pixels() {
     );
 }
 
+/// The row parts to where the mockup stands the neighbours and dims them to a quarter, as it has
+/// them. The recede alone, set by where they stand, left their faces at 0.41.
+#[test]
+fn the_neighbours_dim_to_a_quarter_while_a_cart_is_open() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let faces = vec![TexId::from_raw(920), TexId::from_raw(921)];
+    app.set_faces(faces.clone());
+    fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    let out = frame(&app);
+
+    let alpha = out
+        .iter()
+        .find_map(|d| match *d {
+            Draw::Tex { tex, alpha, .. } if tex == faces[1] => Some(alpha),
+            _ => None,
+        })
+        .expect("the neighbour is not on screen while the cart is open");
+    assert!(
+        (alpha - 0.25).abs() <= 0.01,
+        "the neighbour's face is at {alpha}, not a quarter"
+    );
+}
+
 /// Which socket the chip lands in follows the arrow. A swapped `CHIP_U` index, or an `across`
 /// inverted from what the picker reports, would still draw a chip named `chips[1]` somewhere on
 /// the board and pass a test that only asked whether it was there.
