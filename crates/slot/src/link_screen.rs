@@ -48,6 +48,9 @@ const PICK_BASE: f32 = 336.0;
 const ARC_MS: f32 = 1200.0;
 const ARC_STAGGER_MS: f32 = 300.0;
 const ARROW_ALPHA: f32 = 0.7;
+/// The glow's pulse while waiting: dimmest at the top of the bob, brightest nearest the port.
+const GLOW_MID: f32 = 0.725;
+const GLOW_SWING: f32 = 0.275;
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     if t >= 1.0 {
@@ -89,6 +92,15 @@ fn working_arcs(since: Millis, now: Millis) -> [f32; 3] {
         }
     }
     out
+}
+
+fn working_glow(since: Millis, now: Millis) -> f32 {
+    let t = now.saturating_sub(since);
+    if t < DROP_MS {
+        lerp(1.0, GLOW_MID - GLOW_SWING, eased(now, since, DROP_MS))
+    } else {
+        GLOW_MID - GLOW_SWING * (TAU * (t - DROP_MS) as f32 / BOB_MS).cos()
+    }
 }
 
 pub fn plug_tip(menu: GameMenu, now: Millis) -> f32 {
@@ -165,11 +177,16 @@ pub fn clicks_alpha(menu: GameMenu, now: Millis) -> f32 {
 
 pub fn glow_alpha(menu: GameMenu, now: Millis) -> f32 {
     match menu {
-        GameMenu::Working { since, .. } if now.saturating_sub(since) >= DROP_MS => {
-            0.725 - 0.275 * (TAU * (now - since - DROP_MS) as f32 / BOB_MS).cos()
+        GameMenu::Pick(_) => 1.0,
+        GameMenu::Working { since, .. } => working_glow(since, now),
+        GameMenu::Linked { worked, since, .. } => {
+            lerp(working_glow(worked, since), 1.0, eased(now, since, SEAT_MS))
         }
-        GameMenu::Failed { .. } => art_alpha(menu, now),
-        _ => 1.0,
+        GameMenu::Failed { worked, since, .. } => lerp(
+            working_glow(worked, since),
+            FAILED_ALPHA,
+            eased(now, since, LIFT_MS),
+        ),
     }
 }
 

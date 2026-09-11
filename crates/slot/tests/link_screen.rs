@@ -201,3 +201,36 @@ fn a_failed_plug_is_drawn_turned() {
         |d| matches!(d, Draw::Turned { tex, turn, .. } if *tex == s.plug_host.tex && *turn > 0.2)
     ));
 }
+
+#[test]
+fn the_glow_eases_between_states_too() {
+    let m = working(LinkRow::Host, 1000);
+    assert_eq!(glow_alpha(m, 1000), 1.0);
+    assert!(
+        (glow_alpha(m, 1199) - glow_alpha(m, 1200)).abs() < 0.02,
+        "the glow stepped at the end of the drop"
+    );
+    let (worked, since) = (1000, 2700);
+    let waiting = glow_alpha(working(LinkRow::Host, worked), since);
+    let linked = GameMenu::Linked {
+        role: LinkRow::Host,
+        worked,
+        since,
+    };
+    assert!(
+        (glow_alpha(linked, since) - waiting).abs() < 1e-4,
+        "the glow jumped when the link came up"
+    );
+    assert!((glow_alpha(linked, since + 160) - 1.0).abs() < 1e-4);
+    let failed = GameMenu::Failed {
+        role: LinkRow::Host,
+        fail: LinkFail::NobodyCame,
+        worked,
+        since,
+    };
+    assert!(
+        (glow_alpha(failed, since) - waiting).abs() < 1e-4,
+        "the glow jumped when the link failed"
+    );
+    assert!((glow_alpha(failed, since + 250) - 0.45).abs() < 1e-4);
+}
