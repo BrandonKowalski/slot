@@ -9,8 +9,8 @@ use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V,
-    SOCKET_W, TURN_PAD,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U,
+    SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -1106,23 +1106,24 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     assert!(shadow_i < lid_i, "the lid's shadow is drawn over the lid");
 
-    // Back under the cart's left edge, Swap on the panel's centre line, Choose ending under the
-    // cart's right edge. The fake widths are 60, 90 and 80.
-    let [back, swap, choose] = f.legend;
+    // Cancel under the cart's left edge, Swap centred by what shows, Choose's word ending under
+    // the cart's right edge. A hint face's last HINT_EDGE pixels are transparent, so they do not
+    // count toward where it sits.
+    let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
-    assert_eq!(at(back.0), [174.0, 386.0, back.1 as f32, HINT_H as f32]);
+    let seen = |w: u32| (w - HINT_EDGE) as f32;
+    assert_eq!(at(cancel.0), [174.0, 386.0, cancel.1 as f32, HINT_H as f32]);
     assert_eq!(
-        at(swap.0)[0] + swap.1 as f32 / 2.0,
+        at(swap.0)[0] + seen(swap.1) / 2.0,
         360.0,
         "Swap is off the panel's centre"
     );
-    assert_eq!(at(swap.0)[1], 386.0);
     assert_eq!(
-        at(choose.0)[0] + choose.1 as f32,
+        at(choose.0)[0] + seen(choose.1),
         546.0,
-        "Choose does not end at the cart's right edge"
+        "Choose does not end at the cart's edge"
     );
-    assert_eq!(at(choose.0)[1], 386.0);
+    assert_eq!((at(swap.0)[1], at(choose.0)[1]), (386.0, 386.0));
 }
 
 /// A face drawn at its own size is only sharp on whole pixels. At a fractional place the linear

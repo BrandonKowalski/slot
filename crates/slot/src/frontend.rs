@@ -194,7 +194,7 @@ impl Frontend {
         // Every action the picker takes, the way out first and the choice last, as the
         // switcher's legend is ordered.
         let legend = [
-            hint_face("B", "Back"),
+            hint_face("B", "Cancel"),
             arrows_hint_face("Swap"),
             hint_face("A", "Choose"),
         ]

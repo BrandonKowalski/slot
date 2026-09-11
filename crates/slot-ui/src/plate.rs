@@ -24,6 +24,9 @@ pub const HINT_GAP: f32 = 14.0;
 pub const CAP_GAP: u32 = 5;
 /// Blank column past the type, so a label that filled its band cannot touch the next hint.
 const EDGE: u32 = 2;
+/// The transparent strip every hint face carries after its label, so type never touches the
+/// face's last column. Whoever lines a hint up against something should not count it.
+pub const HINT_EDGE: u32 = EDGE;
 /// The longest a label may rasterise to before the fitter shrinks it. The undo is the only
 /// one that comes from outside this file.
 const LABEL_MAX_W: f32 = 140.0;

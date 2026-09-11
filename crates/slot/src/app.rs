@@ -12,8 +12,8 @@ use slot_ui::{
     board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
     lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed,
     Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U,
-    SOCKET_V, SOCKET_W, TURN_PAD,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H,
+    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -324,8 +324,8 @@ pub struct App {
     /// The chip in flight, blank, and the shadow under it.
     core_blank_chip_face: Option<TexId>,
     core_chip_shadow_face: Option<TexId>,
-    /// `B` Back, the two arrows, `A` Choose, each with the width it was rastered at, laid out
-    /// by role in that order: Back under the cart's left edge, Swap on the panel's centre,
+    /// `B` Cancel, the two arrows, `A` Choose, each with the width it was rastered at, laid out
+    /// by role in that order: Cancel under the cart's left edge, Swap on the panel's centre,
     /// Choose under its right edge.
     core_legend_faces: Vec<(TexId, u32)>,
     /// Open when SELECT+MENU raised the in-game menu over a running game. An overlay rather
@@ -1841,15 +1841,16 @@ impl App {
             });
         }
 
-        // Back under the open cart's left edge, Swap on the panel's centre line, Choose under
-        // its right edge: the row belongs to the cart above it, and the control the screen is
-        // about sits in the middle.
-        if let [back, swap, choose] = self.core_legend_faces.as_slice() {
+        // Cancel under the open cart's left edge, Swap centred on the panel, Choose under its
+        // right edge, each placed by what shows of it — the key caps and the word — and not by
+        // the transparent strip every hint face carries after its label.
+        if let [cancel, swap, choose] = self.core_legend_faces.as_slice() {
             let right = BOARD_X + BOARD_W as f32;
+            let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
             for (tex, w, x) in [
-                (back.0, back.1, BOARD_X),
-                (swap.0, swap.1, ((OUT_W - swap.1) / 2) as f32),
-                (choose.0, choose.1, right - choose.1 as f32),
+                (cancel.0, cancel.1, BOARD_X),
+                (swap.0, swap.1, (OUT_W as f32 - seen(swap.1)) / 2.0),
+                (choose.0, choose.1, right - seen(choose.1)),
             ] {
                 out.push(Draw::Tex {
                     x: x.round(),
