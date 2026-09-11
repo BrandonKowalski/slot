@@ -18,7 +18,7 @@ const VIDEO_BYTES: usize = (GBA_W * GBA_H * 4) as usize;
 /// the first one's machine.
 static LIVE: AtomicBool = AtomicBool::new(false);
 
-/// The buildbot core is compiled `COLOR_16_BIT`, so it only ever offers RGB565 and the
+/// mGBA's libretro build is compiled `COLOR_16_BIT`, so it only ever offers RGB565 and the
 /// host converts. A core built the other way needs no conversion.
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum PixelFormat {

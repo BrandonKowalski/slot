@@ -23,6 +23,8 @@ jobs:
     outputs:
       zip: ${{ steps.package.outputs.zip }}
       mgba_sha: ${{ steps.package.outputs.mgba_sha }}
+      mgba_head: ${{ steps.package.outputs.mgba_head }}
+      mgba_patches: ${{ steps.package.outputs.mgba_patches }}
       gpsp_sha: ${{ steps.package.outputs.gpsp_sha }}
       core_date: ${{ steps.package.outputs.core_date }}
       gpsp_head: ${{ steps.package.outputs.gpsp_head }}
@@ -32,12 +34,15 @@ jobs:
       - uses: actions/checkout@v7
 
       # The image already carries curl, file and unzip, which the fetch and the arch check
-      # need. zip is the only thing missing.
-      - name: Install zip and Task
+      # need. zip is missing, and so is cmake, which core:device builds mGBA with. Bullseye is
+      # past its security support, so its Release files are no longer re-signed and apt refuses
+      # them as expired unless told the date does not matter; nothing installed here needs a
+      # security update.
+      - name: Install zip, cmake and Task
         run: |
           set -eu
-          apt-get update
-          apt-get install -y --no-install-recommends zip
+          apt-get -o Acquire::Check-Valid-Until=false update
+          apt-get install -y --no-install-recommends zip cmake
           curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
 
       # Named for the tag, so what comes out of the archive says which version it is rather
@@ -62,6 +67,14 @@ jobs:
           gpsp_src_sha="$(cat vendor/gpsp-src.sha)"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.tar.gz"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.meta"
+          # MPL-2.0: mGBA ships patched, so what changed travels with it. `task dist:device`
+          # names the .meta for the commit cores/mgba/build.sh recorded, and every patch that
+          # build applied ships beside it.
+          mgba_src_commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
+          test -f "$out/System/licenses/mgba-${mgba_src_commit}.meta"
+          for p in cores/mgba/*.patch; do
+            test -f "$out/System/licenses/mgba-$(basename "$p")"
+          done
 
       - name: Package
         id: package
@@ -72,14 +85,17 @@ jobs:
           zip -qry "$zip" "$out"
           {
             echo "zip=$zip"
-            # Recorded rather than pinned: both cores are whatever the buildbot was serving
-            # as latest when this ran, and a release should be able to say which ones those
-            # were. Both are hashed, not only mGBA's — the release ships gpSP's binary too,
-            # and a card with a corrupted or substituted gpSP core deserves the same way to
-            # check it against the announcement as mGBA already had.
+            # gpSP is recorded rather than pinned: it is whatever the buildbot was serving as
+            # latest when this ran, and a release should be able to say which one that was.
+            # mGBA is built from the pin in taskfile.yml instead. Both are hashed, so a card
+            # with a corrupted or substituted core can be checked against the announcement.
             echo "mgba_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
             echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
             echo "core_date=$(date -u +%Y-%m-%d)"
+            # mGBA's source, read back from the .meta cores/mgba/build.sh wrote beside the core
+            # that shipped: the libretro/mgba commit, and the patches applied on top of it.
+            echo "mgba_head=$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
+            echo "mgba_patches=$(grep '^patch=' vendor/mgba_libretro.so.meta | cut -d= -f2 | cut -d' ' -f1 | paste -sd' ' -)"
             # The commit whose source archive actually shipped in this zip (see
             # licenses/README.md) — read back from what core:gpsp recorded, not re-resolved
             # here, so this can never name a different commit than the file the "Check what
@@ -119,6 +135,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ZIP: ${{ needs.build.outputs.zip }}
           MGBA_SHA: ${{ needs.build.outputs.mgba_sha }}
+          MGBA_HEAD: ${{ needs.build.outputs.mgba_head }}
+          MGBA_PATCHES: ${{ needs.build.outputs.mgba_patches }}
           GPSP_SHA: ${{ needs.build.outputs.gpsp_sha }}
           CORE_DATE: ${{ needs.build.outputs.core_date }}
           GPSP_HEAD: ${{ needs.build.outputs.gpsp_head }}
@@ -132,13 +150,18 @@ jobs:
           | | |
           |---|---|
           | \`System/slot\` | aarch64, built against glibc 2.31 |
-          | \`System/mgba_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${MGBA_SHA}\` |
+          | \`System/mgba_libretro.so\` | built from libretro/mgba @ \`${MGBA_HEAD}\` with \`${MGBA_PATCHES}\` applied, sha256 \`${MGBA_SHA}\` |
           | \`System/gpsp_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${GPSP_SHA}\` |
+          | \`System/licenses/mgba-${MGBA_HEAD}.meta\` | mGBA's source commit and the patches applied, which ship beside it as \`mgba-*.patch\` |
           | \`System/licenses/gpsp-${GPSP_HEAD}.tar.gz\` | gpSP source, libretro/gpsp \`master\` @ \`${GPSP_HEAD}\` |
           | \`System/licenses/gpsp-${GPSP_HEAD}.meta\` | anchor \`${GPSP_ANCHOR}\`, resolved via \`${GPSP_METHOD}\` |
 
-          mGBA is MPL-2.0, gpSP is GPL-2.0 — both shipped as unmodified libretro cores, both
-          credited with their license text under \`System/licenses/\`. gpSP's corresponding
+          mGBA is MPL-2.0 and gpSP is GPL-2.0, both credited with their license text under
+          \`System/licenses/\`. mGBA ships patched: libretro/mgba had not picked up upstream
+          mGBA's fix for the Classic NES Series audio, so the core is built from libretro/mgba at
+          \`${MGBA_HEAD}\` with that fix applied. The patch ships under \`System/licenses/\`, and
+          the rest of mGBA's source is public at that commit. gpSP ships as the unmodified
+          buildbot nightly, and its corresponding
           source ships in this zip too, per GPL-2.0 section 3(a): the buildbot does not publish
           which commit a nightly was built from, so what ships is \`master\` as of
           \`${GPSP_ANCHOR}\` — the timestamp the buildbot itself stamped onto this release's

@@ -1,25 +1,34 @@
 # Third-party licenses
 
 `slot` itself is MIT (see the repo's top-level `LICENSE`). The release also distributes two
-compiled libretro cores it did not write, unmodified, fetched by `taskfile.yml`'s `core:gpsp`
-and `core:device`/`core` tasks from the official libretro buildbot:
+compiled libretro cores it did not write:
 
-| Core            | Upstream                                | License  | Text here                |
+| Core            | Source                                   | License  | Text here                |
 |-----------------|------------------------------------------|----------|---------------------------|
 | `gpsp_libretro`  | https://github.com/libretro/gpsp        | GPL-2.0  | `gpsp-GPL-2.0.txt`        |
-| `mgba_libretro`  | https://github.com/mgba-emu/mgba        | MPL-2.0  | `mgba-MPL-2.0.txt`        |
+| `mgba_libretro`  | https://github.com/libretro/mgba        | MPL-2.0  | `mgba-MPL-2.0.txt`        |
 
 gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core above is the
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
+libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba.
 
-Both cores are conveyed here only in the executable form the libretro buildbot publishes —
-`slot` never links against or modifies either. `taskfile.yml`'s `dist:device` task copies this
-directory into the shipped tree alongside the cores it licenses, so a card built from this
-repo carries the same notice the release zip does.
+gpSP is conveyed unmodified, in the executable form the libretro buildbot publishes, fetched by
+`taskfile.yml`'s `core:gpsp`. mGBA is built by this repo instead: `cores/mgba/build.sh`, run by
+`core:device` and `core:mgba:host`, builds libretro/mgba at a pinned commit with the patches in
+`cores/mgba/` applied. `slot` never links against either. `taskfile.yml`'s `dist:device` task
+copies this directory into the shipped tree alongside the cores it licenses, so a card built
+from this repo carries the same notice the release zip does.
 
-- **MPL-2.0 (mGBA):** the Source Code Form of the Covered Software is available under the
-  same license at the repository above. That is what MPL-2.0 section 3.1 requires and what
-  recipients be told, and this paragraph is that notice.
+- **MPL-2.0 (mGBA): this build is modified, and the modifications ship in this directory.**
+  The core is libretro/mgba at the commit recorded in `mgba-<commit>.meta`, with every patch
+  from `cores/mgba/` applied. Each patch ships here too, its file name prefixed `mgba-`, and is
+  itself under MPL-2.0; the rest of the Source Code Form is public at
+  https://github.com/libretro/mgba at that commit. That is what MPL-2.0 sections 3.1 and 3.2
+  require recipients be told, and this paragraph is that notice.
+
+  The one patch today is upstream mGBA's own fix for the Classic NES Series audio,
+  https://github.com/mgba-emu/mgba/commit/685023e05d90d87050fb357f46f7bd2d907083f5, which
+  libretro/mgba had not picked up when this build was set up. Once it has, the patch can go.
 
 - **GPL-2.0 (gpSP): the corresponding source ships in this directory, under section 3(a).**
   Section 3 allows conveying object code three ways: with the corresponding source, with a

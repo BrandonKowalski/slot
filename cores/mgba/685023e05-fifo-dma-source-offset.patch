@@ -1,0 +1,43 @@
+From 685023e05d90d87050fb357f46f7bd2d907083f5 Mon Sep 17 00:00:00 2001
+From: Ryan McClelland <rymcclel@gmail.com>
+Date: Fri, 4 Sep 2026 19:41:33 -0700
+Subject: [PATCH] fix(gba/audio): rescale the FIFO DMA source offset to 32-bit
+ width
+
+Upstream 2deb4aa6f ("GBA DMA: Minor refactoring; cache offsets") caches a
+DMA's sourceOffset and destOffset when CNT_HI is written, from the width the
+game programmed. GBAAudioScheduleFifoDma then forces the FIFO DMA to 32-bit
+and fixed destination and zeroes destOffset, but leaves sourceOffset at the
+old width. A FIFO DMA the game set up as 16-bit therefore steps its source by
+2 bytes while transferring 4-byte words, and the FIFO plays doubled,
+misaligned sample bytes -- a ~100 Hz square wave under the music, heard as
+"deep and underwater" on the Classic NES Series and the e-Reader NES cards.
+Games that program the DMA 32-bit never hit it, which is why Super Mario
+Advance was clean on the same core (bit-identical before and after).
+
+Bisected against Classic NES Series - The Legend of Zelda with a hard-jump
+oracle: 4062fb985 clean, 2deb4aa6f and every later commit 46/s, this fix 0/s,
+and the spectrum lands within 1 dB of 0.10.5 in every band to 5 kHz.
+---
+ src/gba/audio.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/gba/audio.c b/src/gba/audio.c
+index 1e913554ff9..278e8783239 100644
+--- a/src/gba/audio.c
++++ b/src/gba/audio.c
+@@ -106,6 +106,14 @@ void GBAAudioScheduleFifoDma(struct GBAAudio* audio, int number, struct GBADMA*
+ 	info->reg = GBADMARegisterSetDestControl(info->reg, GBA_DMA_FIXED);
+ 	info->reg = GBADMARegisterSetWidth(info->reg, 1);
+ 	info->destOffset = 0;
++	// The width was just forced to 32-bit, but sourceOffset was cached at CNT_HI
++	// write time from the width the game programmed. Rescale it, keeping the
++	// direction the source control selected.
++	if (info->sourceOffset > 0) {
++		info->sourceOffset = 4;
++	} else if (info->sourceOffset < 0) {
++		info->sourceOffset = -4;
++	}
+ 	switch (info->dest) {
+ 	case GBA_BASE_IO | GBA_REG_FIFO_A_LO:
+ 		audio->chA.dmaSource = number;

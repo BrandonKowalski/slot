@@ -3,6 +3,11 @@ version: '3'
 vars:
   CORE: vendor/mgba_libretro.dylib
   GPSP_HOST: vendor/gpsp_libretro.dylib
+  # mGBA is built rather than fetched: libretro/mgba at this commit, which is what the buildbot
+  # was serving when issue #1 was found, with cores/mgba's patches on top. The buildbot builds
+  # the same fork, and that fork lacks upstream's fix for the Classic NES Series audio
+  # (mgba-emu/mgba 685023e05). Once libretro/mgba carries it, drop the patch and fetch again.
+  MGBA_COMMIT: e31759b24e7a4e3899285ff720d7b573ac328ae7
 
 tasks:
   default:
@@ -64,32 +69,25 @@ tasks:
 
   core:
     desc: >-
-      Fetch both host cores. gpSP is selectable per game, so a host that only has mGBA
-      silently runs the mock instead - a rainbow test pattern and a sine tone, which reads
-      as "gpSP is broken" rather than "gpSP is missing"
+      Build mGBA and fetch gpSP for this host. gpSP is selectable per game, so a host that
+      only has mGBA silently runs the mock instead - a rainbow test pattern and a sine tone,
+      which reads as "gpSP is broken" rather than "gpSP is missing"
     cmds:
       - task: core:mgba:host
       - task: core:gpsp:host
 
   core:mgba:host:
-    desc: Fetch mgba_libretro from the libretro buildbot
+    desc: Build mgba_libretro for this host from the pinned libretro/mgba commit and cores/mgba's patches
+    # Built, not fetched: see MGBA_COMMIT above. The .meta beside the core is what `status`
+    # compares, so a changed pin or patch rebuilds, and a buildbot core left in vendor/ from
+    # before (it has no .meta) is replaced rather than trusted.
     status:
       - test -f {{.CORE}}
+      - test "$(cat {{.CORE}}.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
-      - |
-        set -euo pipefail
-        case "$(uname -m)" in
-          arm64)  arch=arm64 ;;
-          x86_64) arch=x86_64 ;;
-          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
-        esac
-        mkdir -p vendor
-        curl -fsSL -o vendor/mgba.zip \
-          "https://buildbot.libretro.com/nightly/apple/osx/${arch}/latest/mgba_libretro.dylib.zip"
-        unzip -o -q vendor/mgba.zip -d vendor
-        rm -f vendor/mgba.zip
-        file {{.CORE}} | grep -q Mach-O
-        echo "fetched {{.CORE}}"
+      - sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target/mgba {{.CORE}}
+      - file {{.CORE}} | grep -q Mach-O
+      - 'echo "built {{.CORE}}"'
 
   core:gpsp:host:
     desc: Fetch the host gpSP core from the libretro buildbot
@@ -115,9 +113,9 @@ tasks:
         echo "fetched {{.GPSP_HOST}}"
 
   core:update:
-    desc: Re-fetch the host cores even if they are already vendored
+    desc: Rebuild mGBA and re-fetch gpSP for this host even if they are already vendored
     cmds:
-      - rm -f {{.CORE}} {{.GPSP_HOST}}
+      - rm -f {{.CORE}} {{.CORE}}.meta {{.GPSP_HOST}}
       - task: core
 
   icons:
@@ -192,19 +190,19 @@ tasks:
       - 'echo "dist ready at {{.OUT}}, copy its contents to SD2"'
 
   core:device:
-    desc: Fetch the aarch64 linux mgba core for the device bundle
+    desc: Build the aarch64 linux mgba core for the device bundle, in the box the device build uses
+    # Same script, pin, patches and .meta check as core:mgba:host, run where `build:device`
+    # runs, so the core links against the same glibc 2.31 as slot. Its own work directory,
+    # since a cmake build tree cannot be shared between two toolchains.
     status:
       - test -f vendor/mgba_libretro.so
+      - test "$(cat vendor/mgba_libretro.so.meta 2>/dev/null)" = "$(sh cores/mgba/build.sh stamp {{.MGBA_COMMIT}})"
     cmds:
-      - |
-        set -euo pipefail
-        mkdir -p vendor
-        curl -fsSL -o vendor/mgba-linux.zip \
-          "https://buildbot.libretro.com/nightly/linux/aarch64/latest/mgba_libretro.so.zip"
-        unzip -o -q vendor/mgba-linux.zip -d vendor
-        rm -f vendor/mgba-linux.zip
-        file vendor/mgba_libretro.so | grep -q aarch64
-        echo "fetched vendor/mgba_libretro.so"
+      - task: device:sh
+        vars:
+          CMD: sh cores/mgba/build.sh build {{.MGBA_COMMIT}} target-device/mgba vendor/mgba_libretro.so
+      - file vendor/mgba_libretro.so | grep -q aarch64
+      - 'echo "built vendor/mgba_libretro.so"'
 
   core:gpsp:
     desc: >-
@@ -379,6 +377,17 @@ tasks:
         sha="$(cat vendor/gpsp-src.sha)"
         cp vendor/gpsp-src.tar.gz "{{.OUT}}/System/licenses/gpsp-${sha}.tar.gz"
         cp vendor/gpsp-src.meta "{{.OUT}}/System/licenses/gpsp-${sha}.meta"
+      # MPL-2.0: mGBA ships patched, so what changed travels with it. Every patch
+      # cores/mgba/build.sh applied lands here, prefixed `mgba-`, beside the .meta naming the
+      # libretro/mgba commit they apply to, whose source is public there. The .meta is named for
+      # that commit, as gpSP's files are.
+      - |
+        set -euo pipefail
+        commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
+        cp vendor/mgba_libretro.so.meta "{{.OUT}}/System/licenses/mgba-${commit}.meta"
+        for p in cores/mgba/*.patch; do
+          cp "$p" "{{.OUT}}/System/licenses/mgba-$(basename "$p")"
+        done
       - 'echo "device tree ready at {{.OUT}}, copy its contents to SD2"'
 
   deploy:device:
@@ -409,6 +418,14 @@ tasks:
         sha="$(cat vendor/gpsp-src.sha)"
         adb push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
         adb push vendor/gpsp-src.meta "{{.SD}}/System/licenses/gpsp-${sha}.meta"
+      # Same as dist:device: mGBA's patches, and the .meta naming the commit they apply to.
+      - |
+        set -euo pipefail
+        commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
+        adb push vendor/mgba_libretro.so.meta "{{.SD}}/System/licenses/mgba-${commit}.meta"
+        for p in cores/mgba/*.patch; do
+          adb push "$p" "{{.SD}}/System/licenses/mgba-$(basename "$p")"
+        done
       - adb shell 'chmod +x {{.SD}}/System/slot && sync'
       - adb reboot
       - adb wait-for-device
