@@ -965,3 +965,36 @@ fn a_joiner_can_be_cancelled_while_it_is_retrying() {
         "the bound was a minute; cancellation is what ended this"
     );
 }
+
+/// A raw peer going away is what a player switching off looks like on the wire. The link has
+/// to be able to say so, rather than looking like a peer that is only thinking.
+#[test]
+fn a_link_whose_peer_goes_away_reports_itself_closed() {
+    let port = 45889;
+    let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
+    let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
+    let client = TcpLink::join("127.0.0.1", port).expect("join");
+    let host_raw = acceptor.join().expect("accept thread");
+    assert!(!client.is_closed(), "closed before anything went away");
+    drop(host_raw);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !client.is_closed() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never noticed the peer leave"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_quiet_link_is_not_closed() {
+    let port = 45890;
+    let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
+    let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
+    let client = TcpLink::join("127.0.0.1", port).expect("join");
+    let _host_raw = acceptor.join().expect("accept thread");
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(!client.is_closed());
+    assert!(!slot_retro::LoopbackLink::default().is_closed());
+}

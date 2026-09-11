@@ -21,6 +21,12 @@ pub trait LinkChannel: Send {
     /// that has gone quiet is indistinguishable from one that is still thinking, and neither
     /// is a reason to stop the frame.
     fn try_recv(&mut self) -> Option<Vec<u8>>;
+
+    /// Whether the other end is known to have gone. Only a transport that can tell a closed
+    /// wire from a quiet one says yes; the default is a transport that never closes by itself.
+    fn is_closed(&self) -> bool {
+        false
+    }
 }
 
 /// Hands back whatever was put in, in the order it was sent. No network, no peer, no

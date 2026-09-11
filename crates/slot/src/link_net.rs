@@ -65,6 +65,9 @@ pub struct TcpLink {
     /// `try_clone` of the same socket, a dup at the OS level, so a shutdown through this
     /// handle reaches both of theirs too.
     stream: TcpStream,
+    /// Set by the reader thread the moment a read on the socket fails — the peer is gone, not
+    /// merely quiet. `try_recv` alone cannot tell the two apart: both look like `None` forever.
+    closed: Arc<AtomicBool>,
 }
 
 impl TcpLink {
@@ -191,16 +194,22 @@ impl TcpLink {
         let mut writer = stream.try_clone()?;
         let (rtx, inbox) = channel();
         let (wtx, wrx) = channel::<Vec<u8>>();
+        let closed = Arc::new(AtomicBool::new(false));
+        let reader_closed = closed.clone();
 
         std::thread::spawn(move || {
             let mut header = [0u8; 2];
             loop {
                 if reader.read_exact(&mut header).is_err() {
-                    return; // peer gone; the session notices by starving, not by a panic
+                    // The peer is gone. Said out loud now, so the session can end the link
+                    // instead of starving on it.
+                    reader_closed.store(true, Ordering::Release);
+                    return;
                 }
                 let len = u16::from_be_bytes(header) as usize;
                 let mut buf = vec![0u8; len];
                 if len > 0 && reader.read_exact(&mut buf).is_err() {
+                    reader_closed.store(true, Ordering::Release);
                     return;
                 }
                 if rtx.send(buf).is_err() {
@@ -235,6 +244,7 @@ impl TcpLink {
             outbox: wtx,
             inbox,
             stream,
+            closed,
         })
     }
 
@@ -276,5 +286,9 @@ impl LinkChannel for TcpLink {
             Ok(p) => Some(p),
             Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => None,
         }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
     }
 }
