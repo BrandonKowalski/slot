@@ -14,7 +14,7 @@ use slot_ui::{
     Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
-use crate::app::{App, GameRow, LinkRow, Phase};
+use crate::app::{App, LinkRow, Phase};
 use crate::build_info::Build;
 use crate::face_builder::FaceBuilder;
 use crate::link_start::{LinkFail, LinkStep};
@@ -219,10 +219,21 @@ impl Frontend {
         // same rasteriser as the two menus above, because they are the same object — and all
         // of it at boot, because a link that is failing is the worst moment to be asking a
         // font for a sentence.
-        let rows = menu_faces(compositor, GameRow::ALL.iter().map(|r| r.text()));
-        self.session.app_mut().set_game_menu_faces(rows);
-        let link = menu_faces(compositor, LinkRow::ALL.iter().map(|r| r.text()));
-        self.session.app_mut().set_link_menu_faces(link);
+        let roles = menu_faces(compositor, LinkRow::ALL.iter().map(|r| r.text()));
+        self.session.app_mut().set_link_menu_faces(roles);
+        if let Some(linked) = menu_faces(compositor, ["Linked"].into_iter()).pop() {
+            self.session.app_mut().set_link_linked_face(linked);
+        }
+        let legend = [
+            hint_face("B", "Cancel"),
+            arrows_hint_face("Swap"),
+            hint_face("A", "Link"),
+            hint_face("A", "OK"),
+        ]
+        .into_iter()
+        .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
+        .collect();
+        self.session.app_mut().set_link_legend_faces(legend);
         let steps = menu_faces(compositor, LinkStep::ALL.iter().map(|s| s.line()));
         self.session.app_mut().set_link_step_faces(steps);
         let fails = menu_faces(compositor, LinkFail::SHOWN.iter().map(|f| f.line()));
