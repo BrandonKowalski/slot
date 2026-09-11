@@ -2,8 +2,7 @@
   <!-- The back half of a cart with the front slid off, and the board in it, after a photograph
        of an opened cartridge. Shell parts are placeholder colours that board.rs swaps for the
        cart's own plastic: #ff00ff the wall, #800080 the floor, #400040 the deepest shadow.
-       No text: usvg has no fonts loaded here, so board.rs sets the ROM marking and the cell's
-       print itself. -->
+       No text: usvg has no fonts loaded here, so board.rs sets the ROM marking itself. -->
   <defs>
     <pattern id="fingers" width="6.125" height="24" patternUnits="userSpaceOnUse">
       <rect x="1" width="4.1" height="24" rx=".8" fill="#d4a93c"/>

@@ -8,9 +8,10 @@ use slot_gfx::OUT_W;
 use slot_store::{Cart, Core};
 
 use crate::art;
-use crate::cart::{clean_label, label_tags, CartFace, CART_H, CART_W};
+use crate::cart::{clean_label, CartFace, CART_H, CART_W};
 use crate::shelf::FOOT_Y;
 use crate::shell::shell_for;
+use crate::slot_chrome::ease;
 use crate::text;
 
 const BOARD_SVG: &str = include_str!("../assets/board.svg");
@@ -38,22 +39,13 @@ const MARK_LINES: usize = 3;
 const MARK_PAD: u32 = 4;
 const MARK_PX: f32 = 10.0;
 const MARK_MIN_PX: f32 = 6.0;
-const TAG_PX: f32 = 7.0;
-const TAG_MIN_PX: f32 = 5.0;
 /// Grey on black, as a mask ROM is marked: legible, and nothing like the socket names, which
 /// are the words on the board that mean something.
 const MARK_INK: [u8; 3] = [0xbd, 0xbd, 0xbd];
-const TAG_INK: [u8; 3] = [0x8a, 0x8a, 0x8a];
-const CELL_INK: [u8; 3] = [0x6a, 0x6b, 0x70];
 
-/// What the ROM says: the game a few words to a line, and the dump's tags beneath.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct RomMarking {
-    pub title: Vec<String>,
-    pub tags: Option<String>,
-}
-
-pub fn rom_marking(stem: &str) -> RomMarking {
+/// The game's title, a few words to a line. The dump's bracketed tags are facts about the file
+/// rather than the game, and the chip does not carry them.
+pub fn rom_marking(stem: &str) -> Vec<String> {
     let mut title: Vec<String> = Vec::new();
     for word in clean_label(stem).to_uppercase().split_whitespace() {
         match title.last_mut() {
@@ -68,16 +60,12 @@ pub fn rom_marking(stem: &str) -> RomMarking {
         let tail = title.split_off(MARK_LINES - 1).join(" ");
         title.push(tail);
     }
-    let tags = label_tags(stem);
-    RomMarking {
-        title,
-        tags: (!tags.is_empty()).then(|| tags.join(" · ").to_uppercase()),
-    }
+    title
 }
 
 /// The marking alone, on nothing, the size of the ROM's body.
 pub fn rom_marking_face(stem: &str) -> CartFace {
-    let mark = rom_marking(stem);
+    let title = rom_marking(stem);
     let mut face = CartFace {
         rgba: vec![0; (ROM_W * ROM_H * 4) as usize],
         w: ROM_W,
@@ -88,29 +76,24 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
     };
     let max_w = (ROM_W - 2 * MARK_PAD) as f32;
     let line_h = (MARK_PX * 1.25).ceil() as u32;
-    let tag_h = match mark.tags {
-        Some(_) => (TAG_PX * 1.6).ceil() as u32,
-        None => 0,
-    };
-    let mut top = ROM_H.saturating_sub(line_h * mark.title.len() as u32 + tag_h) / 2;
-    for line in &mark.title {
+    let mut top = ROM_H.saturating_sub(line_h * title.len() as u32) / 2;
+    for line in &title {
         let layout = text::fit(font, line, max_w, 1, MARK_PX, MARK_MIN_PX);
         ink_band(&mut face, top, line_h, &layout, MARK_INK, 1.0);
         top += line_h;
-    }
-    if let Some(tags) = &mark.tags {
-        let layout = text::fit(font, tags, max_w, 1, TAG_PX, TAG_MIN_PX);
-        ink_band(&mut face, top, tag_h, &layout, TAG_INK, 1.0);
     }
     face
 }
 
 pub fn board_face(cart: &Cart) -> CartFace {
     let shell = shell_for(&cart.code);
+    // Deepest placeholder first and the wall last, so a shell whose own hex or shade matches
+    // a placeholder still further down the list finds nothing left to replace: once a
+    // placeholder's `.replace` call has run, its literal text is gone from the SVG.
     let svg = BOARD_SVG
-        .replace(PLASTIC, &hex(shell.colour))
+        .replace(DEEP, &hex(shade(shell.colour, 0.35)))
         .replace(FLOOR, &hex(shade(shell.colour, 0.62)))
-        .replace(DEEP, &hex(shade(shell.colour, 0.35)));
+        .replace(PLASTIC, &hex(shell.colour));
     let rgba = art::render_svg(&svg, BOARD_W, BOARD_H)
         .unwrap_or_else(|| vec![0; (BOARD_W * BOARD_H * 4) as usize]);
     let mut face = CartFace {
@@ -119,7 +102,6 @@ pub fn board_face(cart: &Cart) -> CartFace {
         h: BOARD_H,
     };
     over(&mut face, &rom_marking_face(&cart.stem), ROM_X, ROM_Y);
-    print_cell(&mut face);
     face
 }
 
@@ -152,22 +134,6 @@ fn ink_band(
         }
         face.rgba[at + 3] = (out_a * 255.0).round() as u8;
     }
-}
-
-/// `CR1616` on the cell, at board unit (204, 38).
-fn print_cell(face: &mut CartFace) {
-    let Some(font) = text::label_font() else {
-        return;
-    };
-    let (w, h) = (30u32, 10u32);
-    let mut cell = CartFace {
-        rgba: vec![0; (w * h * 4) as usize],
-        w,
-        h,
-    };
-    let layout = text::fit(font, "CR1616", w as f32, 1, 6.0, 4.0);
-    ink_band(&mut cell, 0, h, &layout, CELL_INK, 1.0);
-    over(face, &cell, 316 - w / 2, 59 - h / 2);
 }
 
 /// Straight alpha over an opaque face.
@@ -214,6 +180,23 @@ pub const LID_TURN: f32 = -5.0 * std::f32::consts::PI / 180.0;
 pub const CHIP_TIP: f32 = 4.0 * std::f32::consts::PI / 180.0;
 /// How far the chip rises at mid-flight, in board units.
 pub const HOP_LIFT: f32 = 10.0;
+
+/// The open is one progress in two beats, and this is the slide's share of it: 160 ms of the
+/// 420 ms in `slot::core_picker`, which a test there holds to its own constants.
+pub const SLIDE_SHARE: f32 = 160.0 / 420.0;
+/// How far the front half slides up off the back before it lifts: a third of the cart, the
+/// travel that unhooks a real shell once its screw is out.
+pub const SLIDE_UP: f32 = CART_H as f32 / 3.0;
+
+/// The slide, eased on its own share of the progress: 0.0 closed, 1.0 unhooked.
+pub fn slide_of(progress: f32) -> f32 {
+    ease((progress / SLIDE_SHARE).clamp(0.0, 1.0))
+}
+
+/// The lift, eased on the rest of the progress: 0.0 still over the back, 1.0 at rest.
+pub fn lift_of(progress: f32) -> f32 {
+    ease(((progress - SLIDE_SHARE) / (1.0 - SLIDE_SHARE)).clamp(0.0, 1.0))
+}
 
 /// Each socket's face, in `Core::ALL` order: board units of its top left, and its size.
 pub const SOCKET_U: [f32; 2] = [99.5, 171.5];
@@ -262,21 +245,26 @@ pub fn shelf_cart() -> Placed {
     }
 }
 
-/// The open cart, `open` of the way from the shelf cart to its rest.
-pub fn board_at(open: f32) -> Placed {
+/// The back half: standing where the shelf stood it through the slide, then growing to its rest.
+pub fn board_at(progress: f32) -> Placed {
     let rest = Placed {
         x: BOARD_X,
         y: BOARD_Y,
         w: BOARD_W as f32,
         h: BOARD_H as f32,
     };
-    lerp(shelf_cart(), rest, open.clamp(0.0, 1.0))
+    lerp(shelf_cart(), rest, lift_of(progress))
 }
 
-/// The lid, `open` of the way from level on the shelf to turned at its rest, and its turn.
-pub fn lid_at(open: f32) -> (Placed, f32) {
-    let t = open.clamp(0.0, 1.0);
-    (lerp(shelf_cart(), LID_REST, t), LID_TURN * t)
+/// The front half and its turn: slid up off the back, then lifted from there to its rest.
+pub fn lid_at(progress: f32) -> (Placed, f32) {
+    let shelf = shelf_cart();
+    let slid = Placed {
+        y: shelf.y - SLIDE_UP * slide_of(progress),
+        ..shelf
+    };
+    let lift = lift_of(progress);
+    (lerp(slid, LID_REST, lift), LID_TURN * lift)
 }
 
 /// A board unit on the panel, wherever the open cart currently is.

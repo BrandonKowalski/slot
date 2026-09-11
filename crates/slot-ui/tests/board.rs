@@ -1,9 +1,9 @@
 use slot_store::{Cart, Core};
 use slot_ui::{
-    board_at, board_face, chip_face, chip_shadow_face, lid_at, on_board, padded, rom_marking,
-    rom_marking_face, shelf_cart, shell_for, socket_face, CartFace, Placed, BOARD_H, BOARD_W,
-    CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_W,
-    TURN_PAD,
+    board_at, board_face, chip_face, chip_shadow_face, lid_at, lift_of, on_board, padded,
+    rom_marking, rom_marking_face, shelf_cart, shell_for, slide_of, socket_face, CartFace, Placed,
+    BOARD_H, BOARD_W, CART_H, CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H,
+    SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_W, TURN_PAD,
 };
 
 fn cart(stem: &str, code: &str) -> Cart {
@@ -27,37 +27,30 @@ fn near(a: [u8; 3], b: [u8; 3]) -> bool {
 
 const EMERALD: &str = "Pokemon - Emerald Version (USA, Europe)";
 
-/// The chip is tall and narrow, so the name goes on it a few words at a time, and the dump's
-/// bracketed facts go underneath in smaller type — the way a mask ROM carries a part number
-/// over a date code.
+/// The chip is tall and narrow, so the name goes on it a few words at a time. The dump's tags
+/// are facts about the file, not the game, and the chip does not carry them.
 #[test]
-fn the_marking_stacks_the_title_and_puts_the_tags_beneath() {
-    let m = rom_marking(EMERALD);
-    assert_eq!(m.title, ["POKEMON", "EMERALD", "VERSION"]);
-    assert_eq!(m.tags.as_deref(), Some("USA, EUROPE"));
+fn the_marking_is_the_title_stacked() {
+    assert_eq!(rom_marking(EMERALD), ["POKEMON", "EMERALD", "VERSION"]);
 }
 
 /// Three lines is all the chip has. A fourth would run off the bottom, so the rest joins the
 /// third and the fitter shrinks it.
 #[test]
 fn a_long_title_folds_its_tail_into_the_third_line() {
-    let m = rom_marking("Advance Wars 2 - Black Hole Rising");
-    assert_eq!(m.title, ["ADVANCE", "WARS 2", "BLACK HOLE RISING"]);
-    assert_eq!(m.tags, None);
-}
-
-/// One tag per bracketed group, as `label_tags` has it: `(USA, Europe)` is one release.
-#[test]
-fn every_bracketed_group_is_its_own_tag() {
-    let m = rom_marking("Pokemon - LeafGreen Version (USA, Europe) (Rev 1)");
-    assert_eq!(m.tags.as_deref(), Some("USA, EUROPE · REV 1"));
+    assert_eq!(
+        rom_marking("Advance Wars 2 - Black Hole Rising"),
+        ["ADVANCE", "WARS 2", "BLACK HOLE RISING"]
+    );
 }
 
 #[test]
-fn a_title_without_brackets_has_no_tag_line() {
-    let m = rom_marking("Metroid Fusion");
-    assert_eq!(m.title, ["METROID", "FUSION"]);
-    assert_eq!(m.tags, None);
+fn bracketed_tags_never_reach_the_chip() {
+    assert_eq!(
+        rom_marking("Pokemon - LeafGreen Version (USA, Europe) (Rev 1)"),
+        ["POKEMON", "LEAFGREEN", "VERSION"]
+    );
+    assert_eq!(rom_marking("Metroid Fusion"), ["METROID", "FUSION"]);
 }
 
 /// Ink in the outermost column is type that ran off the chip and onto the legs.
@@ -85,6 +78,19 @@ fn the_marking_is_drawn_and_stays_on_the_chip() {
             );
         }
     }
+}
+
+/// The coin cell is bare metal. Board unit (204, 38) lands at panel pixel (316, 59) of the face;
+/// within 9 px of it is only the cell's own fill, so dark pixels there are print.
+#[test]
+fn the_cell_carries_no_print() {
+    let face = board_face(&cart(EMERALD, "BPEE"));
+    let dark = (50..69)
+        .flat_map(|y| (307..326).map(move |x| (x, y)))
+        .filter(|&(x, y)| (x as i32 - 316).pow(2) + (y as i32 - 59).pow(2) <= 81)
+        .filter(|&(x, y)| rgb(&face, x, y)[0] < 150)
+        .count();
+    assert_eq!(dark, 0, "the cell still has {dark} dark pixels of print");
 }
 
 /// Rasterised at the size it is shown at, since that is the only size a face is sharp at.
@@ -177,6 +183,48 @@ fn the_lid_leaves_level_and_rests_turned() {
 }
 
 #[test]
+fn the_beats_split_one_progress() {
+    assert_eq!((slide_of(0.0), lift_of(0.0)), (0.0, 0.0));
+    assert_eq!((slide_of(SLIDE_SHARE), lift_of(SLIDE_SHARE)), (1.0, 0.0));
+    assert_eq!((slide_of(1.0), lift_of(1.0)), (1.0, 1.0));
+    assert!((slide_of(SLIDE_SHARE / 2.0) - 0.5).abs() < 1e-5);
+}
+
+/// The back half is the cart that was standing there; it does not move until the front is off it.
+#[test]
+fn the_back_half_stays_on_the_shelf_while_the_front_slides() {
+    for p in [0.0, 0.1, 0.25, SLIDE_SHARE] {
+        assert_eq!(board_at(p), shelf_cart(), "the back moved at progress {p}");
+    }
+}
+
+/// A third of the cart, level: the travel that unhooks a real shell once its screw is out.
+#[test]
+fn the_front_slides_up_a_third_before_it_lifts() {
+    assert_eq!(SLIDE_UP, CART_H as f32 / 3.0);
+    let shelf = shelf_cart();
+    let (slid, turn) = lid_at(SLIDE_SHARE);
+    assert_eq!(
+        slid,
+        Placed {
+            y: shelf.y - SLIDE_UP,
+            ..shelf
+        }
+    );
+    assert_eq!(turn, 0.0);
+    let (half, turn) = lid_at(SLIDE_SHARE / 2.0);
+    assert!(half.y < shelf.y && half.y > slid.y && turn == 0.0 && half.w == shelf.w);
+}
+
+/// The lift picks the lid up from where the slide left it rather than from the shelf.
+#[test]
+fn the_lift_starts_where_the_slide_ends() {
+    let (slid, _) = lid_at(SLIDE_SHARE);
+    let (next, _) = lid_at(SLIDE_SHARE + 0.001);
+    assert!((next.y - slid.y).abs() < 0.5 && (next.w - slid.w).abs() < 0.5);
+}
+
+#[test]
 fn board_units_land_on_the_panel_at_one_and_a_half_times() {
     let board = board_at(1.0);
     assert_eq!(on_board(board, 0.0, 0.0), (174.0, 150.0));
@@ -199,6 +247,27 @@ fn a_socket_names_its_core_at_half_strength() {
             "{core:?}'s name is at alpha {strongest}"
         );
     }
+}
+
+/// The outline's left edge is the socket SVG's closing stroke, sitting right at `x = 0` for
+/// the straight run of it: a partly covered pixel there is the outline ink, `#eef5e6`, at some
+/// fraction of full alpha. Premultiplied, the compositor's own blend then multiplies that
+/// fraction in a second time and darkens it; straight alpha keeps the ink's own brightness at
+/// any coverage.
+#[test]
+fn a_partly_covered_socket_edge_pixel_keeps_the_outline_inks_brightness() {
+    let face = socket_face(Core::Mgba);
+    let (r, a) = (6..(face.h - 6))
+        .find_map(|y| {
+            let i = ((y * face.w) * 4) as usize;
+            let a = face.rgba[i + 3];
+            (a > 0 && a < 255).then(|| (face.rgba[i], a))
+        })
+        .expect("no partly covered pixel on the socket's left edge");
+    assert!(
+        r > 200,
+        "the outline ink darkened at partial coverage: R={r} at alpha={a}"
+    );
 }
 
 /// A turned quad's edge is not antialiased, so the chip's outline has to sit inside the

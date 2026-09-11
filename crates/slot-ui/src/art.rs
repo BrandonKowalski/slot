@@ -91,9 +91,10 @@ fn decode(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 /// The traced shape, at the size the face wants. `tiny_skia` hands back premultiplied RGBA,
-/// which is the same thing straight through wherever alpha is 0 or 255 — and this artwork has
-/// no partial coverage except on its own antialiased edges, where premultiplied is what the
-/// compositor wants anyway.
+/// which is the same thing straight through wherever alpha is 0 or 255, but every caller here
+/// pastes this over another face or hands it to the sprite pass expecting straight alpha — so
+/// the antialiased edges, the only place the two differ, are un-premultiplied before they go
+/// back.
 pub(crate) fn render_svg(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
     let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).ok()?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
@@ -101,5 +102,22 @@ pub(crate) fn render_svg(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
     let scale =
         resvg::tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
     resvg::render(&tree, scale, &mut pixmap.as_mut());
-    Some(pixmap.data().to_vec())
+    let mut rgba = pixmap.data().to_vec();
+    unpremultiply(&mut rgba);
+    Some(rgba)
+}
+
+/// Undoes `tiny_skia`'s premultiply in place. Opaque and fully transparent pixels are already
+/// their own straight-alpha value, so only the antialiased edges, where `0 < a < 255`, need the
+/// divide.
+fn unpremultiply(rgba: &mut [u8]) {
+    for px in rgba.chunks_exact_mut(4) {
+        let a = px[3];
+        if a == 0 || a == 255 {
+            continue;
+        }
+        for c in &mut px[..3] {
+            *c = ((*c as u32 * 255 + a as u32 / 2) / a as u32).min(255) as u8;
+        }
+    }
 }

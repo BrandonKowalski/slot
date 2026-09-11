@@ -5,6 +5,7 @@ pub mod core;
 pub mod core_picker;
 pub mod drc;
 pub mod emu;
+pub mod face_builder;
 pub mod frames;
 pub mod frontend;
 pub mod input;

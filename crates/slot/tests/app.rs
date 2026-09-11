@@ -8,8 +8,9 @@ use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, on_board, opening, Draw, Placed, TexId, BOARD_W, CART_W, CHIP_H,
-    CHIP_U, CHIP_V, CHIP_W, LID_TURN, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U,
+    SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -531,7 +532,7 @@ fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
 
 /// Long enough for the close to put the lid back, with room to spare.
 fn let_it_close(app: &mut App) {
-    app.update(0.3);
+    app.update(0.4);
 }
 
 /// Long enough for a hop to land.
@@ -568,6 +569,7 @@ fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
 #[test]
 fn choosing_a_core_writes_it_and_closes() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
@@ -589,6 +591,7 @@ fn choosing_a_core_writes_it_and_closes() {
 #[test]
 fn b_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
@@ -607,6 +610,7 @@ fn b_closes_the_picker_without_writing() {
 #[test]
 fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
 
     app.apply(Action::GbaDown(Btn::Left));
@@ -637,9 +641,25 @@ fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
     );
 }
 
+/// `the_chip_goes_where_the_arrow_points_and_does_not_wrap` asserts this too, but nothing in it
+/// ever refuses the shelf, so that assertion passes whether or not `shelf_shake` still guards on
+/// the picker being up. Arming a real refusal first is what makes the guard's absence show.
+#[test]
+fn a_shelf_refusal_does_not_shake_once_the_picker_takes_over() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.refuse();
+    app.apply(Action::GbaDown(Btn::Start));
+    assert_eq!(
+        app.shelf_shake(),
+        0.0,
+        "the shelf shook under an open picker"
+    );
+}
+
 #[test]
 fn back_mid_hop_turns_round_and_onward_does_nothing() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
@@ -663,6 +683,7 @@ fn back_mid_hop_turns_round_and_onward_does_nothing() {
 #[test]
 fn a_mid_hop_writes_where_the_chip_is_heading() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
@@ -692,6 +713,7 @@ fn the_a_that_saved_does_not_start_the_cart() {
 #[test]
 fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     for key in [Btn::Up, Btn::Down, Btn::Start, Btn::Select] {
         app.apply(Action::GbaDown(key));
@@ -719,6 +741,7 @@ fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
 #[test]
 fn shutting_the_lid_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::LidClose);
@@ -738,6 +761,39 @@ fn the_picker_swallows_the_shelf_arrows() {
         app.selected_stem(),
         Some("Emerald"),
         "the shelf moved underneath an open picker"
+    );
+}
+
+/// An A pressed just before START belonged to the shelf that was showing when it went down.
+/// Opening the picker has to let go of it, or its 500 ms hold still runs out underneath the
+/// open cart and inserts it clean, skipping the resume the shelf would otherwise have offered.
+#[test]
+fn opening_the_picker_lets_go_of_a_play_hold_already_armed() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::A));
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaUp(Btn::A));
+    app.update(0.6);
+    assert!(
+        matches!(app.phase(), Phase::Shelf),
+        "the held A inserted the cart under the open picker: {:?}",
+        app.phase()
+    );
+}
+
+/// A direction still repeating when START goes down is the shelf's, not the picker's: it must
+/// stop, the same as when the shelf leaves the screen any other way, or the row keeps moving
+/// underneath the cart that is supposedly open.
+#[test]
+fn opening_the_picker_lets_go_of_a_direction_still_held() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(0.6);
+    assert_eq!(
+        app.selected_stem(),
+        Some("Metroid Fusion"),
+        "the shelf moved underneath the open picker"
     );
 }
 
@@ -783,7 +839,9 @@ struct PickerFaces {
     legend: [(TexId, u32); 3],
 }
 
-fn fake_picker_faces(app: &mut App) -> PickerFaces {
+/// Only the faces the frontend uploads at boot: the sockets, the chips and the legend. The board
+/// and the lid are the highlighted cart's, and are not set.
+fn fake_boot_faces(app: &mut App) -> PickerFaces {
     let id = TexId::from_raw;
     let f = PickerFaces {
         board: id(900),
@@ -794,9 +852,16 @@ fn fake_picker_faces(app: &mut App) -> PickerFaces {
         shadow: id(907),
         legend: [(id(908), 60), (id(909), 90), (id(910), 80)],
     };
-    app.set_core_board_faces(f.board, f.lid);
     app.set_core_part_faces(f.sockets.to_vec(), f.chips.to_vec(), f.blank, f.shadow);
     app.set_core_legend_faces(f.legend.to_vec());
+    f
+}
+
+/// Everything the picker draws, this cart's board and lid included, so START opens the cart at
+/// once instead of leaving it waiting on the shelf, where the arrows do nothing.
+fn fake_picker_faces(app: &mut App) -> PickerFaces {
+    let f = fake_boot_faces(app);
+    app.set_core_board_faces(f.board, f.lid);
     f
 }
 
@@ -850,9 +915,111 @@ fn near(a: [f32; 4], b: [f32; 4]) -> bool {
     a.iter().zip(b).all(|(p, q)| (p - q).abs() < 0.01)
 }
 
+/// How opaque a plain face was drawn.
+fn alpha_of(out: &[Draw], want: TexId) -> Option<f32> {
+    out.iter().find_map(|d| match *d {
+        Draw::Tex { tex, alpha, .. } if tex == want => Some(alpha),
+        _ => None,
+    })
+}
+
+/// The sockets and the chip seated in mGBA ride `board` wherever it is and at whatever size it
+/// is: a missing `* zoom` anywhere in that chain would separate them from it well before the
+/// movement settles.
+fn assert_parts_on_board(out: &[Draw], f: &PickerFaces, board: Placed, when: &str) {
+    let zoom = board.w / BOARD_W as f32;
+    for (i, socket) in f.sockets.iter().enumerate() {
+        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+        let (_, at) = tex_at(out, *socket).unwrap_or_else(|| panic!("a socket is missing {when}"));
+        assert!(
+            near(
+                at,
+                [
+                    x.round(),
+                    y.round(),
+                    SOCKET_W as f32 * zoom,
+                    SOCKET_H as f32 * zoom
+                ]
+            ),
+            "socket {i} at {at:?} {when}"
+        );
+    }
+    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
+    let want_chip = grown(
+        Placed {
+            x: cx,
+            y: cy,
+            w: CHIP_W as f32 * zoom,
+            h: CHIP_H as f32 * zoom,
+        },
+        TURN_PAD as f32 * zoom,
+    );
+    let (_, chip, _) =
+        turned_at(out, f.chips[0]).unwrap_or_else(|| panic!("no seated chip {when}"));
+    assert!(
+        near(
+            chip,
+            [
+                want_chip.x.round(),
+                want_chip.y.round(),
+                want_chip.w,
+                want_chip.h
+            ]
+        ),
+        "the chip is not riding the board {when}: {chip:?}"
+    );
+}
+
+/// Quads a shelf cart's width other than the open cart's board: the highlighted cart standing in
+/// the row. Its neighbours are drawn smaller.
+fn carts_standing(out: &[Draw], board: TexId) -> usize {
+    out.iter()
+        .filter(|d| match **d {
+            Draw::Rect { w, .. } => (w - CART_W as f32).abs() < 0.01,
+            Draw::Tex { w, tex, .. } => tex != board && (w - CART_W as f32).abs() < 0.01,
+            _ => false,
+        })
+        .count()
+}
+
+/// A picker still waiting on its cart's faces draws nothing of its own: the shelf is the shelf,
+/// with the highlighted cart standing in the row.
+fn assert_plain_shelf(out: &[Draw], f: &PickerFaces, when: &str) {
+    assert!(
+        !out.iter().any(|d| matches!(d, Draw::Turned { .. })),
+        "a turned face is drawn {when}"
+    );
+    let picker = [
+        f.board,
+        f.lid,
+        f.sockets[0],
+        f.sockets[1],
+        f.chips[0],
+        f.chips[1],
+        f.blank,
+        f.shadow,
+        f.legend[0].0,
+        f.legend[1].0,
+        f.legend[2].0,
+    ];
+    let drawn: Vec<TexId> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Tex { tex, .. } if picker.contains(&tex) => Some(tex),
+            _ => None,
+        })
+        .collect();
+    assert!(drawn.is_empty(), "the picker drew {drawn:?} {when}");
+    assert_eq!(
+        carts_standing(out, f.board),
+        1,
+        "the highlighted cart is not standing in the row {when}"
+    );
+}
+
 /// Long enough for the lid to come off.
 fn let_it_open(app: &mut App) {
-    app.update(0.4);
+    app.update(0.5);
 }
 
 /// At rest: the board where the mockup has it, both sockets on it, the chip seated in the cart's
@@ -939,10 +1106,24 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     assert!(shadow_i < lid_i, "the lid's shadow is drawn over the lid");
 
-    for (tex, _) in f.legend {
-        let (_, at) = tex_at(&out, tex).expect("a legend hint is missing");
-        assert_eq!(at[1], 386.0, "the legend is off its line");
-    }
+    // Cancel under the cart's left edge, Swap centred by what shows, Choose's word ending under
+    // the cart's right edge. A hint face's last HINT_EDGE pixels are transparent, so they do not
+    // count toward where it sits.
+    let [cancel, swap, choose] = f.legend;
+    let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
+    let seen = |w: u32| (w - HINT_EDGE) as f32;
+    assert_eq!(at(cancel.0), [174.0, 386.0, cancel.1 as f32, HINT_H as f32]);
+    assert_eq!(
+        at(swap.0)[0] + seen(swap.1) / 2.0,
+        360.0,
+        "Swap is off the panel's centre"
+    );
+    assert_eq!(
+        at(choose.0)[0] + seen(choose.1),
+        546.0,
+        "Choose does not end at the cart's edge"
+    );
+    assert_eq!((at(swap.0)[1], at(choose.0)[1]), (386.0, 386.0));
 }
 
 /// A face drawn at its own size is only sharp on whole pixels. At a fractional place the linear
@@ -1057,11 +1238,44 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     );
     assert_eq!(turn, 0.0);
 
-    // Halfway up, the lid is between the shelf and its rest and part turned, over a board
-    // that is part grown and part faded in.
-    app.update(0.13);
-    let partway = frame(&app);
-    let (_, lid, turn) = turned_at(&partway, f.lid).expect("the lid vanished mid-open");
+    // Halfway through the slide the front half has come up half its travel, level and still the
+    // shelf cart's width, off a back half standing exactly where the shelf stood the cart, opaque,
+    // with the sockets and the chip already on it. 80.5 ms rather than 80: the app's clock counts
+    // whole milliseconds, and 0.08 s adds up to a hair under 80.
+    app.update(0.0805);
+    let slid = frame(&app);
+    let (_, lid, turn) = turned_at(&slid, f.lid).expect("the lid vanished mid-slide");
+    assert_eq!(turn, 0.0, "the lid turned while it slid");
+    let shelf = shelf_cart();
+    let want = grown(
+        Placed {
+            y: shelf.y - SLIDE_UP * 0.5,
+            ..shelf
+        },
+        TURN_PAD as f32,
+    );
+    assert!(
+        near(lid, [want.x, want.y, want.w, want.h]),
+        "the lid is not half way up its slide: {lid:?}"
+    );
+    let (_, board) = tex_at(&slid, f.board).expect("no board mid-slide");
+    assert_eq!(
+        board,
+        [shelf.x, shelf.y, shelf.w, shelf.h],
+        "the back half moved while the front slid"
+    );
+    assert_eq!(
+        alpha_of(&slid, f.board),
+        Some(1.0),
+        "the back half is not opaque under the front"
+    );
+    assert_parts_on_board(&slid, &f, shelf, "mid-slide");
+
+    // Halfway through the lift, the lid is on its way up and turning, over a back half that is
+    // part grown and still opaque.
+    app.update(0.21);
+    let lifting = frame(&app);
+    let (_, lid, turn) = turned_at(&lifting, f.lid).expect("the lid vanished mid-lift");
     assert!(
         turn < 0.0 && turn > LID_TURN,
         "the lid is not turning: {turn}"
@@ -1070,71 +1284,26 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         lid[1] < lid_at(0.0).0.y && lid[1] > lid_at(1.0).0.y,
         "the lid is not on its way up: {lid:?}"
     );
-    let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("no board mid-open");
+    let (_, [bx, by, bw, bh]) = tex_at(&lifting, f.board).expect("no board mid-lift");
     assert!(
         bw > board_at(0.0).w && bw < board_at(1.0).w,
         "the board is not growing: {bw}"
     );
-    let alpha = partway
-        .iter()
-        .find_map(|d| match *d {
-            Draw::Tex { tex, alpha, .. } if tex == f.board => Some(alpha),
-            _ => None,
-        })
-        .expect("no board mid-open");
-    assert!(
-        alpha > 0.0 && alpha < 1.0,
-        "the board is not fading in: {alpha}"
+    assert_eq!(
+        alpha_of(&lifting, f.board),
+        Some(1.0),
+        "the back half faded mid-lift"
     );
-
-    // The sockets and the seated chip travel with the board rather than staying where the
-    // shelf drew the cart: a missing `* zoom` anywhere in that chain would separate them from
-    // it here, well before the movement settles.
-    let board = Placed {
-        x: bx,
-        y: by,
-        w: bw,
-        h: bh,
-    };
-    let zoom = bw / BOARD_W as f32;
-    for (i, socket) in f.sockets.iter().enumerate() {
-        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
-        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-open");
-        assert!(
-            near(
-                at,
-                [
-                    x.round(),
-                    y.round(),
-                    SOCKET_W as f32 * zoom,
-                    SOCKET_H as f32 * zoom
-                ]
-            ),
-            "socket {i} at {at:?} mid-open"
-        );
-    }
-    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
-    let want_chip = grown(
+    assert_parts_on_board(
+        &lifting,
+        &f,
         Placed {
-            x: cx,
-            y: cy,
-            w: CHIP_W as f32 * zoom,
-            h: CHIP_H as f32 * zoom,
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
         },
-        TURN_PAD as f32 * zoom,
-    );
-    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-open");
-    assert!(
-        near(
-            chip,
-            [
-                want_chip.x.round(),
-                want_chip.y.round(),
-                want_chip.w,
-                want_chip.h
-            ]
-        ),
-        "the chip is not riding the board mid-open: {chip:?}"
+        "mid-lift",
     );
 }
 
@@ -1226,54 +1395,24 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         bw < board_at(1.0).w && bw > board_at(0.0).w,
         "the board is not shrinking: {bw}"
     );
+    assert_eq!(
+        alpha_of(&partway, f.board),
+        Some(1.0),
+        "the back half faded mid-close"
+    );
 
     // The sockets and the seated chip shrink with the board rather than staying put, the same
     // check as mid-open run the other way.
-    let board = Placed {
-        x: bx,
-        y: by,
-        w: bw,
-        h: bh,
-    };
-    let zoom = bw / BOARD_W as f32;
-    for (i, socket) in f.sockets.iter().enumerate() {
-        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
-        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-close");
-        assert!(
-            near(
-                at,
-                [
-                    x.round(),
-                    y.round(),
-                    SOCKET_W as f32 * zoom,
-                    SOCKET_H as f32 * zoom
-                ]
-            ),
-            "socket {i} at {at:?} mid-close"
-        );
-    }
-    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
-    let want_chip = grown(
+    assert_parts_on_board(
+        &partway,
+        &f,
         Placed {
-            x: cx,
-            y: cy,
-            w: CHIP_W as f32 * zoom,
-            h: CHIP_H as f32 * zoom,
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
         },
-        TURN_PAD as f32 * zoom,
-    );
-    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-close");
-    assert!(
-        near(
-            chip,
-            [
-                want_chip.x.round(),
-                want_chip.y.round(),
-                want_chip.w,
-                want_chip.h
-            ]
-        ),
-        "the chip is not riding the board mid-close: {chip:?}"
+        "mid-close",
     );
 
     let_it_close(&mut app);
@@ -1295,4 +1434,161 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         })
         .count();
     assert_eq!(standing, 1, "the cart did not go back on the shelf");
+}
+
+/// Pressed before the cart's faces are up, the cart stands on the shelf until they arrive and
+/// opens from there. Drawn before them the picker had only bare sockets and a chip to show where
+/// the cart had been, and an open timed from the press would have spent the wait as animation
+/// that never reached the panel.
+#[test]
+fn the_open_waits_on_the_shelf_for_its_faces() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_boot_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(0.3);
+    assert_plain_shelf(&frame(&app), &f, "while its faces are built");
+
+    app.set_core_board_faces(f.board, f.lid);
+    app.update(0.016);
+    let out = frame(&app);
+    let shelf = grown(shelf_cart(), TURN_PAD as f32);
+    let (_, lid, _) = turned_at(&out, f.lid).expect("no lid once the faces arrived");
+    assert!(
+        near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),
+        "the open used up the wait: the lid is at {lid:?}"
+    );
+    assert_eq!(
+        carts_standing(&out, f.board),
+        0,
+        "the row still draws the cart whose lid is coming off"
+    );
+
+    let_it_open(&mut app);
+    let (rest, _) = lid_at(1.0);
+    let rest = grown(rest, TURN_PAD as f32 * rest.w / CART_W as f32);
+    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once open");
+    assert!(
+        near(lid, [rest.x, rest.y, rest.w, rest.h]),
+        "the lid is not at rest: {lid:?}"
+    );
+}
+
+/// A face that never comes cannot freeze the picker: past `FACES_WAIT_MS` the cart opens anyway.
+/// The only faces on the GPU are the other cart's, built while the caret passed over it on the
+/// way back to this one, and the fallback open never wears them: it has nothing of its own to
+/// show and draws nothing rather than borrow theirs.
+#[test]
+fn the_open_starts_anyway_when_the_faces_never_come() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaUp(Btn::Right));
+    assert_eq!(app.selected_stem(), Some("Zzz"));
+    let f = fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Left));
+    app.apply(Action::GbaUp(Btn::Left));
+    assert_eq!(app.selected_stem(), Some("Emerald"));
+
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(1.499);
+    assert_plain_shelf(&frame(&app), &f, "a hair under the cap");
+
+    app.update(0.002);
+    assert_eq!(
+        carts_standing(&frame(&app), f.board),
+        0,
+        "the open never started once the cap ran out"
+    );
+
+    let_it_open(&mut app);
+    let out = frame(&app);
+    assert!(
+        tex_at(&out, f.board).is_none(),
+        "the fallback open drew the other cart's board"
+    );
+    assert!(
+        turned_at(&out, f.lid).is_none(),
+        "the fallback open drew the other cart's lid"
+    );
+    for tex in [f.sockets[0], f.sockets[1], f.chips[0], f.chips[1], f.blank] {
+        assert!(
+            tex_at(&out, tex).is_none() && turned_at(&out, tex).is_none(),
+            "the fallback open drew a socket or chip quad"
+        );
+    }
+}
+
+/// Past the cap, with nothing of this cart's own built yet, the fallback lifts the shelf's own
+/// face for the cart — the only thing on the GPU that is honestly this cart's — rather than
+/// leave the lid off altogether.
+#[test]
+fn the_fallback_open_lifts_the_shelfs_own_face_for_the_lid() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
+    app.set_faces(shelf_faces.to_vec());
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(1.501);
+    let_it_open(&mut app);
+
+    let (rest, _) = lid_at(1.0);
+    let (_, lid, turn) =
+        turned_at(&frame(&app), shelf_faces[0]).expect("no lid drawn from the shelf's own face");
+    assert!(
+        near(lid, [rest.x, rest.y, rest.w, rest.h]),
+        "the fallback lid is not at rest: {lid:?}"
+    );
+    assert_eq!(turn, LID_TURN, "the fallback lid is not turned");
+}
+
+/// When this cart's own faces land mid-open, having missed the cap, the very next frame draws
+/// them: the fallback was only ever a placeholder for a build the worker had not finished yet.
+#[test]
+fn the_real_faces_replace_the_fallback_once_they_arrive() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
+    app.set_faces(shelf_faces.to_vec());
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(1.501);
+    let_it_open(&mut app);
+    assert!(
+        turned_at(&frame(&app), shelf_faces[0]).is_some(),
+        "the fallback lid should be up before the real faces arrive"
+    );
+
+    let f = fake_picker_faces(&mut app);
+    app.update(0.016);
+    let out = frame(&app);
+    assert!(tex_at(&out, f.board).is_some(), "the board never arrived");
+    assert!(
+        turned_at(&out, f.lid).is_some(),
+        "the picker's own lid never arrived"
+    );
+}
+
+/// The chip is already in the cart's own socket when the cart opens. Arrows pressed while the cart
+/// still stands on the shelf waiting for its faces move nothing, so the `A` that follows writes
+/// only a choice the player saw made.
+#[test]
+fn arrows_pressed_while_the_cart_waits_move_nothing() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_boot_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.set_core_board_faces(f.board, f.lid);
+    app.update(0.016);
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Mgba),
+        "a hop ran while the cart waited"
+    );
+
+    let_it_open(&mut app);
+    let out = frame(&app);
+    assert!(
+        turned_at(&out, f.chips[0]).is_some(),
+        "the chip is not seated in mGBA once the cart is open"
+    );
+    assert!(
+        turned_at(&out, f.chips[1]).is_none(),
+        "the chip opened in gpSP"
+    );
 }

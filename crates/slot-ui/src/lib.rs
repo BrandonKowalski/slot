@@ -25,10 +25,11 @@ pub use backdrop::{draw_backdrop, wallpaper_face};
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
 pub use board::{
-    board_at, board_face, board_zoom, chip_face, chip_shadow_face, grown, lid_at, on_board, padded,
-    rom_marking, rom_marking_face, shelf_cart, socket_face, Placed, RomMarking, BOARD_H, BOARD_W,
-    BOARD_X, BOARD_Y, CHIP_H, CHIP_TIP, CHIP_U, CHIP_V, CHIP_W, HOP_LIFT, LID_TURN, ROM_H, ROM_W,
-    ROM_X, ROM_Y, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, board_face, board_zoom, chip_face, chip_shadow_face, grown, lid_at, lift_of,
+    on_board, padded, rom_marking, rom_marking_face, shelf_cart, slide_of, socket_face, Placed,
+    BOARD_H, BOARD_W, BOARD_X, BOARD_Y, CHIP_H, CHIP_TIP, CHIP_U, CHIP_V, CHIP_W, HOP_LIFT,
+    LID_TURN, ROM_H, ROM_W, ROM_X, ROM_Y, SHADOW_H, SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H,
+    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 pub use cart::{
     cart_face, cart_shadow, clean_label, label_colour, label_panel, label_tags, label_text,
@@ -41,8 +42,8 @@ pub use hud::{ff_badge, FfState, Hud, HudKind, Millis, HUD_ICON_PX, HUD_INK, HUD
 pub use icon::{icon_box, icon_face, Icon};
 pub use plate::{
     arrows_hint_face, arrows_hint_width, cap_width, hint_face, hint_quad, hint_row, hint_width,
-    title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_GAP, HINT_H,
-    TITLE_H, TITLE_W,
+    title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_EDGE,
+    HINT_GAP, HINT_H, TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
 pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
