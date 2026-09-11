@@ -832,7 +832,9 @@ struct PickerFaces {
     legend: [(TexId, u32); 3],
 }
 
-fn fake_picker_faces(app: &mut App) -> PickerFaces {
+/// Only the faces the frontend uploads at boot: the sockets, the chips and the legend. The board
+/// and the lid are the highlighted cart's, and are not set.
+fn fake_boot_faces(app: &mut App) -> PickerFaces {
     let id = TexId::from_raw;
     let f = PickerFaces {
         board: id(900),
@@ -843,9 +845,14 @@ fn fake_picker_faces(app: &mut App) -> PickerFaces {
         shadow: id(907),
         legend: [(id(908), 60), (id(909), 90), (id(910), 80)],
     };
-    app.set_core_board_faces(f.board, f.lid);
     app.set_core_part_faces(f.sockets.to_vec(), f.chips.to_vec(), f.blank, f.shadow);
     app.set_core_legend_faces(f.legend.to_vec());
+    f
+}
+
+fn fake_picker_faces(app: &mut App) -> PickerFaces {
+    let f = fake_boot_faces(app);
+    app.set_core_board_faces(f.board, f.lid);
     f
 }
 
@@ -951,6 +958,53 @@ fn assert_parts_on_board(out: &[Draw], f: &PickerFaces, board: Placed, when: &st
             ]
         ),
         "the chip is not riding the board {when}: {chip:?}"
+    );
+}
+
+/// Quads a shelf cart's width other than the open cart's board: the highlighted cart standing in
+/// the row. Its neighbours are drawn smaller.
+fn carts_standing(out: &[Draw], board: TexId) -> usize {
+    out.iter()
+        .filter(|d| match **d {
+            Draw::Rect { w, .. } => (w - CART_W as f32).abs() < 0.01,
+            Draw::Tex { w, tex, .. } => tex != board && (w - CART_W as f32).abs() < 0.01,
+            _ => false,
+        })
+        .count()
+}
+
+/// A picker still waiting on its cart's faces draws nothing of its own: the shelf is the shelf,
+/// with the highlighted cart standing in the row.
+fn assert_plain_shelf(out: &[Draw], f: &PickerFaces, when: &str) {
+    assert!(
+        !out.iter().any(|d| matches!(d, Draw::Turned { .. })),
+        "a turned face is drawn {when}"
+    );
+    let picker = [
+        f.board,
+        f.lid,
+        f.sockets[0],
+        f.sockets[1],
+        f.chips[0],
+        f.chips[1],
+        f.blank,
+        f.shadow,
+        f.legend[0].0,
+        f.legend[1].0,
+        f.legend[2].0,
+    ];
+    let drawn: Vec<TexId> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Tex { tex, .. } if picker.contains(&tex) => Some(tex),
+            _ => None,
+        })
+        .collect();
+    assert!(drawn.is_empty(), "the picker drew {drawn:?} {when}");
+    assert_eq!(
+        carts_standing(out, f.board),
+        1,
+        "the highlighted cart is not standing in the row {when}"
     );
 }
 
@@ -1360,21 +1414,30 @@ fn closing_puts_the_cart_back_on_the_shelf() {
 }
 
 /// Pressed before the cart's faces are up, the cart stands on the shelf until they arrive and
-/// opens from there. An open timed from the press would have spent the wait as animation that
-/// never reached the panel.
+/// opens from there. Drawn before them the picker had only bare sockets and a chip to show where
+/// the cart had been, and an open timed from the press would have spent the wait as animation
+/// that never reached the panel.
 #[test]
 fn the_open_waits_on_the_shelf_for_its_faces() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_boot_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.update(0.3);
-    let f = fake_picker_faces(&mut app);
-    app.update(0.016);
+    assert_plain_shelf(&frame(&app), &f, "while its faces are built");
 
+    app.set_core_board_faces(f.board, f.lid);
+    app.update(0.016);
+    let out = frame(&app);
     let shelf = grown(shelf_cart(), TURN_PAD as f32);
-    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once the faces arrived");
+    let (_, lid, _) = turned_at(&out, f.lid).expect("no lid once the faces arrived");
     assert!(
         near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),
         "the open used up the wait: the lid is at {lid:?}"
+    );
+    assert_eq!(
+        carts_standing(&out, f.board),
+        0,
+        "the row still draws the cart whose lid is coming off"
     );
 
     let_it_open(&mut app);
@@ -1388,7 +1451,8 @@ fn the_open_waits_on_the_shelf_for_its_faces() {
 }
 
 /// A face that never comes cannot freeze the picker: after a second on the shelf the cart opens
-/// anyway. The faces here were built for the other cart, and do not count for this one.
+/// anyway. The faces here were built for the other cart: they do not count for this one, and
+/// are not drawn over it while it waits.
 #[test]
 fn the_open_starts_anyway_when_the_faces_never_come() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
@@ -1402,11 +1466,10 @@ fn the_open_starts_anyway_when_the_faces_never_come() {
 
     app.apply(Action::GbaDown(Btn::Start));
     app.update(0.3);
-    let shelf = grown(shelf_cart(), TURN_PAD as f32);
-    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid while waiting");
-    assert!(
-        near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),
-        "the other cart's faces started the open: the lid is at {lid:?}"
+    assert_plain_shelf(
+        &frame(&app),
+        &f,
+        "while the only faces are the other cart's",
     );
 
     app.update(1.1);

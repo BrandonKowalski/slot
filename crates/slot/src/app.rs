@@ -1476,7 +1476,8 @@ impl App {
                 match (self.core_picker, self.selected_stem()) {
                     // The highlighted cart is the picker's to draw while its lid is off, and the
                     // rest of the row makes way for it the way it does for a cart going in.
-                    (Some(picker), Some(stem)) => {
+                    // Until its faces are up the picker has only bare parts, so the cart stands.
+                    (Some(picker), Some(stem)) if !picker.waiting() => {
                         // Eased on the whole progress rather than on either beat: the row makes
                         // way across the slide and the lift as one movement.
                         let open = ease(picker.openness(self.now()));
@@ -1559,7 +1560,7 @@ impl App {
         // row of carts it is a menu for, and START would look like a button that does
         // nothing. Only the shelf can raise it, so no phase needs excluding here — the
         // phases that own the whole panel have already returned.
-        if let Some(picker) = self.core_picker {
+        if let Some(picker) = self.core_picker.filter(|p| !p.waiting()) {
             self.draw_core_picker(&picker, out);
         }
         // Over the game and under the HUD, for the same reason the picker is over the shelf:
