@@ -130,6 +130,9 @@ struct Shared {
     /// serialized machine state almost never does), so only the region actually refused may
     /// be withheld. See `EmuSnapshot::save_ram_trusted`.
     sav_refused: AtomicBool,
+    /// The transport's far end went away during a session. Cleared when a session begins or
+    /// ends. See `EmuHandle::link_lost`.
+    link_lost: AtomicBool,
 }
 
 impl EmuHandle {
@@ -167,6 +170,7 @@ impl EmuHandle {
             published: AtomicU64::new(0),
             resume_refused: AtomicBool::new(false),
             sav_refused: AtomicBool::new(false),
+            link_lost: AtomicBool::new(false),
         });
         let (tx, rx) = channel();
         let worker = Worker {
@@ -207,6 +211,12 @@ impl EmuHandle {
     /// reads one off to prove the worker's own pump moved it — see `crates/slot/tests/emu.rs`.
     pub fn net(&self) -> &Link {
         &self.link
+    }
+
+    /// The transport's far end went away during a session. Cleared when a session begins or
+    /// ends.
+    pub fn link_lost(&self) -> bool {
+        self.shared.link_lost.load(Ordering::Relaxed)
     }
 
     /// Wires a transport into the core's serial traffic, on the emulator thread — the only
@@ -469,6 +479,7 @@ impl Worker {
                         let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
                     }
                     Cmd::BeginLink(client_id, t) => {
+                        self.shared.link_lost.store(false, Ordering::Relaxed);
                         core.start_link(client_id);
                         // Set here as well as by `LibretroCore::start_link` itself: this is
                         // the thing that actually knows a transport is wired and about to be
@@ -480,6 +491,7 @@ impl Worker {
                         transport = Some(t);
                     }
                     Cmd::EndLink => {
+                        self.shared.link_lost.store(false, Ordering::Relaxed);
                         // `Cmd::BeginLink`'s counterpart: tells the core the session is over,
                         // if it registered a `stop` to hear it through (`RetroCore::stop_link`
                         // — libretro documents `stop` as OPTIONAL, unlike `start`, so this is
@@ -511,6 +523,11 @@ impl Worker {
             // `try_recv` already never does — so this is always safe to run.
             if let Some(t) = transport.as_mut() {
                 drain_transport(t.as_mut(), &link, MAX_LINK_PACKETS_PER_PRESENT);
+                // Checked after the drain, so the last packets a peer sent before leaving still
+                // reach the core.
+                if t.is_closed() {
+                    self.shared.link_lost.store(true, Ordering::Relaxed);
+                }
             }
             core.pump_link();
             // A `poll` can make the core send, so this catches anything it just queued. The

@@ -579,3 +579,58 @@ fn ending_a_link_clears_stale_packets_for_the_next_session() {
         "a packet queued before the session ended survived into the next one"
     );
 }
+
+/// A transport whose far end the test can close.
+struct ClosingLink {
+    closed: Arc<AtomicBool>,
+}
+
+impl LinkChannel for ClosingLink {
+    fn send(&mut self, _flags: i32, _buf: &[u8]) {}
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        None
+    }
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+}
+
+#[test]
+fn a_transport_that_closes_is_reported_as_a_lost_link() {
+    let emu = spawn();
+    let closed = Arc::new(AtomicBool::new(false));
+    emu.begin_link(
+        0,
+        Box::new(ClosingLink {
+            closed: closed.clone(),
+        }),
+    );
+    assert!(wait_for(|| emu.net().is_active()));
+    assert!(!emu.link_lost(), "lost before the far end went");
+    closed.store(true, Ordering::SeqCst);
+    assert!(
+        wait_for(|| emu.link_lost()),
+        "the closed transport was never noticed"
+    );
+}
+
+#[test]
+fn ending_or_beginning_a_link_clears_the_lost_flag() {
+    let emu = spawn();
+    let closed = Arc::new(AtomicBool::new(true));
+    emu.begin_link(0, Box::new(ClosingLink { closed }));
+    assert!(wait_for(|| emu.link_lost()));
+    emu.end_link();
+    assert!(
+        wait_for(|| !emu.link_lost()),
+        "the flag outlived the session"
+    );
+    emu.begin_link(
+        0,
+        Box::new(ClosingLink {
+            closed: Arc::new(AtomicBool::new(false)),
+        }),
+    );
+    assert!(wait_for(|| emu.net().is_active()));
+    assert!(!emu.link_lost(), "a new session started already lost");
+}
