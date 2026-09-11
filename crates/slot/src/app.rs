@@ -14,6 +14,7 @@ use slot_ui::{
 };
 
 use crate::audio::Sfx;
+use crate::core_picker::{Chip, CorePicker, Outcome, Press};
 use crate::link_radio::LinkRole;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
@@ -290,11 +291,10 @@ pub struct App {
     power_menu: Option<usize>,
     /// One per `PowerChoice::ALL`, in that order, with the size each was rastered at.
     power_menu_faces: Vec<(TexId, u32, u32)>,
-    /// Which core row is highlighted, and `None` when the picker is closed. The cart it acts
-    /// on is whichever the shelf has, read when it opens rather than held here: the shelf
-    /// cannot move while it is up, so there is only ever one answer and no way for a
-    /// remembered one to go stale against it.
-    core_picker: Option<usize>,
+    /// The picker while the cart is open, and while its lid is going back on. The cart it acts
+    /// on is whichever the shelf has, read when it opens rather than held here: the shelf cannot
+    /// move while it is up, so there is only ever one answer.
+    core_picker: Option<CorePicker>,
     /// The highlighted cart's name, rasterised by the frontend when the picker opens. The
     /// picker's own rows say only "mGBA" and "gpSP", so without this the screen never names
     /// the cart it is about to change.
@@ -791,10 +791,15 @@ impl App {
         self.power_menu
     }
 
-    /// Which core row the picker is on, and `None` while it is closed. The chrome draws from
-    /// it, exactly as it does from `power_menu`.
-    pub fn core_picker(&self) -> Option<usize> {
-        self.core_picker
+    /// The core the chip is in or heading for, and `None` once the picker has gone. Still
+    /// `Some` while the lid is going back on.
+    pub fn core_picker(&self) -> Option<Core> {
+        self.core_picker.map(|p| p.seat())
+    }
+
+    /// The chip's pose this frame, for whatever draws it.
+    pub fn core_picker_chip(&self) -> Option<Chip> {
+        self.core_picker.map(|p| p.chip(self.now()))
     }
 
     /// Whether the in-game menu is up. Read by whoever owns the emulator as well as by the
@@ -1141,6 +1146,10 @@ impl App {
         // their own.
         self.poll_link();
         let now = self.now();
+        // The lid is back on, so the shelf is the shelf again.
+        if self.core_picker.is_some_and(|p| p.finished(now)) {
+            self.core_picker = None;
+        }
         // A direction still held as the shelf leaves the screen is not held when it comes
         // back: the row repeats only while it is the thing being looked at.
         if !self.on_shelf() {
@@ -1506,8 +1515,8 @@ impl App {
         // row of carts it is a menu for, and START would look like a button that does
         // nothing. Only the shelf can raise it, so no phase needs excluding here — the
         // phases that own the whole panel have already returned.
-        if let Some(index) = self.core_picker {
-            self.draw_core_picker(index, out);
+        if let Some(picker) = self.core_picker {
+            self.draw_core_picker(picker.seat().index(), out);
         }
         // Over the game and under the HUD, for the same reason the picker is over the shelf:
         // it is a menu about the thing still on screen behind it, and the level bars have to
@@ -1533,7 +1542,9 @@ impl App {
     /// Pixels the cart row is displaced by. On the shelf the frame is mostly backdrop, so
     /// shaking the whole image would just slide the letterbox in at the edges.
     pub fn shelf_shake(&self) -> f32 {
-        self.shake_when(self.on_shelf(), self.now())
+        // The chip is what flinches while the picker is up, and two things shaking at once reads
+        // as two separate refusals.
+        self.shake_when(self.on_shelf() && self.core_picker.is_none(), self.now())
     }
 
     /// Shake whatever represents the thing that was refused, and only that: two of them at
@@ -1939,6 +1950,9 @@ impl App {
         // The overlay is drawn over a game that is about to go dark, and a starter left
         // running behind it would keep a radio up through the doze.
         self.close_game_menu();
+        // A shut lid is walking away, not choosing. Nothing is written and nothing animates:
+        // waking comes back to a plain shelf.
+        self.core_picker = None;
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
@@ -2069,27 +2083,28 @@ impl App {
         let Some(cart) = self.shelf.carts.get(self.shelf.index) else {
             return;
         };
-        self.core_picker = Some(slot_store::core_for(&root, &cart.stem).index());
+        let seat = slot_store::core_for(&root, &cart.stem);
+        self.core_picker = Some(CorePicker::open(seat, self.now()));
     }
 
     /// The picker owns every button while it is up, including the arrows the shelf uses: a
-    /// menu that let the thing behind it move would act on a different cart than the one it
-    /// named. Up and down wrap, because with two rows either arrow is the other's undo and
-    /// an end that stuck would need the player to know which one they were against.
+    /// board that let the row behind it move would act on a different cart than the one whose
+    /// lid is off. The arrows point at the sockets, so they do not wrap.
     fn core_picker_input(&mut self, action: Action) {
-        let Some(row) = self.core_picker else {
+        let press = match action {
+            Action::GbaDown(Btn::Left) | Action::ShelfLeft => Press::Left,
+            Action::GbaDown(Btn::Right) | Action::ShelfRight => Press::Right,
+            Action::GbaDown(Btn::A) => Press::Keep,
+            Action::GbaDown(Btn::B) => Press::Back,
+            _ => return,
+        };
+        let now = self.now();
+        let Some(picker) = &mut self.core_picker else {
             return;
         };
-        let rows = Core::ALL.len();
-        match action {
-            Action::GbaDown(Btn::Up) => self.core_picker = Some((row + rows - 1) % rows),
-            Action::GbaDown(Btn::Down) => self.core_picker = Some((row + 1) % rows),
-            Action::GbaDown(Btn::A) => {
-                self.write_core(Core::ALL[row]);
-                self.core_picker = None;
-            }
-            Action::GbaDown(Btn::B) => self.core_picker = None,
-            _ => {}
+        let outcome = picker.press(press, now);
+        if let Outcome::Write(core) = outcome {
+            self.write_core(core);
         }
     }
 

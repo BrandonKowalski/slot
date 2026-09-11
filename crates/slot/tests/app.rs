@@ -6,7 +6,7 @@ use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
-use slot_store::{write_slot_state, Cart, SlotState};
+use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{edge, opening, Draw, TexId, CART_W, OUT_H, OUT_W};
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -526,8 +526,18 @@ fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
     (d, app)
 }
 
-/// Opening on row zero would be a menu that says every cart runs mGBA, which is a lie the
-/// moment one of them does not.
+/// Long enough for the close to put the lid back, with room to spare.
+fn let_it_close(app: &mut App) {
+    app.update(0.3);
+}
+
+/// Long enough for a hop to land.
+fn let_it_hop(app: &mut App) {
+    app.update(0.25);
+}
+
+/// Opening on mGBA whatever the cart runs would be a board that says every cart runs mGBA,
+/// which is a lie the moment one of them does not.
 #[test]
 fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
@@ -536,40 +546,40 @@ fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
     app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(
         app.core_picker(),
-        Some(0),
+        Some(Core::Mgba),
         "a cart with no line of its own runs the default core"
     );
     app.apply(Action::GbaDown(Btn::B));
+    let_it_close(&mut app);
 
-    slot_store::write_selected_core(d.path(), "Emerald", slot_store::Core::Gpsp).unwrap();
+    slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
     app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(
         app.core_picker(),
-        Some(1),
-        "the picker should open on the core the cart already uses, not on row zero"
+        Some(Core::Gpsp),
+        "the chip should start in the core the cart already uses"
     );
 }
 
+/// The write happens on the press, and the lid then takes its time going back on.
 #[test]
 fn choosing_a_core_writes_it_and_closes() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     app.apply(Action::GbaDown(Btn::Start));
-    app.apply(Action::GbaDown(Btn::Down));
+    app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
 
+    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Gpsp);
+    assert_eq!(
+        slot_store::core_for(d.path(), "Zzz"),
+        Core::Mgba,
+        "the choice landed on a cart the shelf was not on"
+    );
+    let_it_close(&mut app);
     assert_eq!(
         app.core_picker(),
         None,
         "the picker stayed open after a choice"
-    );
-    assert_eq!(
-        slot_store::core_for(d.path(), "Emerald"),
-        slot_store::Core::Gpsp
-    );
-    assert_eq!(
-        slot_store::core_for(d.path(), "Zzz"),
-        slot_store::Core::Mgba,
-        "the choice landed on a cart the shelf was not on"
     );
 }
 
@@ -577,15 +587,140 @@ fn choosing_a_core_writes_it_and_closes() {
 fn b_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     app.apply(Action::GbaDown(Btn::Start));
-    app.apply(Action::GbaDown(Btn::Down));
+    app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
+    let_it_close(&mut app);
 
     assert_eq!(app.core_picker(), None);
     assert_eq!(
         slot_store::core_for(d.path(), "Emerald"),
-        slot_store::Core::Mgba,
+        Core::Mgba,
         "backing out of the picker still changed the cart"
     );
+}
+
+/// The sockets sit left and right, so the arrows point at them: no wrapping. Toward the socket
+/// the chip is already in, only the chip shakes.
+#[test]
+fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+
+    app.apply(Action::GbaDown(Btn::Left));
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Mgba),
+        "left from mGBA wrapped round"
+    );
+    assert_ne!(
+        app.core_picker_chip().unwrap().shake,
+        0.0,
+        "a press toward the chip's own socket went unanswered"
+    );
+    assert_eq!(
+        app.shelf_shake(),
+        0.0,
+        "the shelf shook as well as the chip"
+    );
+
+    app.apply(Action::GbaDown(Btn::Right));
+    assert_eq!(app.core_picker(), Some(Core::Gpsp));
+    let_it_hop(&mut app);
+    app.apply(Action::GbaDown(Btn::Right));
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Gpsp),
+        "right from gpSP wrapped round"
+    );
+}
+
+#[test]
+fn back_mid_hop_turns_round_and_onward_does_nothing() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.update(0.05);
+
+    app.apply(Action::GbaDown(Btn::Right));
+    assert_eq!(app.core_picker(), Some(Core::Gpsp));
+    assert_eq!(
+        app.core_picker_chip().unwrap().shake,
+        0.0,
+        "onward mid-hop was refused"
+    );
+
+    app.apply(Action::GbaDown(Btn::Left));
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Mgba),
+        "back mid-hop did not turn the chip round"
+    );
+}
+
+#[test]
+fn a_mid_hop_writes_where_the_chip_is_heading() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.update(0.05);
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Gpsp);
+}
+
+/// A on the shelf inserts on the release of a press the shelf saw. The press that saved went
+/// to the picker, so its release — however late — must not start the cart.
+#[test]
+fn the_a_that_saved_does_not_start_the_cart() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaDown(Btn::A));
+    let_it_close(&mut app);
+    assert_eq!(app.core_picker(), None);
+
+    app.apply(Action::GbaUp(Btn::A));
+    assert!(
+        matches!(app.phase(), Phase::Shelf),
+        "releasing the A that saved inserted the cart: {:?}",
+        app.phase()
+    );
+}
+
+#[test]
+fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    for key in [Btn::Up, Btn::Down, Btn::Start, Btn::Select] {
+        app.apply(Action::GbaDown(key));
+        assert_eq!(
+            app.core_picker(),
+            Some(Core::Mgba),
+            "{key:?} moved the chip"
+        );
+    }
+
+    app.apply(Action::GbaDown(Btn::B));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaDown(Btn::A));
+    let_it_close(&mut app);
+    assert_eq!(app.core_picker(), None);
+    assert_eq!(
+        slot_store::core_for(d.path(), "Emerald"),
+        Core::Mgba,
+        "a press during the close wrote a core"
+    );
+}
+
+/// A shut lid is walking away. The picker goes at once and writes nothing, so waking lands on a
+/// plain shelf.
+#[test]
+fn shutting_the_lid_closes_the_picker_without_writing() {
+    let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::LidClose);
+    assert_eq!(app.core_picker(), None, "the picker survived the lid");
+    assert_eq!(slot_store::core_for(d.path(), "Emerald"), Core::Mgba);
 }
 
 /// A menu that let the thing behind it move would act on a different cart than the one it
@@ -610,18 +745,6 @@ fn the_picker_does_not_open_on_an_empty_shelf() {
     let (_d, mut app) = on_shelf(&[]);
     app.apply(Action::GbaDown(Btn::Start));
     assert_eq!(app.core_picker(), None);
-}
-
-/// Up from the top and down from the bottom wrap. Two rows makes either arrow the other's
-/// undo, and a picker that stuck at an end would need the player to know which.
-#[test]
-fn the_picker_wraps_at_both_ends() {
-    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    app.apply(Action::GbaDown(Btn::Start));
-    app.apply(Action::GbaDown(Btn::Up));
-    assert_eq!(app.core_picker(), Some(slot_store::Core::ALL.len() - 1));
-    app.apply(Action::GbaDown(Btn::Down));
-    assert_eq!(app.core_picker(), Some(0));
 }
 
 /// The picker is on START because SELECT is the chord key. Held, SELECT turns Up/Down into
@@ -772,8 +895,8 @@ fn the_bar_sits_behind_the_row_the_player_is_on() {
         "the bar is nearer the second row than the first: bar {bars:?}, rows {rows:?}"
     );
 
-    app.apply(Action::GbaDown(Btn::Down));
-    assert_eq!(app.core_picker(), Some(1));
+    app.apply(Action::GbaDown(Btn::Right));
+    assert_eq!(app.core_picker(), Some(Core::Gpsp));
     let mut moved = Vec::new();
     app.draw(&mut moved);
     let bars = highlight_bars(&moved, &faces);
@@ -798,6 +921,7 @@ fn closing_the_picker_takes_it_off_the_screen() {
 
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::B));
+    let_it_close(&mut app);
     let mut out = Vec::new();
     app.draw(&mut out);
 
