@@ -8,14 +8,15 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm,
-    hint_face, icon_face, menu_face, padded, photo_face, set_clock_hint_face, socket_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice,
-    StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND, TURN_PAD,
+    arrows_hint_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm, hint_face,
+    icon_face, menu_face, photo_face, set_clock_hint_face, socket_face, sticker_face, title_face,
+    toast_face, wallpaper_face, word_face, Icon, PowerChoice, StickerFields, Toast, ALERT_PX,
+    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, GameRow, LinkRow, Phase};
 use crate::build_info::Build;
+use crate::face_builder::FaceBuilder;
 use crate::link_start::{LinkFail, LinkStep};
 use crate::session::Session;
 use crate::wallpaper;
@@ -43,6 +44,10 @@ pub struct Frontend {
     polaroid_texes: Vec<TexId>,
     /// The top plate's line of type, re-rasterised whenever the selection moves.
     title_tex: Option<TexId>,
+    /// Builds the open cart's faces off the frame loop.
+    faces: FaceBuilder,
+    /// The cart last asked for.
+    core_asked: Option<String>,
     /// The open cart and its lid, and which cart they were built for.
     core_board_tex: Option<TexId>,
     core_lid_tex: Option<TexId>,
@@ -100,6 +105,8 @@ impl Frontend {
             draws: Vec::new(),
             polaroid_texes: Vec::new(),
             title_tex: None,
+            faces: FaceBuilder::spawn(),
+            core_asked: None,
             core_board_tex: None,
             core_lid_tex: None,
             core_built: None,
@@ -264,6 +271,8 @@ impl Frontend {
         sync_core_picker(
             self.session.app_mut(),
             compositor,
+            &self.faces,
+            &mut self.core_asked,
             &mut self.core_board_tex,
             &mut self.core_lid_tex,
             &mut self.core_built,
@@ -455,44 +464,47 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
     app.set_sticker_face(id);
 }
 
-/// The open cart and its lid, rebuilt only when the cart under the caret changes while the
-/// picker is up — once per open. `built` is what makes that a comparison rather than a
-/// rasterise every frame, and it goes back to `None` when the picker closes, so opening the
-/// same cart again builds it again.
+/// The open cart's faces, asked for as soon as the caret lands on a cart and uploaded when the
+/// worker hands them back, so they are normally on the GPU before START. The worker is the only
+/// place they are built: rasterised on the frame loop, a board freezes the shelf for the better
+/// part of half a second on the H700.
 fn sync_core_picker(
     app: &mut App,
     compositor: &mut Compositor,
+    builder: &FaceBuilder,
+    asked: &mut Option<String>,
     board: &mut Option<TexId>,
     lid: &mut Option<TexId>,
     built: &mut Option<String>,
 ) {
-    let want = app
-        .core_picker()
-        .and_then(|_| app.selected_stem().map(str::to_string));
-    if *built == want {
+    let highlighted = app.selected_stem().map(str::to_string);
+    if highlighted.is_some() && *asked != highlighted {
+        if let Some(cart) = app
+            .carts()
+            .iter()
+            .find(|c| highlighted.as_deref() == Some(c.stem.as_str()))
+        {
+            builder.request(cart.clone());
+        }
+        *asked = highlighted.clone();
+    }
+    let Some(faces) = builder.take() else {
+        return;
+    };
+    // A build for a cart the caret has since left is dropped; the one it is on is on its way.
+    if highlighted.as_deref() != Some(faces.stem.as_str()) || *built == highlighted {
         return;
     }
-    *built = want.clone();
-    let Some(stem) = want else {
-        return;
-    };
-    let Some((board_face, lid_face)) = app
-        .carts()
-        .iter()
-        .find(|c| c.stem == stem)
-        .map(|c| (board_face(c), padded(&cart_face(c), TURN_PAD)))
-    else {
-        return;
-    };
     let board_id = upload_rgba(
         compositor,
         board,
-        board_face.w,
-        board_face.h,
-        &board_face.rgba,
+        faces.board.w,
+        faces.board.h,
+        &faces.board.rgba,
     );
-    let lid_id = upload_rgba(compositor, lid, lid_face.w, lid_face.h, &lid_face.rgba);
+    let lid_id = upload_rgba(compositor, lid, faces.lid.w, faces.lid.h, &faces.lid.rgba);
     app.set_core_board_faces(board_id, lid_id);
+    *built = Some(faces.stem);
 }
 
 fn upload(compositor: &mut Compositor, slot: &mut Option<TexId>, face: slot_ui::UndoFace) -> TexId {
