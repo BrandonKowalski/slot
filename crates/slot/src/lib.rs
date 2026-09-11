@@ -9,6 +9,7 @@ pub mod face_builder;
 pub mod frames;
 pub mod frontend;
 pub mod input;
+pub mod link_kind;
 pub mod link_net;
 pub mod link_radio;
 pub mod link_start;
