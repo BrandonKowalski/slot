@@ -11,9 +11,9 @@ use slot_store::{
 use slot_ui::{
     board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
     lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed,
-    Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U,
-    CHIP_V, CHIP_W, HINT_GAP, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V,
-    SOCKET_W, TURN_PAD,
+    Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U,
+    SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -324,7 +324,9 @@ pub struct App {
     /// The chip in flight, blank, and the shadow under it.
     core_blank_chip_face: Option<TexId>,
     core_chip_shadow_face: Option<TexId>,
-    /// `B` Back, the two arrows, `A` Choose, each with the width it was rastered at.
+    /// `B` Back, the two arrows, `A` Choose, each with the width it was rastered at, laid out
+    /// by role in that order: Back under the cart's left edge, Swap on the panel's centre,
+    /// Choose under its right edge.
     core_legend_faces: Vec<(TexId, u32)>,
     /// Open when SELECT+MENU raised the in-game menu over a running game. An overlay rather
     /// than a phase, and for a stronger reason than the power menu's: `Phase::Playing` is
@@ -1839,24 +1841,25 @@ impl App {
             });
         }
 
-        let gaps = HINT_GAP * self.core_legend_faces.len().saturating_sub(1) as f32;
-        let span: f32 = self
-            .core_legend_faces
-            .iter()
-            .map(|(_, w)| *w as f32)
-            .sum::<f32>()
-            + gaps;
-        let mut x = ((OUT_W as f32 - span) / 2.0).round();
-        for (tex, w) in self.core_legend_faces.iter().copied() {
-            out.push(Draw::Tex {
-                x,
-                y: CORE_LEGEND_Y,
-                w: w as f32,
-                h: HINT_H as f32,
-                tex,
-                alpha: lift,
-            });
-            x += w as f32 + HINT_GAP;
+        // Back under the open cart's left edge, Swap on the panel's centre line, Choose under
+        // its right edge: the row belongs to the cart above it, and the control the screen is
+        // about sits in the middle.
+        if let [back, swap, choose] = self.core_legend_faces.as_slice() {
+            let right = BOARD_X + BOARD_W as f32;
+            for (tex, w, x) in [
+                (back.0, back.1, BOARD_X),
+                (swap.0, swap.1, ((OUT_W - swap.1) / 2) as f32),
+                (choose.0, choose.1, right - choose.1 as f32),
+            ] {
+                out.push(Draw::Tex {
+                    x: x.round(),
+                    y: CORE_LEGEND_Y,
+                    w: w as f32,
+                    h: HINT_H as f32,
+                    tex,
+                    alpha: lift,
+                });
+            }
         }
     }
 

@@ -9,8 +9,8 @@ use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
-    TURN_PAD,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V,
+    SOCKET_W, TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -1106,10 +1106,23 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     assert!(shadow_i < lid_i, "the lid's shadow is drawn over the lid");
 
-    for (tex, _) in f.legend {
-        let (_, at) = tex_at(&out, tex).expect("a legend hint is missing");
-        assert_eq!(at[1], 386.0, "the legend is off its line");
-    }
+    // Back under the cart's left edge, Swap on the panel's centre line, Choose ending under the
+    // cart's right edge. The fake widths are 60, 90 and 80.
+    let [back, swap, choose] = f.legend;
+    let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
+    assert_eq!(at(back.0), [174.0, 386.0, back.1 as f32, HINT_H as f32]);
+    assert_eq!(
+        at(swap.0)[0] + swap.1 as f32 / 2.0,
+        360.0,
+        "Swap is off the panel's centre"
+    );
+    assert_eq!(at(swap.0)[1], 386.0);
+    assert_eq!(
+        at(choose.0)[0] + choose.1 as f32,
+        546.0,
+        "Choose does not end at the cart's right edge"
+    );
+    assert_eq!(at(choose.0)[1], 386.0);
 }
 
 /// A face drawn at its own size is only sharp on whole pixels. At a fractional place the linear
