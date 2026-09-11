@@ -16,15 +16,27 @@ const WIRELESS: [&str; 43] = [
     "BR5E", "BR6E", "BRBE", "BRKE", "BTME", "BTMJ", "BTMP",
 ];
 
-/// `code` is the four-character header code and `title` the header title, as `Cart` has them.
-pub fn link_kind(code: &str, title: &str) -> LinkKind {
-    // Ruby, Sapphire, and Advance Wars use the cable.
-    if code.starts_with("AXV") || code.starts_with("AXP") || code.starts_with("AW") {
-        return LinkKind::Cable;
+/// `code` and `title` are the header's, as `Cart` has them; `clean` is
+/// `slot_store::header_clean` for the same ROM.
+pub fn link_kind(code: &str, title: &str, clean: bool) -> LinkKind {
+    let pokemon = title.starts_with("POKEMON")
+        || ["AXV", "AXP", "BPE", "BPR", "BPG"]
+            .iter()
+            .any(|p| code.starts_with(p));
+    if pokemon {
+        // gpSP treats a Pokémon ROM as a hack, and links it by cable, unless its header is
+        // standard, it is 16 MB or smaller, its code is one gpSP knows and its title is exactly
+        // the retail one. Of the retail games only FireRed, LeafGreen and Emerald get the adapter.
+        let retail = clean
+            && WIRELESS.contains(&code)
+            && ["POKEMON FIRE", "POKEMON LEAF", "POKEMON EMER"].contains(&title);
+        return if retail {
+            LinkKind::Wireless
+        } else {
+            LinkKind::Cable
+        };
     }
-    let pokemon =
-        title.starts_with("POKEMON") || ["BPE", "BPR", "BPG"].iter().any(|p| code.starts_with(p));
-    if pokemon || WIRELESS.contains(&code) {
+    if WIRELESS.contains(&code) {
         LinkKind::Wireless
     } else {
         LinkKind::Cable

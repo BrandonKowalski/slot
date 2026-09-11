@@ -378,6 +378,9 @@ pub struct App {
     /// to come back from cancelling.
     game_menu: Option<GameMenu>,
     link_sprites: Option<LinkSprites>,
+    /// The seated cart's link hardware, read once when the screen opens (see
+    /// `seated_link_kind`) rather than every frame `draw_game_menu` runs.
+    link_hardware: LinkKind,
     /// The role last picked, Host or Join, so opening the screen again lands back on it
     /// rather than always starting at Host.
     last_role: LinkRow,
@@ -517,6 +520,7 @@ impl App {
             core_legend_faces: Vec::new(),
             game_menu: None,
             link_sprites: None,
+            link_hardware: LinkKind::Cable,
             last_role: LinkRow::Host,
             link_menu_faces: Vec::new(),
             link_linked_face: None,
@@ -2014,13 +2018,7 @@ impl App {
             colour: slot_ui::opening(),
         });
         if let Some(sprites) = &self.link_sprites {
-            crate::link_screen::draw_link_art(
-                menu,
-                self.seated_link_kind(),
-                self.now(),
-                sprites,
-                out,
-            );
+            crate::link_screen::draw_link_art(menu, self.link_hardware, self.now(), sprites, out);
         }
         let line = match menu {
             GameMenu::Pick(role) => self.link_menu_faces.get(role.index()).copied(),
@@ -2067,11 +2065,13 @@ impl App {
         }
     }
 
-    /// The seated cart's link hardware; a cart the shelf cannot name links by cable.
+    /// The seated cart's link hardware, read from the header on disk here — once, when the
+    /// screen opens (`open_game_menu`) — rather than once a frame; a cart the shelf cannot
+    /// name links by cable.
     fn seated_link_kind(&self) -> LinkKind {
         self.seated()
             .and_then(|stem| self.shelf.carts.iter().find(|c| c.stem == stem))
-            .map(|c| link_kind(&c.code, &c.title))
+            .map(|c| link_kind(&c.code, &c.title, slot_store::header_clean(&c.rom)))
             .unwrap_or(LinkKind::Cable)
     }
 
@@ -2420,6 +2420,7 @@ impl App {
         if self.core != Core::Gpsp {
             return;
         }
+        self.link_hardware = self.seated_link_kind();
         self.game_menu = Some(GameMenu::Pick(self.last_role));
     }
 

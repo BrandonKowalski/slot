@@ -592,23 +592,15 @@ fn a_button_the_menu_is_using_never_reaches_the_game() {
     );
 }
 
-/// A Pokémon cart links over the Wireless Adapter, so that is what its screen shows.
-#[test]
-fn a_pokemon_cart_shows_the_adapter() {
-    let d = common::tmp_root_with_carts(&["Pokemon Emerald", "Zzz"]);
-    let mut app = common::boot(d.path());
-    app.apply(Action::Insert);
-    app.set_core(Core::Gpsp);
-    app.on_core_ready();
-    for _ in 0..120 {
-        app.update(1.0 / 60.0);
-    }
+/// Sprites distinguishable only by their `TexId`, the way `a_pokemon_cart_shows_the_adapter`
+/// and `a_pokemon_hack_shows_the_cable` tell which one the screen actually drew.
+fn fake_link_sprites() -> slot::link_screen::LinkSprites {
     let s = |n: usize| slot::link_screen::Sprite {
         tex: TexId::from_raw(n),
         w: 10,
         h: 10,
     };
-    app.set_link_sprites(slot::link_screen::LinkSprites {
+    slot::link_screen::LinkSprites {
         port: s(1),
         plug_host: s(2),
         plug_join: s(3),
@@ -620,10 +612,34 @@ fn a_pokemon_cart_shows_the_adapter() {
         clicks: s(13),
         arrow_left: s(14),
         arrow_right: s(15),
-    });
+    }
+}
+
+/// A cart in the slot, its link screen open and drawn, with `fake_link_sprites`' faces to
+/// tell the plug from the adapter.
+fn open_link_screen(d: &TempDir) -> Vec<Draw> {
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(Core::Gpsp);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    app.set_link_sprites(fake_link_sprites());
     app.apply(Action::GameMenu);
     let mut out = Vec::new();
     app.draw(&mut out);
+    out
+}
+
+/// A retail Pokémon cart links over the Wireless Adapter, so that is what its screen shows.
+#[test]
+fn a_pokemon_cart_shows_the_adapter() {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    // Written before `boot`, so the shelf scan behind it reads this header off disk.
+    // "Pokemon Emerald" still sorts before "Zzz", so `Action::Insert` seats it.
+    common::write_retail_header(&d, "Pokemon Emerald", "POKEMON EMER", "BPEE");
+    let out = open_link_screen(&d);
     assert!(
         out.iter()
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(4))),
@@ -633,5 +649,30 @@ fn a_pokemon_cart_shows_the_adapter() {
         !out.iter()
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(2))),
         "a plug on a wireless cart"
+    );
+}
+
+/// gpSP forces a Pokémon ROM whose header is not standard to the cable, whatever its title
+/// claims to be — it is a hack, not the retail game.
+#[test]
+fn a_pokemon_hack_shows_the_cable() {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    common::write_retail_header(&d, "Pokemon Emerald", "POKEMON EMER", "BPEE");
+    // Overwrite the entry branch's opcode byte gpSP checks, leaving the rest of the header
+    // (title, code) looking exactly like the retail game.
+    let rom = d.path().join("Games").join("Pokemon Emerald.gba");
+    let mut bytes = std::fs::read(&rom).expect("read rom");
+    bytes[3] = 0;
+    std::fs::write(&rom, bytes).expect("rewrite rom");
+    let out = open_link_screen(&d);
+    assert!(
+        out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(2))),
+        "no plug"
+    );
+    assert!(
+        !out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(4))),
+        "the adapter on a Pokémon hack"
     );
 }

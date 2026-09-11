@@ -21,6 +21,24 @@ pub fn header_code(rom: &Path) -> Option<String> {
     field(rom, CODE_OFF, &mut [0u8; CODE_LEN])
 }
 
+/// Whether gpSP will take a cart's header at its word. A ROM hack's header usually gets the
+/// entry branch's opcode byte or the fixed 0x96 wrong, and a ROM over 16 MB is an expanded
+/// one; gpSP links a Pokémon ROM that fails either by cable. Reads 179 bytes and the file's
+/// length, never the whole ROM.
+pub fn header_clean(rom: &Path) -> bool {
+    let Ok(mut f) = File::open(rom) else {
+        return false;
+    };
+    let Ok(meta) = f.metadata() else {
+        return false;
+    };
+    let mut head = [0u8; 0xB3];
+    f.read_exact(&mut head).is_ok()
+        && head[3] == 0xEA
+        && head[0xB2] == 0x96
+        && meta.len() <= 16 * 1024 * 1024
+}
+
 fn field(rom: &Path, off: u64, buf: &mut [u8]) -> Option<String> {
     let mut f = File::open(rom).ok()?;
     f.seek(SeekFrom::Start(off)).ok()?;

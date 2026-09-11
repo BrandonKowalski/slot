@@ -62,6 +62,16 @@ fn rom_path(d: &TempDir, stem: &str) -> PathBuf {
     d.path().join("Games").join(format!("{stem}.gba"))
 }
 
+/// A header gpSP takes at its word: title, code, the entry branch's 0xEA and the fixed 0x96.
+pub fn write_retail_header(d: &TempDir, stem: &str, title: &str, code: &str) {
+    let mut rom = vec![0u8; 0x100];
+    rom[3] = 0xEA;
+    rom[0xa0..0xa0 + title.len()].copy_from_slice(title.as_bytes());
+    rom[0xac..0xac + code.len()].copy_from_slice(code.as_bytes());
+    rom[0xb2] = 0x96;
+    std::fs::write(rom_path(d, stem), rom).expect("write rom");
+}
+
 /// Tests do not run from the workspace root, so anything reaching a file that is checked in
 /// has to get there from the crate.
 pub fn repo_root() -> PathBuf {
