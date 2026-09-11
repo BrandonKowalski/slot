@@ -18,6 +18,7 @@ use slot_ui::{
 
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
+use crate::link_kind::{link_kind, LinkKind};
 use crate::link_radio::LinkRole;
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
@@ -2012,6 +2013,15 @@ impl App {
             h: OUT_H as f32,
             colour: slot_ui::opening(),
         });
+        if let Some(sprites) = &self.link_sprites {
+            crate::link_screen::draw_link_art(
+                menu,
+                self.seated_link_kind(),
+                self.now(),
+                sprites,
+                out,
+            );
+        }
         let line = match menu {
             GameMenu::Pick(role) => self.link_menu_faces.get(role.index()).copied(),
             GameMenu::Working { step, .. } => self.link_step_faces.get(step.index()).copied(),
@@ -2055,6 +2065,14 @@ impl App {
             });
             x += (seen(w) + LINK_LEGEND_GAP).round();
         }
+    }
+
+    /// The seated cart's link hardware; a cart the shelf cannot name links by cable.
+    fn seated_link_kind(&self) -> LinkKind {
+        self.seated()
+            .and_then(|stem| self.shelf.carts.iter().find(|c| c.stem == stem))
+            .map(|c| link_kind(&c.code, &c.title))
+            .unwrap_or(LinkKind::Cable)
     }
 
     fn on_shelf(&self) -> bool {

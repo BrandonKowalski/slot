@@ -591,3 +591,47 @@ fn a_button_the_menu_is_using_never_reaches_the_game() {
         "the press that picked a row was handed to the game as well"
     );
 }
+
+/// A Pokémon cart links over the Wireless Adapter, so that is what its screen shows.
+#[test]
+fn a_pokemon_cart_shows_the_adapter() {
+    let d = common::tmp_root_with_carts(&["Pokemon Emerald", "Zzz"]);
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(Core::Gpsp);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    let s = |n: usize| slot::link_screen::Sprite {
+        tex: TexId::from_raw(n),
+        w: 10,
+        h: 10,
+    };
+    app.set_link_sprites(slot::link_screen::LinkSprites {
+        port: s(1),
+        plug_host: s(2),
+        plug_join: s(3),
+        adapter: s(4),
+        glow_host: s(5),
+        glow_neutral: s(6),
+        arcs_right: [s(7), s(8), s(9)],
+        arcs_left: [s(10), s(11), s(12)],
+        clicks: s(13),
+        arrow_left: s(14),
+        arrow_right: s(15),
+    });
+    app.apply(Action::GameMenu);
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    assert!(
+        out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(4))),
+        "no adapter"
+    );
+    assert!(
+        !out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(2))),
+        "a plug on a wireless cart"
+    );
+}
