@@ -99,9 +99,11 @@ const POWER_MENU_PITCH: f32 = 44.0;
 /// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
 /// stay separate things rather than one continuous block when the selection moves.
 const POWER_MENU_BAR_INSET: f32 = 4.0;
-/// How far the row makes way while a cart is open, as `Shelf::draw_row` counts `recede`: the
-/// neighbours part and dim to about a quarter, as the mockup has them.
-const CORE_PICKER_RECEDE: f32 = 0.55;
+/// How far the row makes way while a cart is open, as `Shelf::draw_row` counts `recede`. One
+/// number moves the neighbours and dims them, so it is set by where they stand: here they come
+/// to rest at -41 and 574, where the mockup frames the open cart with them, and dim to about
+/// two fifths. Parted far enough to dim to a quarter, they left the open cart alone in the frame.
+const CORE_PICKER_RECEDE: f32 = 0.26;
 /// The legend's line, under the open cart and clear of the case band.
 const CORE_LEGEND_Y: f32 = 386.0;
 /// The soft oval under the resting lid, as the mockup draws it: its size, how far below the
@@ -1733,7 +1735,9 @@ impl App {
         let u = CHIP_U[0] + (CHIP_U[1] - CHIP_U[0]) * chip.across;
         if chip.lift > 0.0 {
             if let Some(tex) = self.core_chip_shadow_face {
-                let (cx, cy) = on_board(board, u + 19.0, CHIP_V + 27.0);
+                // Under the body's middle and 90 units down the board, where the mockup's oval
+                // falls: low enough to read as cast on the board rather than tucked under the pins.
+                let (cx, cy) = on_board(board, u + 19.0, CHIP_V + 29.4);
                 let (w, h) = (SHADOW_W as f32 * zoom, SHADOW_H as f32 * zoom);
                 out.push(Draw::Tex {
                     x: cx - w / 2.0,
