@@ -320,8 +320,6 @@ impl Frontend {
                     plug_host: up(&art.plug_host),
                     plug_join: up(&art.plug_join),
                     adapter: up(&art.adapter),
-                    glow_host: up(&art.glow_host),
-                    glow_neutral: up(&art.glow_neutral),
                     arcs_right: [
                         up(&art.arcs_right[0]),
                         up(&art.arcs_right[1]),

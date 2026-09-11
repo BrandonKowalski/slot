@@ -676,8 +676,6 @@ fn fake_link_sprites() -> slot::link_screen::LinkSprites {
         plug_host: s(2),
         plug_join: s(3),
         adapter: s(4),
-        glow_host: s(5),
-        glow_neutral: s(6),
         arcs_right: [s(7), s(8), s(9)],
         arcs_left: [s(10), s(11), s(12)],
         clicks: s(13),

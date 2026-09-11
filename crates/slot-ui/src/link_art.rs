@@ -1,5 +1,5 @@
 //! The link screen's artwork: the console's port, the two ends of an AGB-005 link cable, the
-//! Wireless Adapter with its label, and the glows, signal arcs, click marks and swap arrows.
+//! Wireless Adapter with its label, and the signal arcs, click marks and swap arrows.
 //! Built once, off the frame loop, by the binary's link art worker.
 
 use crate::art::render_svg;
@@ -24,8 +24,6 @@ pub const ADAPTER_H: u32 = 182;
 /// The middle of the adapter's base line, inside its face.
 pub const ADAPTER_BASE_X: f32 = 134.0;
 pub const ADAPTER_BASE_Y: f32 = 144.0;
-pub const GLOW_HOST_R: u32 = 150;
-pub const GLOW_NEUTRAL_R: u32 = 180;
 /// The right-hand arcs' faces on the canvas for a seated adapter: left, top, width, height.
 pub const ARCS: [(f32, f32, u32, u32); 3] = [
     (508.0, 290.0, 16, 56),
@@ -53,8 +51,6 @@ pub struct LinkArt {
     pub plug_host: CartFace,
     pub plug_join: CartFace,
     pub adapter: CartFace,
-    pub glow_host: CartFace,
-    pub glow_neutral: CartFace,
     pub arcs_right: [CartFace; 3],
     pub arcs_left: [CartFace; 3],
     pub clicks: CartFace,
@@ -75,8 +71,6 @@ pub fn link_art() -> LinkArt {
         plug_host: svg_face(PLUG_HOST_SVG, PLUG_W, PLUG_H),
         plug_join: svg_face(PLUG_JOIN_SVG, PLUG_W, PLUG_H),
         adapter: adapter_face(),
-        glow_host: glow_face(GLOW_HOST_R, [0x8b, 0x73, 0xd6], 0.38),
-        glow_neutral: glow_face(GLOW_NEUTRAL_R, [0xcf, 0xd8, 0xe3], 0.20),
         arcs_right,
         arcs_left,
         clicks: svg_face(
@@ -130,24 +124,6 @@ fn mirror(face: &CartFace) -> CartFace {
         rgba,
         w: face.w,
         h: face.h,
-    }
-}
-
-/// A soft round light behind the art: `peak` alpha at the centre, nothing at `r`.
-fn glow_face(r: u32, colour: [u8; 3], peak: f32) -> CartFace {
-    let size = r * 2;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-    for y in 0..size {
-        for x in 0..size {
-            let (dx, dy) = (x as f32 + 0.5 - r as f32, y as f32 + 0.5 - r as f32);
-            let a = (peak * (1.0 - (dx * dx + dy * dy).sqrt() / r as f32)).clamp(0.0, 1.0);
-            rgba.extend_from_slice(&[colour[0], colour[1], colour[2], (a * 255.0).round() as u8]);
-        }
-    }
-    CartFace {
-        rgba,
-        w: size,
-        h: size,
     }
 }
 

@@ -30,8 +30,6 @@ fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, CartFace)>) {
         plug_host: put(art.plug_host),
         plug_join: put(art.plug_join),
         adapter: put(art.adapter),
-        glow_host: put(art.glow_host),
-        glow_neutral: put(art.glow_neutral),
         arcs_right: [put(ar0), put(ar1), put(ar2)],
         arcs_left: [put(al0), put(al1), put(al2)],
         clicks: put(art.clicks),

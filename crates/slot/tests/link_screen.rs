@@ -27,19 +27,15 @@ fn pick_hangs_the_plug_above_the_port() {
 }
 
 #[test]
-fn working_drops_the_plug_in_200ms_then_bobs_between_352_and_364() {
+fn working_seats_the_plug_in_200ms_and_holds_it_there() {
     let m = working(LinkRow::Host, 1000);
     assert_eq!(plug_tip(m, 1000), 330.0);
-    assert!((plug_tip(m, 1200) - 352.0).abs() < 0.01);
-    let bob: Vec<f32> = (0..1600)
+    assert!((plug_tip(m, 1200) - 419.0).abs() < 0.01);
+    let held: Vec<f32> = (0..3000)
         .step_by(50)
         .map(|t| plug_tip(m, 1200 + t))
         .collect();
-    assert!(bob.iter().all(|y| (351.9..=364.1).contains(y)), "{bob:?}");
-    assert!(
-        bob.iter().any(|y| *y > 363.0),
-        "the bob never reached the bottom"
-    );
+    assert!(held.iter().all(|y| (y - 419.0).abs() < 0.01), "{held:?}");
 }
 
 #[test]
@@ -106,14 +102,39 @@ fn sprites() -> LinkSprites {
         plug_host: s(2, PLUG_W, PLUG_H),
         plug_join: s(3, PLUG_W, PLUG_H),
         adapter: s(4, ADAPTER_W, ADAPTER_H),
-        glow_host: s(5, GLOW_HOST_R * 2, GLOW_HOST_R * 2),
-        glow_neutral: s(6, GLOW_NEUTRAL_R * 2, GLOW_NEUTRAL_R * 2),
         arcs_right: [arc(7, 0), arc(8, 1), arc(9, 2)],
         arcs_left: [arc(10, 0), arc(11, 1), arc(12, 2)],
         clicks: s(13, CLICKS_W, CLICKS_H),
         arrow_left: s(14, ARROW_W, ARROW_H),
         arrow_right: s(15, ARROW_W, ARROW_H),
     }
+}
+
+#[test]
+fn a_searching_plug_sits_in_the_port() {
+    let s = sprites();
+    let mut out = Vec::new();
+    draw_link_art(
+        working(LinkRow::Host, 0),
+        LinkKind::Cable,
+        1000,
+        &s,
+        &mut out,
+    );
+    let plug = out
+        .iter()
+        .position(|d| matches!(d, Draw::Tex { tex, .. } if *tex == s.plug_host.tex))
+        .expect("no plug");
+    assert!(
+        matches!(out[plug], Draw::Tex { y, .. } if y == 419.0 - PLUG_H as f32),
+        "the plug is not seated in the port: {:?}",
+        out[plug]
+    );
+    let port = out
+        .iter()
+        .position(|d| matches!(d, Draw::Tex { tex, .. } if *tex == s.port.tex))
+        .expect("no port");
+    assert!(port > plug, "the port must be drawn over the seated plug");
 }
 
 fn texes(out: &[Draw]) -> Vec<TexId> {
@@ -202,31 +223,11 @@ fn a_failed_plug_is_drawn_turned() {
     ));
 }
 
-/// The Wireless Adapter stands in the port with its signal arcs and no light behind it.
+/// The Wireless Adapter calls out with its signal arcs while it waits.
 #[test]
-fn the_adapter_has_no_glow_but_keeps_its_arcs() {
+fn the_adapter_calls_out_with_its_arcs_while_working() {
     let s = sprites();
     let mut out = Vec::new();
-    let linked = GameMenu::Linked {
-        role: LinkRow::Host,
-        worked: 0,
-        since: 4000,
-    };
-    for (menu, now) in [
-        (GameMenu::Pick(LinkRow::Host), 0),
-        (working(LinkRow::Host, 0), 800),
-        (linked, 4160),
-        (failed(0), 250),
-    ] {
-        out.clear();
-        draw_link_art(menu, LinkKind::Wireless, now, &s, &mut out);
-        let t = texes(&out);
-        assert!(
-            !t.contains(&s.glow_neutral.tex) && !t.contains(&s.glow_host.tex),
-            "a glow behind the adapter: {menu:?}"
-        );
-    }
-    out.clear();
     draw_link_art(
         working(LinkRow::Host, 0),
         LinkKind::Wireless,
@@ -237,39 +238,6 @@ fn the_adapter_has_no_glow_but_keeps_its_arcs() {
     let t = texes(&out);
     assert!(
         t.contains(&s.arcs_right[0].tex) && t.contains(&s.arcs_left[0].tex),
-        "the arcs went with the glow"
+        "no arcs while working"
     );
-}
-
-#[test]
-fn the_glow_eases_between_states_too() {
-    let m = working(LinkRow::Host, 1000);
-    assert_eq!(glow_alpha(m, 1000), 1.0);
-    assert!(
-        (glow_alpha(m, 1199) - glow_alpha(m, 1200)).abs() < 0.02,
-        "the glow stepped at the end of the drop"
-    );
-    let (worked, since) = (1000, 2700);
-    let waiting = glow_alpha(working(LinkRow::Host, worked), since);
-    let linked = GameMenu::Linked {
-        role: LinkRow::Host,
-        worked,
-        since,
-    };
-    assert!(
-        (glow_alpha(linked, since) - waiting).abs() < 1e-4,
-        "the glow jumped when the link came up"
-    );
-    assert!((glow_alpha(linked, since + 160) - 1.0).abs() < 1e-4);
-    let failed = GameMenu::Failed {
-        role: LinkRow::Host,
-        fail: LinkFail::NobodyCame,
-        worked,
-        since,
-    };
-    assert!(
-        (glow_alpha(failed, since) - waiting).abs() < 1e-4,
-        "the glow jumped when the link failed"
-    );
-    assert!((glow_alpha(failed, since + 250) - 0.45).abs() < 1e-4);
 }

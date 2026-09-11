@@ -8,13 +8,7 @@ fn render_link_art() {
         return;
     };
     let a = link_art();
-    let faces: [&CartFace; 5] = [
-        &a.port,
-        &a.plug_host,
-        &a.plug_join,
-        &a.adapter,
-        &a.glow_host,
-    ];
+    let faces: [&CartFace; 4] = [&a.port, &a.plug_host, &a.plug_join, &a.adapter];
     let (w, h) = (760u32, faces.iter().map(|f| f.h + 10).sum::<u32>());
     let mut sheet = vec![0x05u8; (w * h * 4) as usize];
     let mut top = 0;
