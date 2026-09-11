@@ -8,7 +8,7 @@ use slot_gfx::OUT_W;
 use slot_store::{Cart, Core};
 
 use crate::art;
-use crate::cart::{clean_label, label_tags, CartFace, CART_H, CART_W};
+use crate::cart::{clean_label, CartFace, CART_H, CART_W};
 use crate::shelf::FOOT_Y;
 use crate::shell::shell_for;
 use crate::slot_chrome::ease;
@@ -39,22 +39,13 @@ const MARK_LINES: usize = 3;
 const MARK_PAD: u32 = 4;
 const MARK_PX: f32 = 10.0;
 const MARK_MIN_PX: f32 = 6.0;
-const TAG_PX: f32 = 7.0;
-const TAG_MIN_PX: f32 = 5.0;
 /// Grey on black, as a mask ROM is marked: legible, and nothing like the socket names, which
 /// are the words on the board that mean something.
 const MARK_INK: [u8; 3] = [0xbd, 0xbd, 0xbd];
-const TAG_INK: [u8; 3] = [0x8a, 0x8a, 0x8a];
-const CELL_INK: [u8; 3] = [0x6a, 0x6b, 0x70];
 
-/// What the ROM says: the game a few words to a line, and the dump's tags beneath.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct RomMarking {
-    pub title: Vec<String>,
-    pub tags: Option<String>,
-}
-
-pub fn rom_marking(stem: &str) -> RomMarking {
+/// The game's title, a few words to a line. The dump's bracketed tags are facts about the file
+/// rather than the game, and the chip does not carry them.
+pub fn rom_marking(stem: &str) -> Vec<String> {
     let mut title: Vec<String> = Vec::new();
     for word in clean_label(stem).to_uppercase().split_whitespace() {
         match title.last_mut() {
@@ -69,16 +60,12 @@ pub fn rom_marking(stem: &str) -> RomMarking {
         let tail = title.split_off(MARK_LINES - 1).join(" ");
         title.push(tail);
     }
-    let tags = label_tags(stem);
-    RomMarking {
-        title,
-        tags: (!tags.is_empty()).then(|| tags.join(" · ").to_uppercase()),
-    }
+    title
 }
 
 /// The marking alone, on nothing, the size of the ROM's body.
 pub fn rom_marking_face(stem: &str) -> CartFace {
-    let mark = rom_marking(stem);
+    let title = rom_marking(stem);
     let mut face = CartFace {
         rgba: vec![0; (ROM_W * ROM_H * 4) as usize],
         w: ROM_W,
@@ -89,19 +76,11 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
     };
     let max_w = (ROM_W - 2 * MARK_PAD) as f32;
     let line_h = (MARK_PX * 1.25).ceil() as u32;
-    let tag_h = match mark.tags {
-        Some(_) => (TAG_PX * 1.6).ceil() as u32,
-        None => 0,
-    };
-    let mut top = ROM_H.saturating_sub(line_h * mark.title.len() as u32 + tag_h) / 2;
-    for line in &mark.title {
+    let mut top = ROM_H.saturating_sub(line_h * title.len() as u32) / 2;
+    for line in &title {
         let layout = text::fit(font, line, max_w, 1, MARK_PX, MARK_MIN_PX);
         ink_band(&mut face, top, line_h, &layout, MARK_INK, 1.0);
         top += line_h;
-    }
-    if let Some(tags) = &mark.tags {
-        let layout = text::fit(font, tags, max_w, 1, TAG_PX, TAG_MIN_PX);
-        ink_band(&mut face, top, tag_h, &layout, TAG_INK, 1.0);
     }
     face
 }
@@ -123,7 +102,6 @@ pub fn board_face(cart: &Cart) -> CartFace {
         h: BOARD_H,
     };
     over(&mut face, &rom_marking_face(&cart.stem), ROM_X, ROM_Y);
-    print_cell(&mut face);
     face
 }
 
@@ -156,22 +134,6 @@ fn ink_band(
         }
         face.rgba[at + 3] = (out_a * 255.0).round() as u8;
     }
-}
-
-/// `CR1616` on the cell, at board unit (204, 38).
-fn print_cell(face: &mut CartFace) {
-    let Some(font) = text::label_font() else {
-        return;
-    };
-    let (w, h) = (30u32, 10u32);
-    let mut cell = CartFace {
-        rgba: vec![0; (w * h * 4) as usize],
-        w,
-        h,
-    };
-    let layout = text::fit(font, "CR1616", w as f32, 1, 6.0, 4.0);
-    ink_band(&mut cell, 0, h, &layout, CELL_INK, 1.0);
-    over(face, &cell, 316 - w / 2, 59 - h / 2);
 }
 
 /// Straight alpha over an opaque face.

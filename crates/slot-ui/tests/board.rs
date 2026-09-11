@@ -27,37 +27,30 @@ fn near(a: [u8; 3], b: [u8; 3]) -> bool {
 
 const EMERALD: &str = "Pokemon - Emerald Version (USA, Europe)";
 
-/// The chip is tall and narrow, so the name goes on it a few words at a time, and the dump's
-/// bracketed facts go underneath in smaller type — the way a mask ROM carries a part number
-/// over a date code.
+/// The chip is tall and narrow, so the name goes on it a few words at a time. The dump's tags
+/// are facts about the file, not the game, and the chip does not carry them.
 #[test]
-fn the_marking_stacks_the_title_and_puts_the_tags_beneath() {
-    let m = rom_marking(EMERALD);
-    assert_eq!(m.title, ["POKEMON", "EMERALD", "VERSION"]);
-    assert_eq!(m.tags.as_deref(), Some("USA, EUROPE"));
+fn the_marking_is_the_title_stacked() {
+    assert_eq!(rom_marking(EMERALD), ["POKEMON", "EMERALD", "VERSION"]);
 }
 
 /// Three lines is all the chip has. A fourth would run off the bottom, so the rest joins the
 /// third and the fitter shrinks it.
 #[test]
 fn a_long_title_folds_its_tail_into_the_third_line() {
-    let m = rom_marking("Advance Wars 2 - Black Hole Rising");
-    assert_eq!(m.title, ["ADVANCE", "WARS 2", "BLACK HOLE RISING"]);
-    assert_eq!(m.tags, None);
-}
-
-/// One tag per bracketed group, as `label_tags` has it: `(USA, Europe)` is one release.
-#[test]
-fn every_bracketed_group_is_its_own_tag() {
-    let m = rom_marking("Pokemon - LeafGreen Version (USA, Europe) (Rev 1)");
-    assert_eq!(m.tags.as_deref(), Some("USA, EUROPE · REV 1"));
+    assert_eq!(
+        rom_marking("Advance Wars 2 - Black Hole Rising"),
+        ["ADVANCE", "WARS 2", "BLACK HOLE RISING"]
+    );
 }
 
 #[test]
-fn a_title_without_brackets_has_no_tag_line() {
-    let m = rom_marking("Metroid Fusion");
-    assert_eq!(m.title, ["METROID", "FUSION"]);
-    assert_eq!(m.tags, None);
+fn bracketed_tags_never_reach_the_chip() {
+    assert_eq!(
+        rom_marking("Pokemon - LeafGreen Version (USA, Europe) (Rev 1)"),
+        ["POKEMON", "LEAFGREEN", "VERSION"]
+    );
+    assert_eq!(rom_marking("Metroid Fusion"), ["METROID", "FUSION"]);
 }
 
 /// Ink in the outermost column is type that ran off the chip and onto the legs.
@@ -85,6 +78,19 @@ fn the_marking_is_drawn_and_stays_on_the_chip() {
             );
         }
     }
+}
+
+/// The coin cell is bare metal. Board unit (204, 38) lands at panel pixel (316, 59) of the face;
+/// within 9 px of it is only the cell's own fill, so dark pixels there are print.
+#[test]
+fn the_cell_carries_no_print() {
+    let face = board_face(&cart(EMERALD, "BPEE"));
+    let dark = (50..69)
+        .flat_map(|y| (307..326).map(move |x| (x, y)))
+        .filter(|&(x, y)| (x as i32 - 316).pow(2) + (y as i32 - 59).pow(2) <= 81)
+        .filter(|&(x, y)| rgb(&face, x, y)[0] < 150)
+        .count();
+    assert_eq!(dark, 0, "the cell still has {dark} dark pixels of print");
 }
 
 /// Rasterised at the size it is shown at, since that is the only size a face is sharp at.
