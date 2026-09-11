@@ -1,7 +1,7 @@
 use slot_input::RawEvent::{Down, Up};
 use slot_input::{
-    Action::*, Btn, Btn::*, Gestures, RawEvent, MENU_HOLD_MS, POWER_HOLD_MS, SELECT_CHORD_MS,
-    SELECT_TAP_MS, VOLUME_REPEAT_DELAY_MS, VOLUME_REPEAT_MS,
+    Action, Action::*, Btn, Btn::*, Gestures, RawEvent, MENU_HOLD_MS, POWER_HOLD_MS,
+    SELECT_CHORD_MS, SELECT_TAP_MS, VOLUME_REPEAT_DELAY_MS, VOLUME_REPEAT_MS,
 };
 
 #[test]
@@ -389,5 +389,54 @@ fn the_menu_button_still_works_after_a_chord() {
         g.feed(Up(Menu), 450),
         vec![OpenAbout],
         "the chord left the menu button dead"
+    );
+}
+
+/// On the shelf SELECT + START is the core picker, and neither key reaches anything else.
+#[test]
+fn select_and_start_choose_the_core_on_the_shelf() {
+    let mut g = Gestures::new();
+    g.set_shelf(true);
+    assert!(g.feed(RawEvent::Down(Btn::Select), 0).is_empty());
+    assert_eq!(
+        g.feed(RawEvent::Down(Btn::Start), 10),
+        vec![Action::ChooseCore]
+    );
+    assert!(
+        g.feed(RawEvent::Up(Btn::Start), 20).is_empty(),
+        "the START release leaked"
+    );
+    assert!(
+        g.feed(RawEvent::Up(Btn::Select), 30).is_empty(),
+        "the SELECT press leaked"
+    );
+    assert!(g.tick(1_000).is_empty());
+}
+
+/// In a game the pair belongs to the game: A+B+SELECT+START resets most GBA games.
+#[test]
+fn select_and_start_in_a_game_reach_the_game() {
+    let mut g = Gestures::new();
+    g.set_shelf(false);
+    assert!(g.feed(RawEvent::Down(Btn::Select), 0).is_empty());
+    assert_eq!(
+        g.feed(RawEvent::Down(Btn::Start), 10),
+        vec![Action::GbaDown(Btn::Start)]
+    );
+    let later = g.tick(1_000);
+    assert!(
+        later.contains(&Action::GbaDown(Btn::Select)),
+        "SELECT never reached the game"
+    );
+}
+
+/// START alone is not the chord anywhere.
+#[test]
+fn start_alone_on_the_shelf_is_just_start() {
+    let mut g = Gestures::new();
+    g.set_shelf(true);
+    assert_eq!(
+        g.feed(RawEvent::Down(Btn::Start), 0),
+        vec![Action::GbaDown(Btn::Start)]
     );
 }

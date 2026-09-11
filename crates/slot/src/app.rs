@@ -946,16 +946,11 @@ impl App {
         let now = self.now();
         match self.phase {
             Phase::Shelf => match action {
-                // START rather than SELECT, and the difference is not cosmetic. SELECT is
-                // the chord key: held, it turns Up/Down into brightness and Left/Right into
-                // blue light, and `adjust` answers those on every screen including this one.
-                // Opening a menu the instant SELECT goes down would eat the first half of
-                // every one of those chords; waiting out the 600 ms window instead would put
-                // that delay in front of the menu. START is bound to nothing here and reaches
-                // no core from the shelf, so it costs neither.
-                Action::GbaDown(Btn::Start) if self.core_picker.is_none() => {
-                    self.open_core_picker()
-                }
+                // SELECT + START, not START alone: the gesture layer only makes the chord here,
+                // so in a game START stays the GBA's own. SELECT still turns Up/Down and
+                // Left/Right into brightness and blue light on its own; START after it is what
+                // makes this the picker.
+                Action::ChooseCore if self.core_picker.is_none() => self.open_core_picker(),
                 // Ahead of the shelf's own movement, so an open picker takes the arrows
                 // before the row of carts underneath it does.
                 _ if self.core_picker.is_some() => self.core_picker_input(action),
@@ -1561,7 +1556,7 @@ impl App {
             }
         }
         // After the shelf, never before it: drawn first it would be painted over by the very
-        // row of carts it is a menu for, and START would look like a button that does
+        // row of carts it is a menu for, and SELECT + START would look like a chord that does
         // nothing. Only the shelf can raise it, so no phase needs excluding here — the
         // phases that own the whole panel have already returned.
         if let Some(picker) = self.core_picker_shown() {
@@ -2203,8 +2198,8 @@ impl App {
         }
     }
 
-    /// SELECT on the shelf offers the highlighted cart's core, opening on the one it already
-    /// uses so the menu answers "which is this?" before it asks "which do you want?".
+    /// SELECT + START on the shelf offers the highlighted cart's core, opening on the one it
+    /// already uses so the menu answers "which is this?" before it asks "which do you want?".
     ///
     /// Both the read that positions the highlight and the write that follows need the card.
     /// Without one there is nothing to configure and nowhere to put an answer, so the button
@@ -2225,9 +2220,9 @@ impl App {
             picker.start(now);
         }
         self.core_picker = Some(picker);
-        // Whatever the shelf had armed before START belonged to the shelf that was showing,
-        // not to the cart now open over it: a held direction would keep repeating underneath
-        // the lid, and a held A would still insert the cart once its 500 ms ran out.
+        // Whatever the shelf had armed before SELECT + START belonged to the shelf that was
+        // showing, not to the cart now open over it: a held direction would keep repeating
+        // underneath the lid, and a held A would still insert the cart once its 500 ms ran out.
         self.shelf.release_hold();
         self.play_held = None;
     }

@@ -15,13 +15,13 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 
 ### On the carousel
 
-| Input     | Action                              |
-|-----------|-------------------------------------|
-| `L` / `R` | Browse the carousel                 |
-| Tap `A`   | Resume the last save state          |
-| Hold `A`  | Start the game fresh                |
-| `MENU`    | Open the about screen               |
-| `START`   | Choose which emulator runs the cart |
+| Input               | Action                              |
+|---------------------|-------------------------------------|
+| `L` / `R`           | Browse the carousel                 |
+| Tap `A`             | Resume the last save state          |
+| Hold `A`            | Start the game fresh                |
+| `MENU`              | Open the about screen               |
+| `SELECT` + `START`  | Choose which emulator runs the cart |
 
 ### In game
 

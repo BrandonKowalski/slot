@@ -543,11 +543,11 @@ fn let_it_hop(app: &mut App) {
 /// Opening on mGBA whatever the cart runs would be a board that says every cart runs mGBA,
 /// which is a lie the moment one of them does not.
 #[test]
-fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
+fn select_and_start_on_the_shelf_open_the_core_picker_on_the_carts_current_core() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     assert_eq!(app.selected_stem(), Some("Emerald"));
 
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     assert_eq!(
         app.core_picker(),
         Some(Core::Mgba),
@@ -557,7 +557,7 @@ fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
     let_it_close(&mut app);
 
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     assert_eq!(
         app.core_picker(),
         Some(Core::Gpsp),
@@ -570,7 +570,7 @@ fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
 fn choosing_a_core_writes_it_and_closes() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
 
@@ -592,7 +592,7 @@ fn choosing_a_core_writes_it_and_closes() {
 fn b_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
     let_it_close(&mut app);
@@ -611,7 +611,7 @@ fn b_closes_the_picker_without_writing() {
 fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
 
     app.apply(Action::GbaDown(Btn::Left));
     assert_eq!(
@@ -648,7 +648,7 @@ fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
 fn a_shelf_refusal_does_not_shake_once_the_picker_takes_over() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     app.refuse();
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     assert_eq!(
         app.shelf_shake(),
         0.0,
@@ -660,7 +660,7 @@ fn a_shelf_refusal_does_not_shake_once_the_picker_takes_over() {
 fn back_mid_hop_turns_round_and_onward_does_nothing() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
 
@@ -684,7 +684,7 @@ fn back_mid_hop_turns_round_and_onward_does_nothing() {
 fn a_mid_hop_writes_where_the_chip_is_heading() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
     app.apply(Action::GbaDown(Btn::A));
@@ -696,7 +696,7 @@ fn a_mid_hop_writes_where_the_chip_is_heading() {
 #[test]
 fn the_a_that_saved_does_not_start_the_cart() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
     let_it_close(&mut app);
@@ -714,7 +714,7 @@ fn the_a_that_saved_does_not_start_the_cart() {
 fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     for key in [Btn::Up, Btn::Down, Btn::Start, Btn::Select] {
         app.apply(Action::GbaDown(key));
         assert_eq!(
@@ -742,7 +742,7 @@ fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
 fn shutting_the_lid_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::LidClose);
     assert_eq!(app.core_picker(), None, "the picker survived the lid");
@@ -754,7 +754,7 @@ fn shutting_the_lid_closes_the_picker_without_writing() {
 #[test]
 fn the_picker_swallows_the_shelf_arrows() {
     let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion"]);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
     assert_eq!(
@@ -764,14 +764,15 @@ fn the_picker_swallows_the_shelf_arrows() {
     );
 }
 
-/// An A pressed just before START belonged to the shelf that was showing when it went down.
-/// Opening the picker has to let go of it, or its 500 ms hold still runs out underneath the
-/// open cart and inserts it clean, skipping the resume the shelf would otherwise have offered.
+/// An A pressed just before SELECT + START belonged to the shelf that was showing when it went
+/// down. Opening the picker has to let go of it, or its 500 ms hold still runs out underneath
+/// the open cart and inserts it clean, skipping the resume the shelf would otherwise have
+/// offered.
 #[test]
 fn opening_the_picker_lets_go_of_a_play_hold_already_armed() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     app.apply(Action::GbaDown(Btn::A));
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaUp(Btn::A));
     app.update(0.6);
     assert!(
@@ -781,14 +782,14 @@ fn opening_the_picker_lets_go_of_a_play_hold_already_armed() {
     );
 }
 
-/// A direction still repeating when START goes down is the shelf's, not the picker's: it must
-/// stop, the same as when the shelf leaves the screen any other way, or the row keeps moving
-/// underneath the cart that is supposedly open.
+/// A direction still repeating when SELECT + START goes down is the shelf's, not the picker's:
+/// it must stop, the same as when the shelf leaves the screen any other way, or the row keeps
+/// moving underneath the cart that is supposedly open.
 #[test]
 fn opening_the_picker_lets_go_of_a_direction_still_held() {
     let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion", "Zzz"]);
     app.apply(Action::GbaDown(Btn::Right));
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.update(0.6);
     assert_eq!(
         app.selected_stem(),
@@ -802,15 +803,15 @@ fn opening_the_picker_lets_go_of_a_direction_still_held() {
 #[test]
 fn the_picker_does_not_open_on_an_empty_shelf() {
     let (_d, mut app) = on_shelf(&[]);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     assert_eq!(app.core_picker(), None);
 }
 
-/// The picker is on START because SELECT is the chord key. Held, SELECT turns Up/Down into
-/// brightness and Left/Right into blue light, and `adjust` answers those on the shelf as
-/// readily as in a game. A picker on SELECT would have to choose between eating the first
-/// half of every one of those chords and putting the 600 ms chord window in front of the
-/// menu; START is bound to nothing here and owes neither.
+/// The picker opens only on `Action::ChooseCore`, which the gesture layer emits from SELECT +
+/// START — never on a bare SELECT. Held on its own, SELECT turns Up/Down into brightness and
+/// Left/Right into blue light, and `adjust` answers those on the shelf as readily as in a game;
+/// this layer must not treat a bare SELECT as the picker's, or it would steal the chord's
+/// first half from `adjust` before the gesture layer ever sees the second key.
 #[test]
 fn select_on_the_shelf_leaves_the_picker_shut_so_it_can_still_chord() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
@@ -825,6 +826,14 @@ fn select_on_the_shelf_leaves_the_picker_shut_so_it_can_still_chord() {
     // That SELECT+Up actually yields BrightnessUp is the gesture layer's to prove, and it
     // does: see the chord table test in slot-input/tests/gesture.rs. What this layer owes is
     // only that the shelf does not intercept SELECT before the chord can form.
+}
+
+/// START on its own is a key the shelf no longer uses.
+#[test]
+fn start_alone_on_the_shelf_leaves_the_picker_shut() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Start));
+    assert_eq!(app.core_picker(), None);
 }
 
 /// Stand-ins for everything the frontend uploads for the picker, so the draw can be read back
@@ -1029,7 +1038,7 @@ fn let_it_open(app: &mut App) {
 fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     let out = frame(&app);
 
@@ -1133,7 +1142,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
 fn the_sockets_and_the_seated_chip_rest_on_whole_pixels() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     let out = frame(&app);
 
@@ -1157,7 +1166,7 @@ fn the_neighbours_dim_to_a_quarter_while_a_cart_is_open() {
     let faces = vec![TexId::from_raw(920), TexId::from_raw(921)];
     app.set_faces(faces.clone());
     fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     let out = frame(&app);
 
@@ -1181,7 +1190,7 @@ fn the_neighbours_dim_to_a_quarter_while_a_cart_is_open() {
 fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     app.apply(Action::GbaDown(Btn::Right));
     let_it_hop(&mut app);
@@ -1214,7 +1223,7 @@ fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
 fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let out = frame(&app);
 
     let standing = out
@@ -1311,7 +1320,7 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
 fn mid_hop_the_chip_is_blank_tipped_and_off_the_board() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     let (_, seated, _) = turned_at(&frame(&app), f.chips[0]).expect("no seated chip");
 
@@ -1350,7 +1359,7 @@ fn mid_hop_the_chip_is_blank_tipped_and_off_the_board() {
 fn the_chip_alone_shakes_when_refused() {
     let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     let before = frame(&app);
     app.apply(Action::GbaDown(Btn::Left));
@@ -1378,7 +1387,7 @@ fn the_chip_alone_shakes_when_refused() {
 fn closing_puts_the_cart_back_on_the_shelf() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     let_it_open(&mut app);
     app.apply(Action::GbaDown(Btn::B));
 
@@ -1444,7 +1453,7 @@ fn closing_puts_the_cart_back_on_the_shelf() {
 fn the_open_waits_on_the_shelf_for_its_faces() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_boot_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.update(0.3);
     assert_plain_shelf(&frame(&app), &f, "while its faces are built");
 
@@ -1488,7 +1497,7 @@ fn the_open_starts_anyway_when_the_faces_never_come() {
     app.apply(Action::GbaUp(Btn::Left));
     assert_eq!(app.selected_stem(), Some("Emerald"));
 
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.update(1.499);
     assert_plain_shelf(&frame(&app), &f, "a hair under the cap");
 
@@ -1525,7 +1534,7 @@ fn the_fallback_open_lifts_the_shelfs_own_face_for_the_lid() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
     app.set_faces(shelf_faces.to_vec());
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.update(1.501);
     let_it_open(&mut app);
 
@@ -1546,7 +1555,7 @@ fn the_real_faces_replace_the_fallback_once_they_arrive() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
     app.set_faces(shelf_faces.to_vec());
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.update(1.501);
     let_it_open(&mut app);
     assert!(
@@ -1571,7 +1580,7 @@ fn the_real_faces_replace_the_fallback_once_they_arrive() {
 fn arrows_pressed_while_the_cart_waits_move_nothing() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_boot_faces(&mut app);
-    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::ChooseCore);
     app.apply(Action::GbaDown(Btn::Right));
     app.set_core_board_faces(f.board, f.lid);
     app.update(0.016);
