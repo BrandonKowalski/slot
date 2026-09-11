@@ -8,8 +8,8 @@ use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, on_board, opening, Draw, TexId, CART_W, LID_TURN, SOCKET_H, SOCKET_U,
-    SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, grown, lid_at, on_board, opening, Draw, Placed, TexId, BOARD_W, CART_W, CHIP_H,
+    CHIP_U, CHIP_V, CHIP_W, LID_TURN, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -887,9 +887,23 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
         );
     }
 
-    let (chip_i, _, chip_turn) =
+    let (chip_i, chip, chip_turn) =
         turned_at(&out, f.chips[0]).expect("the chip is not seated in mGBA");
     assert_eq!(chip_turn, 0.0, "a seated chip is tipped");
+    let (cx, cy) = on_board(rest, CHIP_U[0], CHIP_V);
+    let want_chip = grown(
+        Placed {
+            x: cx,
+            y: cy,
+            w: CHIP_W as f32,
+            h: CHIP_H as f32,
+        },
+        TURN_PAD as f32,
+    );
+    assert!(
+        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        "the seated chip is not in mGBA's socket: {chip:?}"
+    );
     assert!(turned_at(&out, f.blank).is_none(), "a blank chip at rest");
 
     let (lid_rest, turn) = lid_at(1.0);
@@ -921,6 +935,40 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
         let (_, at) = tex_at(&out, tex).expect("a legend hint is missing");
         assert_eq!(at[1], 386.0, "the legend is off its line");
     }
+}
+
+/// Which socket the chip lands in follows the arrow. A swapped `CHIP_U` index, or an `across`
+/// inverted from what the picker reports, would still draw a chip named `chips[1]` somewhere on
+/// the board and pass a test that only asked whether it was there.
+#[test]
+fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    app.apply(Action::GbaDown(Btn::Right));
+    let_it_hop(&mut app);
+    let out = frame(&app);
+
+    let (x, y) = on_board(board_at(1.0), CHIP_U[1], CHIP_V);
+    let want = grown(
+        Placed {
+            x,
+            y,
+            w: CHIP_W as f32,
+            h: CHIP_H as f32,
+        },
+        TURN_PAD as f32,
+    );
+    let (_, chip, _) = turned_at(&out, f.chips[1]).expect("the chip did not land in gpSP");
+    assert!(
+        near(chip, [want.x, want.y, want.w, want.h]),
+        "the gpSP chip is not in gpSP's socket: {chip:?}"
+    );
+    assert!(
+        turned_at(&out, f.chips[0]).is_none(),
+        "mGBA's chip is still drawn once the hop lands in gpSP"
+    );
 }
 
 /// The lid is the highlighted cart. On the first frame it stands exactly where the shelf stood
@@ -966,20 +1014,55 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         lid[1] < lid_at(0.0).0.y && lid[1] > lid_at(1.0).0.y,
         "the lid is not on its way up: {lid:?}"
     );
-    let (w, alpha) = partway
+    let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("no board mid-open");
+    assert!(
+        bw > board_at(0.0).w && bw < board_at(1.0).w,
+        "the board is not growing: {bw}"
+    );
+    let alpha = partway
         .iter()
         .find_map(|d| match *d {
-            Draw::Tex { w, tex, alpha, .. } if tex == f.board => Some((w, alpha)),
+            Draw::Tex { tex, alpha, .. } if tex == f.board => Some(alpha),
             _ => None,
         })
         .expect("no board mid-open");
     assert!(
-        w > board_at(0.0).w && w < board_at(1.0).w,
-        "the board is not growing: {w}"
-    );
-    assert!(
         alpha > 0.0 && alpha < 1.0,
         "the board is not fading in: {alpha}"
+    );
+
+    // The sockets and the seated chip travel with the board rather than staying where the
+    // shelf drew the cart: a missing `* zoom` anywhere in that chain would separate them from
+    // it here, well before the movement settles.
+    let board = Placed {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+    };
+    let zoom = bw / BOARD_W as f32;
+    for (i, socket) in f.sockets.iter().enumerate() {
+        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-open");
+        assert!(
+            near(at, [x, y, SOCKET_W as f32 * zoom, SOCKET_H as f32 * zoom]),
+            "socket {i} at {at:?} mid-open"
+        );
+    }
+    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
+    let want_chip = grown(
+        Placed {
+            x: cx,
+            y: cy,
+            w: CHIP_W as f32 * zoom,
+            h: CHIP_H as f32 * zoom,
+        },
+        TURN_PAD as f32 * zoom,
+    );
+    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-open");
+    assert!(
+        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        "the chip is not riding the board mid-open: {chip:?}"
     );
 }
 
@@ -997,6 +1080,16 @@ fn mid_hop_the_chip_is_blank_tipped_and_off_the_board() {
     let (_, flying, tip) = turned_at(&out, f.blank).expect("no chip in flight");
     assert!(tip > 0.0, "a chip heading right does not lean right");
     assert!(flying[1] < seated[1], "the chip is not off the board");
+    // Between the two sockets rather than merely "somewhere off the board": an inverted
+    // `across` would send it the wrong way and still clear the two checks above.
+    let board = board_at(1.0);
+    let left = on_board(board, CHIP_U[0], CHIP_V).0 + CHIP_W as f32 / 2.0;
+    let right = on_board(board, CHIP_U[1], CHIP_V).0 + CHIP_W as f32 / 2.0;
+    let mid = flying[0] + flying[2] / 2.0;
+    assert!(
+        mid > left && mid < right,
+        "the flying chip is not between the sockets: {mid} not in ({left}, {right})"
+    );
     assert_eq!(
         tex_all(&out, f.shadow).len(),
         2,
@@ -1056,10 +1149,43 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         "the lid is not turning level: {turn}"
     );
     assert!(lid[1] > lid_at(1.0).0.y, "the lid is not coming back down");
-    let (_, board) = tex_at(&partway, f.board).expect("the board vanished mid-close");
+    let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("the board vanished mid-close");
     assert!(
-        board[2] < board_at(1.0).w && board[2] > board_at(0.0).w,
-        "the board is not shrinking: {board:?}"
+        bw < board_at(1.0).w && bw > board_at(0.0).w,
+        "the board is not shrinking: {bw}"
+    );
+
+    // The sockets and the seated chip shrink with the board rather than staying put, the same
+    // check as mid-open run the other way.
+    let board = Placed {
+        x: bx,
+        y: by,
+        w: bw,
+        h: bh,
+    };
+    let zoom = bw / BOARD_W as f32;
+    for (i, socket) in f.sockets.iter().enumerate() {
+        let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+        let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-close");
+        assert!(
+            near(at, [x, y, SOCKET_W as f32 * zoom, SOCKET_H as f32 * zoom]),
+            "socket {i} at {at:?} mid-close"
+        );
+    }
+    let (cx, cy) = on_board(board, CHIP_U[0], CHIP_V);
+    let want_chip = grown(
+        Placed {
+            x: cx,
+            y: cy,
+            w: CHIP_W as f32 * zoom,
+            h: CHIP_H as f32 * zoom,
+        },
+        TURN_PAD as f32 * zoom,
+    );
+    let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-close");
+    assert!(
+        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        "the chip is not riding the board mid-close: {chip:?}"
     );
 
     let_it_close(&mut app);
