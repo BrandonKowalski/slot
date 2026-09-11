@@ -38,6 +38,29 @@ void main() {
 }
 "#;
 
+/// `RECT_VERT` for sprites, turned about the rect's centre by `u_turn`, which holds the cosine
+/// and sine of the angle. The corner is placed exactly as `RECT_VERT` places it, plus the
+/// difference between the corner turned and unturned; the sprite loop passes exactly (1, 0)
+/// for anything that is not turned, which makes that difference exactly zero. A shader of its
+/// own rather than a change to `RECT_VERT`, because the game pass links that one too and would
+/// read an unset `u_turn` as (0, 0).
+pub const SPRITE_VERT: &str = r#"
+attribute vec2 a_pos;
+uniform vec4 u_rect;
+uniform vec2 u_target;
+uniform vec2 u_turn;
+varying vec2 v_uv;
+void main() {
+    v_uv = a_pos;
+    vec2 mid = u_rect.zw * 0.5;
+    vec2 local = a_pos * u_rect.zw - mid;
+    vec2 turned = vec2(u_turn.x * local.x - u_turn.y * local.y,
+                       u_turn.y * local.x + u_turn.x * local.y);
+    vec2 p = (u_rect.xy + a_pos * u_rect.zw + (turned - local)) / u_target;
+    gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
+}
+"#;
+
 /// `u_src` is the source size in pixels, which is also the number of times the 3x3 mask
 /// tiles across the target: one RGB triad per source pixel, exactly.
 pub const GAME_FRAG: &str = r#"

@@ -8,10 +8,10 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    cart_face, cart_shadow, clean_label, hhmm, hint_face, icon_face, label_tags, menu_face,
-    photo_face, picker_caption_face, picker_title_face, set_clock_hint_face, sticker_face,
-    tag_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice, StickerFields,
-    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm,
+    hint_face, icon_face, menu_face, padded, photo_face, set_clock_hint_face, socket_face,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, PowerChoice,
+    StickerFields, Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND, TURN_PAD,
 };
 
 use crate::app::{App, GameRow, LinkRow, Phase};
@@ -43,8 +43,10 @@ pub struct Frontend {
     polaroid_texes: Vec<TexId>,
     /// The top plate's line of type, re-rasterised whenever the selection moves.
     title_tex: Option<TexId>,
-    core_title_tex: Option<TexId>,
-    core_titled: Option<String>,
+    /// The open cart and its lid, and which cart they were built for.
+    core_board_tex: Option<TexId>,
+    core_lid_tex: Option<TexId>,
+    core_built: Option<String>,
     /// The undo cap's label, which changes with what is on offer.
     undo_tex: Option<TexId>,
     switcher: Switcher,
@@ -98,8 +100,9 @@ impl Frontend {
             draws: Vec::new(),
             polaroid_texes: Vec::new(),
             title_tex: None,
-            core_title_tex: None,
-            core_titled: None,
+            core_board_tex: None,
+            core_lid_tex: None,
+            core_built: None,
             undo_tex: None,
             switcher: Switcher::default(),
             clocks: Clocks::default(),
@@ -157,28 +160,41 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_power_menu_faces(menu);
-        // The same rasteriser and the same trip to the GPU as the row above, in `Core::ALL`
-        // order so a row index is a core without a lookup. Uploaded here rather than when
-        // the picker opens because these words never change either, and a menu that
-        // rasterised on the way up would spend its first frame doing it.
-        let cores = slot_store::Core::ALL
+        // The open cart's parts that never change: each socket, the chip seated in each, the
+        // blank chip in flight and its shadow, in `Core::ALL` order. At boot like the power
+        // menu's rows, so the first frame of a lid coming off is not spent in a rasteriser.
+        let sockets = slot_store::Core::ALL
             .iter()
             .map(|c| {
-                let f = menu_face(c.text());
-                (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+                let f = socket_face(*c);
+                compositor.create_texture(f.w, f.h, &f.rgba)
             })
             .collect();
-        self.session.app_mut().set_core_picker_faces(cores);
-        // Static text, so it goes up with everything else at boot rather than on every open.
-        let cap = picker_caption_face("Core");
-        let cap = (
-            compositor.create_texture(cap.w, cap.h, &cap.rgba),
-            cap.w,
-            cap.h,
-        );
+        let chips = slot_store::Core::ALL
+            .iter()
+            .map(|c| {
+                let f = chip_face(Some(*c));
+                compositor.create_texture(f.w, f.h, &f.rgba)
+            })
+            .collect();
+        let blank = chip_face(None);
+        let blank = compositor.create_texture(blank.w, blank.h, &blank.rgba);
+        let shadow = chip_shadow_face();
+        let shadow = compositor.create_texture(shadow.w, shadow.h, &shadow.rgba);
         self.session
             .app_mut()
-            .set_core_picker_caption_face(Some(cap));
+            .set_core_part_faces(sockets, chips, blank, shadow);
+        // Every action the picker takes, the way out first and the choice last, as the
+        // switcher's legend is ordered.
+        let legend = [
+            hint_face("B", "Back"),
+            arrows_hint_face("Swap"),
+            hint_face("A", "Choose"),
+        ]
+        .into_iter()
+        .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
+        .collect();
+        self.session.app_mut().set_core_legend_faces(legend);
         // The in-game menu, its two link rows, and the sentences the screen says while a
         // link is coming up or after it did not. All of it at the same size and through the
         // same rasteriser as the two menus above, because they are the same object — and all
@@ -248,8 +264,9 @@ impl Frontend {
         sync_core_picker(
             self.session.app_mut(),
             compositor,
-            &mut self.core_title_tex,
-            &mut self.core_titled,
+            &mut self.core_board_tex,
+            &mut self.core_lid_tex,
+            &mut self.core_built,
         );
         sync_switcher(
             self.session.app_mut(),
@@ -438,56 +455,65 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
     app.set_sticker_face(id);
 }
 
-/// Into the slot's own texture if it has one, so the pool stops growing after the first
-/// opening.
-/// The cart's name over the core picker, rebuilt only when the name under the caret changes:
-/// once per open, and once more per arrow press while it is shut. `titled` is what makes that
-/// a comparison rather than a rasterise every frame.
+/// The open cart and its lid, rebuilt only when the cart under the caret changes while the
+/// picker is up — once per open. `built` is what makes that a comparison rather than a
+/// rasterise every frame, and it goes back to `None` when the picker closes, so opening the
+/// same cart again builds it again.
 fn sync_core_picker(
     app: &mut App,
     compositor: &mut Compositor,
-    slot: &mut Option<TexId>,
-    titled: &mut Option<String>,
+    board: &mut Option<TexId>,
+    lid: &mut Option<TexId>,
+    built: &mut Option<String>,
 ) {
     let want = app
         .core_picker()
         .and_then(|_| app.selected_stem().map(str::to_string));
-    if *titled == want {
+    if *built == want {
         return;
     }
-    *titled = want.clone();
-    match want {
-        Some(stem) => {
-            // The title is the game; the brackets are facts about this dump of it. Cut here
-            // rather than in the rasteriser so the two are laid out as separate things.
-            let face = picker_title_face(&clean_label(&stem));
-            let (w, h) = (face.w, face.h);
-            let id = upload(compositor, slot, face);
-            app.set_core_picker_title_face(Some((id, w, h)));
-            let tags = label_tags(&stem)
-                .iter()
-                .map(|t| {
-                    let f = tag_face(t);
-                    (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
-                })
-                .collect();
-            app.set_core_picker_tag_faces(tags);
-        }
-        None => {
-            app.set_core_picker_title_face(None);
-            app.set_core_picker_tag_faces(Vec::new());
-        }
-    }
+    *built = want.clone();
+    let Some(stem) = want else {
+        return;
+    };
+    let Some((board_face, lid_face)) = app
+        .carts()
+        .iter()
+        .find(|c| c.stem == stem)
+        .map(|c| (board_face(c), padded(&cart_face(c), TURN_PAD)))
+    else {
+        return;
+    };
+    let board_id = upload_rgba(
+        compositor,
+        board,
+        board_face.w,
+        board_face.h,
+        &board_face.rgba,
+    );
+    let lid_id = upload_rgba(compositor, lid, lid_face.w, lid_face.h, &lid_face.rgba);
+    app.set_core_board_faces(board_id, lid_id);
 }
 
 fn upload(compositor: &mut Compositor, slot: &mut Option<TexId>, face: slot_ui::UndoFace) -> TexId {
+    upload_rgba(compositor, slot, face.w, face.h, &face.rgba)
+}
+
+/// Into the slot's own texture if it has one, so the pool stops growing after the first time.
+fn upload_rgba(
+    compositor: &mut Compositor,
+    slot: &mut Option<TexId>,
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+) -> TexId {
     match *slot {
         Some(id) => {
-            compositor.update_texture(id, face.w, face.h, &face.rgba);
+            compositor.update_texture(id, w, h, rgba);
             id
         }
         None => {
-            let id = compositor.create_texture(face.w, face.h, &face.rgba);
+            let id = compositor.create_texture(w, h, rgba);
             *slot = Some(id);
             id
         }

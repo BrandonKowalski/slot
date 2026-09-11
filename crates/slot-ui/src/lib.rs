@@ -2,6 +2,7 @@ mod art;
 mod backdrop;
 mod barcode;
 mod battery;
+mod board;
 mod cart;
 mod clock;
 mod draw;
@@ -23,6 +24,12 @@ mod toast;
 pub use backdrop::{draw_backdrop, wallpaper_face};
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
+pub use board::{
+    board_at, board_face, board_zoom, chip_face, chip_shadow_face, grown, lid_at, on_board, padded,
+    rom_marking, rom_marking_face, shelf_cart, socket_face, Placed, RomMarking, BOARD_H, BOARD_W,
+    BOARD_X, BOARD_Y, CHIP_H, CHIP_TIP, CHIP_U, CHIP_V, CHIP_W, HOP_LIFT, LID_TURN, ROM_H, ROM_W,
+    ROM_X, ROM_Y, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+};
 pub use cart::{
     cart_face, cart_shadow, clean_label, label_colour, label_panel, label_tags, label_text,
     CartFace, CART_H, CART_W, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
@@ -33,13 +40,12 @@ pub use footer::{draw_footer, Printed};
 pub use hud::{ff_badge, FfState, Hud, HudKind, Millis, HUD_ICON_PX, HUD_INK, HUD_MS, PLATE_H};
 pub use icon::{icon_box, icon_face, Icon};
 pub use plate::{
-    cap_width, hint_face, hint_quad, hint_row, hint_width, title_face, word_face, word_width, Hint,
-    UndoFace, CAP_GAP, HINT_GAP, HINT_H, TITLE_H, TITLE_W,
+    arrows_hint_face, arrows_hint_width, cap_width, hint_face, hint_quad, hint_row, hint_width,
+    title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_GAP, HINT_H,
+    TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
-pub use power_menu::{
-    menu_face, picker_caption_face, picker_title_face, tag_face, PowerChoice, MENU_PAD, TAG_PAD,
-};
+pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
 pub use refusal::Refusal;
 pub use shelf::Shelf;
 pub use shell::{
@@ -48,7 +54,7 @@ pub use shell::{
 };
 pub use silhouette::silhouette;
 pub use slot_chrome::{
-    draw_empty_slot, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
+    draw_empty_slot, ease, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
     MOUTH_H, MOUTH_W,
 };
 pub use sticker::{

@@ -18,11 +18,12 @@ fn shelf_with(n: usize) -> Shelf {
 
 fn placed(s: &Shelf) -> Vec<(f32, f32)> {
     let mut out = Vec::new();
-    s.draw_row(None, 0.0, 0.0, &mut out);
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
     out.iter()
         .map(|d| match *d {
             Draw::Rect { x, w, .. } => (x, w),
             Draw::Tex { x, w, .. } => (x, w),
+            Draw::Turned { x, w, .. } => (x, w),
             Draw::Game | Draw::Shot { .. } => (0.0, OUT_W as f32),
         })
         .collect()
@@ -30,7 +31,7 @@ fn placed(s: &Shelf) -> Vec<(f32, f32)> {
 
 fn xw(d: &Draw) -> (f32, f32) {
     match *d {
-        Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => (x, w),
+        Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } | Draw::Turned { x, w, .. } => (x, w),
         Draw::Game | Draw::Shot { .. } => (0.0, OUT_W as f32),
     }
 }
@@ -133,7 +134,7 @@ fn no_cart_is_drawn_twice_in_one_row() {
     for n in [2usize, 3, 4] {
         let s = shelf_with(n);
         let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, &mut out);
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
         let drawn = drawn_cart_indices(&out);
         let mut uniq = drawn.clone();
         uniq.sort();
@@ -333,7 +334,7 @@ fn a_refusal_moves_the_carts_and_leaves_the_device_where_it_is() {
     // The row draws first, so its quads are the leading ones. Sizes cannot tell the two
     // apart: the carts either side of the selection are drawn scaled down.
     let mut row = Vec::new();
-    s.draw_row(None, 0.0, 0.0, &mut row);
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut row);
     let carts = row.len();
     assert!(
         carts > 0 && carts < still.len(),
@@ -407,9 +408,9 @@ fn the_row_is_evenly_spaced() {
 fn cart_spans(out: &[Draw]) -> Vec<(f32, f32)> {
     out.iter()
         .filter_map(|d| match *d {
-            Draw::Rect { x, w, h, .. } | Draw::Tex { x, w, h, .. } => {
-                (h > 60.0).then_some((x, x + w))
-            }
+            Draw::Rect { x, w, h, .. }
+            | Draw::Tex { x, w, h, .. }
+            | Draw::Turned { x, w, h, .. } => (h > 60.0).then_some((x, x + w)),
             Draw::Game | Draw::Shot { .. } => None,
         })
         .filter(|(x0, x1)| *x1 > 0.0 && *x0 < OUT_W as f32)
@@ -424,7 +425,7 @@ fn the_row_parts_for_the_cart_going_in() {
     let s = shelf_with(5);
     let at = |recede: f32| {
         let mut out = Vec::new();
-        s.draw_row(Some("Game 0"), 0.0, recede, &mut out);
+        s.draw_row(Some("Game 0"), 0.0, recede, 1.0, &mut out);
         out
     };
     let start = at(0.0);
@@ -445,5 +446,47 @@ fn the_row_parts_for_the_cart_going_in() {
     assert!(
         at(1.0).is_empty(),
         "the row is still on screen with the cart seated"
+    );
+}
+
+/// Dimming darkens a side cart's face and leaves the black under it as the recede has it, so a
+/// dimmed cart reads as a cart in shadow rather than a ghost over the wallpaper.
+#[test]
+fn dim_darkens_a_side_carts_face_and_not_the_black_under_it() {
+    let mut s = shelf_with(3);
+    let shadow = TexId::from_raw(99);
+    s.set_shadow(shadow);
+    let side = TexId::from_raw(11);
+    s.set_faces(vec![TexId::from_raw(10), side, TexId::from_raw(12)]);
+    let drawn = |dim: f32| {
+        let mut out = Vec::new();
+        s.draw_row(Some("Game 0"), 0.0, 0.3, dim, &mut out);
+        let (x, face) = out
+            .iter()
+            .find_map(|d| match *d {
+                Draw::Tex { x, tex, alpha, .. } if tex == side => Some((x, alpha)),
+                _ => None,
+            })
+            .expect("the side cart is not drawn");
+        let under = out
+            .iter()
+            .find_map(|d| match *d {
+                Draw::Tex {
+                    x: at, tex, alpha, ..
+                } if tex == shadow && at == x => Some(alpha),
+                _ => None,
+            })
+            .expect("nothing is drawn under the side cart");
+        (face, under)
+    };
+    let (face, under) = drawn(1.0);
+    let (dimmed, dimmed_under) = drawn(0.5);
+    assert!(
+        (dimmed - face * 0.5).abs() < 1e-6,
+        "the face went from {face} to {dimmed} at half dim"
+    );
+    assert_eq!(
+        dimmed_under, under,
+        "the black under the side cart changed with the dim"
     );
 }

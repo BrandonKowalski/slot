@@ -9,11 +9,15 @@ use slot_store::{
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    draw_backdrop, draw_footer, draw_sticker, ClockPicker, Draw, FfState, Hud, HudKind, Icon,
-    Millis, Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast,
+    board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, grown, lid_at,
+    on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed, Polaroids,
+    PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W,
+    HINT_GAP, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
+    TURN_PAD,
 };
 
 use crate::audio::Sfx;
+use crate::core_picker::{Chip, CorePicker, Outcome, Press};
 use crate::link_radio::LinkRole;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
@@ -94,15 +98,25 @@ const SHUTDOWN_SHOW_MS: Millis = 250;
 const POWER_MENU_PITCH: f32 = 44.0;
 /// How much shorter the bar is than the row it marks, top and bottom. Enough that the rows
 /// stay separate things rather than one continuous block when the selection moves.
-/// Between the cart's name and the first core row.
-const CORE_PICKER_TITLE_GAP: f32 = 10.0;
-/// Between the title and its tag blocks, and between those and the caption.
-const CORE_PICKER_TAG_GAP: f32 = 14.0;
-/// Between one tag block and the next.
-const CORE_PICKER_TAG_SPACING: f32 = 8.0;
-/// Between the caption and the first core row.
-const CORE_PICKER_CAPTION_GAP: f32 = 14.0;
 const POWER_MENU_BAR_INSET: f32 = 4.0;
+/// How far the row makes way while a cart is open, as `Shelf::draw_row` counts `recede`. It is
+/// set by where the neighbours stand: here they come to rest at -41 and 574, where the mockup
+/// frames the open cart with them. Parted far enough for the recede alone to dim them to a
+/// quarter, they left the open cart alone in the frame.
+const CORE_PICKER_RECEDE: f32 = 0.26;
+/// How much further the neighbours' faces darken while a cart is open, since the recede that
+/// stands them in place dims them only part of the way. At it a side cart's face is at
+/// `SIDE_ALPHA * (1 - CORE_PICKER_RECEDE)` = 0.55 * 0.74 = 0.407, and the mockup has it at a
+/// quarter: 0.25 / 0.407 = 0.614.
+const CORE_PICKER_DIM: f32 = 0.614;
+/// The legend's line, under the open cart and clear of the case band.
+const CORE_LEGEND_Y: f32 = 386.0;
+/// The soft oval under the resting lid, as the mockup draws it: its size, how far below the
+/// lid's bottom edge its centre falls, and how dark it is. Scaled with the lid as it lifts.
+const LID_SHADOW_W: f32 = 168.0;
+const LID_SHADOW_H: f32 = 18.0;
+const LID_SHADOW_DROP: f32 = 29.0;
+const LID_SHADOW_ALPHA: f32 = 0.8;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
@@ -290,25 +304,23 @@ pub struct App {
     power_menu: Option<usize>,
     /// One per `PowerChoice::ALL`, in that order, with the size each was rastered at.
     power_menu_faces: Vec<(TexId, u32, u32)>,
-    /// Which core row is highlighted, and `None` when the picker is closed. The cart it acts
-    /// on is whichever the shelf has, read when it opens rather than held here: the shelf
-    /// cannot move while it is up, so there is only ever one answer and no way for a
-    /// remembered one to go stale against it.
-    core_picker: Option<usize>,
-    /// The highlighted cart's name, rasterised by the frontend when the picker opens. The
-    /// picker's own rows say only "mGBA" and "gpSP", so without this the screen never names
-    /// the cart it is about to change.
-    core_picker_title_face: Option<(TexId, u32, u32)>,
-    /// The word "Core" between the name and the rows. Static text, so it is rastered once at
-    /// boot rather than with the title.
-    core_picker_caption_face: Option<(TexId, u32, u32)>,
-    /// The bracketed groups cut from the title, one block each.
-    core_picker_tag_faces: Vec<(TexId, u32, u32)>,
-    /// One per `Core::ALL`, in that order, with the size each was rastered at. Uploaded at
-    /// startup beside the power menu's, for a quieter version of the same reason: the faces
-    /// never change, so rastering them the moment a button opens the menu would put a font
-    /// pass in front of a press that has nothing to gain by it.
-    core_picker_faces: Vec<(TexId, u32, u32)>,
+    /// The picker while the cart is open, and while its lid is going back on. The cart it acts
+    /// on is whichever the shelf has, read when it opens rather than held here: the shelf cannot
+    /// move while it is up, so there is only ever one answer.
+    core_picker: Option<CorePicker>,
+    /// The open cart under the highlight, and its lid: the shelf face with a transparent border
+    /// so it can be turned. Rebuilt by the frontend when the highlighted cart changes.
+    core_board_face: Option<TexId>,
+    core_lid_face: Option<TexId>,
+    /// In `Core::ALL` order: each socket empty, and the chip seated and named in each. Uploaded
+    /// at boot, since none of them ever changes.
+    core_socket_faces: Vec<TexId>,
+    core_chip_faces: Vec<TexId>,
+    /// The chip in flight, blank, and the shadow under it.
+    core_blank_chip_face: Option<TexId>,
+    core_chip_shadow_face: Option<TexId>,
+    /// `B` Back, the two arrows, `A` Choose, each with the width it was rastered at.
+    core_legend_faces: Vec<(TexId, u32)>,
     /// Open when SELECT+MENU raised the in-game menu over a running game. An overlay rather
     /// than a phase, and for a stronger reason than the power menu's: `Phase::Playing` is
     /// what holds the seated cart, and a menu that left it would have to rebuild the session
@@ -439,10 +451,13 @@ impl App {
             power_menu: None,
             power_menu_faces: Vec::new(),
             core_picker: None,
-            core_picker_title_face: None,
-            core_picker_caption_face: None,
-            core_picker_tag_faces: Vec::new(),
-            core_picker_faces: Vec::new(),
+            core_board_face: None,
+            core_lid_face: None,
+            core_socket_faces: Vec::new(),
+            core_chip_faces: Vec::new(),
+            core_blank_chip_face: None,
+            core_chip_shadow_face: None,
+            core_legend_faces: Vec::new(),
             game_menu: None,
             game_menu_faces: Vec::new(),
             link_menu_faces: Vec::new(),
@@ -791,10 +806,15 @@ impl App {
         self.power_menu
     }
 
-    /// Which core row the picker is on, and `None` while it is closed. The chrome draws from
-    /// it, exactly as it does from `power_menu`.
-    pub fn core_picker(&self) -> Option<usize> {
-        self.core_picker
+    /// The core the chip is in or heading for, and `None` once the picker has gone. Still
+    /// `Some` while the lid is going back on.
+    pub fn core_picker(&self) -> Option<Core> {
+        self.core_picker.map(|p| p.seat())
+    }
+
+    /// The chip's pose this frame, for whatever draws it.
+    pub fn core_picker_chip(&self) -> Option<Chip> {
+        self.core_picker.map(|p| p.chip(self.now()))
     }
 
     /// Whether the in-game menu is up. Read by whoever owns the emulator as well as by the
@@ -1141,6 +1161,10 @@ impl App {
         // their own.
         self.poll_link();
         let now = self.now();
+        // The lid is back on, so the shelf is the shelf again.
+        if self.core_picker.is_some_and(|p| p.finished(now)) {
+            self.core_picker = None;
+        }
         // A direction still held as the shelf leaves the screen is not held when it comes
         // back: the row repeats only while it is the thing being looked at.
         if !self.on_shelf() {
@@ -1435,7 +1459,20 @@ impl App {
             }
             Phase::Shelf => {
                 draw_backdrop(self.wallpaper, out);
-                self.shelf.draw(self.shelf_shake(), out);
+                match (self.core_picker, self.selected_stem()) {
+                    // The highlighted cart is the picker's to draw while its lid is off, and the
+                    // rest of the row makes way for it the way it does for a cart going in.
+                    (Some(picker), Some(stem)) => {
+                        let open = picker.openness(self.now());
+                        // Dimmed by as much of the open as has happened, so the dark arrives
+                        // with the lid coming off and leaves with it going back on.
+                        let dim = 1.0 + (CORE_PICKER_DIM - 1.0) * open;
+                        self.shelf
+                            .draw_row(Some(stem), 0.0, CORE_PICKER_RECEDE * open, dim, out);
+                        draw_empty_slot(out);
+                    }
+                    _ => self.shelf.draw(self.shelf_shake(), out),
+                }
                 draw_footer(
                     self.battery,
                     self.battery_percent,
@@ -1458,7 +1495,7 @@ impl App {
                 // Spec section 3: a resumed cart shows no shelf, not even one frame of it.
                 if !resumed {
                     draw_backdrop(self.wallpaper, out);
-                    self.shelf.draw_row(Some(cart), 0.0, self.seat(), out);
+                    self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 }
                 self.chrome(cart, self.seat(), out);
             }
@@ -1468,7 +1505,7 @@ impl App {
             // playing the same movement twice rather than reversing it.
             Phase::Ejecting { cart, .. } => {
                 draw_backdrop(self.wallpaper, out);
-                self.shelf.draw_row(Some(cart), 0.0, self.seat(), out);
+                self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 self.chrome(cart, self.seat(), out);
             }
             // The slot stays on screen until the picture behind it has finished arriving,
@@ -1506,8 +1543,8 @@ impl App {
         // row of carts it is a menu for, and START would look like a button that does
         // nothing. Only the shelf can raise it, so no phase needs excluding here — the
         // phases that own the whole panel have already returned.
-        if let Some(index) = self.core_picker {
-            self.draw_core_picker(index, out);
+        if let Some(picker) = self.core_picker {
+            self.draw_core_picker(&picker, out);
         }
         // Over the game and under the HUD, for the same reason the picker is over the shelf:
         // it is a menu about the thing still on screen behind it, and the level bars have to
@@ -1533,7 +1570,9 @@ impl App {
     /// Pixels the cart row is displaced by. On the shelf the frame is mostly backdrop, so
     /// shaking the whole image would just slide the letterbox in at the edges.
     pub fn shelf_shake(&self) -> f32 {
-        self.shake_when(self.on_shelf(), self.now())
+        // The chip is what flinches while the picker is up, and two things shaking at once reads
+        // as two separate refusals.
+        self.shake_when(self.on_shelf() && self.core_picker.is_none(), self.now())
     }
 
     /// Shake whatever represents the thing that was refused, and only that: two of them at
@@ -1601,20 +1640,27 @@ impl App {
         self.power_menu_faces = faces;
     }
 
-    pub fn set_core_picker_title_face(&mut self, face: Option<(TexId, u32, u32)>) {
-        self.core_picker_title_face = face;
+    pub fn set_core_board_faces(&mut self, board: TexId, lid: TexId) {
+        self.core_board_face = Some(board);
+        self.core_lid_face = Some(lid);
     }
 
-    pub fn set_core_picker_caption_face(&mut self, face: Option<(TexId, u32, u32)>) {
-        self.core_picker_caption_face = face;
+    /// `sockets` and `chips` in `Core::ALL` order.
+    pub fn set_core_part_faces(
+        &mut self,
+        sockets: Vec<TexId>,
+        chips: Vec<TexId>,
+        blank: TexId,
+        shadow: TexId,
+    ) {
+        self.core_socket_faces = sockets;
+        self.core_chip_faces = chips;
+        self.core_blank_chip_face = Some(blank);
+        self.core_chip_shadow_face = Some(shadow);
     }
 
-    pub fn set_core_picker_tag_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
-        self.core_picker_tag_faces = faces;
-    }
-
-    pub fn set_core_picker_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
-        self.core_picker_faces = faces;
+    pub fn set_core_legend_faces(&mut self, faces: Vec<(TexId, u32)>) {
+        self.core_legend_faces = faces;
     }
 
     /// One per `GameRow::ALL`, in that order, whether or not the cart in the slot shows it.
@@ -1661,100 +1707,134 @@ impl App {
         );
     }
 
-    /// The power menu's rows, at the power menu's pitch, in the power menu's materials —
-    /// they are the same kind of object and there is no reason for a device this small to
-    /// have two menu idioms.
-    ///
-    /// What differs is where it goes in the frame. The power menu is the first thing `draw`
-    /// does and it returns straight after: it ends the session, so nothing else on the panel
-    /// is still true. This is a property of one cart on a shelf the player is still standing
-    /// in front of, so it goes over the shelf rather than in place of it, and the HUD still
-    /// lands on top — brightness and blue light are answered while it is up, and their level
-    /// bars have to be visible when they are.
-    fn draw_core_picker(&self, index: usize, out: &mut Vec<Draw>) {
-        let rows = self.core_picker_faces.len();
-        if rows == 0 {
-            return;
-        }
-        out.push(Draw::Rect {
-            x: 0.0,
-            y: 0.0,
-            w: OUT_W as f32,
-            h: OUT_H as f32,
-            colour: slot_ui::opening(),
-        });
-        let pitch = POWER_MENU_PITCH;
-        // Title, caption and rows centre as one block, not the rows alone with the other two
-        // pushed above them: a menu that names its cart and says what it is choosing has both
-        // as part of it.
-        let title_h = self
-            .core_picker_title_face
-            .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_TITLE_GAP);
-        let tags_h = self
-            .core_picker_tag_faces
-            .first()
-            .map_or(0.0, |(_, _, h)| *h as f32 + CORE_PICKER_TAG_GAP);
-        let caption_h = self
-            .core_picker_caption_face
-            .map_or(0.0, |(_, _, h)| h as f32 + CORE_PICKER_CAPTION_GAP);
-        let head = title_h + tags_h + caption_h;
-        let mut y = (OUT_H as f32 - (pitch * rows as f32 + head)) / 2.0;
-        if let Some((tex, w, h)) = self.core_picker_title_face {
+    /// The open cart over the shelf that is making way for it: the board growing out of the cart
+    /// that stood there, both sockets on it, the chip in one of them or in the air between, the
+    /// lid lifted away with the cart's own face on it, and the legend. Over the shelf and under
+    /// the HUD: brightness and blue light are still answered while it is up.
+    fn draw_core_picker(&self, picker: &CorePicker, out: &mut Vec<Draw>) {
+        let now = self.now();
+        let open = picker.openness(now);
+        let board = board_at(open);
+        let zoom = board_zoom(board);
+
+        if let Some(tex) = self.core_board_face {
             out.push(Draw::Tex {
-                x: ((OUT_W as f32 - w as f32) / 2.0).round(),
-                y,
-                w: w as f32,
-                h: h as f32,
+                x: board.x,
+                y: board.y,
+                w: board.w,
+                h: board.h,
                 tex,
-                alpha: 1.0,
+                alpha: open,
             });
-            y += h as f32 + CORE_PICKER_TITLE_GAP;
         }
-        // The dump's own facts, as separate blocks rather than one band: each parenthesis in
-        // the filename was one fact, and a single strip would read as a sentence.
-        if !self.core_picker_tag_faces.is_empty() {
-            let gaps = CORE_PICKER_TAG_SPACING * (self.core_picker_tag_faces.len() - 1) as f32;
-            let span: f32 = self
-                .core_picker_tag_faces
-                .iter()
-                .map(|(_, w, _)| *w as f32)
-                .sum::<f32>()
-                + gaps;
-            let mut x = ((OUT_W as f32 - span) / 2.0).round();
-            let mut tag_h = 0.0;
-            for (tex, w, h) in self.core_picker_tag_faces.iter().copied() {
-                out.push(Draw::Rect {
-                    x,
-                    y,
-                    w: w as f32,
-                    h: h as f32,
-                    colour: [1.0, 1.0, 1.0, 0.10],
-                });
+        // A face drawn at its own size is only sharp on whole pixels.
+        for (i, tex) in self.core_socket_faces.iter().copied().enumerate() {
+            let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+            out.push(Draw::Tex {
+                x: x.round(),
+                y: y.round(),
+                w: SOCKET_W as f32 * zoom,
+                h: SOCKET_H as f32 * zoom,
+                tex,
+                alpha: open,
+            });
+        }
+
+        let chip = picker.chip(now);
+        let u = CHIP_U[0] + (CHIP_U[1] - CHIP_U[0]) * chip.across;
+        if chip.lift > 0.0 {
+            if let Some(tex) = self.core_chip_shadow_face {
+                // Under the body's middle and 90 units down the board, where the mockup's oval
+                // falls: low enough to read as cast on the board rather than tucked under the pins.
+                let (cx, cy) = on_board(board, u + 19.0, CHIP_V + 29.4);
+                let (w, h) = (SHADOW_W as f32 * zoom, SHADOW_H as f32 * zoom);
                 out.push(Draw::Tex {
-                    x,
-                    y,
-                    w: w as f32,
-                    h: h as f32,
+                    x: cx - w / 2.0,
+                    y: cy - h / 2.0,
+                    w,
+                    h,
                     tex,
-                    alpha: 1.0,
+                    alpha: 0.6 * chip.lift * open,
                 });
-                x += w as f32 + CORE_PICKER_TAG_SPACING;
-                tag_h = h as f32;
             }
-            y += tag_h + CORE_PICKER_TAG_GAP;
         }
-        if let Some((tex, w, h)) = self.core_picker_caption_face {
-            out.push(Draw::Tex {
-                x: ((OUT_W as f32 - w as f32) / 2.0).round(),
+        let face = match chip.seated {
+            Some(core) => self.core_chip_faces.get(core.index()).copied(),
+            None => self.core_blank_chip_face,
+        };
+        if let Some(tex) = face {
+            let (x, y) = on_board(board, u, CHIP_V - HOP_LIFT * chip.lift);
+            let body = Placed {
+                x: x + chip.shake,
                 y,
-                w: w as f32,
-                h: h as f32,
+                w: CHIP_W as f32 * zoom,
+                h: CHIP_H as f32 * zoom,
+            };
+            // Whole pixels, as the sockets: a seated chip is drawn at its own size too.
+            let at = grown(body, TURN_PAD as f32 * zoom);
+            out.push(Draw::Turned {
+                x: at.x.round(),
+                y: at.y.round(),
+                w: at.w,
+                h: at.h,
+                tex,
+                alpha: open,
+                turn: chip.tip,
+            });
+        }
+
+        // The soft oval on the ground under the lid. Without it the lid reads as printed on the
+        // backdrop rather than held up off the board. The chip's shadow, stretched: it grows
+        // with the lid and comes in as the lid rises.
+        if let Some(tex) = self.core_chip_shadow_face {
+            let (lid, _) = lid_at(open);
+            let k = lid.w / lid_at(1.0).0.w;
+            let (w, h) = (LID_SHADOW_W * k, LID_SHADOW_H * k);
+            out.push(Draw::Tex {
+                x: lid.x + (lid.w - w) / 2.0,
+                y: lid.y + lid.h + LID_SHADOW_DROP * k - h / 2.0,
+                w,
+                h,
+                tex,
+                alpha: LID_SHADOW_ALPHA * open,
+            });
+        }
+
+        // Always opaque: at the very start and end of the movement the lid is the cart on the
+        // shelf, and a cart there does not fade.
+        if let Some(tex) = self.core_lid_face {
+            let (lid, turn) = lid_at(open);
+            let at = grown(lid, TURN_PAD as f32 * lid.w / CART_W as f32);
+            out.push(Draw::Turned {
+                x: at.x,
+                y: at.y,
+                w: at.w,
+                h: at.h,
                 tex,
                 alpha: 1.0,
+                turn,
             });
-            y += h as f32 + CORE_PICKER_CAPTION_GAP;
         }
-        draw_menu_rows(&self.core_picker_faces, Some(index), y, out);
+
+        let gaps = HINT_GAP * self.core_legend_faces.len().saturating_sub(1) as f32;
+        let span: f32 = self
+            .core_legend_faces
+            .iter()
+            .map(|(_, w)| *w as f32)
+            .sum::<f32>()
+            + gaps;
+        let mut x = ((OUT_W as f32 - span) / 2.0).round();
+        for (tex, w) in self.core_legend_faces.iter().copied() {
+            out.push(Draw::Tex {
+                x,
+                y: CORE_LEGEND_Y,
+                w: w as f32,
+                h: HINT_H as f32,
+                tex,
+                alpha: open,
+            });
+            x += w as f32 + HINT_GAP;
+        }
     }
 
     /// The power menu's rows, at its pitch, in its materials — the third menu on the device
@@ -1939,6 +2019,9 @@ impl App {
         // The overlay is drawn over a game that is about to go dark, and a starter left
         // running behind it would keep a radio up through the doze.
         self.close_game_menu();
+        // A shut lid is walking away, not choosing. Nothing is written and nothing animates:
+        // waking comes back to a plain shelf.
+        self.core_picker = None;
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
@@ -2069,27 +2152,28 @@ impl App {
         let Some(cart) = self.shelf.carts.get(self.shelf.index) else {
             return;
         };
-        self.core_picker = Some(slot_store::core_for(&root, &cart.stem).index());
+        let seat = slot_store::core_for(&root, &cart.stem);
+        self.core_picker = Some(CorePicker::open(seat, self.now()));
     }
 
     /// The picker owns every button while it is up, including the arrows the shelf uses: a
-    /// menu that let the thing behind it move would act on a different cart than the one it
-    /// named. Up and down wrap, because with two rows either arrow is the other's undo and
-    /// an end that stuck would need the player to know which one they were against.
+    /// board that let the row behind it move would act on a different cart than the one whose
+    /// lid is off. The arrows point at the sockets, so they do not wrap.
     fn core_picker_input(&mut self, action: Action) {
-        let Some(row) = self.core_picker else {
+        let press = match action {
+            Action::GbaDown(Btn::Left) | Action::ShelfLeft => Press::Left,
+            Action::GbaDown(Btn::Right) | Action::ShelfRight => Press::Right,
+            Action::GbaDown(Btn::A) => Press::Keep,
+            Action::GbaDown(Btn::B) => Press::Back,
+            _ => return,
+        };
+        let now = self.now();
+        let Some(picker) = &mut self.core_picker else {
             return;
         };
-        let rows = Core::ALL.len();
-        match action {
-            Action::GbaDown(Btn::Up) => self.core_picker = Some((row + rows - 1) % rows),
-            Action::GbaDown(Btn::Down) => self.core_picker = Some((row + 1) % rows),
-            Action::GbaDown(Btn::A) => {
-                self.write_core(Core::ALL[row]);
-                self.core_picker = None;
-            }
-            Action::GbaDown(Btn::B) => self.core_picker = None,
-            _ => {}
+        let outcome = picker.press(press, now);
+        if let Outcome::Write(core) = outcome {
+            self.write_core(core);
         }
     }
 

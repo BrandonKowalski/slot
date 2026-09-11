@@ -8,6 +8,7 @@
 
 use slot_gfx::{Draw, TexId};
 
+use crate::art::render_svg;
 use crate::barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 use crate::plate::UndoFace;
 use crate::text;
@@ -383,20 +384,6 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
         w: STICKER_W,
         h: STICKER_H,
     }
-}
-
-/// The traced shape, at the size the face wants. `tiny_skia` hands back premultiplied RGBA,
-/// which is the same thing straight through wherever alpha is 0 or 255 — and this artwork has
-/// no partial coverage except on its own antialiased edges, where premultiplied is what the
-/// compositor wants anyway.
-fn render_svg(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
-    let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).ok()?;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
-    let size = tree.size();
-    let scale =
-        resvg::tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
-    resvg::render(&tree, scale, &mut pixmap.as_mut());
-    Some(pixmap.data().to_vec())
 }
 
 /// The lockup at a given width, and the size it came back. `None` where the artwork will not

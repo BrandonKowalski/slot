@@ -191,3 +191,78 @@ pub(crate) fn blit(dst: &mut [u8], dst_w: u32, src: &[u8], src_w: u32, src_h: u3
         dst[to..to + (src_w * 4) as usize].copy_from_slice(&src[from..from + (src_w * 4) as usize]);
     }
 }
+
+/// Between the two arrow caps. Tighter than `CAP_GAP`, so the pair reads as one control and
+/// its word as belonging to both.
+pub const ARROW_GAP: u32 = 3;
+
+/// Font Awesome's carets, as the bundled symbols font carries them. `label.ttf` has no arrows,
+/// and a glyph it lacks would rasterise to a blank key.
+const LEFT_CARET: char = '\u{f0d9}';
+const RIGHT_CARET: char = '\u{f0da}';
+
+pub fn arrows_hint_width(label: &str) -> u32 {
+    2 * CAP + ARROW_GAP + CAP_GAP + band_width(label) + EDGE
+}
+
+/// Left and right as the two keys they are — a cap each — then the one word they share.
+pub fn arrows_hint_face(label: &str) -> UndoFace {
+    let w = arrows_hint_width(label);
+    let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
+    for (i, glyph) in [LEFT_CARET, RIGHT_CARET].into_iter().enumerate() {
+        blit(
+            &mut rgba,
+            w,
+            &glyph_cap(glyph),
+            CAP,
+            CAP,
+            i as u32 * (CAP + ARROW_GAP),
+            (HINT_H - CAP) / 2,
+        );
+    }
+    let text_w = band_width(label);
+    let mut band = vec![0u8; (text_w * HINT_H * 4) as usize];
+    if let Some(font) = text::label_font() {
+        let layout = text::fit(font, label, text_w as f32, 1, LABEL_PX, LABEL_MIN_PX);
+        text::draw_centred(&mut band, text_w, HINT_H, &layout, INK);
+    }
+    blit(
+        &mut rgba,
+        w,
+        &band,
+        text_w,
+        HINT_H,
+        2 * CAP + ARROW_GAP + CAP_GAP,
+        0,
+    );
+    UndoFace { rgba, w, h: HINT_H }
+}
+
+/// A square cap with one symbol glyph centred on it, in the same inks as a lettered cap.
+fn glyph_cap(glyph: char) -> Vec<u8> {
+    let mut cap = Vec::with_capacity((CAP * CAP * 4) as usize);
+    for _ in 0..CAP * CAP {
+        cap.extend_from_slice(&[INK[0], INK[1], INK[2], 255]);
+    }
+    let Some(font) = crate::icon::symbols_font() else {
+        return cap;
+    };
+    let (m, cov) = font.rasterize(glyph, KEY_PX);
+    let x0 = (CAP as i32 - m.width as i32) / 2;
+    let y0 = (CAP as i32 - m.height as i32) / 2;
+    for gy in 0..m.height {
+        for gx in 0..m.width {
+            let (dx, dy) = (x0 + gx as i32, y0 + gy as i32);
+            if dx < 0 || dy < 0 || dx >= CAP as i32 || dy >= CAP as i32 {
+                continue;
+            }
+            let a = cov[gy * m.width + gx] as u32;
+            let at = ((dy as u32 * CAP + dx as u32) * 4) as usize;
+            for k in 0..3 {
+                cap[at + k] =
+                    ((CAP_INK[k] as u32 * a + cap[at + k] as u32 * (255 - a)) / 255) as u8;
+            }
+        }
+    }
+    cap
+}

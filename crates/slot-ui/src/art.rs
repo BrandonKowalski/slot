@@ -89,3 +89,17 @@ fn decode(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
     }
     Some((rgba, info.width, info.height))
 }
+
+/// The traced shape, at the size the face wants. `tiny_skia` hands back premultiplied RGBA,
+/// which is the same thing straight through wherever alpha is 0 or 255 — and this artwork has
+/// no partial coverage except on its own antialiased edges, where premultiplied is what the
+/// compositor wants anyway.
+pub(crate) fn render_svg(svg: &str, w: u32, h: u32) -> Option<Vec<u8>> {
+    let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).ok()?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
+    let size = tree.size();
+    let scale =
+        resvg::tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
+    resvg::render(&tree, scale, &mut pixmap.as_mut());
+    Some(pixmap.data().to_vec())
+}

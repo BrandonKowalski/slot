@@ -219,7 +219,7 @@ fn frame(font: &Font, px: f32) -> Frame {
     }
 }
 
-fn symbols_font() -> Option<&'static Font> {
+pub(crate) fn symbols_font() -> Option<&'static Font> {
     static FONT: OnceLock<Option<Font>> = OnceLock::new();
     FONT.get_or_init(|| Font::from_bytes(SYMBOLS_TTF, FontSettings::default()).ok())
         .as_ref()

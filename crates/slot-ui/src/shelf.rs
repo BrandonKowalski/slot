@@ -13,7 +13,7 @@ const PITCH: f32 = 240.0;
 const SIDE_SCALE: f32 = 0.78;
 const SIDE_ALPHA: f32 = 0.55;
 /// Carts stand on the row rather than float: the foot stays put as a cart shrinks away.
-const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
+pub(crate) const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
 /// Critically damped, so a flick lands on a cart instead of bouncing past and returning.
 const OMEGA: f32 = 16.0;
 /// How far the cart next to the selection is pushed aside as the chosen one goes in. Enough
@@ -173,7 +173,7 @@ impl Shelf {
     /// The shelf screen: the row of carts and the slot under it. What is printed on the case
     /// is drawn after this, by whoever holds the type.
     pub fn draw(&self, shake: f32, out: &mut Vec<Draw>) {
-        self.draw_row(None, shake, 0.0, out);
+        self.draw_row(None, shake, 0.0, 1.0, out);
         draw_empty_slot(out);
     }
 
@@ -188,8 +188,20 @@ impl Shelf {
     /// `recede` clears the row for the cart going into the slot: 0.0 leaves it alone, 1.0
     /// has every other cart gone. They part outwards rather than fading in place, so the row
     /// reads as making way for the one that was chosen.
-    pub fn draw_row(&self, hidden: Option<&str>, shake: f32, recede: f32, out: &mut Vec<Draw>) {
+    ///
+    /// `dim` darkens the faces further and nothing else: 1.0 leaves them as `recede` has them.
+    /// The black under a dimmed cart stays as `recede` alone makes it, so a dimmed cart reads
+    /// as a cart in shadow rather than a ghost over the wallpaper.
+    pub fn draw_row(
+        &self,
+        hidden: Option<&str>,
+        shake: f32,
+        recede: f32,
+        dim: f32,
+        out: &mut Vec<Draw>,
+    ) {
         let recede = recede.clamp(0.0, 1.0);
+        let dim = dim.clamp(0.0, 1.0);
         let target = self.scroll_target();
         for slot in -SLOTS..=SLOTS {
             let Some(i) = self.cart_at_offset(slot) else {
@@ -234,7 +246,7 @@ impl Shelf {
                     w,
                     h,
                     tex: *tex,
-                    alpha,
+                    alpha: alpha * dim,
                 },
                 // A cart whose face has not been uploaded still holds its place. A gap in
                 // the row would read as a missing game.
@@ -249,7 +261,7 @@ impl Shelf {
                             c[0] as f32 / 255.0,
                             c[1] as f32 / 255.0,
                             c[2] as f32 / 255.0,
-                            alpha,
+                            alpha * dim,
                         ],
                     }
                 }
