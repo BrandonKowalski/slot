@@ -210,8 +210,8 @@ fn tex(out: &mut Vec<Draw>, s: Sprite, x: f32, y: f32, alpha: f32) {
     });
 }
 
-/// The art between the scrim and the text: glow, plug or adapter, the port over it, then the
-/// arcs, click marks and swap arrows.
+/// The art between the scrim and the text: the plug with its glow or the adapter, the port over
+/// it, then the arcs, click marks and swap arrows.
 pub fn draw_link_art(
     menu: GameMenu,
     kind: LinkKind,
@@ -256,15 +256,8 @@ pub fn draw_link_art(
             }
         }
         LinkKind::Wireless => {
+            // No light behind the adapter: it calls out with its arcs instead.
             let base = adapter_base(menu, now);
-            let glow = s.glow_neutral;
-            tex(
-                out,
-                glow,
-                centre - glow.w as f32 / 2.0,
-                base - 70.0 - glow.h as f32 / 2.0,
-                glow_alpha(menu, now),
-            );
             tex(
                 out,
                 s.adapter,

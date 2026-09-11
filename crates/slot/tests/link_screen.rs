@@ -202,6 +202,45 @@ fn a_failed_plug_is_drawn_turned() {
     ));
 }
 
+/// The Wireless Adapter stands in the port with its signal arcs and no light behind it.
+#[test]
+fn the_adapter_has_no_glow_but_keeps_its_arcs() {
+    let s = sprites();
+    let mut out = Vec::new();
+    let linked = GameMenu::Linked {
+        role: LinkRow::Host,
+        worked: 0,
+        since: 4000,
+    };
+    for (menu, now) in [
+        (GameMenu::Pick(LinkRow::Host), 0),
+        (working(LinkRow::Host, 0), 800),
+        (linked, 4160),
+        (failed(0), 250),
+    ] {
+        out.clear();
+        draw_link_art(menu, LinkKind::Wireless, now, &s, &mut out);
+        let t = texes(&out);
+        assert!(
+            !t.contains(&s.glow_neutral.tex) && !t.contains(&s.glow_host.tex),
+            "a glow behind the adapter: {menu:?}"
+        );
+    }
+    out.clear();
+    draw_link_art(
+        working(LinkRow::Host, 0),
+        LinkKind::Wireless,
+        800,
+        &s,
+        &mut out,
+    );
+    let t = texes(&out);
+    assert!(
+        t.contains(&s.arcs_right[0].tex) && t.contains(&s.arcs_left[0].tex),
+        "the arcs went with the glow"
+    );
+}
+
 #[test]
 fn the_glow_eases_between_states_too() {
     let m = working(LinkRow::Host, 1000);
