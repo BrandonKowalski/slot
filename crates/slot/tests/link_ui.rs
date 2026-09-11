@@ -13,7 +13,7 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use slot::app::{App, GameMenu, LinkRow, Phase, LINKED_HOLD_MS};
+use slot::app::{App, GameMenu, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS};
 use slot::emu::Speed;
 use slot::link_net::{Cancel, TcpLink};
 use slot::link_radio::LinkRole;
@@ -590,6 +590,77 @@ fn a_button_the_menu_is_using_never_reaches_the_game() {
         ButtonMask(0),
         "the press that picked a row was handed to the game as well"
     );
+}
+
+/// `Session::update`'s own hop from the emulator's lost-peer flag to `App::peer_lost` (see its
+/// doc comment there) has nothing watching it end to end: the flag alone is `tests/emu.rs`'s,
+/// `App::peer_lost` called directly is this file's and `link_session.rs`'s, and
+/// `TcpLink::is_closed` is `link_session.rs`'s again — every piece tested alone, never the
+/// wire between them. This links a real session over loopback the way
+/// `a_started_link_reaches_the_emulator_thread_with_its_transport` above does, drops the far
+/// end, and follows the badge breaking and then the session actually ending, on both `App`
+/// and the emulator thread — the same two-sided proof that test already gives the *start* of
+/// a link, but for the end of one instead.
+#[test]
+fn a_dropped_peer_breaks_the_badge_and_ends_the_session_end_to_end() {
+    let (mut s, _d, mut now) = session_playing_on_gpsp();
+    let port = 45913;
+    let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    s.app_mut().start_link(
+        fake_starter(move |_, _| TcpLink::join("127.0.0.1", port)),
+        1,
+    );
+    let deadline = Instant::now() + BAIL;
+    while s.app().game_menu_open() {
+        assert!(Instant::now() < deadline, "the link never came up");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let far = far.join().expect("host thread");
+
+    // Live on both sides before anything is dropped, the same wait
+    // `a_started_link_reaches_the_emulator_thread_with_its_transport` makes for the start.
+    let deadline = Instant::now() + BAIL;
+    while !(s.app().link_active() && s.emu().is_some_and(|e| e.net().is_active())) {
+        assert!(
+            Instant::now() < deadline,
+            "the link never went live on both sides"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    // The peer leaving: `TcpLink`'s `Drop` shuts its socket down, which is a real FIN on the
+    // wire (see `dropping_the_link_closes_the_wire` in `link_session.rs`), not merely a value
+    // going out of scope.
+    drop(far);
+
+    let deadline = Instant::now() + BAIL;
+    while s.app().link_badge() != slot_ui::LinkBadge::JoinedLost {
+        assert!(Instant::now() < deadline, "the badge never broke");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    // The broken badge has to be seen for `LINK_LOST_MS` before the session ends on its own.
+    let margin_steps = (LINK_LOST_MS / 16) as usize + 30;
+    for _ in 0..margin_steps {
+        step(&mut s, &mut now, &[]);
+    }
+    assert!(!s.app().link_active(), "the session never ended");
+
+    // The proof this test exists for: the ending reached the emulator thread too, which only
+    // happens through `Session::bridge_link` — `App`'s own bookkeeping ending is not enough.
+    let deadline = Instant::now() + BAIL;
+    while s.emu().is_some_and(|e| e.net().is_active()) {
+        assert!(
+            Instant::now() < deadline,
+            "bridge_link never carried the ending to the emulator thread"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 /// Sprites distinguishable only by their `TexId`, the way `a_pokemon_cart_shows_the_adapter`
