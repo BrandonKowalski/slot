@@ -2154,6 +2154,11 @@ impl App {
         };
         let seat = slot_store::core_for(&root, &cart.stem);
         self.core_picker = Some(CorePicker::open(seat, self.now()));
+        // Whatever the shelf had armed before START belonged to the shelf that was showing,
+        // not to the cart now open over it: a held direction would keep repeating underneath
+        // the lid, and a held A would still insert the cart once its 500 ms ran out.
+        self.shelf.release_hold();
+        self.play_held = None;
     }
 
     /// The picker owns every button while it is up, including the arrows the shelf uses: a

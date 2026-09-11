@@ -741,6 +741,39 @@ fn the_picker_swallows_the_shelf_arrows() {
     );
 }
 
+/// An A pressed just before START belonged to the shelf that was showing when it went down.
+/// Opening the picker has to let go of it, or its 500 ms hold still runs out underneath the
+/// open cart and inserts it clean, skipping the resume the shelf would otherwise have offered.
+#[test]
+fn opening_the_picker_lets_go_of_a_play_hold_already_armed() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::A));
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaUp(Btn::A));
+    app.update(0.6);
+    assert!(
+        matches!(app.phase(), Phase::Shelf),
+        "the held A inserted the cart under the open picker: {:?}",
+        app.phase()
+    );
+}
+
+/// A direction still repeating when START goes down is the shelf's, not the picker's: it must
+/// stop, the same as when the shelf leaves the screen any other way, or the row keeps moving
+/// underneath the cart that is supposedly open.
+#[test]
+fn opening_the_picker_lets_go_of_a_direction_still_held() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Metroid Fusion", "Zzz"]);
+    app.apply(Action::GbaDown(Btn::Right));
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(0.6);
+    assert_eq!(
+        app.selected_stem(),
+        Some("Metroid Fusion"),
+        "the shelf moved underneath the open picker"
+    );
+}
+
 /// Nothing to configure with no cart under the highlight, and a picker that wrote to an
 /// empty stem would leave a line for a cart that is not there.
 #[test]
