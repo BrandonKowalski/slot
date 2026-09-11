@@ -409,7 +409,10 @@ tasks:
       - adb push target-device/release/slot '{{.SD}}/System/slot'
       - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
       - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
-      - adb push licenses '{{.SD}}/System/licenses'
+      # Into System/, not onto System/licenses: adb copies a folder inside a destination that
+      # already exists, so naming licenses itself nested a fresh copy inside the old one on
+      # every deploy after the first and left the notice at the top of the card stale.
+      - adb push licenses '{{.SD}}/System/'
       # Same reasoning as dist:device: the source belongs on the card next to the binary it
       # corresponds to, not only offered on request, and the .meta beside it so the anchor
       # timestamp and resolution method travel too.
