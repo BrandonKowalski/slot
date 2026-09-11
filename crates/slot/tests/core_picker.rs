@@ -111,6 +111,17 @@ fn a_close_during_the_lift_reverses_from_where_the_lid_had_got_to() {
     );
 }
 
+/// A refusal decays on its own clock and must not survive into a hop that actually happens: two
+/// things shaking at once reads as two separate failures.
+#[test]
+fn a_hop_started_soon_after_a_refusal_does_not_carry_its_shake() {
+    let mut p = CorePicker::open(Core::Gpsp, 0);
+    assert_eq!(p.press(Press::Right, 0), Outcome::Refused);
+    assert_eq!(p.press(Press::Left, 100), Outcome::Nothing);
+    assert_eq!(p.chip(100).shake, 0.0, "the refusal rode along on the hop");
+    assert_eq!(p.chip(150).shake, 0.0, "the refusal rode along on the hop");
+}
+
 #[test]
 fn presses_during_the_close_do_nothing() {
     let mut p = CorePicker::open(Core::Mgba, 0);

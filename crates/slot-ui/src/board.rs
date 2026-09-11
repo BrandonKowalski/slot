@@ -107,10 +107,13 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
 
 pub fn board_face(cart: &Cart) -> CartFace {
     let shell = shell_for(&cart.code);
+    // Deepest placeholder first and the wall last, so a shell whose own hex or shade matches
+    // a placeholder still further down the list finds nothing left to replace: once a
+    // placeholder's `.replace` call has run, its literal text is gone from the SVG.
     let svg = BOARD_SVG
-        .replace(PLASTIC, &hex(shell.colour))
+        .replace(DEEP, &hex(shade(shell.colour, 0.35)))
         .replace(FLOOR, &hex(shade(shell.colour, 0.62)))
-        .replace(DEEP, &hex(shade(shell.colour, 0.35)));
+        .replace(PLASTIC, &hex(shell.colour));
     let rgba = art::render_svg(&svg, BOARD_W, BOARD_H)
         .unwrap_or_else(|| vec![0; (BOARD_W * BOARD_H * 4) as usize]);
     let mut face = CartFace {

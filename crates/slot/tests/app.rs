@@ -637,6 +637,21 @@ fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
     );
 }
 
+/// `the_chip_goes_where_the_arrow_points_and_does_not_wrap` asserts this too, but nothing in it
+/// ever refuses the shelf, so that assertion passes whether or not `shelf_shake` still guards on
+/// the picker being up. Arming a real refusal first is what makes the guard's absence show.
+#[test]
+fn a_shelf_refusal_does_not_shake_once_the_picker_takes_over() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    app.refuse();
+    app.apply(Action::GbaDown(Btn::Start));
+    assert_eq!(
+        app.shelf_shake(),
+        0.0,
+        "the shelf shook under an open picker"
+    );
+}
+
 #[test]
 fn back_mid_hop_turns_round_and_onward_does_nothing() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);

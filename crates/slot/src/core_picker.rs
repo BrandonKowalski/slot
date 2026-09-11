@@ -134,6 +134,9 @@ impl CorePicker {
                 started: now.saturating_sub(done),
             });
             self.seat = target;
+            // A hop is happening now, so a shake left over from an earlier refusal is not
+            // this chip's any more.
+            self.refusal = None;
             return Outcome::Nothing;
         }
         if target == self.seat {
@@ -145,6 +148,9 @@ impl CorePicker {
             started: now,
         });
         self.seat = target;
+        // Same rule as the turn above: a hop starting now has nothing to do with whatever was
+        // refused before it, however recently.
+        self.refusal = None;
         Outcome::Nothing
     }
 
