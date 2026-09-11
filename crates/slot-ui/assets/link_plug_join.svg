@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 92 244" width="92" height="244">
+  <!-- A gray end of an AGB-005 link cable: every player after the first. -->
+  <defs>
+    <linearGradient id="cable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8e8e95" stop-opacity="0"/>
+      <stop offset="1" stop-color="#8e8e95" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  <rect x="39" y="0" width="14" height="96" fill="url(#cable)"/>
+  <g transform="translate(46 244) rotate(180) scale(1.4)">
+    <path d="M-10 88 L10 88 L8 110 L-8 110 Z" fill="#7a7a82"/>
+    <rect x="-31" y="22" width="62" height="68" rx="13" fill="#b2b2b8"/>
+    <rect x="-26" y="26" width="12" height="60" rx="6" fill="#d2d2d7" opacity=".6"/>
+    <g stroke="#96969d" stroke-width="2.2" stroke-linecap="round">
+      <line x1="-18" y1="58" x2="20" y2="58"/><line x1="-18" y1="65" x2="20" y2="65"/><line x1="-18" y1="72" x2="20" y2="72"/>
+    </g>
+    <rect x="-16" y="0" width="32" height="26" rx="5" fill="#8d8d95"/>
+    <rect x="-11" y="4" width="22" height="7" rx="2" fill="#5f5f67"/>
+  </g>
+</svg>

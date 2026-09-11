@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 268 182" width="268" height="182">
+  <!-- The GBA Wireless Adapter (AGB-015) standing in the port, traced from a photograph of one on
+       an SP: the outline and latches were measured from the silhouette, not drawn by eye. The
+       label rows and the name in the logo are set by link_art.rs. -->
+  <g transform="translate(134 144) scale(1.75)">
+    <rect x="-16" y="-1" width="32" height="22" rx="3" fill="#b9bcc2"/>
+    <rect x="-12" y="7" width="24" height="9" rx="2" fill="#161618"/>
+    <path d="M-48.4 -59.5 L-54 -59 L-59.2 -56.8 L-63.8 -54.5 L-68 -52.2 L-71.9 -50 Q-75 -47.5 -74 -44.5 L-72.6 -41.8 L-70.6 -39.5 Q-69.2 -37.5 -66.5 -37.5 L-61.5 -37.5 L-58.3 -42.5 L-55 -47.5 L-51.7 -52.5 Z" fill="#2b2d31"/>
+    <path d="M48.4 -59.5 L54 -59 L59.2 -56.8 L63.8 -54.5 L68 -52.2 L71.9 -50 Q75 -47.5 74 -44.5 L72.6 -41.8 L70.6 -39.5 Q69.2 -37.5 66.5 -37.5 L61.5 -37.5 L58.3 -42.5 L55 -47.5 L51.7 -52.5 Z" fill="#2b2d31"/>
+    <path d="M-80 0 L-80.4 -4.5 L-79.8 -10.5 L-78.8 -15.5 L-77 -20.5 L-74.6 -25.5 L-71.4 -30.5 L-68.1 -34.5 L-64.5 -40.5 L-61.2 -45.5 L-58 -50.5 L-54.7 -55.5 L-50.8 -60.5 L-48.5 -64.5 L-46.2 -67.5 L-43.2 -70.5 L-40.5 -72.5 L-36.6 -74.5 L-33.6 -75.5 L-29.6 -76.5 Q-18 -80.5 0 -80.5 Q18 -80.5 29.6 -76.5 L33.6 -75.5 L36.6 -74.5 L40.5 -72.5 L43.2 -70.5 L46.2 -67.5 L48.5 -64.5 L50.8 -60.5 L54.7 -55.5 L58 -50.5 L61.2 -45.5 L64.5 -40.5 L68.1 -34.5 L71.4 -30.5 L74.6 -25.5 L77 -20.5 L78.8 -15.5 L79.8 -10.5 L80.4 -4.5 L80 0 Z" fill="#4a5058" fill-opacity=".92"/>
+    <path d="M-58 -44 L-48 -62 Q-30 -75 0 -75 Q30 -75 48 -62 L58 -44 Z" fill="#2f6b37" opacity=".3"/>
+    <g stroke="#2c3136" stroke-width="1.6" opacity=".75">
+      <line x1="-36" y1="-73" x2="-36" y2="-56"/><line x1="-22" y1="-76" x2="-22" y2="-56"/><line x1="-8" y1="-77" x2="-8" y2="-66"/>
+      <line x1="8" y1="-77" x2="8" y2="-66"/><line x1="22" y1="-76" x2="22" y2="-56"/><line x1="36" y1="-73" x2="36" y2="-56"/>
+      <line x1="-44" y1="-56" x2="44" y2="-56"/>
+    </g>
+    <rect x="-19.4" y="-64.7" width="38.8" height="7.5" rx="3.75" fill="none" stroke="#6e757e" stroke-width="1.2" opacity=".7"/>
+    <path d="M-54 -5 A54 37 0 0 1 54 -5 Z" fill="#3d4147" opacity=".95"/>
+    <line x1="-33" y1="-21.2" x2="33" y2="-21.2" stroke="#b9bdc2" stroke-width=".45"/>
+    <path d="M-80 0 L-80.4 -4.5 L-79.8 -10.5 L-78.8 -15.5 L-77 -20.5 L-74.6 -25.5 L-71.4 -30.5 L-68.1 -34.5 L-64.5 -40.5 L-61.2 -45.5 L-58 -50.5 L-54.7 -55.5 L-50.8 -60.5 L-48.5 -64.5 L-46.2 -67.5 L-43.2 -70.5 L-40.5 -72.5 L-36.6 -74.5 L-33.6 -75.5 L-29.6 -76.5 Q-18 -80.5 0 -80.5 Q18 -80.5 29.6 -76.5 L33.6 -75.5 L36.6 -74.5 L40.5 -72.5 L43.2 -70.5 L46.2 -67.5 L48.5 -64.5 L50.8 -60.5 L54.7 -55.5 L58 -50.5 L61.2 -45.5 L64.5 -40.5 L68.1 -34.5 L71.4 -30.5 L74.6 -25.5 L77 -20.5 L78.8 -15.5 L79.8 -10.5 L80.4 -4.5 L80 0 Z" fill="#5e656e" fill-opacity=".22" stroke="#767e87" stroke-width="1.4"/>
+    <g>
+      <circle cx="-61.8" cy="-21" r="3.8" fill="#c6cad0"/><circle cx="-61.8" cy="-21" r="3.8" fill="none" stroke="#25282c" stroke-width="1"/>
+      <g transform="translate(-61.8 -21) rotate(60)" fill="#2f3338"><circle r=".95"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z" transform="rotate(120)"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z" transform="rotate(240)"/></g>
+      <circle cx="61.2" cy="-21" r="3.8" fill="#c6cad0"/><circle cx="61.2" cy="-21" r="3.8" fill="none" stroke="#25282c" stroke-width="1"/>
+      <g transform="translate(61.2 -21)" fill="#2f3338"><circle r=".95"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z" transform="rotate(120)"/><path d="M-.8 -.3 L-.7 -2.65 L1.25 -2.45 L.8 .25 Z" transform="rotate(240)"/></g>
+    </g>
+  </g>
+</svg>

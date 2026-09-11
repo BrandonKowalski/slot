@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 92 244" width="92" height="244">
+  <!-- The purple end of an AGB-005 link cable, pointing down, tip at the bottom edge, with its
+       cable trailing up and fading out. The first player always takes this end. -->
+  <defs>
+    <linearGradient id="cable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8e8e95" stop-opacity="0"/>
+      <stop offset="1" stop-color="#8e8e95" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  <rect x="39" y="0" width="14" height="96" fill="url(#cable)"/>
+  <g transform="translate(46 244) rotate(180) scale(1.4)">
+    <path d="M-9 88 L9 88 L7 110 L-7 110 Z" fill="#46397a"/>
+    <rect x="-24" y="22" width="48" height="68" rx="11" fill="#6a55a6"/>
+    <rect x="-20" y="26" width="10" height="60" rx="5" fill="#8570c4" opacity=".55"/>
+    <g stroke="#55448f" stroke-width="2.2" stroke-linecap="round">
+      <line x1="-13" y1="58" x2="15" y2="58"/><line x1="-13" y1="65" x2="15" y2="65"/><line x1="-13" y1="72" x2="15" y2="72"/>
+    </g>
+    <rect x="-16" y="0" width="32" height="26" rx="5" fill="#4e3f86"/>
+    <rect x="-11" y="4" width="22" height="7" rx="2" fill="#2f2556"/>
+  </g>
+</svg>

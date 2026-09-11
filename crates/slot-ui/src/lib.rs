@@ -9,6 +9,7 @@ mod draw;
 mod footer;
 mod hud;
 mod icon;
+mod link_art;
 mod plate;
 mod polaroids;
 mod power_menu;
@@ -43,6 +44,11 @@ pub use hud::{
     LINK_HOST_INK, LINK_JOIN_INK, PLATE_H,
 };
 pub use icon::{badge_face, icon_box, icon_face, Badge, Icon};
+pub use link_art::{
+    link_art, LinkArt, ADAPTER_BASE_X, ADAPTER_BASE_Y, ADAPTER_H, ADAPTER_W, ARCS, ARROW_H,
+    ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y,
+    GLOW_HOST_R, GLOW_NEUTRAL_R, PLUG_H, PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
+};
 pub use plate::{
     arrows_hint_face, arrows_hint_width, cap_width, hint_face, hint_quad, hint_row, hint_width,
     title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_EDGE,
