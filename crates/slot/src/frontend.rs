@@ -8,10 +8,10 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    arrows_hint_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm, hint_face,
-    icon_face, menu_face, photo_face, set_clock_hint_face, socket_face, sticker_face, title_face,
-    toast_face, wallpaper_face, word_face, Icon, PowerChoice, StickerFields, Toast, ALERT_PX,
-    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm,
+    hint_face, icon_face, menu_face, photo_face, set_clock_hint_face, socket_face, sticker_face,
+    title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge, PowerChoice, StickerFields,
+    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, GameRow, LinkRow, Phase};
@@ -139,6 +139,18 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_icon_faces(icons);
+        let link_badges = LinkBadge::FACES
+            .iter()
+            .map(|b| {
+                let (badge, ink) = (
+                    b.badge().expect("a face has a glyph"),
+                    b.colour().expect("and a colour"),
+                );
+                let f = badge_face(badge, HUD_ICON_PX, ink);
+                compositor.create_texture(f.w, f.h, &f.rgba)
+            })
+            .collect();
+        self.session.app_mut().set_link_badge_faces(link_badges);
         // Its own upload rather than one of the HUD's: it is drawn on a cart, at its own
         // size, and in a warning colour the level glyphs have no business borrowing.
         let alert = icon_face(Icon::Alert, ALERT_PX, ALERT_INK);

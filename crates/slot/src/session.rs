@@ -251,6 +251,11 @@ impl Session {
                 None => eprintln!("slot: link: a transport arrived with no core to run it"),
             }
         }
+        // The far end went away. `App` breaks the badge and ends the session itself later, from
+        // inside `update`, where `bridge_link` carries the ending to the emulator thread.
+        if self.app.link_active() && self.emu.as_ref().is_some_and(EmuHandle::link_lost) {
+            self.app.peer_lost();
+        }
         if let Some(sfx) = self.app.take_sfx() {
             self.play_sfx(sfx);
         }

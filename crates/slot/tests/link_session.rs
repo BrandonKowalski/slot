@@ -15,6 +15,7 @@ use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_power::{Battery, Charge};
 use slot_retro::{LinkChannel, LoopbackLink, NETPACKET_RELIABLE};
 use slot_store::{write_slot_state, Core, SlotState, StateRing};
+use slot_ui::LinkBadge;
 
 /// Both ends on loopback: no radio, no peer device, no BaseOS. This proves the framing and
 /// the threading, which is everything the transport is responsible for.
@@ -997,4 +998,50 @@ fn a_quiet_link_is_not_closed() {
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(!client.is_closed());
     assert!(!slot_retro::LoopbackLink::default().is_closed());
+}
+
+// --- the badge follows the session, and a lost peer breaks it then ends it ----------------
+
+#[test]
+fn a_live_session_shows_the_badge_for_its_role() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut app = common::app_playing_in(d.path(), "Emerald");
+    assert_eq!(app.link_badge(), LinkBadge::Off);
+    app.begin_link(0);
+    assert_eq!(app.link_badge(), LinkBadge::Hosting);
+    app.end_link();
+    app.begin_link(1);
+    assert_eq!(app.link_badge(), LinkBadge::Joined);
+}
+
+#[test]
+fn a_peer_that_leaves_breaks_the_badge_for_two_seconds_then_ends_the_session() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut app = common::app_playing_in(d.path(), "Emerald");
+    app.begin_link(0);
+    app.peer_lost();
+    assert_eq!(app.link_badge(), LinkBadge::HostingLost);
+    for _ in 0..114 {
+        app.update(1.0 / 60.0); // 1.9 s
+    }
+    assert!(
+        app.link_active(),
+        "ended before the broken badge had its two seconds"
+    );
+    assert_eq!(app.link_badge(), LinkBadge::HostingLost);
+    for _ in 0..8 {
+        app.update(1.0 / 60.0);
+    }
+    assert!(!app.link_active(), "a lost peer's session never ended");
+    assert_eq!(app.link_badge(), LinkBadge::Off);
+}
+
+#[test]
+fn a_session_ended_on_this_device_shows_no_broken_badge() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut app = common::app_playing_in(d.path(), "Emerald");
+    app.begin_link(1);
+    app.apply(Action::PowerPress);
+    assert!(!app.link_active());
+    assert_eq!(app.link_badge(), LinkBadge::Off);
 }

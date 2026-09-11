@@ -10,10 +10,10 @@ use slot_store::{
 };
 use slot_ui::{
     board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
-    lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, Millis, Placed,
-    Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H,
-    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, LinkBadge, Millis,
+    Placed, Polaroids, PowerChoice, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X,
+    CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W,
+    SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -81,6 +81,9 @@ const BATTERY_LOW: u8 = 20;
 /// Long enough to notice the wrong state loading, short enough that the offer is gone by the
 /// time the switcher is opened for any other reason.
 pub const UNDO_GRACE_MS: Millis = 30_000;
+
+/// How long a link whose other end went away shows its broken badge before the session ends.
+pub const LINK_LOST_MS: Millis = 2000;
 
 /// How long A has to be down on the shelf before it means "start this cart clean". Past the
 /// point a press could be a tap, and short enough to hold without wondering whether the
@@ -155,6 +158,9 @@ pub enum PendingUndo {
 /// is open.
 struct LinkSession {
     client_id: u16,
+    /// When the other end was found gone. The session lasts `LINK_LOST_MS` past it, so the
+    /// broken badge is seen.
+    lost_at: Option<Millis>,
 }
 
 /// A link being started: the worker doing the slow parts, and which of libretro's two client
@@ -682,7 +688,11 @@ impl App {
     /// answers. A session always starts from the cart's battery save, never a state — that
     /// falls out for free here, since nothing on this path touches the state ring at all.
     pub fn begin_link(&mut self, client_id: u16) {
-        self.link = Some(LinkSession { client_id });
+        self.link = Some(LinkSession {
+            client_id,
+            lost_at: None,
+        });
+        self.sync_link_badge();
     }
 
     /// Which side of the session this device is, for whatever the UI ends up showing while
@@ -724,6 +734,38 @@ impl App {
     /// call site today.
     pub fn end_link(&mut self) {
         self.link = None;
+        self.sync_link_badge();
+    }
+
+    /// The emulator thread found the transport closed. The badge breaks now; `timers` ends the
+    /// session once the broken badge has been up for `LINK_LOST_MS`.
+    pub fn peer_lost(&mut self) {
+        let now = self.now();
+        if let Some(session) = &mut self.link {
+            session.lost_at.get_or_insert(now);
+        }
+        self.sync_link_badge();
+    }
+
+    pub fn link_badge(&self) -> LinkBadge {
+        self.hud.link()
+    }
+
+    pub fn set_link_badge_faces(&mut self, faces: Vec<TexId>) {
+        self.hud.set_link_faces(faces);
+    }
+
+    fn sync_link_badge(&mut self) {
+        let badge = match &self.link {
+            None => LinkBadge::Off,
+            Some(s) => match (s.client_id == 0, s.lost_at.is_some()) {
+                (true, false) => LinkBadge::Hosting,
+                (false, false) => LinkBadge::Joined,
+                (true, true) => LinkBadge::HostingLost,
+                (false, true) => LinkBadge::JoinedLost,
+            },
+        };
+        self.hud.set_link(badge);
     }
 
     /// The app has no device, so the sound it wants is left here for whoever does.
@@ -1319,6 +1361,12 @@ impl App {
             // seconds behind the cable is worse than no LED at all.
             let state = self.led_state();
             self.set_led(state);
+        }
+        // A lost peer's session ends on its own, once the broken badge has been seen.
+        if let Some(at) = self.link.as_ref().and_then(|s| s.lost_at) {
+            if self.now().saturating_sub(at) >= LINK_LOST_MS {
+                self.end_link();
+            }
         }
     }
 
