@@ -38,26 +38,36 @@ fn a_request_comes_back_as_the_open_carts_faces() {
 }
 
 /// A caret that ran along the shelf has no use for the carts it passed: the last one asked for
-/// is the last one built.
+/// is the last one built. Counting every build that comes back, not just the last one seen,
+/// is the point: a worker that dutifully built all three in FIFO order would also have the
+/// newest arrive last, so that alone does not tell the burst was collapsed. The worker can only
+/// ever be partway through the first request when the rest of the burst lands — sending three
+/// requests in a tight loop, with no sleep between them, is over long before even a fast build
+/// finishes — so at most that one build and the newest can come back; a middle request coming
+/// back too means the queue was drained one at a time instead of collapsed to its newest.
 #[test]
 fn the_newest_request_of_a_burst_is_the_last_built() {
     let builder = FaceBuilder::spawn();
     for stem in ["Advance Wars", "Drill Dozer", "Metroid Fusion"] {
         builder.request(cart(stem));
     }
-    let mut last = None;
+    let mut seen = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if let Some(faces) = builder.take() {
             let done = faces.stem == "Metroid Fusion";
-            last = Some(faces.stem);
+            seen.push(faces.stem);
             if done {
                 break;
             }
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert_eq!(last.as_deref(), Some("Metroid Fusion"));
+    assert_eq!(seen.last().map(String::as_str), Some("Metroid Fusion"));
+    assert!(
+        seen.len() <= 2,
+        "the burst did not collapse to its newest: {seen:?} came back"
+    );
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         builder.take().is_none(),

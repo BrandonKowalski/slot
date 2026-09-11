@@ -78,14 +78,13 @@ fn every_line_is_already_upper_case() {
     }
 }
 
-/// `Canvas::blit` composites the wordmark's own SVG raster onto the label, and used to assume
-/// that raster was premultiplied — correct while `render_svg` handed back premultiplied pixels,
-/// wrong now that it hands back straight alpha (see the `art.rs` fix). A premultiplied-shaped
-/// blend on straight alpha clips every partly covered edge pixel toward the full ink colour, so
-/// the wordmark's top edge collapsed from a ramp to a single hard step. This scans the columns
-/// where that top edge sits (in the sticker's own coordinate space) and asks for at least one
-/// column whose edge pixel is neither the ground nor the ink outright: proof the edge is still
-/// antialiased.
+/// `Canvas::blit` composites the wordmark's own SVG raster onto the label. `render_svg` hands
+/// back straight alpha, so the blend scales the source by its own alpha rather than trusting it
+/// to already carry that scale; a blend shaped for premultiplied pixels would instead clip
+/// every partly covered edge pixel toward the full ink colour, collapsing the wordmark's top
+/// edge from a ramp to a single hard step. This scans the columns where that top edge sits (in
+/// the sticker's own coordinate space) and asks for at least one column whose edge pixel is
+/// neither the ground nor the ink outright: proof the edge is still antialiased.
 #[test]
 fn the_wordmarks_top_edge_is_antialiased_not_a_hard_step() {
     use slot_ui::sticker_face;

@@ -49,9 +49,9 @@ impl FaceBuilder {
             });
         // A thread that never started leaves both ends of `inbox`/`outbox` dropped with it, so
         // `request` below sends into a channel nobody drains and `take` only ever sees it
-        // disconnected — the same shape as a worker too far behind to answer in time. Task 10's
-        // picker already waits on that and gives up after `FACES_WAIT_MS`, so this is reported
-        // rather than turned into a panic that would take the whole frontend down with it.
+        // disconnected — the same shape as a worker too far behind to answer in time. `App`
+        // already waits on that and gives up after `FACES_WAIT_MS`, so this is reported rather
+        // than turned into a panic that would take the whole frontend down with it.
         if let Err(e) = spawned {
             eprintln!("slot: faces: worker thread failed to start: {e}");
         }
