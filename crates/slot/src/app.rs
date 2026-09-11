@@ -1719,11 +1719,12 @@ impl App {
                 alpha: open,
             });
         }
+        // A face drawn at its own size is only sharp on whole pixels.
         for (i, tex) in self.core_socket_faces.iter().copied().enumerate() {
             let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
             out.push(Draw::Tex {
-                x,
-                y,
+                x: x.round(),
+                y: y.round(),
                 w: SOCKET_W as f32 * zoom,
                 h: SOCKET_H as f32 * zoom,
                 tex,
@@ -1761,10 +1762,11 @@ impl App {
                 w: CHIP_W as f32 * zoom,
                 h: CHIP_H as f32 * zoom,
             };
+            // Whole pixels, as the sockets: a seated chip is drawn at its own size too.
             let at = grown(body, TURN_PAD as f32 * zoom);
             out.push(Draw::Turned {
-                x: at.x,
-                y: at.y,
+                x: at.x.round(),
+                y: at.y.round(),
                 w: at.w,
                 h: at.h,
                 tex,

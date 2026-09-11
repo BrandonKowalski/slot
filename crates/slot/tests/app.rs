@@ -882,7 +882,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
         let (x, y) = on_board(rest, SOCKET_U[i], SOCKET_V);
         let (_, at) = tex_at(&out, *socket).expect("a socket is missing");
         assert!(
-            near(at, [x, y, SOCKET_W as f32, SOCKET_H as f32]),
+            near(at, [x.round(), y.round(), SOCKET_W as f32, SOCKET_H as f32]),
             "socket {i} at {at:?}"
         );
     }
@@ -901,7 +901,15 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
         TURN_PAD as f32,
     );
     assert!(
-        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        near(
+            chip,
+            [
+                want_chip.x.round(),
+                want_chip.y.round(),
+                want_chip.w,
+                want_chip.h
+            ]
+        ),
         "the seated chip is not in mGBA's socket: {chip:?}"
     );
     assert!(turned_at(&out, f.blank).is_none(), "a blank chip at rest");
@@ -937,6 +945,29 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     }
 }
 
+/// A face drawn at its own size is only sharp on whole pixels. At a fractional place the linear
+/// filter splits each 1 px line of a socket's silkscreen across two pixels at half strength, and
+/// the empty socket's outline goes faint.
+#[test]
+fn the_sockets_and_the_seated_chip_rest_on_whole_pixels() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_picker_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    let out = frame(&app);
+
+    let whole = |r: [f32; 4]| r[0].fract() == 0.0 && r[1].fract() == 0.0;
+    for (i, socket) in f.sockets.iter().enumerate() {
+        let (_, at) = tex_at(&out, *socket).expect("a socket is missing");
+        assert!(whole(at), "socket {i} is off the pixel grid at {at:?}");
+    }
+    let (_, chip, _) = turned_at(&out, f.chips[0]).expect("the chip is not seated in mGBA");
+    assert!(
+        whole(chip),
+        "the seated chip is off the pixel grid at {chip:?}"
+    );
+}
+
 /// Which socket the chip lands in follows the arrow. A swapped `CHIP_U` index, or an `across`
 /// inverted from what the picker reports, would still draw a chip named `chips[1]` somewhere on
 /// the board and pass a test that only asked whether it was there.
@@ -962,7 +993,7 @@ fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
     );
     let (_, chip, _) = turned_at(&out, f.chips[1]).expect("the chip did not land in gpSP");
     assert!(
-        near(chip, [want.x, want.y, want.w, want.h]),
+        near(chip, [want.x.round(), want.y.round(), want.w, want.h]),
         "the gpSP chip is not in gpSP's socket: {chip:?}"
     );
     assert!(
@@ -1045,7 +1076,15 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
         let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-open");
         assert!(
-            near(at, [x, y, SOCKET_W as f32 * zoom, SOCKET_H as f32 * zoom]),
+            near(
+                at,
+                [
+                    x.round(),
+                    y.round(),
+                    SOCKET_W as f32 * zoom,
+                    SOCKET_H as f32 * zoom
+                ]
+            ),
             "socket {i} at {at:?} mid-open"
         );
     }
@@ -1061,7 +1100,15 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     );
     let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-open");
     assert!(
-        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        near(
+            chip,
+            [
+                want_chip.x.round(),
+                want_chip.y.round(),
+                want_chip.w,
+                want_chip.h
+            ]
+        ),
         "the chip is not riding the board mid-open: {chip:?}"
     );
 }
@@ -1168,7 +1215,15 @@ fn closing_puts_the_cart_back_on_the_shelf() {
         let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
         let (_, at) = tex_at(&partway, *socket).expect("a socket is missing mid-close");
         assert!(
-            near(at, [x, y, SOCKET_W as f32 * zoom, SOCKET_H as f32 * zoom]),
+            near(
+                at,
+                [
+                    x.round(),
+                    y.round(),
+                    SOCKET_W as f32 * zoom,
+                    SOCKET_H as f32 * zoom
+                ]
+            ),
             "socket {i} at {at:?} mid-close"
         );
     }
@@ -1184,7 +1239,15 @@ fn closing_puts_the_cart_back_on_the_shelf() {
     );
     let (_, chip, _) = turned_at(&partway, f.chips[0]).expect("no seated chip mid-close");
     assert!(
-        near(chip, [want_chip.x, want_chip.y, want_chip.w, want_chip.h]),
+        near(
+            chip,
+            [
+                want_chip.x.round(),
+                want_chip.y.round(),
+                want_chip.w,
+                want_chip.h
+            ]
+        ),
         "the chip is not riding the board mid-close: {chip:?}"
     );
 
