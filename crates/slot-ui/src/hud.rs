@@ -218,8 +218,9 @@ impl Hud {
         self.kind.icon(self.value, self.muted)
     }
 
-    /// The glyph the badge is showing, which is not the same question as what reached the
-    /// screen: without an uploaded face it draws nothing at all.
+    /// The fast-forward glyph, which is not the same question as what the badge is actually
+    /// showing: `draw` lets a live link outrank it, and without an uploaded face it draws
+    /// nothing at all either way.
     pub fn badge(&self) -> Option<Icon> {
         ff_badge(self.ff)
     }

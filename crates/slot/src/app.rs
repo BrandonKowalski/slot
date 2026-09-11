@@ -1814,9 +1814,8 @@ impl App {
     /// words and a choice, and a box around those was furniture the screen did not need.
     ///
     /// The ground is drawn here rather than in `draw_menu_rows` because it is the only thing
-    /// about this menu that is its own: the core picker draws over a shelf it did not paint,
-    /// and the in-game menu over a game it did not either. See `draw_menu_rows` for why the
-    /// bar behind the row in hand is the colour it is.
+    /// about this menu that is its own: the core picker draws over a shelf it did not paint.
+    /// See `draw_menu_rows` for why the bar behind the row in hand is the colour it is.
     fn draw_power_menu(&self, index: usize, out: &mut Vec<Draw>) {
         out.push(Draw::Rect {
             x: 0.0,
@@ -3059,9 +3058,8 @@ fn centred_top(rows: usize) -> f32 {
 }
 
 /// The rows of a menu, at the menu pitch from `top`, with a bar behind the one in hand and
-/// none at all when nothing is. Shared by the power menu and the core picker, which are the
-/// same object as far as this loop is concerned, and a device this small has no business
-/// carrying two copies of it.
+/// none at all when nothing is. Only the power menu draws rows this way now — the core picker
+/// draws its own cart art instead, and the in-game menu a sentence and a key legend.
 ///
 /// The bar is `edge` — the lightest thing in the theme — because it has to read at a glance.
 /// `recess` was tried first and is the right idea and the wrong value: it and `housing` are

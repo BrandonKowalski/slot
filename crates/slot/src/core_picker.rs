@@ -60,7 +60,7 @@ struct Close {
 #[derive(Copy, Clone)]
 pub struct CorePicker {
     seat: Core,
-    /// When START was pressed.
+    /// When SELECT + START was pressed.
     opened: Millis,
     /// When the open's clock began, once the cart's faces were ready.
     started: Option<Millis>,
@@ -92,7 +92,7 @@ impl CorePicker {
         self.started.is_none()
     }
 
-    /// How long ago START was pressed.
+    /// How long ago SELECT + START was pressed.
     pub fn waited(&self, now: Millis) -> Millis {
         now.saturating_sub(self.opened)
     }

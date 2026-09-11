@@ -866,8 +866,8 @@ fn fake_boot_faces(app: &mut App) -> PickerFaces {
     f
 }
 
-/// Everything the picker draws, this cart's board and lid included, so START opens the cart at
-/// once instead of leaving it waiting on the shelf, where the arrows do nothing.
+/// Everything the picker draws, this cart's board and lid included, so ChooseCore opens the
+/// cart at once instead of leaving it waiting on the shelf, where the arrows do nothing.
 fn fake_picker_faces(app: &mut App) -> PickerFaces {
     let f = fake_boot_faces(app);
     app.set_core_board_faces(f.board, f.lid);

@@ -222,11 +222,11 @@ impl Frontend {
         .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
         .collect();
         self.session.app_mut().set_core_legend_faces(legend);
-        // The in-game menu, its two link rows, and the sentences the screen says while a
-        // link is coming up or after it did not. All of it at the same size and through the
-        // same rasteriser as the two menus above, because they are the same object — and all
-        // of it at boot, because a link that is failing is the worst moment to be asking a
-        // font for a sentence.
+        // The in-game menu: the HOST/JOIN labels, the LINKED line, the step and failure
+        // sentences, and the key legend. All of it at the same size and through the same
+        // rasteriser as the two menus above, because they are the same object — and all of it
+        // at boot, because a link that is failing is the worst moment to be asking a font for
+        // a sentence.
         let roles = menu_faces(compositor, LinkRow::ALL.iter().map(|r| r.text()));
         self.session.app_mut().set_link_menu_faces(roles);
         if let Some(linked) = menu_faces(compositor, ["Linked"].into_iter()).pop() {
