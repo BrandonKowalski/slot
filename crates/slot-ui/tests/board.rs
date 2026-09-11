@@ -201,6 +201,27 @@ fn a_socket_names_its_core_at_half_strength() {
     }
 }
 
+/// The outline's left edge is the socket SVG's closing stroke, sitting right at `x = 0` for
+/// the straight run of it: a partly covered pixel there is the outline ink, `#eef5e6`, at some
+/// fraction of full alpha. Premultiplied, the compositor's own blend then multiplies that
+/// fraction in a second time and darkens it; straight alpha keeps the ink's own brightness at
+/// any coverage.
+#[test]
+fn a_partly_covered_socket_edge_pixel_keeps_the_outline_inks_brightness() {
+    let face = socket_face(Core::Mgba);
+    let (r, a) = (6..(face.h - 6))
+        .find_map(|y| {
+            let i = ((y * face.w) * 4) as usize;
+            let a = face.rgba[i + 3];
+            (a > 0 && a < 255).then(|| (face.rgba[i], a))
+        })
+        .expect("no partly covered pixel on the socket's left edge");
+    assert!(
+        r > 200,
+        "the outline ink darkened at partial coverage: R={r} at alpha={a}"
+    );
+}
+
 /// A turned quad's edge is not antialiased, so the chip's outline has to sit inside the
 /// texture: the outermost `TURN_PAD` pixels are nothing.
 #[test]
