@@ -13,16 +13,18 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use slot::app::{App, GameMenu, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS};
-use slot::emu::Speed;
+use slot::app::{App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS};
+use slot::emu::{CoreState, EmuHandle, Speed};
+use slot::link_kind::LinkKind;
 use slot::link_net::{Cancel, TcpLink};
 use slot::link_radio::LinkRole;
 use slot::link_start::{LinkFail, LinkStarter, LinkStep};
+use slot::persist::{self, Snapshot};
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Core, SlotState};
-use slot_ui::{opening, Draw, TexId, OUT_H, OUT_W};
+use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, HINT_EDGE, OUT_H, OUT_W};
 use tempfile::TempDir;
 
 /// How long a test waits on a real worker thread before deciding it never will answer.
@@ -699,9 +701,9 @@ fn fake_link_sprites() -> slot::link_screen::LinkSprites {
     }
 }
 
-/// A cart in the slot, its link screen open and drawn, with `fake_link_sprites`' faces to
-/// tell the plug from the adapter.
-fn open_link_screen(d: &TempDir) -> Vec<Draw> {
+/// The first cart on the card in the slot and running on gpSP, with `fake_link_sprites`' faces
+/// to tell the plug from the adapter.
+fn seated_on_gpsp(d: &TempDir) -> App {
     let mut app = common::boot(d.path());
     app.apply(Action::Insert);
     app.set_core(Core::Gpsp);
@@ -710,6 +712,13 @@ fn open_link_screen(d: &TempDir) -> Vec<Draw> {
         app.update(1.0 / 60.0);
     }
     app.set_link_sprites(fake_link_sprites());
+    app
+}
+
+/// A cart in the slot, its link screen open and drawn, with `fake_link_sprites`' faces to
+/// tell the plug from the adapter.
+fn open_link_screen(d: &TempDir) -> Vec<Draw> {
+    let mut app = seated_on_gpsp(d);
     app.apply(Action::GameMenu);
     let mut out = Vec::new();
     app.draw(&mut out);
@@ -759,4 +768,674 @@ fn a_pokemon_hack_shows_the_cable() {
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == TexId::from_raw(4))),
         "the adapter on a Pokémon hack"
     );
+}
+
+// --- the cable or the adapter -------------------------------------------------------------
+//
+// The screen opens on the hardware gpSP would pick and SELECT switches it. gpSP reads its link
+// mode only while a game loads, so linking in the mode it was not loaded with reloads the game
+// behind the screen first. `App` asks for that and `Session` carries it out.
+
+/// A tap of SELECT the way the gesture layer delivers one: on the release, with no chord.
+fn select(app: &mut App) {
+    app.apply(Action::GbaDown(Btn::Select));
+    app.apply(Action::GbaUp(Btn::Select));
+}
+
+/// Which hardware the open screen draws, told apart by `fake_link_sprites`' faces: 2 and 3
+/// are the two plugs, 4 the adapter.
+fn drawn_hardware(app: &App) -> LinkKind {
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    let drew = |n: usize| {
+        out.iter().any(|d| {
+            matches!(*d, Draw::Tex { tex, .. } | Draw::Turned { tex, .. }
+                if tex == TexId::from_raw(n))
+        })
+    };
+    match (drew(2) || drew(3), drew(4)) {
+        (true, false) => LinkKind::Cable,
+        (false, true) => LinkKind::Wireless,
+        other => panic!("the screen drew (plug, adapter) = {other:?}"),
+    }
+}
+
+/// Frames, until the link worker has reported its socket step. Nothing but a running worker
+/// moves the screen off its first step, so this is what tells a started link apart from a
+/// screen still waiting on the game to reload.
+fn reaches_waiting(app: &mut App) -> bool {
+    let deadline = Instant::now() + BAIL;
+    while !matches!(
+        app.game_menu(),
+        Some(GameMenu::Working {
+            step: LinkStep::Waiting,
+            ..
+        })
+    ) {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        app.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    true
+}
+
+/// Frames for a stretch of wall clock long enough for a worker, had one been started, to have
+/// moved the screen on.
+fn idle(app: &mut App, ms: u64) {
+    let until = Instant::now() + Duration::from_millis(ms);
+    while Instant::now() < until {
+        app.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// The link screen open as Join with the hardware switched, and A pressed. Join, so the
+/// worker a test starts reaches out rather than binding the port every test would share.
+fn switched_and_picked() -> (App, TempDir) {
+    let (mut app, d) = playing_on(Core::Gpsp);
+    app.apply(Action::GameMenu);
+    app.apply(Action::GbaDown(Btn::Right));
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    (app, d)
+}
+
+/// SELECT swaps the cable for the adapter and the art follows on the same frame. The choice
+/// belongs to the cart, so closing the screen and opening it again keeps it.
+#[test]
+fn select_on_pick_switches_the_hardware_and_the_cart_keeps_it() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.set_link_sprites(fake_link_sprites());
+    app.apply(Action::GameMenu);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Cable,
+        "the test cart's own header links by cable"
+    );
+    select(&mut app);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Wireless,
+        "SELECT switched nothing"
+    );
+    assert_eq!(
+        app.game_menu(),
+        Some(GameMenu::Pick(LinkRow::Host)),
+        "SELECT did more than switch the hardware"
+    );
+    app.apply(Action::GbaDown(Btn::B));
+    app.apply(Action::GameMenu);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Wireless,
+        "the switch was forgotten when the screen closed"
+    );
+    select(&mut app);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Cable,
+        "SELECT only goes one way"
+    );
+}
+
+/// Switched away and back again is the mode the game already runs, so there is nothing to
+/// reload and A starts the link exactly as it always has.
+#[test]
+fn a_in_the_mode_the_game_already_runs_starts_the_link_straight_away() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.apply(Action::GameMenu);
+    app.apply(Action::GbaDown(Btn::Right));
+    select(&mut app);
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        app.take_link_reload(),
+        None,
+        "a mode the game already runs asked for a reload"
+    );
+    assert!(reaches_waiting(&mut app), "A started no link");
+    app.apply(Action::GbaDown(Btn::B));
+    settle(&mut app);
+}
+
+/// A in the other mode asks for the game to be loaded again — which cart, and the
+/// `gpsp_serial` to load it with — and starts nothing yet: a worker running ahead of the
+/// reload would bring a link up over a game still in the old mode.
+#[test]
+fn a_in_a_switched_mode_asks_for_the_game_to_reload_first() {
+    let (mut app, _d) = switched_and_picked();
+    assert_eq!(
+        app.take_link_reload(),
+        Some(("Emerald".to_string(), "rfu")),
+        "no reload asked for, or the wrong one"
+    );
+    assert_eq!(
+        app.take_link_reload(),
+        None,
+        "the request was handed on twice"
+    );
+    assert!(
+        matches!(
+            app.game_menu(),
+            Some(GameMenu::Working {
+                role: LinkRow::Join,
+                step: LinkStep::Radio,
+                ..
+            })
+        ),
+        "the screen did not go to its first step: {:?}",
+        app.game_menu()
+    );
+    idle(&mut app, 150);
+    assert!(
+        matches!(
+            app.game_menu(),
+            Some(GameMenu::Working {
+                step: LinkStep::Radio,
+                ..
+            })
+        ),
+        "a link started before the game reloaded: {:?}",
+        app.game_menu()
+    );
+}
+
+/// The reload done, the link starts in the role that was picked, and the screen carries on
+/// from the step it has been showing since A rather than starting its animation again.
+#[test]
+fn the_reload_finishing_starts_the_link() {
+    let (mut app, _d) = switched_and_picked();
+    let Some(GameMenu::Working { since, .. }) = app.game_menu() else {
+        panic!("A did not start working: {:?}", app.game_menu());
+    };
+    app.take_link_reload().expect("no reload asked for");
+    idle(&mut app, 50);
+    app.link_reload_done();
+    assert!(
+        matches!(
+            app.game_menu(),
+            Some(GameMenu::Working { role: LinkRow::Join, since: s, .. }) if s == since
+        ),
+        "the screen started over: {:?}",
+        app.game_menu()
+    );
+    assert!(
+        reaches_waiting(&mut app),
+        "the reload finished and no link started"
+    );
+    app.apply(Action::GbaDown(Btn::B));
+    settle(&mut app);
+}
+
+/// B during the reload is heard, but the game is still loading behind the screen and there
+/// is no worker to stop. Once the reload finishes the screen closes and hands the game back
+/// instead of linking, the way a cancelled start does.
+#[test]
+fn b_during_the_reload_hands_the_game_back_once_it_finishes() {
+    let (mut app, _d) = switched_and_picked();
+    app.take_link_reload().expect("no reload asked for");
+    app.apply(Action::GbaDown(Btn::B));
+    idle(&mut app, 50);
+    assert!(
+        matches!(app.game_menu(), Some(GameMenu::Working { .. })),
+        "B handed the game back while it was still loading"
+    );
+    app.link_reload_done();
+    assert!(!app.game_menu_open(), "the cancel left a screen behind");
+    assert!(matches!(app.phase(), Phase::Playing { .. }));
+    idle(&mut app, 150);
+    assert!(!app.game_menu_open(), "a link started anyway");
+    assert!(!app.link_active());
+}
+
+/// A game that will not load in the mode it was switched to goes back to the one it came from,
+/// which loaded a moment ago from the same state. Once it has, the switch is undone, the cart's
+/// choice with it, and the game is handed back with the shake every refusal gets.
+#[test]
+fn a_reload_that_fails_goes_back_to_the_mode_the_game_came_from() {
+    let (mut app, _d) = switched_and_picked();
+    app.set_link_sprites(fake_link_sprites());
+    assert_eq!(app.take_link_reload(), Some(("Emerald".to_string(), "rfu")));
+    app.link_reload_failed();
+    assert_eq!(
+        app.take_link_reload(),
+        Some(("Emerald".to_string(), "auto")),
+        "the reload that failed did not go back to the mode the game came from"
+    );
+    assert!(
+        matches!(app.game_menu(), Some(GameMenu::Working { .. })),
+        "the screen closed with the game still loading behind it"
+    );
+    app.link_reload_done();
+    assert!(
+        !app.game_menu_open(),
+        "the screen stayed up over a switch that never happened"
+    );
+    assert!(matches!(app.phase(), Phase::Playing { .. }));
+    assert!(
+        app.refusal_active(app.now()),
+        "the game came back without saying the switch was refused"
+    );
+    idle(&mut app, 150);
+    assert!(!app.game_menu_open(), "a link started anyway");
+    assert!(!app.link_active());
+    app.apply(Action::GameMenu);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Cable,
+        "the cart kept the switch that failed"
+    );
+}
+
+/// Neither mode loads, so there is no game left to hand back. The cart comes back out of the
+/// slot carrying the alert, the way a cart the core refused on the way in does, rather than
+/// sitting seated with no core behind it.
+#[test]
+fn a_game_that_loads_in_neither_mode_comes_back_out_refused() {
+    let (mut app, _d) = switched_and_picked();
+    app.take_link_reload().expect("no reload asked for");
+    app.link_reload_failed();
+    app.take_link_reload().expect("no way back asked for");
+    app.link_reload_failed();
+    assert_eq!(app.take_link_reload(), None, "a third load was asked for");
+    assert!(!app.game_menu_open(), "the screen outlived the game");
+    assert!(
+        matches!(app.phase(), Phase::Ejecting { .. }),
+        "the cart stayed seated with no game: {:?}",
+        app.phase()
+    );
+    assert!(
+        app.alert_visible(),
+        "the cart came out without saying it was refused"
+    );
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    assert!(matches!(app.phase(), Phase::Shelf), "{:?}", app.phase());
+}
+
+/// A shut lid closes the screen, but a reload already underway still has to end in a game or
+/// on the shelf. If neither mode loads, opening the lid lands on the shelf rather than on a
+/// seated cart with no core behind it.
+#[test]
+fn a_lid_shut_over_a_game_that_loads_in_neither_mode_opens_onto_the_shelf() {
+    let (mut app, _d) = switched_and_picked();
+    app.take_link_reload().expect("no reload asked for");
+    app.apply(Action::LidClose);
+    assert!(matches!(app.phase(), Phase::Doze { .. }));
+    app.link_reload_failed();
+    assert_eq!(
+        app.take_link_reload(),
+        Some(("Emerald".to_string(), "auto")),
+        "the shut lid dropped the way back"
+    );
+    app.link_reload_failed();
+    app.apply(Action::LidOpen);
+    assert!(
+        matches!(app.phase(), Phase::Shelf),
+        "the lid opened onto a cart with no game: {:?}",
+        app.phase()
+    );
+}
+
+/// A game with no cable protocol of its own loads on `auto` whichever hardware is picked, and
+/// gpSP links it over the adapter regardless, so a plug drawn over it would be a mode the core
+/// never runs. SELECT is refused with the shake, the adapter stays, and A links straight away.
+#[test]
+fn select_is_refused_where_gpsp_would_link_the_same_either_way() {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    // "Mario Golf" sorts before "Zzz", so `Action::Insert` seats it.
+    common::write_retail_header(&d, "Mario Golf", "MARIO GOLF", "BMGE");
+    let mut app = seated_on_gpsp(&d);
+    app.apply(Action::GameMenu);
+    assert_eq!(drawn_hardware(&app), LinkKind::Wireless);
+    app.apply(Action::GbaDown(Btn::Right));
+    select(&mut app);
+    assert!(app.refusal_active(app.now()), "SELECT was not refused");
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Wireless,
+        "a plug drawn over a game gpSP links by adapter"
+    );
+    assert_eq!(app.game_menu(), Some(GameMenu::Pick(LinkRow::Join)));
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        app.take_link_reload(),
+        None,
+        "a reload for a mode gpSP would not change"
+    );
+    assert!(reaches_waiting(&mut app), "A started no link");
+    app.apply(Action::GbaDown(Btn::B));
+    settle(&mut app);
+}
+
+/// A compares the mode picked with the `gpsp_serial` the running core was actually loaded with,
+/// not with what the screen opened on. A core loaded on `rfu` links over the adapter straight
+/// away, and has to be loaded again to link by cable.
+#[test]
+fn a_reloads_only_for_a_serial_the_core_was_not_loaded_with() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.set_link_loaded("rfu");
+    app.apply(Action::GameMenu);
+    app.apply(Action::GbaDown(Btn::Right));
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        app.take_link_reload(),
+        None,
+        "the adapter, picked over a core loaded on rfu, asked for a reload"
+    );
+    assert!(reaches_waiting(&mut app), "A started no link");
+    app.apply(Action::GbaDown(Btn::B));
+    settle(&mut app);
+    app.apply(Action::GameMenu);
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        app.take_link_reload(),
+        Some(("Emerald".to_string(), "auto")),
+        "the cable, picked over a core loaded on rfu, linked without a reload"
+    );
+}
+
+/// A core that refused the resume it was opened with: running, but on its own default machine,
+/// which is the one thing a flush will not write back.
+struct RefusedResume;
+
+impl Snapshot for RefusedResume {
+    fn state(&self) -> Option<Vec<u8>> {
+        Some(vec![0; 8])
+    }
+
+    fn save_ram(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn thumb(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn load(&self, _state: Vec<u8>) {}
+
+    fn resume_trusted(&self) -> bool {
+        false
+    }
+}
+
+/// Over a core that refused its resume, the flush keeps the player's state rather than writing
+/// the core's default machine over it, so a reload would resume from the refused file again and
+/// lose everything since. A in a switched mode is refused with the shake instead: the screen
+/// stays on Pick, and the mode the game already runs still links.
+#[test]
+fn a_switch_is_refused_over_a_resume_the_core_would_not_take() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.set_snapshot(Box::new(RefusedResume));
+    app.apply(Action::GameMenu);
+    app.apply(Action::GbaDown(Btn::Right));
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        app.take_link_reload(),
+        None,
+        "a reload over a state that cannot be saved"
+    );
+    assert!(app.refusal_active(app.now()), "A was not refused");
+    assert_eq!(
+        app.game_menu(),
+        Some(GameMenu::Pick(LinkRow::Join)),
+        "the refusal left Pick"
+    );
+    select(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert!(
+        reaches_waiting(&mut app),
+        "the mode the game already runs did not link"
+    );
+    app.apply(Action::GbaDown(Btn::B));
+    settle(&mut app);
+}
+
+/// Pick names every key it takes, the way out first and the commitment last: B, SELECT, the
+/// arrows, A. The faces are the real ones, so the widths are what the device rasterises and
+/// the row is proven to fit the console strip rather than assumed to.
+#[test]
+fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    let width = |k: LinkLegend| match k {
+        LinkLegend::Cancel => hint_face("B", "Cancel").w,
+        LinkLegend::Mode => hint_face("SELECT", "Mode").w,
+        LinkLegend::Swap => arrows_hint_face("Swap").w,
+        LinkLegend::Link => hint_face("A", "Link").w,
+        LinkLegend::Ok => hint_face("A", "OK").w,
+    };
+    let faces: Vec<(TexId, u32)> = LinkLegend::ALL
+        .iter()
+        .map(|k| (TexId::from_raw(900 + k.index()), width(*k)))
+        .collect();
+    app.set_link_legend_faces(faces.clone());
+    app.apply(Action::GameMenu);
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    let mut keys: Vec<(f32, f32, LinkLegend)> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Tex { x, w, tex, .. } => LinkLegend::ALL
+                .iter()
+                .find(|k| faces[k.index()].0 == tex)
+                .map(|k| (x, w, *k)),
+            _ => None,
+        })
+        .collect();
+    keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(
+        keys.iter().map(|k| k.2).collect::<Vec<_>>(),
+        [
+            LinkLegend::Cancel,
+            LinkLegend::Mode,
+            LinkLegend::Swap,
+            LinkLegend::Link
+        ],
+    );
+    let left = keys[0].0;
+    let (x, w, _) = keys[keys.len() - 1];
+    let right = x + w - HINT_EDGE as f32;
+    println!(
+        "pick legend: faces {:?} wide, drawn from x {left} to {right} of {OUT_W}",
+        keys.iter().map(|k| k.1).collect::<Vec<_>>()
+    );
+    assert!(
+        left >= 0.0 && right <= OUT_W as f32,
+        "the legend runs off the strip: {left}..{right}"
+    );
+}
+
+/// The mock core's own frame counter, which is the whole of its save state.
+fn counter(s: &Session) -> u64 {
+    let state = s
+        .emu()
+        .expect("a core is running")
+        .request_state()
+        .recv_timeout(BAIL)
+        .expect("the core gave up no state");
+    u64::from_le_bytes(state.try_into().expect("mock state is 8 bytes"))
+}
+
+/// The reload end to end, through a real `Session`: SELECT and A replace the emulator with a
+/// new one, that one carries on from exactly where the old one stopped, and only then does
+/// the link start. `App` alone cannot show any of it — it never holds the core, so a reload
+/// it asked for and nobody carried out looks exactly like one that happened.
+#[test]
+fn a_link_in_a_switched_mode_reloads_the_game_and_then_starts_the_link() {
+    let (mut s, _d, mut now) = session_playing_on_gpsp();
+    assert!(
+        runs_at(&mut s, &mut now, Speed::Normal),
+        "the game never started running, so a fresh core would look the same"
+    );
+    step(
+        &mut s,
+        &mut now,
+        &[RawEvent::Down(Btn::Select), RawEvent::Down(Btn::Menu)],
+    );
+    step(
+        &mut s,
+        &mut now,
+        &[RawEvent::Up(Btn::Menu), RawEvent::Up(Btn::Select)],
+    );
+    assert!(s.app().game_menu_open(), "the chord never reached the app");
+    assert!(
+        runs_at(&mut s, &mut now, Speed::Paused),
+        "the game ran on behind the menu"
+    );
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Right)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Right)]);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Select)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
+
+    let played = counter(&s);
+    assert!(
+        played > 0 && s.frames_published() > 0,
+        "nothing ran before the reload"
+    );
+
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::A)]);
+    assert_eq!(
+        s.frames_published(),
+        0,
+        "the emulator that was running is still the one in the slot"
+    );
+    let deadline = Instant::now() + BAIL;
+    while s.emu().map(EmuHandle::state) != Some(CoreState::Ready) {
+        assert!(Instant::now() < deadline, "the reloaded game never loaded");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        counter(&s),
+        played,
+        "the reloaded game did not come back where it left off"
+    );
+
+    let deadline = Instant::now() + BAIL;
+    while !matches!(
+        s.app().game_menu(),
+        Some(GameMenu::Working {
+            step: LinkStep::Waiting,
+            ..
+        })
+    ) {
+        assert!(
+            Instant::now() < deadline,
+            "the game reloaded and no link started: {:?}",
+            s.app().game_menu()
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::B)]);
+    let deadline = Instant::now() + BAIL;
+    while s.app().game_menu_open() {
+        assert!(Instant::now() < deadline, "the cancel never landed");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// A whole `Session` over a real core planted under gpSP's name, the way `gpsp.rs` plants one,
+/// and a cart that is a real ROM. The mock loads anything, so only a real core can fail to load
+/// a game again. `None` on a host with no core to plant; the caller holds `core_lock`.
+fn session_on_a_real_core() -> Option<(Session, TempDir, Millis)> {
+    let core = common::vendored_core()?;
+    let d = common::tmp_root_with_real_carts(&["Emerald"]);
+    slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).expect("write core");
+    std::fs::copy(
+        &core,
+        d.path()
+            .join("System")
+            .join(slot::core::dylib_name(Core::Gpsp)),
+    )
+    .expect("plant a core under gpSP's name");
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    Some((s, d, now))
+}
+
+/// The failure path through a real `Session`. The ROM is taken off the card from under the
+/// running game, so neither the mode it was switched to nor the one it came from can load it
+/// again: the session goes back once, then gives up, and the cart comes back out of the slot
+/// refused. At no point is a seated cart left playing with no core behind it.
+#[test]
+fn a_game_that_will_not_load_again_comes_back_out_of_the_slot() {
+    let _g = common::core_lock();
+    let Some((mut s, d, mut now)) = session_on_a_real_core() else {
+        eprintln!("no host-openable dylib on this machine, skipping");
+        return;
+    };
+    step(
+        &mut s,
+        &mut now,
+        &[RawEvent::Down(Btn::Select), RawEvent::Down(Btn::Menu)],
+    );
+    step(
+        &mut s,
+        &mut now,
+        &[RawEvent::Up(Btn::Menu), RawEvent::Up(Btn::Select)],
+    );
+    assert!(s.app().game_menu_open(), "the chord never reached the app");
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Right)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Right)]);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Select)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
+    std::fs::remove_file(d.path().join("Games").join("Emerald.gba")).expect("take the rom away");
+
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::A)]);
+    let deadline = Instant::now() + BAIL;
+    while !matches!(s.app().phase(), Phase::Ejecting { .. }) {
+        assert!(
+            Instant::now() < deadline,
+            "the cart never came back out: {:?}",
+            s.app().phase()
+        );
+        assert!(
+            s.has_core() || s.app().game_menu_open(),
+            "a seated cart was left playing with no core behind it"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        s.app().alert_visible(),
+        "the cart came out without the alert"
+    );
+    assert!(
+        persist::read_resume(d.path(), Core::Gpsp, "Emerald").is_some(),
+        "the state flushed before the reload is gone"
+    );
+    let deadline = Instant::now() + BAIL;
+    while !matches!(s.app().phase(), Phase::Shelf) {
+        assert!(
+            Instant::now() < deadline,
+            "the refused cart never reached the shelf"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }

@@ -57,8 +57,10 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
 /// what the caller does with that `Core` afterward: `App` is the one that has to keep using
 /// the same value for every later read and write, and it does that by storing it rather than
 /// asking again.
-pub fn open_core(root: &Path, core: Core) -> Box<dyn RetroCore> {
-    open_core_for(root, core, &candidates(root, core))
+///
+/// `serial` is the `gpsp_serial` a gpSP core loads with. See `apply_core_options`.
+pub fn open_core(root: &Path, core: Core, serial: &str) -> Box<dyn RetroCore> {
+    open_core_for(root, core, serial, &candidates(root, core))
 }
 
 /// The named core if one of these opens, the mock if none of them do. A missing core is not
@@ -73,8 +75,14 @@ pub fn open_core(root: &Path, core: Core) -> Box<dyn RetroCore> {
 /// `core` too, and only `open_core_for` ever holds a concrete `slot_retro::LibretroCore` to
 /// call it on: everything above here deals in `Box<dyn RetroCore>`, which has no `set_option`.
 /// That is also why the call sits here rather than at a caller — after `open_with` succeeds,
-/// before the `Box<dyn RetroCore>` is handed back and `load` becomes reachable at all.
-pub fn open_core_for(root: &Path, core: Core, paths: &[PathBuf]) -> Box<dyn RetroCore> {
+/// before the `Box<dyn RetroCore>` is handed back and `load` becomes reachable at all. `serial`
+/// goes the same way, for the same reason.
+pub fn open_core_for(
+    root: &Path,
+    core: Core,
+    serial: &str,
+    paths: &[PathBuf],
+) -> Box<dyn RetroCore> {
     let bios = root::bios_dir(root);
     let saves = root::saves_dir(root);
     for path in paths {
@@ -83,7 +91,7 @@ pub fn open_core_for(root: &Path, core: Core, paths: &[PathBuf]) -> Box<dyn Retr
         }
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
-                apply_core_options(&mut opened, core);
+                apply_core_options(&mut opened, core, serial);
                 eprintln!("slot: core {}", path.display());
                 return Box::new(opened);
             }
@@ -109,13 +117,15 @@ pub fn open_core_for(root: &Path, core: Core, paths: &[PathBuf]) -> Box<dyn Retr
 /// Options a core needs before `load`, because libretro cores read them during
 /// `retro_load_game` rather than continuously.
 ///
-/// `auto` resolves the serial protocol from the ROM, so two devices running the same game
-/// agree on a mode without either being told which. Anything more deliberate belongs to a
-/// link session, which knows what the other end picked. mGBA gets nothing: it has no
-/// `gpsp_serial` option, and handing it one anyway is a landmine the day it grows one.
-pub fn apply_core_options(core: &mut LibretroCore, which: Core) {
+/// `serial` is gpSP's link mode, and loading a game is the only time gpSP reads it: a reset
+/// does not, and a save state does not carry it. `auto` resolves the protocol from the ROM, so
+/// two devices running the same game agree on a mode without either being told which, and it
+/// is what every cart loads with until its link screen is switched to the other hardware (see
+/// `link_kind::serial_option`). mGBA gets nothing: it has no `gpsp_serial` option, and handing
+/// it one anyway is a landmine the day it grows one.
+pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str) {
     if which == Core::Gpsp {
-        core.set_option("gpsp_serial", "auto");
+        core.set_option("gpsp_serial", serial);
     }
 }
 

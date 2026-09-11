@@ -28,6 +28,9 @@ pub struct Session {
     /// What the motor was last set to. On the device that setting is a write to hardware and
     /// the core asks for the same value most frames.
     motor: u16,
+    /// A reload for a link is underway: the core in the slot was spawned for it, and `App` is
+    /// waiting to hear whether it loaded. See `reload_for_link`.
+    reloading: bool,
 }
 
 impl Session {
@@ -48,6 +51,7 @@ impl Session {
             rewinding: false,
             fast: false,
             motor: 0,
+            reloading: false,
         }
     }
 
@@ -247,6 +251,11 @@ impl Session {
                 None => eprintln!("slot: link: a transport arrived with no core to run it"),
             }
         }
+        // A link picked in a mode the running core was not loaded with. Carried out here for the
+        // same reason the wire is: `App` never touches the core.
+        if let Some((stem, serial)) = self.app.take_link_reload() {
+            self.reload_for_link(&stem, serial);
+        }
         // The far end went away. `App` breaks the badge and ends the session itself later, from
         // inside `update`, where `bridge_link` carries the ending to the emulator thread.
         if self.app.link_active() && self.emu.as_ref().is_some_and(EmuHandle::link_lost) {
@@ -256,6 +265,7 @@ impl Session {
             self.play_sfx(sfx);
         }
         self.sync_core();
+        self.sync_reload();
         // After the core sync: a handle spawned or dropped this frame has published nothing
         // the renderer may show.
         self.app
@@ -425,7 +435,10 @@ impl Session {
             _ => return,
         };
         if self.emu.is_none() {
-            self.spawn_core(&stem);
+            // In whatever mode the cart is in now: what SELECT last switched it to, or what gpSP
+            // picks for it.
+            let (_, serial) = self.app.link_mode(&stem);
+            self.spawn_core(&stem, serial);
         }
         match self.emu.as_ref().map(EmuHandle::state) {
             Some(CoreState::Loading) => {}
@@ -439,7 +452,8 @@ impl Session {
         }
     }
 
-    fn spawn_core(&mut self, stem: &str) {
+    /// `serial` is the `gpsp_serial` the core loads with.
+    fn spawn_core(&mut self, stem: &str, serial: &'static str) {
         let Some(rom) = self
             .app
             .carts()
@@ -458,13 +472,16 @@ impl Session {
         // structurally unreachable now instead of merely unobserved.
         let core = slot_store::core_for(&self.root, stem);
         self.app.set_core(core);
+        // gpSP reads its link mode only while a game loads, so what this hands the core is what
+        // the game links over from here on, and what `App` compares a picked link against.
+        self.app.set_link_loaded(serial);
         // A clean start skips the state, it does not delete it: the file stays on the card
         // for the next tap to resume from.
         let resume = (!self.app.starting_clean())
             .then(|| persist::read_resume(&self.root, core, stem))
             .flatten();
         let emu = EmuHandle::spawn(
-            open_core(&self.root, core),
+            open_core(&self.root, core, serial),
             rom,
             self.sink.ring(),
             persist::read_sav(&self.root, stem),
@@ -474,6 +491,48 @@ impl Session {
         emu.set_volume(self.app.output_volume());
         self.app.set_snapshot(Box::new(emu.snapshot()));
         self.emu = Some(emu);
+    }
+
+    /// Loads the seated game again with `serial`, carrying on from where it is. Durable first,
+    /// through the flush the lid, the power button and the autosave all use, because the new
+    /// core resumes from exactly what it writes. A load on its way back from one that failed has
+    /// no running core to flush, and the state on the card is already the one it resumes. The
+    /// old core is dropped before the new one opens: dropping joins its worker, which is what
+    /// lets the core go, and libretro allows only one.
+    fn reload_for_link(&mut self, stem: &str, serial: &'static str) {
+        eprintln!("slot: link: loading {stem} again with gpsp_serial={serial}");
+        if self.emu.is_some() {
+            self.app.flush_resume();
+        }
+        self.emu = None;
+        self.spawn_core(stem, serial);
+        self.reloading = true;
+    }
+
+    /// Follows a reload for a link to its end, which `App` is waiting on. A core that will not
+    /// load is dropped, as `sync_core` drops a refused cart's, and `App` decides what follows.
+    /// The first time that is the mode the game came from, carried out here straight away so no
+    /// frame passes with a seated cart and no core behind it; the second time, the cart comes
+    /// back out of the slot.
+    fn sync_reload(&mut self) {
+        if !self.reloading {
+            return;
+        }
+        match self.emu.as_ref().map(EmuHandle::state) {
+            Some(CoreState::Loading) => {}
+            Some(CoreState::Ready) => {
+                self.reloading = false;
+                self.app.link_reload_done();
+            }
+            Some(CoreState::Failed) | None => {
+                self.reloading = false;
+                self.emu = None;
+                self.app.link_reload_failed();
+                if let Some((stem, serial)) = self.app.take_link_reload() {
+                    self.reload_for_link(&stem, serial);
+                }
+            }
+        }
     }
 }
 

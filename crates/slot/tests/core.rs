@@ -34,7 +34,7 @@ fn the_vendored_core_is_preferred_over_the_mock() {
         return;
     };
     let d = common::tmp_root_with_real_carts(&[]);
-    let mut core = open_core_for(d.path(), Core::Mgba, &[dylib]);
+    let mut core = open_core_for(d.path(), Core::Mgba, "auto", &[dylib]);
     assert!(
         is_mgba(core.as_mut(), &rom("preferred.gba")),
         "the mock ran with a vendored core sitting right there"
@@ -44,7 +44,12 @@ fn the_vendored_core_is_preferred_over_the_mock() {
 #[test]
 fn a_missing_core_falls_back_to_the_mock_rather_than_failing() {
     let d = common::tmp_root_with_real_carts(&[]);
-    let mut core = open_core_for(d.path(), Core::Mgba, &[PathBuf::from("no/such/core.dylib")]);
+    let mut core = open_core_for(
+        d.path(),
+        Core::Mgba,
+        "auto",
+        &[PathBuf::from("no/such/core.dylib")],
+    );
     assert!(!is_mgba(core.as_mut(), &rom("missing.gba")));
 }
 
@@ -58,7 +63,7 @@ fn a_rom_the_real_core_refuses_reports_failed() {
     };
     let d = common::tmp_root_with_carts(&["Broken"]);
     let emu = EmuHandle::spawn(
-        open_core_for(d.path(), Core::Mgba, &[dylib]),
+        open_core_for(d.path(), Core::Mgba, "auto", &[dylib]),
         d.path().join("Games/Broken.gba"),
         StubSink::new().ring(),
         None,

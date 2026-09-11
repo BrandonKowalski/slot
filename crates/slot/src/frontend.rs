@@ -232,8 +232,10 @@ impl Frontend {
         if let Some(linked) = menu_faces(compositor, ["Linked"].into_iter()).pop() {
             self.session.app_mut().set_link_linked_face(linked);
         }
+        // In `LinkLegend::ALL` order, which is how `App` finds each one.
         let legend = [
             hint_face("B", "Cancel"),
+            hint_face("SELECT", "Mode"),
             arrows_hint_face("Swap"),
             hint_face("A", "Link"),
             hint_face("A", "OK"),

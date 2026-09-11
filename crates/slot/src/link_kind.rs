@@ -1,11 +1,22 @@
 //! Which link hardware a cart uses, so the link screen draws the thing the game expects: the
 //! cable or the Wireless Adapter. Mirrors the rule gpSP's `gpsp_serial=auto` applies, because
-//! that is the link the core actually runs.
+//! that is the link the core actually runs — until the player switches it, and then
+//! `serial_option` names the mode gpSP has to be loaded with instead.
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LinkKind {
     Cable,
     Wireless,
+}
+
+impl LinkKind {
+    /// The one SELECT switches to.
+    pub fn other(self) -> LinkKind {
+        match self {
+            LinkKind::Cable => LinkKind::Wireless,
+            LinkKind::Wireless => LinkKind::Cable,
+        }
+    }
 }
 
 /// gpSP's `FLAGS_RFU` entries, from `gba_over.h` in `vendor/gpsp-src.tar.gz`.
@@ -19,11 +30,7 @@ const WIRELESS: [&str; 43] = [
 /// `code` and `title` are the header's, as `Cart` has them; `clean` is
 /// `slot_store::header_clean` for the same ROM.
 pub fn link_kind(code: &str, title: &str, clean: bool) -> LinkKind {
-    let pokemon = title.starts_with("POKEMON")
-        || ["AXV", "AXP", "BPE", "BPR", "BPG"]
-            .iter()
-            .any(|p| code.starts_with(p));
-    if pokemon {
+    if pokemon(code, title) {
         // gpSP treats a Pokémon ROM as a hack, and links it by cable, unless its header is
         // standard, it is 16 MB or smaller, its code is one gpSP knows and its title is exactly
         // the retail one. Of the retail games only FireRed, LeafGreen and Emerald get the adapter.
@@ -41,4 +48,34 @@ pub fn link_kind(code: &str, title: &str, clean: bool) -> LinkKind {
     } else {
         LinkKind::Cable
     }
+}
+
+/// The `gpsp_serial` a cart loads with to link over `chosen`, where `auto` is what gpSP picks
+/// for it on its own (`link_kind`'s answer). `code` and `title` are the header's.
+///
+/// The mode gpSP would pick is left to gpSP, as `auto`, which is how every cart loaded before
+/// there was a choice: a cart nobody switched never changes. The adapter is one mode for every
+/// game. The cable is not — gpSP speaks each family's own protocol and has no generic one — so
+/// a switch to the cable names the family's, and any other game stays on `auto`, which is
+/// still gpSP's own pick.
+pub fn serial_option(chosen: LinkKind, auto: LinkKind, code: &str, title: &str) -> &'static str {
+    if chosen == auto {
+        return "auto";
+    }
+    match chosen {
+        LinkKind::Wireless => "rfu",
+        LinkKind::Cable if pokemon(code, title) => "mul_poke",
+        LinkKind::Cable if code.starts_with("AWR") => "mul_aw1",
+        LinkKind::Cable if code.starts_with("AW2") => "mul_aw2",
+        LinkKind::Cable => "auto",
+    }
+}
+
+/// The Pokémon family, by title or by any of its codes. gpSP's own test, and the one both its
+/// automatic pick and its cable protocol hang off.
+fn pokemon(code: &str, title: &str) -> bool {
+    title.starts_with("POKEMON")
+        || ["AXV", "AXP", "BPE", "BPR", "BPG"]
+            .iter()
+            .any(|p| code.starts_with(p))
 }

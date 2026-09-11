@@ -25,16 +25,17 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 
 ### In game
 
-| Input                     | Action                                                                                           |
-|---------------------------|--------------------------------------------------------------------------------------------------|
-| Hold `MENU`               | Save state, eject the cart, back to the carousel                                                 |
-| Double tap `MENU`         | Save state switcher: pick one to load or delete, or undo the last save or load within 30 seconds |
-| `SELECT` + `MENU`         | Link with another RG SP. gpSP carts only                                                         |
-| `SELECT` + `R1`           | Save state                                                                                       |
-| `SELECT` + `L1`           | Load the most recent save state                                                                  |
-| Hold `L2`                 | Rewind                                                                                           |
-| Hold `R2`                 | Fast-forward                                                                                     |
-| Double tap `R2`           | Lock fast-forward on. Press again to unlock                                                      |
+| Input                       | Action                                                                                           |
+|-----------------------------|--------------------------------------------------------------------------------------------------|
+| Hold `MENU`                 | Save state, eject the cart, back to the carousel                                                 |
+| Double tap `MENU`           | Save state switcher: pick one to load or delete, or undo the last save or load within 30 seconds |
+| `SELECT` + `MENU`           | Link with another RG SP. gpSP carts only                                                         |
+| `SELECT` on the link screen | Switch between the link cable and the Wireless Adapter                                           |
+| `SELECT` + `R1`             | Save state                                                                                       |
+| `SELECT` + `L1`             | Load the most recent save state                                                                  |
+| Hold `L2`                   | Rewind                                                                                           |
+| Hold `R2`                   | Fast-forward                                                                                     |
+| Double tap `R2`             | Lock fast-forward on. Press again to unlock                                                      |
 
 A `/` means either one. A `+` means both together.
 

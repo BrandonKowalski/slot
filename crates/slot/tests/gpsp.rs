@@ -44,8 +44,8 @@ fn gpsp_loads_and_runs_a_frame() {
 }
 
 /// `auto` resolves the serial protocol from the ROM itself, so two devices running the same
-/// game agree on a mode without either being told which — the right default before there is
-/// any UI to pick one deliberately.
+/// game agree on a mode without either being told which. It is what every cart loads with
+/// until its link screen is switched to the other hardware.
 #[test]
 fn gpsp_is_told_its_serial_mode_before_load() {
     let path = dylib_for(Core::Gpsp);
@@ -55,7 +55,7 @@ fn gpsp_is_told_its_serial_mode_before_load() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp);
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto");
     assert_eq!(
         core.option("gpsp_serial"),
         Some("auto".to_string()),
@@ -63,8 +63,30 @@ fn gpsp_is_told_its_serial_mode_before_load() {
     );
 }
 
+/// The link screen's switch reaches gpSP through this and nothing else: the mode it asked for
+/// is the value the core is handed, never `auto` in its place.
+#[test]
+fn gpsp_is_told_the_serial_mode_it_is_handed() {
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let _g = common::core_lock();
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
+    for serial in ["rfu", "mul_poke", "mul_aw1", "mul_aw2"] {
+        slot::core::apply_core_options(&mut core, Core::Gpsp, serial);
+        assert_eq!(
+            core.option("gpsp_serial"),
+            Some(serial.to_string()),
+            "gpSP was not handed the mode the link screen asked for"
+        );
+    }
+}
+
 /// mGBA has no `gpsp_serial` option at all; handing it one anyway would be silently ignored
-/// by mGBA today and a landmine the moment mGBA ever grows an option by that name.
+/// by mGBA today and a landmine the moment mGBA ever grows an option by that name. Handed a
+/// mode that is not `auto`, it still gets nothing.
 #[test]
 fn mgba_is_given_no_options() {
     let path = dylib_for(Core::Mgba);
@@ -74,7 +96,7 @@ fn mgba_is_given_no_options() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open mgba");
-    slot::core::apply_core_options(&mut core, Core::Mgba);
+    slot::core::apply_core_options(&mut core, Core::Mgba, "rfu");
     assert_eq!(
         core.option("gpsp_serial"),
         None,
@@ -403,7 +425,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         .join(slot::core::dylib_name(Core::Gpsp));
     std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
 
-    let mut core = slot::core::open_core(d.path(), Core::Gpsp);
+    let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto");
     core.load(&d.path().join("Games/Probe.gba"))
         .expect("the planted core refused the test rom");
     core.run_frame(ButtonMask::default());

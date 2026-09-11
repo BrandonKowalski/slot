@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use slot_gfx::{OUT_H, OUT_W};
@@ -18,7 +19,7 @@ use slot_ui::{
 
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
-use crate::link_kind::{link_kind, LinkKind};
+use crate::link_kind::{link_kind, serial_option, LinkKind};
 use crate::link_radio::LinkRole;
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
@@ -178,12 +179,30 @@ struct LinkStarting {
     client_id: u16,
 }
 
+/// A link picked in a mode the running game was not loaded for, and the reload that has to
+/// happen before it can start.
+struct Reload {
+    /// The cart being loaded again.
+    stem: String,
+    /// The role A picked.
+    role: LinkRow,
+    /// No link starts when the reload finishes: B was pressed while the game was still loading,
+    /// or the screen was closed out from under it.
+    cancelled: bool,
+    /// The hardware the game was running before the switch, and the `gpsp_serial` it was loaded
+    /// with. That mode is known to load, so it is what a reload that fails goes back to.
+    from: LinkKind,
+    from_serial: &'static str,
+    /// This load is already the way back to `from`.
+    fallback: bool,
+}
+
 /// The in-game menu, over a paused game rather than instead of it. `Phase::Playing` carries
 /// the session; leaving it to show a menu would mean rebuilding it to come back, and "cancel
 /// returns you to your game" is the entire requirement.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GameMenu {
-    /// Choosing a role. Left/Right swaps, A links, B leaves.
+    /// Choosing a role. Left/Right swaps, SELECT switches the hardware, A links, B leaves.
     Pick(LinkRow),
     /// The worker is bringing a link up. `since` is when this state began.
     Working {
@@ -268,14 +287,16 @@ impl LinkRow {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LinkLegend {
     Cancel,
+    Mode,
     Swap,
     Link,
     Ok,
 }
 
 impl LinkLegend {
-    pub const ALL: [LinkLegend; 4] = [
+    pub const ALL: [LinkLegend; 5] = [
         LinkLegend::Cancel,
+        LinkLegend::Mode,
         LinkLegend::Swap,
         LinkLegend::Link,
         LinkLegend::Ok,
@@ -378,12 +399,29 @@ pub struct App {
     /// to come back from cancelling.
     game_menu: Option<GameMenu>,
     link_sprites: Option<LinkSprites>,
-    /// The seated cart's link hardware, read once when the screen opens (see
-    /// `seated_link_kind`) rather than every frame `draw_game_menu` runs.
+    /// The hardware the link screen shows and a link it starts runs over. Read once when the
+    /// screen opens (see `link_mode`) rather than every frame `draw_game_menu` runs, and
+    /// switched by SELECT.
     link_hardware: LinkKind,
     /// The role last picked, Host or Join, so opening the screen again lands back on it
     /// rather than always starting at Host.
     last_role: LinkRow,
+    /// The hardware SELECT last switched each cart to, by stem. Kept for as long as slot is
+    /// running and never written to the card, so a cart nobody has switched since boot opens
+    /// on whatever gpSP would pick for it.
+    link_choices: HashMap<String, LinkKind>,
+    /// The `gpsp_serial` the core in the slot was loaded with, as `Session` reported when it
+    /// spawned it. gpSP reads its link mode only while a game loads, so this, not whatever the
+    /// screen shows, is what a link would run over. `None` with the slot empty, and for a core
+    /// nobody reported, which was loaded on `auto`.
+    link_loaded: Option<&'static str>,
+    /// A reload the link screen needs carried out — the cart, and the `gpsp_serial` to load it
+    /// with — until `Session::update` collects it, the same hop `link_transport` makes for a
+    /// wire.
+    link_reload: Option<(String, &'static str)>,
+    /// The reload that request belongs to, from A until the game is running again in one mode
+    /// or the other, or has come back out of the slot. `None` the rest of the time.
+    reload: Option<Reload>,
     /// One per `LinkRow::ALL`, in that order — the HOST and JOIN labels `Pick` shows.
     link_menu_faces: Vec<(TexId, u32, u32)>,
     /// What `Linked` says, at the menu's own size.
@@ -522,6 +560,10 @@ impl App {
             link_sprites: None,
             link_hardware: LinkKind::Cable,
             last_role: LinkRow::Host,
+            link_choices: HashMap::new(),
+            link_loaded: None,
+            link_reload: None,
+            reload: None,
             link_menu_faces: Vec::new(),
             link_linked_face: None,
             link_step_faces: Vec::new(),
@@ -720,6 +762,26 @@ impl App {
     /// ask `core_for` again.
     pub fn set_core(&mut self, core: Core) {
         self.core = core;
+    }
+
+    /// The `gpsp_serial` the core `Session` just spawned was loaded with. Called in the same
+    /// breath as `set_core`, from the same one place, so a picked link is compared against what
+    /// the running core was actually handed rather than against what the screen last showed.
+    pub fn set_link_loaded(&mut self, serial: &'static str) {
+        self.link_loaded = Some(serial);
+    }
+
+    /// The hardware the cart named `stem` links over, and the `gpsp_serial` a core has to load
+    /// with for it: what SELECT last switched the cart to, or what gpSP picks for it when nobody
+    /// has. A core loading on the way into the slot and a picked link both read it here, so the
+    /// core and the screen cannot come to disagree about which mode a cart is in. A cart the
+    /// shelf cannot name links by cable, on gpSP's own pick.
+    pub fn link_mode(&self, stem: &str) -> (LinkKind, &'static str) {
+        let Some((cart, auto)) = self.auto_link(stem) else {
+            return (LinkKind::Cable, "auto");
+        };
+        let chosen = self.link_choices.get(stem).copied().unwrap_or(auto);
+        (chosen, serial_option(chosen, auto, &cart.code, &cart.title))
     }
 
     /// Whether a netpacket session is live right now. libretro disables an entire class of
@@ -936,6 +998,61 @@ impl App {
     /// thread — so this is left here for whoever owns that thread to collect.
     pub fn take_link_transport(&mut self) -> Option<(u16, Box<dyn LinkChannel>)> {
         self.link_transport.take()
+    }
+
+    /// The reload a picked link is waiting on — which cart, and the `gpsp_serial` to load it
+    /// with — handed on exactly once. `App` never touches the core, so like the transport this
+    /// is left for whoever owns the emulator thread, who answers with `link_reload_done` or
+    /// `link_reload_failed`.
+    pub fn take_link_reload(&mut self) -> Option<(String, &'static str)> {
+        self.link_reload.take()
+    }
+
+    /// The game is loaded again and back where it was. After a switch, the link starts now in
+    /// the role that was picked — unless B asked in the meantime for it not to, and then the
+    /// screen closes and hands the game back the way a cancelled start does. After a reload that
+    /// failed and went back, the switch never happened: the cart's choice goes back with it, the
+    /// screen closes, and the game is handed back with the shake every refusal gets.
+    pub fn link_reload_done(&mut self) {
+        let Some(reload) = self.reload.take() else {
+            return;
+        };
+        if reload.fallback {
+            self.link_choices.insert(reload.stem, reload.from);
+            self.close_game_menu();
+            return self.refuse();
+        }
+        if reload.cancelled {
+            return self.close_game_menu();
+        }
+        let since = match self.game_menu {
+            Some(GameMenu::Working { since, .. }) => since,
+            _ => self.now(),
+        };
+        self.start_link_from(
+            LinkStarter::spawn(reload.role.role(), link_port()),
+            reload.role.client_id(),
+            since,
+        );
+    }
+
+    /// The game would not load in the mode it was switched to. The mode it came from loaded a
+    /// moment ago, from the same state that was flushed for this reload, so that is asked for
+    /// next, of whoever carried this one out. Only if that fails as well is there no game left to
+    /// hand back, and the cart comes back out of the slot refused rather than sitting seated with
+    /// no core behind it.
+    pub fn link_reload_failed(&mut self) {
+        let Some(mut reload) = self.reload.take() else {
+            return;
+        };
+        if !reload.fallback {
+            self.link_reload = Some((reload.stem.clone(), reload.from_serial));
+            reload.fallback = true;
+            self.reload = Some(reload);
+            return;
+        }
+        self.link_choices.insert(reload.stem, reload.from);
+        self.refuse_seated();
     }
 
     /// The cart under the highlight, and `None` on an empty shelf.
@@ -1333,6 +1450,10 @@ impl App {
                 Phase::Playing { cart } => Some(cart.clone()),
                 _ => None,
             };
+            // `Session` drops the core with the cart, and what it was loaded with goes too.
+            if seated.is_none() {
+                self.link_loaded = None;
+            }
             self.record_cart(seated);
         }
         self.step_screen(dt);
@@ -1489,6 +1610,11 @@ impl App {
             return;
         };
         let cart = std::mem::take(cart);
+        self.refuse_out(cart, caught);
+    }
+
+    /// Sends `cart` back out of the slot refused, from `caught` of the way in.
+    fn refuse_out(&mut self, cart: String, caught: f32) {
         // Resumed at the depth it caught rather than at zero, so the refusal reads as one
         // movement instead of a jump to seated and back out.
         let t = (1.0 - caught) * EJECT_S;
@@ -2043,7 +2169,12 @@ impl App {
             });
         }
         let keys: &[LinkLegend] = match menu {
-            GameMenu::Pick(_) => &[LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link],
+            GameMenu::Pick(_) => &[
+                LinkLegend::Cancel,
+                LinkLegend::Mode,
+                LinkLegend::Swap,
+                LinkLegend::Link,
+            ],
             GameMenu::Working { .. } => &[LinkLegend::Cancel],
             GameMenu::Linked { .. } => &[],
             GameMenu::Failed { .. } => &[LinkLegend::Ok],
@@ -2069,14 +2200,14 @@ impl App {
         }
     }
 
-    /// The seated cart's link hardware, read from the header on disk here — once, when the
-    /// screen opens (`open_game_menu`) — rather than once a frame; a cart the shelf cannot
-    /// name links by cable.
-    fn seated_link_kind(&self) -> LinkKind {
-        self.seated()
-            .and_then(|stem| self.shelf.carts.iter().find(|c| c.stem == stem))
-            .map(|c| link_kind(&c.code, &c.title, slot_store::header_clean(&c.rom)))
-            .unwrap_or(LinkKind::Cable)
+    /// The cart named `stem`, and the hardware gpSP picks for it on its own. Read from the
+    /// header on disk, so asked only when something is about to act on the answer — the link
+    /// screen opening, a core loading, a link being picked — and never once a frame. `None`
+    /// for a cart the shelf cannot name.
+    fn auto_link(&self, stem: &str) -> Option<(&Cart, LinkKind)> {
+        let cart = self.shelf.carts.iter().find(|c| c.stem == stem)?;
+        let auto = link_kind(&cart.code, &cart.title, slot_store::header_clean(&cart.rom));
+        Some((cart, auto))
     }
 
     fn on_shelf(&self) -> bool {
@@ -2424,7 +2555,11 @@ impl App {
             self.hud.toast(Toast::NeedsGpsp, self.now());
             return;
         }
-        self.link_hardware = self.seated_link_kind();
+        // It opens on what this cart was last switched to, or on what gpSP picks for it.
+        let hardware = self
+            .seated()
+            .map_or(LinkKind::Cable, |stem| self.link_mode(stem).0);
+        self.link_hardware = hardware;
         self.game_menu = Some(GameMenu::Pick(self.last_role));
     }
 
@@ -2439,18 +2574,23 @@ impl App {
                     self.last_role = role.other();
                     self.game_menu = Some(GameMenu::Pick(role.other()));
                 }
-                Action::GbaDown(Btn::A) => self.start_link(
-                    LinkStarter::spawn(role.role(), link_port()),
-                    role.client_id(),
-                ),
+                // A tap, never the half of a chord: the gesture layer only delivers SELECT once
+                // no second key can follow it.
+                Action::GbaDown(Btn::Select) => self.switch_hardware(),
+                Action::GbaDown(Btn::A) => self.pick_link(role),
                 Action::GbaDown(Btn::B) | Action::GameMenu => self.close_game_menu(),
                 _ => {}
             },
-            // B asks the worker to stop; the screen waits for its answer, as it always has.
+            // B asks the worker to stop; the screen waits for its answer, as it always has. A
+            // link still waiting on its reload has no worker yet, so the ask is kept until the
+            // reload finishes.
             GameMenu::Working { .. } => {
                 if action == Action::GbaDown(Btn::B) {
                     if let Some(starting) = &mut self.starting {
                         starting.starter.cancel();
+                    }
+                    if let Some(reload) = &mut self.reload {
+                        reload.cancelled = true;
                     }
                 }
             }
@@ -2472,6 +2612,13 @@ impl App {
     /// only seam by which this screen can be driven with no network interface anywhere near
     /// it, and it is the same seam `LinkStarter::spawn_with` exists for one layer down.
     pub fn start_link(&mut self, starter: LinkStarter, client_id: u16) {
+        self.start_link_from(starter, client_id, self.now());
+    }
+
+    /// `start_link`, with the first step dated from `since` rather than from now. A link that
+    /// waited on a reload has been showing that step since A, and carries on from there instead
+    /// of starting its animation over.
+    fn start_link_from(&mut self, starter: LinkStarter, client_id: u16, since: Millis) {
         // Whatever was already running is asked to stop on its way out. `LinkStarter` has no
         // `Drop`: dropping one silently leaves its radio up behind the screen.
         if let Some(mut old) = self.starting.replace(LinkStarting { starter, client_id }) {
@@ -2480,8 +2627,94 @@ impl App {
         self.game_menu = Some(GameMenu::Working {
             role: LinkRow::from_client_id(client_id),
             step: LinkStep::Radio,
+            since,
+        });
+    }
+
+    /// SELECT on Pick. The other hardware becomes this cart's choice until slot restarts, and the
+    /// art follows on this frame; the running game is left alone until A. Only a switch gpSP
+    /// would honour, though: a game with no cable protocol of its own loads on `auto` either way
+    /// and links over the adapter regardless, so a plug drawn over it would be a mode the core
+    /// never runs. That press is refused, and the art stays where it is.
+    fn switch_hardware(&mut self) {
+        let Some(stem) = self.seated().map(str::to_string) else {
+            return;
+        };
+        let other = self.link_hardware.other();
+        let honoured = self.auto_link(&stem).is_some_and(|(cart, auto)| {
+            serial_option(other, auto, &cart.code, &cart.title)
+                != serial_option(self.link_hardware, auto, &cart.code, &cart.title)
+        });
+        if !honoured {
+            return self.refuse();
+        }
+        self.link_hardware = other;
+        self.link_choices.insert(stem, other);
+    }
+
+    /// A on Pick. A link in the mode the core was loaded with starts now. A link in another
+    /// cannot yet: gpSP reads its link mode only while a game loads, so the game is loaded again
+    /// first, behind this screen's first step, and the link waits for that to finish. Modes are
+    /// told apart by the `gpsp_serial` they load with, since that is what the core runs.
+    fn pick_link(&mut self, role: LinkRow) {
+        let Some(stem) = self.seated().map(str::to_string) else {
+            return;
+        };
+        let (_, serial) = self.link_mode(&stem);
+        // A core nobody reported was loaded on `auto`.
+        let loaded = self.link_loaded.unwrap_or("auto");
+        if serial == loaded {
+            return self.start_link(
+                LinkStarter::spawn(role.role(), link_port()),
+                role.client_id(),
+            );
+        }
+        // A core that refused its resume is running its own default machine, and the flush keeps
+        // that off the player's state. A reload would resume from the refused file again and
+        // lose everything since, so it is refused instead: the position stays, and the mode the
+        // game already runs still links.
+        if self.snapshot.as_ref().is_some_and(|s| !s.resume_trusted()) {
+            return self.refuse();
+        }
+        self.link_reload = Some((stem.clone(), serial));
+        self.reload = Some(Reload {
+            stem,
+            role,
+            cancelled: false,
+            // SELECT only ever switches between two modes gpSP runs differently, and the one
+            // picked is not the one loaded, so the one loaded is the other.
+            from: self.link_hardware.other(),
+            from_serial: loaded,
+            fallback: false,
+        });
+        self.game_menu = Some(GameMenu::Working {
+            role,
+            step: LinkStep::Radio,
             since: self.now(),
         });
+    }
+
+    /// The seated cart back out of the slot, refused, when there is no game left to hand back:
+    /// the way `on_core_failed` sends back a cart the core would not take on the way in, from
+    /// fully seated. Whatever was drawn over the game goes with it.
+    fn refuse_seated(&mut self) {
+        self.close_game_menu();
+        // The offer names a state only this cart's core can read, as in `eject`.
+        self.pending = None;
+        let caught = self.seat();
+        let cart = match &mut self.phase {
+            Phase::Playing { cart } => Some(std::mem::take(cart)),
+            // A dark panel has no cart on it to send back. Opening the lid lands on the shelf
+            // rather than on a seated cart with nothing behind it.
+            Phase::Doze { cart } => {
+                *cart = None;
+                None
+            }
+            _ => None,
+        };
+        if let Some(cart) = cart {
+            self.refuse_out(cart, caught);
+        }
     }
 
     /// Ends the overlay and anything it had running.
@@ -2495,6 +2728,17 @@ impl App {
         self.game_menu = None;
         if let Some(mut starting) = self.starting.take() {
             starting.starter.cancel();
+        }
+        // A switch nobody has collected yet has not touched the game, so it is simply dropped.
+        // One already underway, or on its way back to the mode the game came from, still has to
+        // end in a game or on the shelf; only the link that was waiting on it will not start.
+        let uncollected =
+            self.link_reload.is_some() && self.reload.as_ref().is_some_and(|r| !r.fallback);
+        if uncollected {
+            self.link_reload = None;
+            self.reload = None;
+        } else if let Some(reload) = &mut self.reload {
+            reload.cancelled = true;
         }
     }
 
@@ -2630,7 +2874,10 @@ impl App {
 
     /// resume.state and the battery save, with the slot left alone. A cart that is not
     /// playing has no state of its own to write.
-    fn flush_resume(&mut self) {
+    ///
+    /// Public for the one flush `App` cannot start itself: a reload for a link, which `Session`
+    /// carries out and which has to be on the card before the core it reads is dropped.
+    pub fn flush_resume(&mut self) {
         // The invariant is 60 s since the state was last durable, not 60 s since the last
         // autosave, so an attempt that had nothing to write still moves the deadline.
         self.autosave_at = self.now() + AUTOSAVE_MS;
