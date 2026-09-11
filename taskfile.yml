@@ -6,7 +6,8 @@ vars:
   # mGBA is built rather than fetched: libretro/mgba at this commit, which is what the buildbot
   # was serving when issue #1 was found, with cores/mgba's patches on top. The buildbot builds
   # the same fork, and that fork lacks upstream's fix for the Classic NES Series audio
-  # (mgba-emu/mgba 685023e05). Once libretro/mgba carries it, drop the patch and fetch again.
+  # (mgba-emu/mgba 685023e05); once libretro/mgba carries it, that patch can go. The link mode
+  # patch is slot's own and will never be upstream, so this core stays built, not fetched.
   MGBA_COMMIT: e31759b24e7a4e3899285ff720d7b573ac328ae7
 
 tasks:
