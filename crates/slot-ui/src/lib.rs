@@ -38,8 +38,11 @@ pub use cart::{
 pub use clock::{clock_label, hhmm, set_clock_hint_face, ClockPicker, Field};
 pub use draw::{Draw, TexId, OUT_H, OUT_W};
 pub use footer::{draw_footer, Printed};
-pub use hud::{ff_badge, FfState, Hud, HudKind, Millis, HUD_ICON_PX, HUD_INK, HUD_MS, PLATE_H};
-pub use icon::{icon_box, icon_face, Icon};
+pub use hud::{
+    ff_badge, FfState, Hud, HudKind, LinkBadge, Millis, HUD_ICON_PX, HUD_INK, HUD_MS,
+    LINK_HOST_INK, LINK_JOIN_INK, PLATE_H,
+};
+pub use icon::{badge_face, icon_box, icon_face, Badge, Icon};
 pub use plate::{
     arrows_hint_face, arrows_hint_width, cap_width, hint_face, hint_quad, hint_row, hint_width,
     title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_EDGE,

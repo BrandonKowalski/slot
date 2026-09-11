@@ -3,7 +3,7 @@ use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, VOLUME_MAX};
 
 use crate::icon::icon_box;
 use crate::toast::toast_rect;
-use crate::{Icon, Toast};
+use crate::{Badge, Icon, Toast};
 
 /// Milliseconds on the same monotonic clock the gesture machines run on. Spelled again
 /// here because `slot-ui` cannot see `slot-input` and must not learn to.
@@ -93,6 +93,51 @@ pub fn ff_badge(state: FfState) -> Option<Icon> {
     }
 }
 
+/// The link badge's two colours: the host's plug is purple, a joiner's gray.
+pub const LINK_HOST_INK: [u8; 3] = [0x8a, 0x74, 0xcf];
+pub const LINK_JOIN_INK: [u8; 3] = [0xb2, 0xb2, 0xb8];
+
+/// A live link, by role, and the same link once its other end has gone.
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
+pub enum LinkBadge {
+    #[default]
+    Off,
+    Hosting,
+    Joined,
+    HostingLost,
+    JoinedLost,
+}
+
+impl LinkBadge {
+    /// The order the faces are uploaded in.
+    pub const FACES: [LinkBadge; 4] = [
+        LinkBadge::Hosting,
+        LinkBadge::Joined,
+        LinkBadge::HostingLost,
+        LinkBadge::JoinedLost,
+    ];
+
+    pub fn face_index(self) -> Option<usize> {
+        LinkBadge::FACES.iter().position(|b| *b == self)
+    }
+
+    pub fn badge(self) -> Option<Badge> {
+        match self {
+            LinkBadge::Off => None,
+            LinkBadge::Hosting | LinkBadge::Joined => Some(Badge::Link),
+            LinkBadge::HostingLost | LinkBadge::JoinedLost => Some(Badge::LinkBroken),
+        }
+    }
+
+    pub fn colour(self) -> Option<[u8; 3]> {
+        match self {
+            LinkBadge::Off => None,
+            LinkBadge::Hosting | LinkBadge::HostingLost => Some(LINK_HOST_INK),
+            LinkBadge::Joined | LinkBadge::JoinedLost => Some(LINK_JOIN_INK),
+        }
+    }
+}
+
 /// One bar for all three levels, drawn identically whichever it is: the user knows what
 /// they just pressed, and three styles would read as three different controls.
 #[derive(Default)]
@@ -117,6 +162,9 @@ pub struct Hud {
     icons: Vec<TexId>,
     /// One face per toast, in `Toast::ALL` order.
     toasts: Vec<TexId>,
+    link: LinkBadge,
+    /// One face per `LinkBadge::FACES` entry, in that order.
+    link_faces: Vec<TexId>,
 }
 
 impl Hud {
@@ -182,6 +230,19 @@ impl Hud {
         self.ff = ff;
     }
 
+    pub fn set_link(&mut self, badge: LinkBadge) {
+        self.link = badge;
+    }
+
+    pub fn link(&self) -> LinkBadge {
+        self.link
+    }
+
+    /// In `LinkBadge::FACES` order, tinted by the binary.
+    pub fn set_link_faces(&mut self, faces: Vec<TexId>) {
+        self.link_faces = faces;
+    }
+
     pub fn visible(&self, now: Millis) -> bool {
         self.alpha(now) > 0.0
     }
@@ -208,7 +269,16 @@ impl Hud {
         } else if alpha > 0.0 {
             self.draw_bar(alpha, out);
         }
-        self.draw_badge(ff_badge(self.ff), out);
+        // A link outranks fast forward: a session refuses fast forward anyway, so in
+        // practice both are never set at once.
+        let link = self
+            .link
+            .face_index()
+            .and_then(|i| self.link_faces.get(i).copied());
+        let ff = ff_badge(self.ff).and_then(|i| self.icons.get(i.index()).copied());
+        if let Some(tex) = link.or(ff) {
+            self.place_badge(tex, out);
+        }
     }
 
     fn draw_bar(&self, alpha: f32, out: &mut Vec<Draw>) {
@@ -240,13 +310,7 @@ impl Hud {
         });
     }
 
-    fn draw_badge(&self, badge: Option<Icon>, out: &mut Vec<Draw>) {
-        let Some(icon) = badge else {
-            return;
-        };
-        let Some(tex) = self.icons.get(icon.index()).copied() else {
-            return;
-        };
+    fn place_badge(&self, tex: TexId, out: &mut Vec<Draw>) {
         let (w, h) = icon_box(HUD_ICON_PX);
         let (w, h) = (w as f32, h as f32);
         out.push(Draw::Tex {

@@ -1,4 +1,7 @@
-use slot_ui::{ff_badge, icon_face, Draw, FfState, Hud, HudKind, Icon, OUT_H, OUT_W};
+use slot_ui::{
+    ff_badge, icon_box, icon_face, Badge, Draw, FfState, Hud, HudKind, Icon, LinkBadge, TexId,
+    HUD_ICON_PX, LINK_HOST_INK, LINK_JOIN_INK, OUT_H, OUT_W,
+};
 
 fn bottom_edge(d: &Draw) -> Option<f32> {
     match *d {
@@ -202,4 +205,52 @@ fn the_ff_badge_draws_no_plate_but_the_bar_still_does() {
     let mut out = Vec::new();
     with_bar.draw(0, &mut out);
     assert_eq!(full(&out), 1, "the bar lost the plate it is read against");
+}
+
+fn badges() -> Vec<TexId> {
+    (0..4).map(|i| TexId::from_raw(900 + i)).collect()
+}
+
+#[test]
+fn the_link_badge_takes_the_fast_forward_corner_without_a_plate() {
+    let mut h = Hud::new();
+    h.set_link_faces(badges());
+    h.set_link(LinkBadge::Hosting);
+    let mut out = Vec::new();
+    h.draw(60_000, &mut out);
+    assert_eq!(out.len(), 1, "the badge came with company: {out:?}");
+    let (w, _) = icon_box(HUD_ICON_PX);
+    assert!(matches!(out[0], Draw::Tex { tex, x, .. }
+        if tex == TexId::from_raw(900) && x == OUT_W as f32 - 12.0 - w as f32));
+}
+
+#[test]
+fn each_link_badge_has_its_own_face_and_off_has_none() {
+    assert_eq!(LinkBadge::Off.face_index(), None);
+    for (i, b) in LinkBadge::FACES.iter().enumerate() {
+        assert_eq!(b.face_index(), Some(i));
+    }
+    assert_eq!(LinkBadge::HostingLost.colour(), Some(LINK_HOST_INK));
+    assert_eq!(LinkBadge::JoinedLost.colour(), Some(LINK_JOIN_INK));
+    assert_eq!(LinkBadge::JoinedLost.badge(), Some(Badge::LinkBroken));
+    assert_eq!(LinkBadge::Hosting.badge(), Some(Badge::Link));
+}
+
+#[test]
+fn the_link_badge_outranks_fast_forward() {
+    let mut h = Hud::new();
+    h.set_icons((0..10).map(TexId::from_raw).collect());
+    h.set_link_faces(badges());
+    h.set_ff(FfState::Latched);
+    h.set_link(LinkBadge::JoinedLost);
+    let mut out = Vec::new();
+    h.draw(0, &mut out);
+    let texes: Vec<TexId> = out
+        .iter()
+        .filter_map(|d| match d {
+            Draw::Tex { tex, .. } => Some(*tex),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texes, vec![TexId::from_raw(903)]);
 }

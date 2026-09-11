@@ -146,6 +146,50 @@ pub fn icon_box(px: f32) -> (u32, u32) {
     }
 }
 
+/// Badges drawn where the fast-forward badge goes that are not in `Icon::ALL`. Their glyphs sit a
+/// hair outside the frame the icons share, so they rasterise into that frame clipped rather than
+/// widening it for everyone.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Badge {
+    Link,
+    LinkBroken,
+}
+
+impl Badge {
+    pub fn glyph(self) -> char {
+        match self {
+            Badge::Link => '\u{f0339}',
+            Badge::LinkBroken => '\u{f033a}',
+        }
+    }
+}
+
+/// The badge at `px`, tinted, haloed, in exactly `icon_box(px)`.
+pub fn badge_face(badge: Badge, px: f32, colour: [u8; 3]) -> CartFace {
+    let Some(font) = symbols_font() else {
+        return CartFace {
+            rgba: Vec::new(),
+            w: 0,
+            h: 0,
+        };
+    };
+    let f = frame(font, px);
+    let (m, cov) = font.rasterize(badge.glyph(), px);
+    let x0 = m.xmin - f.left;
+    let y0 = f.top - (m.ymin + m.height as i32);
+    let mut out = vec![0u8; (f.w * f.h) as usize];
+    for gy in 0..m.height {
+        for gx in 0..m.width {
+            let (dx, dy) = (x0 + gx as i32, y0 + gy as i32);
+            if dx < 0 || dy < 0 || dx >= f.w as i32 || dy >= f.h as i32 {
+                continue;
+            }
+            out[(dy as u32 * f.w + dx as u32) as usize] = cov[gy * m.width + gx];
+        }
+    }
+    haloed(&out, f.w, f.h, colour)
+}
+
 /// Coverage only. The tint is applied per call, so two colours of one icon share a raster.
 struct Raster {
     cov: Vec<u8>,

@@ -1,4 +1,4 @@
-use slot_ui::{icon_box, icon_face, Icon, HUD_ICON_PX};
+use slot_ui::{badge_face, icon_box, icon_face, Badge, Icon, HUD_ICON_PX, LINK_HOST_INK};
 
 /// Faces are uploaded in `ALL` order and looked up by `index`, which is the discriminant.
 /// Reordering `ALL` alone would silently put the wrong glyph on the HUD.
@@ -133,4 +133,33 @@ fn icon_box_accounts_for_the_halo() {
     let (bw, bh) = icon_box(18.0);
     let f = icon_face(Icon::Volume, 18.0, [255, 255, 255]);
     assert_eq!((bw, bh), (f.w, f.h));
+}
+
+#[test]
+fn link_badges_share_the_icon_box_and_differ() {
+    let link = badge_face(Badge::Link, HUD_ICON_PX, [255, 255, 255]);
+    let broken = badge_face(Badge::LinkBroken, HUD_ICON_PX, [255, 255, 255]);
+    assert_eq!(
+        (link.w, link.h),
+        icon_box(HUD_ICON_PX),
+        "the link badge would move the corner"
+    );
+    assert_eq!((broken.w, broken.h), icon_box(HUD_ICON_PX));
+    assert_ne!(
+        link.rgba, broken.rgba,
+        "a broken link looks like a live one"
+    );
+    assert!(
+        link.rgba.chunks(4).any(|p| p[3] == 255),
+        "the badge drew nothing"
+    );
+}
+
+#[test]
+fn a_link_badge_wears_its_colour() {
+    let face = badge_face(Badge::Link, HUD_ICON_PX, LINK_HOST_INK);
+    assert!(face
+        .rgba
+        .chunks(4)
+        .any(|p| p[3] == 255 && p[..3] == LINK_HOST_INK));
 }
