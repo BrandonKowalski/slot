@@ -569,6 +569,7 @@ fn start_on_the_shelf_opens_the_core_picker_on_the_carts_current_core() {
 #[test]
 fn choosing_a_core_writes_it_and_closes() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::A));
@@ -590,6 +591,7 @@ fn choosing_a_core_writes_it_and_closes() {
 #[test]
 fn b_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::GbaDown(Btn::B));
@@ -608,6 +610,7 @@ fn b_closes_the_picker_without_writing() {
 #[test]
 fn the_chip_goes_where_the_arrow_points_and_does_not_wrap() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
 
     app.apply(Action::GbaDown(Btn::Left));
@@ -656,6 +659,7 @@ fn a_shelf_refusal_does_not_shake_once_the_picker_takes_over() {
 #[test]
 fn back_mid_hop_turns_round_and_onward_does_nothing() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
@@ -679,6 +683,7 @@ fn back_mid_hop_turns_round_and_onward_does_nothing() {
 #[test]
 fn a_mid_hop_writes_where_the_chip_is_heading() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.update(0.05);
@@ -708,6 +713,7 @@ fn the_a_that_saved_does_not_start_the_cart() {
 #[test]
 fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     for key in [Btn::Up, Btn::Down, Btn::Start, Btn::Select] {
         app.apply(Action::GbaDown(key));
@@ -735,6 +741,7 @@ fn presses_during_the_close_and_keys_the_picker_does_not_use_do_nothing() {
 #[test]
 fn shutting_the_lid_closes_the_picker_without_writing() {
     let (d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    fake_picker_faces(&mut app);
     app.apply(Action::GbaDown(Btn::Start));
     app.apply(Action::GbaDown(Btn::Right));
     app.apply(Action::LidClose);
@@ -850,6 +857,8 @@ fn fake_boot_faces(app: &mut App) -> PickerFaces {
     f
 }
 
+/// Everything the picker draws, this cart's board and lid included, so START opens the cart at
+/// once instead of leaving it waiting on the shelf, where the arrows do nothing.
 fn fake_picker_faces(app: &mut App) -> PickerFaces {
     let f = fake_boot_faces(app);
     app.set_core_board_faces(f.board, f.lid);
@@ -1480,5 +1489,34 @@ fn the_open_starts_anyway_when_the_faces_never_come() {
     assert!(
         near(lid, [rest.x, rest.y, rest.w, rest.h]),
         "the cart never opened without its faces: the lid is at {lid:?}"
+    );
+}
+
+/// The chip is already in the cart's own socket when the cart opens. Arrows pressed while the cart
+/// still stands on the shelf waiting for its faces move nothing, so the `A` that follows writes
+/// only a choice the player saw made.
+#[test]
+fn arrows_pressed_while_the_cart_waits_move_nothing() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_boot_faces(&mut app);
+    app.apply(Action::GbaDown(Btn::Start));
+    app.apply(Action::GbaDown(Btn::Right));
+    app.set_core_board_faces(f.board, f.lid);
+    app.update(0.016);
+    assert_eq!(
+        app.core_picker(),
+        Some(Core::Mgba),
+        "a hop ran while the cart waited"
+    );
+
+    let_it_open(&mut app);
+    let out = frame(&app);
+    assert!(
+        turned_at(&out, f.chips[0]).is_some(),
+        "the chip is not seated in mGBA once the cart is open"
+    );
+    assert!(
+        turned_at(&out, f.chips[1]).is_none(),
+        "the chip opened in gpSP"
     );
 }

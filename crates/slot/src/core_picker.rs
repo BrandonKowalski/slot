@@ -124,6 +124,10 @@ impl CorePicker {
         self.close.is_some() && self.openness(now) <= 0.0
     }
 
+    /// What a press does to the chip or the lid, and what it asks of `App`. While the cart still
+    /// waits on its faces the arrows do nothing: the chip is not on screen, and a hop run unseen
+    /// would open the cart with the chip already in the other socket, for an `A` to write a core
+    /// the player never saw chosen. `A` and `B` still close it.
     pub fn press(&mut self, press: Press, now: Millis) -> Outcome {
         if self.close.is_some() {
             return Outcome::Nothing;
@@ -140,6 +144,9 @@ impl CorePicker {
             Press::Left => Core::Mgba,
             Press::Right => Core::Gpsp,
         };
+        if self.waiting() {
+            return Outcome::Nothing;
+        }
         if let Some(progress) = self.hop_progress(now) {
             if target == self.seat {
                 return Outcome::Nothing;

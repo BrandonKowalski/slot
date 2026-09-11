@@ -9,11 +9,13 @@ fn opened(seat: Core, at: Millis) -> CorePicker {
     p
 }
 
+/// Linear, and held to it a quarter of the way in: smootherstep passes through a half at the
+/// midpoint too, so the midpoint alone cannot tell the two apart.
 #[test]
 fn it_opens_over_the_open_time_and_then_rests() {
     let p = opened(Core::Mgba, 1000);
     assert_eq!(p.openness(1000), 0.0);
-    assert_eq!(p.openness(1000 + OPEN_MS / 2), 0.5);
+    assert_eq!(p.openness(1000 + OPEN_MS / 4), 0.25);
     assert_eq!(p.openness(1000 + OPEN_MS), 1.0);
     assert_eq!(p.openness(1000 + 10 * OPEN_MS), 1.0);
 }
@@ -173,11 +175,44 @@ fn backing_out_while_waiting_finishes_at_once() {
     assert!(p.finished(50));
 }
 
-/// The close runs the progress backwards at the close's speed, from wherever it was.
+/// The close runs the progress backwards at the close's speed, from wherever it was, and
+/// linearly: a quarter of the close in, a quarter of the progress is gone. At the midpoint an
+/// eased close would read a half as well.
 #[test]
 fn a_close_from_rest_takes_the_close_time() {
     let mut p = opened(Core::Mgba, 0);
     p.press(Press::Back, OPEN_MS);
-    assert_eq!(p.openness(OPEN_MS + CLOSE_MS / 2), 0.5);
+    assert_eq!(p.openness(OPEN_MS + CLOSE_MS / 4), 0.75);
     assert!(p.finished(OPEN_MS + CLOSE_MS));
+}
+
+/// Until the cart opens the chip is not on screen, so the arrows have nothing to move: a hop run
+/// unseen would open the cart with the chip already in the other socket for an `A` to write, and
+/// a refusal would shake a chip nobody can see.
+#[test]
+fn the_arrows_do_nothing_while_the_picker_waits() {
+    let mut p = CorePicker::open(Core::Mgba, 0);
+    assert_eq!(p.press(Press::Right, 100), Outcome::Nothing);
+    assert_eq!(p.seat(), Core::Mgba, "a hop started while the cart waited");
+    let chip = p.chip(100);
+    assert_eq!((chip.seated, chip.shake), (Some(Core::Mgba), 0.0));
+    assert_eq!(
+        p.press(Press::Left, 120),
+        Outcome::Nothing,
+        "toward its own socket while the cart waited was refused"
+    );
+    assert_eq!(p.chip(120).shake, 0.0);
+
+    p.start(200);
+    assert_eq!(p.press(Press::Right, 300), Outcome::Nothing);
+    assert_eq!(
+        p.seat(),
+        Core::Gpsp,
+        "the arrow did nothing once the cart had opened"
+    );
+    assert_eq!(
+        p.chip(300 + HOP_MS / 2).seated,
+        None,
+        "no hop once the cart had opened"
+    );
 }
