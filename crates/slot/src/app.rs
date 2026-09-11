@@ -118,8 +118,10 @@ const LID_SHADOW_H: f32 = 18.0;
 const LID_SHADOW_DROP: f32 = 29.0;
 const LID_SHADOW_ALPHA: f32 = 0.8;
 /// The longest the cart stands on the shelf waiting for its faces before it opens anyway, so a
-/// face that never comes cannot freeze the picker.
-const FACES_WAIT_MS: Millis = 1000;
+/// face that never comes cannot freeze the picker. A fast scroll can leave the worker still
+/// finishing the cart it was already building before it starts on this one, so the cap has to
+/// cover that wait too, not just this cart's own build.
+const FACES_WAIT_MS: Millis = 1500;
 
 /// How far through a refused cart's exit the alert holds at full, and where it has finished
 /// going. Fractions of that exit rather than seconds, because a cart refused early has a
@@ -1475,11 +1477,11 @@ impl App {
             }
             Phase::Shelf => {
                 draw_backdrop(self.wallpaper, out);
-                match (self.core_picker, self.selected_stem()) {
+                match (self.core_picker_shown(), self.selected_stem()) {
                     // The highlighted cart is the picker's to draw while its lid is off, and the
                     // rest of the row makes way for it the way it does for a cart going in.
                     // Until its faces are up the picker has only bare parts, so the cart stands.
-                    (Some(picker), Some(stem)) if !picker.waiting() => {
+                    (Some(picker), Some(stem)) => {
                         // Eased on the whole progress rather than on either beat: the row makes
                         // way across the slide and the lift as one movement.
                         let open = ease(picker.openness(self.now()));
@@ -1562,7 +1564,7 @@ impl App {
         // row of carts it is a menu for, and START would look like a button that does
         // nothing. Only the shelf can raise it, so no phase needs excluding here — the
         // phases that own the whole panel have already returned.
-        if let Some(picker) = self.core_picker.filter(|p| !p.waiting()) {
+        if let Some(picker) = self.core_picker_shown() {
             self.draw_core_picker(&picker, out);
         }
         // Over the game and under the HUD, for the same reason the picker is over the shelf:
@@ -1728,10 +1730,23 @@ impl App {
         );
     }
 
+    /// The picker, but only once it has started opening: `None` while it is still standing on
+    /// the shelf waiting for this cart's faces, so nothing of it is on screen yet and the row
+    /// has not made way for it.
+    fn core_picker_shown(&self) -> Option<CorePicker> {
+        self.core_picker.filter(|p| !p.waiting())
+    }
+
     /// The open cart over the shelf that is making way for it: the board growing out of the cart
     /// that stood there, both sockets on it, the chip in one of them or in the air between, the
     /// lid slid off it and lifted away with the cart's own face on it, and the legend. Over the
     /// shelf and under the HUD: brightness and blue light are still answered while it is up.
+    ///
+    /// `ready` is this cart's own board and lid, not merely whatever is on the GPU: a picker
+    /// that started on `FACES_WAIT_MS`'s cap has neither yet, and must never wear a build left
+    /// over from the cart the caret was on before — showing nothing is the only honest choice
+    /// until this cart's own faces land, so the board, the sockets, the chip and the chip's own
+    /// shadow wait for `ready` and the lid falls back to the shelf's plain face for this cart.
     fn draw_core_picker(&self, picker: &CorePicker, out: &mut Vec<Draw>) {
         let now = self.now();
         let progress = picker.openness(now);
@@ -1739,78 +1754,83 @@ impl App {
         let lift = lift_of(progress);
         let board = board_at(progress);
         let zoom = board_zoom(board);
+        let ready = self.core_faces_ready();
 
-        // Opaque from the first frame, and the sockets and the chip with it: the back half was
-        // always there under the front, and the slide only uncovers it.
-        if let Some(tex) = self.core_board_face {
-            out.push(Draw::Tex {
-                x: board.x,
-                y: board.y,
-                w: board.w,
-                h: board.h,
-                tex,
-                alpha: 1.0,
-            });
-        }
-        // A face drawn at its own size is only sharp on whole pixels.
-        for (i, tex) in self.core_socket_faces.iter().copied().enumerate() {
-            let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
-            out.push(Draw::Tex {
-                x: x.round(),
-                y: y.round(),
-                w: SOCKET_W as f32 * zoom,
-                h: SOCKET_H as f32 * zoom,
-                tex,
-                alpha: 1.0,
-            });
-        }
-
-        let chip = picker.chip(now);
-        let u = CHIP_U[0] + (CHIP_U[1] - CHIP_U[0]) * chip.across;
-        if chip.lift > 0.0 {
-            if let Some(tex) = self.core_chip_shadow_face {
-                // Under the body's middle and 90 units down the board, where the mockup's oval
-                // falls: low enough to read as cast on the board rather than tucked under the pins.
-                let (cx, cy) = on_board(board, u + 19.0, CHIP_V + 29.4);
-                let (w, h) = (SHADOW_W as f32 * zoom, SHADOW_H as f32 * zoom);
+        if ready {
+            // Opaque from the first frame, and the sockets and the chip with it: the back half
+            // was always there under the front, and the slide only uncovers it.
+            if let Some(tex) = self.core_board_face {
                 out.push(Draw::Tex {
-                    x: cx - w / 2.0,
-                    y: cy - h / 2.0,
-                    w,
-                    h,
+                    x: board.x,
+                    y: board.y,
+                    w: board.w,
+                    h: board.h,
                     tex,
-                    alpha: 0.6 * chip.lift * lift,
+                    alpha: 1.0,
                 });
             }
-        }
-        let face = match chip.seated {
-            Some(core) => self.core_chip_faces.get(core.index()).copied(),
-            None => self.core_blank_chip_face,
-        };
-        if let Some(tex) = face {
-            let (x, y) = on_board(board, u, CHIP_V - HOP_LIFT * chip.lift);
-            let body = Placed {
-                x: x + chip.shake,
-                y,
-                w: CHIP_W as f32 * zoom,
-                h: CHIP_H as f32 * zoom,
+            // A face drawn at its own size is only sharp on whole pixels.
+            for (i, tex) in self.core_socket_faces.iter().copied().enumerate() {
+                let (x, y) = on_board(board, SOCKET_U[i], SOCKET_V);
+                out.push(Draw::Tex {
+                    x: x.round(),
+                    y: y.round(),
+                    w: SOCKET_W as f32 * zoom,
+                    h: SOCKET_H as f32 * zoom,
+                    tex,
+                    alpha: 1.0,
+                });
+            }
+
+            let chip = picker.chip(now);
+            let u = CHIP_U[0] + (CHIP_U[1] - CHIP_U[0]) * chip.across;
+            if chip.lift > 0.0 {
+                if let Some(tex) = self.core_chip_shadow_face {
+                    // Under the body's middle and 90 units down the board, where the mockup's
+                    // oval falls: low enough to read as cast on the board rather than tucked
+                    // under the pins.
+                    let (cx, cy) = on_board(board, u + 19.0, CHIP_V + 29.4);
+                    let (w, h) = (SHADOW_W as f32 * zoom, SHADOW_H as f32 * zoom);
+                    out.push(Draw::Tex {
+                        x: cx - w / 2.0,
+                        y: cy - h / 2.0,
+                        w,
+                        h,
+                        tex,
+                        alpha: 0.6 * chip.lift * lift,
+                    });
+                }
+            }
+            let face = match chip.seated {
+                Some(core) => self.core_chip_faces.get(core.index()).copied(),
+                None => self.core_blank_chip_face,
             };
-            // Whole pixels, as the sockets: a seated chip is drawn at its own size too.
-            let at = grown(body, TURN_PAD as f32 * zoom);
-            out.push(Draw::Turned {
-                x: at.x.round(),
-                y: at.y.round(),
-                w: at.w,
-                h: at.h,
-                tex,
-                alpha: 1.0,
-                turn: chip.tip,
-            });
+            if let Some(tex) = face {
+                let (x, y) = on_board(board, u, CHIP_V - HOP_LIFT * chip.lift);
+                let body = Placed {
+                    x: x + chip.shake,
+                    y,
+                    w: CHIP_W as f32 * zoom,
+                    h: CHIP_H as f32 * zoom,
+                };
+                // Whole pixels, as the sockets: a seated chip is drawn at its own size too.
+                let at = grown(body, TURN_PAD as f32 * zoom);
+                out.push(Draw::Turned {
+                    x: at.x.round(),
+                    y: at.y.round(),
+                    w: at.w,
+                    h: at.h,
+                    tex,
+                    alpha: 1.0,
+                    turn: chip.tip,
+                });
+            }
         }
 
         // The soft oval on the ground under the lid. Without it the lid reads as printed on the
         // backdrop rather than held up off the board. The chip's shadow, stretched: it grows
-        // with the lid and comes in as the lid rises.
+        // with the lid and comes in as the lid rises. Drawn whether or not this cart's faces are
+        // ready: the lid is always something, the fallback included, and it always casts one.
         if let Some(tex) = self.core_chip_shadow_face {
             let (lid, _) = lid_at(progress);
             let k = lid.w / lid_at(1.0).0.w;
@@ -1825,16 +1845,35 @@ impl App {
             });
         }
 
-        // Always opaque: at the very start and end of the movement the lid is the cart on the
-        // shelf, and a cart there does not fade.
-        if let Some(tex) = self.core_lid_face {
+        if ready {
+            // Always opaque: at the very start and end of the movement the lid is the cart on
+            // the shelf, and a cart there does not fade.
+            if let Some(tex) = self.core_lid_face {
+                let (lid, turn) = lid_at(progress);
+                let at = grown(lid, TURN_PAD as f32 * lid.w / CART_W as f32);
+                out.push(Draw::Turned {
+                    x: at.x,
+                    y: at.y,
+                    w: at.w,
+                    h: at.h,
+                    tex,
+                    alpha: 1.0,
+                    turn,
+                });
+            }
+        } else if let Some((_, Some(tex))) =
+            self.selected_stem().and_then(|stem| self.shelf.find(stem))
+        {
+            // The cap ran out before this cart's own lid arrived. The shelf's own face for the
+            // cart is the only thing left to lift — not `core_lid_face`, which would still be
+            // whatever cart the worker built last — and it is drawn unpadded: unlike a face
+            // built for the picker, the shelf's face carries no transparent border to grow into.
             let (lid, turn) = lid_at(progress);
-            let at = grown(lid, TURN_PAD as f32 * lid.w / CART_W as f32);
             out.push(Draw::Turned {
-                x: at.x,
-                y: at.y,
-                w: at.w,
-                h: at.h,
+                x: lid.x,
+                y: lid.y,
+                w: lid.w,
+                h: lid.h,
                 tex,
                 alpha: 1.0,
                 turn,

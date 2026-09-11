@@ -1473,9 +1473,10 @@ fn the_open_waits_on_the_shelf_for_its_faces() {
     );
 }
 
-/// A face that never comes cannot freeze the picker: after a second on the shelf the cart opens
-/// anyway. The faces here were built for the other cart: they do not count for this one, and
-/// are not drawn over it while it waits.
+/// A face that never comes cannot freeze the picker: past `FACES_WAIT_MS` the cart opens anyway.
+/// The only faces on the GPU are the other cart's, built while the caret passed over it on the
+/// way back to this one, and the fallback open never wears them: it has nothing of its own to
+/// show and draws nothing rather than borrow theirs.
 #[test]
 fn the_open_starts_anyway_when_the_faces_never_come() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
@@ -1488,21 +1489,78 @@ fn the_open_starts_anyway_when_the_faces_never_come() {
     assert_eq!(app.selected_stem(), Some("Emerald"));
 
     app.apply(Action::GbaDown(Btn::Start));
-    app.update(0.3);
-    assert_plain_shelf(
-        &frame(&app),
-        &f,
-        "while the only faces are the other cart's",
+    app.update(1.499);
+    assert_plain_shelf(&frame(&app), &f, "a hair under the cap");
+
+    app.update(0.002);
+    assert_eq!(
+        carts_standing(&frame(&app), f.board),
+        0,
+        "the open never started once the cap ran out"
     );
 
-    app.update(1.1);
     let_it_open(&mut app);
+    let out = frame(&app);
+    assert!(
+        tex_at(&out, f.board).is_none(),
+        "the fallback open drew the other cart's board"
+    );
+    assert!(
+        turned_at(&out, f.lid).is_none(),
+        "the fallback open drew the other cart's lid"
+    );
+    for tex in [f.sockets[0], f.sockets[1], f.chips[0], f.chips[1], f.blank] {
+        assert!(
+            tex_at(&out, tex).is_none() && turned_at(&out, tex).is_none(),
+            "the fallback open drew a socket or chip quad"
+        );
+    }
+}
+
+/// Past the cap, with nothing of this cart's own built yet, the fallback lifts the shelf's own
+/// face for the cart — the only thing on the GPU that is honestly this cart's — rather than
+/// leave the lid off altogether.
+#[test]
+fn the_fallback_open_lifts_the_shelfs_own_face_for_the_lid() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
+    app.set_faces(shelf_faces.to_vec());
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(1.501);
+    let_it_open(&mut app);
+
     let (rest, _) = lid_at(1.0);
-    let rest = grown(rest, TURN_PAD as f32 * rest.w / CART_W as f32);
-    let (_, lid, _) = turned_at(&frame(&app), f.lid).expect("no lid once open");
+    let (_, lid, turn) =
+        turned_at(&frame(&app), shelf_faces[0]).expect("no lid drawn from the shelf's own face");
     assert!(
         near(lid, [rest.x, rest.y, rest.w, rest.h]),
-        "the cart never opened without its faces: the lid is at {lid:?}"
+        "the fallback lid is not at rest: {lid:?}"
+    );
+    assert_eq!(turn, LID_TURN, "the fallback lid is not turned");
+}
+
+/// When this cart's own faces land mid-open, having missed the cap, the very next frame draws
+/// them: the fallback was only ever a placeholder for a build the worker had not finished yet.
+#[test]
+fn the_real_faces_replace_the_fallback_once_they_arrive() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let shelf_faces = [TexId::from_raw(950), TexId::from_raw(951)];
+    app.set_faces(shelf_faces.to_vec());
+    app.apply(Action::GbaDown(Btn::Start));
+    app.update(1.501);
+    let_it_open(&mut app);
+    assert!(
+        turned_at(&frame(&app), shelf_faces[0]).is_some(),
+        "the fallback lid should be up before the real faces arrive"
+    );
+
+    let f = fake_picker_faces(&mut app);
+    app.update(0.016);
+    let out = frame(&app);
+    assert!(tex_at(&out, f.board).is_some(), "the board never arrived");
+    assert!(
+        turned_at(&out, f.lid).is_some(),
+        "the picker's own lid never arrived"
     );
 }
 
