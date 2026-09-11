@@ -56,7 +56,7 @@ fn the_compliance_block_is_the_credits() {
     let all = sticker_lines(&fields()).join("\n").to_uppercase();
     // What README.md credits, minus the parts a label has no room for. The cartridge sounds
     // are a recording of the author's own console, so nobody is owed for them.
-    for owed in ["MGBA", "LIBRETRO", "OPEN SANS", "NERD", "LCD3X", "CLAUDE"] {
+    for owed in ["MGBA", "GPSP", "OPEN SANS", "NERD", "LCD3X", "CLAUDE"] {
         assert!(all.contains(owed), "the credits do not mention {owed}");
     }
 }
