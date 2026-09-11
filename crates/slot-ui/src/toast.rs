@@ -5,16 +5,18 @@ use crate::icon::{haloed, HALO_PX};
 use crate::text;
 use crate::CartFace;
 
-/// Everything the HUD ever says in words. Two lines and no third: a toast is confirmation of
-/// something the user just did, never a message.
+/// Everything the HUD ever says in words. Each answers something the user just did: two
+/// confirm it, and the third answers the link shortcut on a core that cannot link, which would
+/// otherwise do nothing and say nothing.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
     StateSaved,
     StateLoaded,
+    NeedsGpsp,
 }
 
 impl Toast {
-    pub const ALL: [Toast; 2] = [Toast::StateSaved, Toast::StateLoaded];
+    pub const ALL: [Toast; 3] = [Toast::StateSaved, Toast::StateLoaded, Toast::NeedsGpsp];
 
     /// Position in `ALL`, which is the order faces are uploaded in.
     pub fn index(self) -> usize {
@@ -25,12 +27,14 @@ impl Toast {
         match self {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
+            Toast::NeedsGpsp => "Please switch to gpSP",
         }
     }
 }
 
-/// One box for both strings, so which one it is never moves the line.
-const TOAST_W: u32 = 220;
+/// One box for every string, so which one it is never moves the line. Wide enough for the
+/// longest at full size: `fit` would otherwise shrink that one line and no other.
+const TOAST_W: u32 = 240;
 const TOAST_H: u32 = 22;
 const TOAST_PX: f32 = 16.0;
 const TOAST_MIN_PX: f32 = 12.0;

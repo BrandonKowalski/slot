@@ -6,6 +6,14 @@ fn saving_and_loading_say_which_one_happened() {
     assert_eq!(Toast::StateLoaded.text(), "State Loaded");
 }
 
+/// The link shortcut on a core that cannot link says which one can, in the same banner.
+#[test]
+fn the_link_shortcut_on_the_wrong_core_says_to_switch() {
+    assert_eq!(Toast::NeedsGpsp.text(), "Please switch to gpSP");
+    let f = toast_face(Toast::NeedsGpsp);
+    assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
+}
+
 #[test]
 fn a_toast_fades_on_the_same_curve_as_the_bar() {
     let mut h = Hud::new();

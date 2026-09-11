@@ -91,14 +91,29 @@ fn select_and_menu_open_the_link_screen_on_host() {
     assert!(matches!(app.phase(), Phase::Playing { .. }));
 }
 
+/// mGBA cannot link, so the screen stays shut, and the banner says what would open it.
 #[test]
-fn the_link_screen_does_not_open_under_mgba() {
+fn the_link_screen_does_not_open_under_mgba_and_says_to_switch() {
     let (mut app, _d) = playing_on(Core::Mgba);
     app.apply(Action::GameMenu);
     assert!(
         !app.game_menu_open(),
         "an mGBA cart was offered a link it cannot make"
     );
+    assert_eq!(
+        app.toast(),
+        Some(slot_ui::Toast::NeedsGpsp),
+        "the press did nothing and said nothing"
+    );
+}
+
+/// On gpSP the screen itself is the answer; the banner stays out of it.
+#[test]
+fn the_link_screen_on_gpsp_says_nothing_in_the_banner() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.apply(Action::GameMenu);
+    assert!(app.game_menu_open());
+    assert_eq!(app.toast(), None);
 }
 
 #[test]

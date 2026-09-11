@@ -2418,10 +2418,10 @@ impl App {
         if self.link_active() {
             return self.refuse();
         }
-        // gpSP is the only core with a netpacket interface to link over. Absent rather than
-        // shown and refused: the fix is not on this screen — it is four steps away on the
-        // shelf — and a screen that says so is a screen that teaches a dead end.
+        // gpSP is the only core with a netpacket interface to link over. The screen stays shut,
+        // and the save-state banner says what would open it, so the press is not simply lost.
         if self.core != Core::Gpsp {
+            self.hud.toast(Toast::NeedsGpsp, self.now());
             return;
         }
         self.link_hardware = self.seated_link_kind();
