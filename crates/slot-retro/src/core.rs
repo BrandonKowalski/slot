@@ -61,6 +61,11 @@ impl From<std::io::Error> for CoreError {
 pub trait RetroCore: Send {
     fn load(&mut self, rom: &Path) -> Result<(), CoreError>;
     fn run_frame(&mut self, input: ButtonMask);
+    /// One frame with two players' buttons: `p1` on input port 0, `p2` on port 1. Only a core
+    /// running two linked GBAs reads port 1, so the default runs `p1` alone and drops `p2`.
+    fn run_frame_linked(&mut self, p1: ButtonMask, _p2: ButtonMask) {
+        self.run_frame(p1);
+    }
     /// `GBA_W * GBA_H * 4` bytes, little endian XRGB8888, so the byte order is B, G, R, unused.
     fn video_xrgb8888(&self) -> &[u8];
     fn take_audio(&mut self) -> Vec<i16>;
@@ -97,4 +102,53 @@ pub trait RetroCore: Send {
     /// never offered one simply has nothing to hear this through, and the default does
     /// nothing.
     fn stop_link(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Records what `run_frame` was handed, to see what the default `run_frame_linked` passes on.
+    #[derive(Default)]
+    struct Recorder(Vec<ButtonMask>);
+
+    impl RetroCore for Recorder {
+        fn load(&mut self, _rom: &Path) -> Result<(), CoreError> {
+            Ok(())
+        }
+        fn run_frame(&mut self, input: ButtonMask) {
+            self.0.push(input);
+        }
+        fn video_xrgb8888(&self) -> &[u8] {
+            &[]
+        }
+        fn take_audio(&mut self) -> Vec<i16> {
+            Vec::new()
+        }
+        fn serialize(&mut self) -> Result<Vec<u8>, CoreError> {
+            Ok(Vec::new())
+        }
+        fn unserialize(&mut self, _data: &[u8]) -> Result<(), CoreError> {
+            Ok(())
+        }
+        fn save_ram(&self) -> Option<Vec<u8>> {
+            None
+        }
+        fn load_save_ram(&mut self, _data: &[u8]) -> Result<(), CoreError> {
+            Ok(())
+        }
+        fn av_info(&self) -> AvInfo {
+            AvInfo {
+                fps: 60.0,
+                sample_rate: 48_000.0,
+            }
+        }
+    }
+
+    #[test]
+    fn a_core_without_link_mode_runs_player_1_alone() {
+        let mut core = Recorder::default();
+        core.run_frame_linked(ButtonMask(ButtonMask::A), ButtonMask(ButtonMask::B));
+        assert_eq!(core.0, vec![ButtonMask(ButtonMask::A)]);
+    }
 }

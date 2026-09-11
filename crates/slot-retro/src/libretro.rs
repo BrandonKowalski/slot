@@ -32,7 +32,9 @@ struct Host {
     video: Vec<u8>,
     format: PixelFormat,
     audio: Vec<i16>,
-    input: u16,
+    /// What input ports 0 and 1 read this frame. Only a core running two linked GBAs reads
+    /// port 1, and it holds 0 otherwise.
+    inputs: [u16; 2],
     system_dir: CString,
     save_dir: CString,
     rumble: Rumble,
@@ -424,13 +426,18 @@ unsafe extern "C" fn audio_batch(data: *const i16, frames: usize) -> usize {
 unsafe extern "C" fn input_poll() {}
 
 unsafe extern "C" fn input_state(port: c_uint, device: c_uint, _index: c_uint, id: c_uint) -> i16 {
-    if port != 0 || device != DEVICE_JOYPAD {
+    if device != DEVICE_JOYPAD {
         return 0;
     }
-    with_host(|h| match id {
-        JOYPAD_MASK => h.input as i16,
-        _ if id < 16 => ((h.input >> id) & 1) as i16,
-        _ => 0,
+    with_host(|h| {
+        let Some(&input) = h.inputs.get(port as usize) else {
+            return 0;
+        };
+        match id {
+            JOYPAD_MASK => input as i16,
+            _ if id < 16 => ((input >> id) & 1) as i16,
+            _ => 0,
+        }
     })
     .unwrap_or(0)
 }
@@ -524,7 +531,7 @@ impl LibretroCore {
             video: vec![0; VIDEO_BYTES],
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
-            input: 0,
+            inputs: [0; 2],
             system_dir: cdir(system_dir)?,
             save_dir: cdir(save_dir)?,
             rumble: Rumble::default(),
@@ -615,10 +622,14 @@ impl RetroCore for LibretroCore {
     }
 
     fn run_frame(&mut self, input: ButtonMask) {
+        self.run_frame_linked(input, ButtonMask::default());
+    }
+
+    fn run_frame_linked(&mut self, p1: ButtonMask, p2: ButtonMask) {
         if !self.loaded {
             return;
         }
-        self.host.input = input.0;
+        self.host.inputs = [p1.0, p2.0];
         let _a = Active::bind(&mut self.host);
         unsafe { (self.api.run)() };
     }
@@ -740,7 +751,7 @@ mod tests {
             video: Vec::new(),
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
-            input: 0,
+            inputs: [0; 2],
             system_dir: CString::new(".").unwrap(),
             save_dir: CString::new(".").unwrap(),
             rumble: Rumble::default(),
@@ -1543,5 +1554,41 @@ mod tests {
         }
 
         TEST_DISCONNECTED_CLIENT.with(|c| assert_eq!(c.get(), None, "nothing was ever connected"));
+    }
+
+    // --- input ports ---------------------------------------------------------------------
+    //
+    // mGBA's link mode reads player 1's buttons from port 0 and player 2's from port 1, so the
+    // host has to answer both. Driven through `input_state` itself, the function the core calls.
+
+    #[test]
+    fn input_state_answers_each_port_from_its_own_mask() {
+        let mut host = host_with(HashMap::new(), false);
+        host.inputs = [ButtonMask::A, ButtonMask::B | ButtonMask::START];
+        let _active = Active::bind(&mut host);
+
+        let mask = |port| unsafe { input_state(port, DEVICE_JOYPAD, 0, JOYPAD_MASK) } as u16;
+        assert_eq!(mask(0), ButtonMask::A);
+        assert_eq!(mask(1), ButtonMask::B | ButtonMask::START);
+    }
+
+    #[test]
+    fn input_state_answers_single_buttons_on_port_1() {
+        let mut host = host_with(HashMap::new(), false);
+        host.inputs = [0, ButtonMask::B];
+        let _active = Active::bind(&mut host);
+
+        let button = |id| unsafe { input_state(1, DEVICE_JOYPAD, 0, id) };
+        assert_eq!(button(0), 1, "B is bit 0 of the libretro joypad");
+        assert_eq!(button(8), 0, "A is not held on port 1");
+    }
+
+    #[test]
+    fn input_state_answers_nothing_past_port_1() {
+        let mut host = host_with(HashMap::new(), false);
+        host.inputs = [u16::MAX, u16::MAX];
+        let _active = Active::bind(&mut host);
+
+        assert_eq!(unsafe { input_state(2, DEVICE_JOYPAD, 0, JOYPAD_MASK) }, 0);
     }
 }
