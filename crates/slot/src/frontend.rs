@@ -17,6 +17,8 @@ use slot_ui::{
 use crate::app::{App, LinkRow, Phase};
 use crate::build_info::Build;
 use crate::face_builder::FaceBuilder;
+use crate::link_art_builder::LinkArtBuilder;
+use crate::link_screen::{LinkSprites, Sprite};
 use crate::link_start::{LinkFail, LinkStep};
 use crate::session::Session;
 use crate::wallpaper;
@@ -46,6 +48,10 @@ pub struct Frontend {
     title_tex: Option<TexId>,
     /// Builds the open cart's faces off the frame loop.
     faces: FaceBuilder,
+    /// Builds the link screen's artwork off the frame loop, once, at boot.
+    link_art: LinkArtBuilder,
+    /// Whether the link art has been uploaded and handed to `App` already.
+    link_art_done: bool,
     /// The cart last asked for.
     core_asked: Option<String>,
     /// The open cart and its lid, and which cart they were built for.
@@ -106,6 +112,8 @@ impl Frontend {
             polaroid_texes: Vec::new(),
             title_tex: None,
             faces: FaceBuilder::spawn(),
+            link_art: LinkArtBuilder::spawn(),
+            link_art_done: false,
             core_asked: None,
             core_board_tex: None,
             core_lid_tex: None,
@@ -300,6 +308,38 @@ impl Frontend {
             &mut self.core_lid_tex,
             &mut self.core_built,
         );
+        if !self.link_art_done {
+            if let Some(art) = self.link_art.take() {
+                let mut up = |f: &slot_ui::CartFace| Sprite {
+                    tex: compositor.create_texture(f.w, f.h, &f.rgba),
+                    w: f.w,
+                    h: f.h,
+                };
+                let sprites = LinkSprites {
+                    port: up(&art.port),
+                    plug_host: up(&art.plug_host),
+                    plug_join: up(&art.plug_join),
+                    adapter: up(&art.adapter),
+                    glow_host: up(&art.glow_host),
+                    glow_neutral: up(&art.glow_neutral),
+                    arcs_right: [
+                        up(&art.arcs_right[0]),
+                        up(&art.arcs_right[1]),
+                        up(&art.arcs_right[2]),
+                    ],
+                    arcs_left: [
+                        up(&art.arcs_left[0]),
+                        up(&art.arcs_left[1]),
+                        up(&art.arcs_left[2]),
+                    ],
+                    clicks: up(&art.clicks),
+                    arrow_left: up(&art.arrow_left),
+                    arrow_right: up(&art.arrow_right),
+                };
+                self.session.app_mut().set_link_sprites(sprites);
+                self.link_art_done = true;
+            }
+        }
         sync_switcher(
             self.session.app_mut(),
             compositor,

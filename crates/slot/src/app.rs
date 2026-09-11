@@ -19,6 +19,7 @@ use slot_ui::{
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
 use crate::link_radio::LinkRole;
+use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
 
@@ -375,6 +376,7 @@ pub struct App {
     /// what holds the seated cart, and a menu that left it would have to rebuild the session
     /// to come back from cancelling.
     game_menu: Option<GameMenu>,
+    link_sprites: Option<LinkSprites>,
     /// The role last picked, Host or Join, so opening the screen again lands back on it
     /// rather than always starting at Host.
     last_role: LinkRow,
@@ -513,6 +515,7 @@ impl App {
             core_chip_shadow_face: None,
             core_legend_faces: Vec::new(),
             game_menu: None,
+            link_sprites: None,
             last_role: LinkRow::Host,
             link_menu_faces: Vec::new(),
             link_linked_face: None,
@@ -1791,6 +1794,15 @@ impl App {
     /// In `LinkLegend::ALL` order: the face and its width.
     pub fn set_link_legend_faces(&mut self, faces: Vec<(TexId, u32)>) {
         self.link_legend_faces = faces;
+    }
+
+    /// The link art, once the worker has built it and the frontend has uploaded it.
+    pub fn set_link_sprites(&mut self, sprites: LinkSprites) {
+        self.link_sprites = Some(sprites);
+    }
+
+    pub fn link_sprites_ready(&self) -> bool {
+        self.link_sprites.is_some()
     }
 
     /// The case's own ground, and the rows on it. No plate behind them: the menu is three
