@@ -45,9 +45,7 @@ pub use plate::{
     TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
-pub use power_menu::{
-    menu_face, picker_caption_face, picker_title_face, tag_face, PowerChoice, MENU_PAD, TAG_PAD,
-};
+pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
 pub use refusal::Refusal;
 pub use shelf::Shelf;
 pub use shell::{
