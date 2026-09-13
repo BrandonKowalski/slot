@@ -53,6 +53,41 @@ fn the_badge_follows_the_latch_rather_than_the_button() {
     assert!(badge(&s).is_none(), "the badge survived the latch it lost");
 }
 
+/// The quick menu's two fast forward settings are read off the card and handed to the emulator
+/// thread, so the cart seated after they were chosen fast forwards with them.
+#[test]
+fn the_fast_forward_settings_reach_the_emulator() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            ff_speed: 2,
+            ff_sound: true,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    let emu = s.emu().expect("a seated cart has a core");
+    assert_eq!(
+        emu.fast_steps(),
+        2,
+        "the chosen speed never reached the core"
+    );
+    assert!(emu.ff_sound(), "fast forward sound never reached the core");
+}
+
 fn step(s: &mut Session, now: &mut Millis, ev: Option<RawEvent>) {
     *now += 16;
     s.feed(ev, *now);

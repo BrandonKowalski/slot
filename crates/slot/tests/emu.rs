@@ -165,9 +165,9 @@ fn a_worker_that_stops_while_muted_leaves_the_sink_audible() {
     assert!(!sink.muted(), "the sink stayed muted after the cart left");
 }
 
-/// `FAST_STEPS` core frames per present, which is the only fast forward speed there is. Read
-/// from the constant rather than repeated here: a step count that moves and a test that does
-/// not would leave the test passing on the old number.
+/// `FAST_STEPS` core frames per present until told otherwise, which is the speed a card that
+/// never chose one gets. Read from the constant rather than repeated here: a step count that
+/// moves and a test that does not would leave the test passing on the old number.
 #[test]
 fn fast_forward_runs_fast_steps_core_frames_per_present() {
     let emu = spawn();
@@ -185,6 +185,124 @@ fn fast_forward_runs_fast_steps_core_frames_per_present() {
         fast as u32 >= n * (FAST_STEPS - 1) && fast as u32 <= n * (FAST_STEPS + 1),
         "{fast} frames fast against {normal} normal is not {FAST_STEPS}x"
     );
+}
+
+/// Frames the core has run and presents the worker has published, read with the core held so
+/// neither can move between the two reads. Seeing the pause observed is what guarantees every
+/// present before it has already been counted.
+fn held_counts(emu: &EmuHandle) -> (u64, u64) {
+    emu.set_speed(Speed::Paused);
+    assert!(
+        wait_for(|| emu.observed_speed() == Speed::Paused),
+        "the worker never saw the pause"
+    );
+    (frame_count(emu), emu.published_count())
+}
+
+/// The quick menu's speed is how many core frames each present runs. Counted against presents
+/// rather than against time, so a loaded machine running the suite moves neither side of it.
+/// Never more than `FAST_STEPS`, whatever is asked: that is all an H700 can serve.
+#[test]
+fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
+    let emu = spawn();
+    for (asked, runs) in [(2, 2), (3, 3), (4, 4), (FAST_STEPS + 4, FAST_STEPS)] {
+        emu.set_fast_steps(asked);
+        let (frames, presents) = held_counts(&emu);
+        emu.set_speed(Speed::Fast);
+        std::thread::sleep(Duration::from_millis(150));
+        let (frames_after, presents_after) = held_counts(&emu);
+        let (ran, shown) = (frames_after - frames, presents_after - presents);
+        assert!(shown > 0, "nothing was presented asking for {asked}");
+        assert_eq!(
+            ran,
+            shown * u64::from(runs),
+            "{ran} frames over {shown} presents, asking for {asked}"
+        );
+    }
+}
+
+/// A device that counts what it took, in frames. It drains everything it is handed, as `drain`
+/// does, so the worker never waits on it.
+fn counting(sink: StubSink) -> Arc<AtomicUsize> {
+    let heard = Arc::new(AtomicUsize::new(0));
+    let tally = heard.clone();
+    std::thread::spawn(move || loop {
+        tally.fetch_add(sink.device_drain(), Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(2));
+    });
+    heard
+}
+
+/// A worker left paused, as a real one starts, over a device that counts what it hears.
+fn spawn_heard() -> (EmuHandle, StubSink, Arc<AtomicUsize>) {
+    let mut sink = StubSink::new();
+    sink.open(32_768).expect("the stub refused to open");
+    let heard = counting(sink.clone());
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        PathBuf::from("mock"),
+        sink.ring(),
+        None,
+        None,
+    );
+    assert!(
+        wait_for(|| emu.state() == CoreState::Ready),
+        "the core never finished loading"
+    );
+    (emu, sink, heard)
+}
+
+/// What the device heard over a stretch of fast forward, in frames per present. The core is
+/// held and the ring let run dry either side, so nothing queued outside the stretch counts.
+fn heard_per_present(emu: &EmuHandle, sink: &StubSink, heard: &AtomicUsize) -> f64 {
+    let settle = || {
+        let (_, presents) = held_counts(emu);
+        assert!(
+            wait_for(|| sink.ring().queued_frames() == 0),
+            "the device never drained the ring"
+        );
+        // The drain empties the ring a moment before it adds up what it took.
+        std::thread::sleep(Duration::from_millis(20));
+        (presents, heard.load(Ordering::Relaxed))
+    };
+    let (presents, before) = settle();
+    emu.set_speed(Speed::Fast);
+    std::thread::sleep(Duration::from_millis(300));
+    let (presents_after, after) = settle();
+    (after - before) as f64 / (presents_after - presents) as f64
+}
+
+/// With its sound off, fast forward is what it always was: its audio never reaches the device,
+/// and the ring is muted over whatever was already queued.
+#[test]
+fn fast_forward_is_silent_while_its_sound_is_off() {
+    let (emu, sink, heard) = spawn_heard();
+    emu.set_ff_sound(false);
+    emu.set_speed(Speed::Fast);
+    assert!(wait_for(|| sink.muted()), "fast forward did not mute");
+    let per = heard_per_present(&emu, &sink, &heard);
+    assert_eq!(per, 0.0, "{per:.0} frames a present reached the device");
+}
+
+/// With its sound on, fast forward is heard, squeezed into real time by the resampler: a
+/// present's worth of audio comes out of every present's several frames of game, so it plays
+/// faster and higher and the device takes what it takes at normal speed, not several times it.
+#[test]
+fn fast_forward_sound_plays_sped_up_in_real_time() {
+    let (emu, sink, heard) = spawn_heard();
+    emu.set_ff_sound(true);
+    let real_time = 32_768.0 / 60.0;
+    for steps in [2, 4] {
+        emu.set_fast_steps(steps);
+        emu.set_speed(Speed::Fast);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!sink.muted(), "fast forward muted with its sound on");
+        let per = heard_per_present(&emu, &sink, &heard);
+        assert!(
+            (per / real_time - 1.0).abs() < 0.05,
+            "{per:.0} frames a present at {steps}x, against {real_time:.0} in real time"
+        );
+    }
 }
 
 /// The battery save has to reach the core after the rom is loaded, since before that

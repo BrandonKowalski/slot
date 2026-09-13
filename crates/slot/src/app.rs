@@ -928,6 +928,22 @@ impl App {
         }
     }
 
+    /// Whether the quick menu lets the motor move at all. `Session::sync_rumble` is what holds
+    /// it still when it does not.
+    pub fn rumble_enabled(&self) -> bool {
+        self.state.rumble
+    }
+
+    /// Core frames per present while fast forwarding, as the quick menu chose.
+    pub fn ff_speed(&self) -> u8 {
+        self.state.ff_speed
+    }
+
+    /// Whether fast forward is heard, sped up, rather than dropped.
+    pub fn ff_sound(&self) -> bool {
+        self.state.ff_sound
+    }
+
     /// Set by the doze timeout and by a graceful power off. The binary is what acts on it:
     /// everything durable has already been written by the time it is true.
     ///

@@ -6,6 +6,7 @@ use common::{session_with_platform, tmp_root_with_carts, tmp_root_with_real_cart
 use slot::app::Phase;
 use slot::session::Session;
 use slot_input::{Btn, Millis, RawEvent, MENU_HOLD_MS, POWER_HOLD_MS};
+use slot_store::{write_slot_state, SlotState};
 
 const FRAME_MS: Millis = 16;
 const DT: f32 = 1.0 / 60.0;
@@ -39,6 +40,35 @@ fn what_the_core_asks_for_reaches_the_motor() {
     assert_eq!(motor.last(), 0, "the motor outlived the cart");
     step(&mut s, &mut now);
     assert_eq!(motor.last(), 0, "the next frame turned it back on");
+}
+
+/// Rumble Off in the quick menu. The game still asks for the motor as far as the emulator
+/// knows, and the motor is never told.
+#[test]
+fn with_rumble_off_the_motor_stays_still_whatever_the_core_asks() {
+    let d = tmp_root_with_real_carts(&["Advance Wars", "Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            rumble: false,
+            ..SlotState::default()
+        },
+    )
+    .expect("write slot.state");
+    let (mut s, motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    let core = s.core_rumble().expect("a seated cart has a core");
+    core.set(0, STRONG, u16::MAX);
+    assert_eq!(
+        core.strength(),
+        u16::MAX,
+        "the core is not asking, so this test proves nothing"
+    );
+    for _ in 0..5 {
+        step(&mut s, &mut now);
+    }
+    assert_eq!(motor.last(), 0, "the motor moved with rumble off");
 }
 
 /// An unplugged cart leaving the motor on would run until the battery died.

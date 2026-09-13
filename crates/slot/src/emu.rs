@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -20,10 +20,12 @@ use crate::rewind::{RewindThread, REWIND_BYTES};
 /// 0.456% the GBA runs slow lands entirely on audio rate control.
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
-/// Core frames per present while fast forwarding. There is no ramp and no adaptive cap: the
-/// core is stepped this many times and the deadline below absorbs whatever that costs.
+/// The most core frames a present runs while fast forwarding, and the speed a card that never
+/// chose one gets. The quick menu picks 2, 3 or this, through `EmuHandle::set_fast_steps`. There
+/// is no ramp and no adaptive cap: the core is stepped the chosen number of times and the
+/// deadline below absorbs whatever that costs.
 ///
-/// Four, because an H700 cannot serve more. Eight was measured on hardware and pegged the
+/// Four at most, because an H700 cannot serve more. Eight was measured on hardware and pegged the
 /// worker at the same 100.5% of one core that four does — a thread already at 100% does the
 /// same work per second either way, so the extra steps bought no speed at all. What they cost
 /// was presents: the deadline sleep was never reached, so the picture fell from 60 Hz to
@@ -115,6 +117,11 @@ struct Shared {
     stop: AtomicBool,
     /// 0 to 100. Read by the worker every batch, so a change lands within one frame.
     volume: AtomicU8,
+    /// Core frames a fast forward present runs, 1 to `FAST_STEPS`. Read by the worker every
+    /// present, so a change lands on the next one.
+    fast_steps: AtomicU32,
+    /// Whether fast forward is heard, sped up, rather than dropped.
+    ff_sound: AtomicBool,
     /// Frames this core has published. Counted rather than peeked because `Frames::latest`
     /// consumes: anything that asks the buffer a question steals a frame from the renderer.
     published: AtomicU64,
@@ -167,6 +174,8 @@ impl EmuHandle {
             rewind_fill: AtomicU8::new(0),
             stop: AtomicBool::new(false),
             volume: AtomicU8::new(100),
+            fast_steps: AtomicU32::new(FAST_STEPS),
+            ff_sound: AtomicBool::new(false),
             published: AtomicU64::new(0),
             resume_refused: AtomicBool::new(false),
             sav_refused: AtomicBool::new(false),
@@ -284,6 +293,29 @@ impl EmuHandle {
 
     pub fn set_volume(&self, level: u8) {
         self.shared.volume.store(level.min(100), Ordering::Relaxed);
+    }
+
+    /// How many core frames a fast forward present runs: the quick menu's 2, 3 or 4. Never more
+    /// than `FAST_STEPS`, which is all an H700 can serve, and never none, which is a pause.
+    pub fn set_fast_steps(&self, steps: u32) {
+        self.shared
+            .fast_steps
+            .store(steps.clamp(1, FAST_STEPS), Ordering::Relaxed);
+    }
+
+    /// What the worker will step its next fast forward present by.
+    pub fn fast_steps(&self) -> u32 {
+        self.shared.fast_steps.load(Ordering::Relaxed)
+    }
+
+    /// Whether fast forward is heard, squeezed into real time by the resampler, rather than
+    /// dropped. Rewind is silent either way.
+    pub fn set_ff_sound(&self, on: bool) {
+        self.shared.ff_sound.store(on, Ordering::Relaxed);
+    }
+
+    pub fn ff_sound(&self) -> bool {
+        self.shared.ff_sound.load(Ordering::Relaxed)
     }
 
     pub fn set_rewinding(&self, on: bool) {
@@ -449,7 +481,8 @@ impl Worker {
             .store(CoreState::Ready as u8, Ordering::Release);
 
         let mut out = Vec::new();
-        let mut muted_at = Speed::Normal;
+        // What the ring was last told: muted, and idle. Neither, to begin with.
+        let mut gated = (false, false);
         let rewind = RewindThread::spawn(REWIND_BYTES);
         let mut since_snapshot = 0;
         let mut deadline = Instant::now();
@@ -543,24 +576,28 @@ impl Worker {
             // `Relaxed` here would leave that unordered, trading the scheduling race this exists
             // to close for a subtler visibility one.
             self.shared.observed.store(speed as u8, Ordering::Release);
-            if speed != muted_at {
-                // Fast forward produces audio nobody asked to hear, so it is gated. A pause
-                // produces none at all and `fill` pads a dry ring with silence, so there is
-                // nothing to gate: what is left simply runs out. Muting on a pause silenced
-                // the insert as well, which is mixed into this ring while the core is held
-                // still and does not come from the core at all.
-                ring.set_muted(speed == Speed::Fast);
-                // A held core feeds it nothing, so the device reading silence out of it is
-                // the arrangement working rather than a starve worth reporting.
-                ring.set_idle(speed == Speed::Paused);
-                muted_at = speed;
+            let ff_sound = self.shared.ff_sound.load(Ordering::Relaxed);
+            // Fast forward with its sound off produces audio nobody asked to hear, so it is
+            // gated; with it on, that audio is the point and the ring stays open. A pause
+            // produces none at all and `fill` pads a dry ring with silence, so there is
+            // nothing to gate: what is left simply runs out. Muting on a pause silenced the
+            // insert as well, which is mixed into this ring while the core is held still and
+            // does not come from the core at all.
+            //
+            // A held core feeds it nothing, so the device reading silence out of it is the
+            // arrangement working rather than a starve worth reporting.
+            let gate = (speed == Speed::Fast && !ff_sound, speed == Speed::Paused);
+            if gate != gated {
+                ring.set_muted(gate.0);
+                ring.set_idle(gate.1);
+                gated = gate;
             }
             let input = ButtonMask(self.shared.input.load(Ordering::Relaxed));
             let rewinding = speed != Speed::Paused && self.shared.rewind.load(Ordering::Relaxed);
             let steps = match speed {
                 Speed::Paused => 0,
                 Speed::Normal => 1,
-                Speed::Fast => FAST_STEPS,
+                Speed::Fast => self.shared.fast_steps.load(Ordering::Relaxed),
             };
             if rewinding {
                 if let Some(state) = rewind.pop() {
@@ -602,7 +639,8 @@ impl Worker {
 
                 // Counted per present rather than per frame, so a fast forward pays the
                 // same snapshot cost per present as normal play and simply records a
-                // coarser trail: eight frames apart at `FAST_STEPS` rather than two.
+                // coarser trail that follows the chosen speed: four frames apart at 2x and
+                // eight at 4x, rather than two.
                 //
                 // This used to sit inside the `Normal` arm below, which exists to gate the
                 // audio, and was swept in with it. The effect was a hole: nothing recorded
@@ -623,13 +661,14 @@ impl Worker {
                 }
 
                 let audio = core.take_audio();
-                // Fast forward drops the core's audio outright. Resampling accelerated
-                // playback down to real time would be pitch shifted noise nobody wants to
-                // hear.
-                if speed == Speed::Normal {
+                // Fast forward drops the core's audio unless its sound is on. On, the several
+                // frames of audio a fast present produced are squeezed into one present's
+                // worth by stepping through them that many times as fast: it comes out faster
+                // and higher, at the device's own pace rather than backing the ring up.
+                if speed == Speed::Normal || ff_sound {
                     let target = drc_target(ring.capacity_frames());
                     let queued = ring.queued_frames();
-                    resampler.set_ratio(drc_ratio(queued, target));
+                    resampler.set_ratio(drc_ratio(queued, target) / f64::from(steps));
                     resampler.process(&audio, &mut out);
                     crate::audio::volume::apply(
                         &mut out,
