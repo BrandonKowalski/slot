@@ -45,7 +45,11 @@ build() {
 	if ! command -v cmake >/dev/null 2>&1; then
 		if command -v apt-get >/dev/null 2>&1; then
 			# Bullseye is past its security support, so its Release files are no longer
-			# re-signed and apt refuses them as expired. Nothing here needs a security update.
+			# re-signed and apt refuses them as expired. bullseye-security also still lists
+			# packages it no longer serves (cmake's libarchive13 3.4.3-2+deb11u5 is a 404),
+			# so that suite is dropped and everything comes from the main archive. Nothing
+			# here needs a security update.
+			sed -i '/bullseye-security/d' /etc/apt/sources.list
 			apt-get -o Acquire::Check-Valid-Until=false update -qq
 			apt-get install -y -qq --no-install-recommends cmake >/dev/null
 		else
