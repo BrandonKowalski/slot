@@ -3,8 +3,7 @@ use slot_store::{
     civil_from_days, days_from_civil, days_in_month, parse_stamp, UTC_OFFSET_MAX, UTC_OFFSET_MIN,
 };
 
-use crate::plate::{blit, hint_width, UndoFace, HINT_EDGE, HINT_H};
-use crate::quick_menu::LEGEND_GAP;
+use crate::plate::{blit, centred_hints, hint_width, UndoFace, HINT_H, LEGEND_GAP};
 use crate::text;
 
 const DAY: i64 = 86_400;
@@ -316,7 +315,8 @@ impl ClockPicker {
         });
         let hint_y = y + PICKER_H as f32 + HINT_DROP;
         let hw = hint_width(SET_CLOCK_KEY, SET_CLOCK_LABEL);
-        let Some((back, bw)) = back else {
+        let (Some(back), Some(tex)) = (back, hint) else {
+            // The first boot's one key, alone in the middle exactly as it always has been.
             if let Some(tex) = hint {
                 out.push(Draw::Tex {
                     x: (OUT_W as f32 - hw as f32) / 2.0,
@@ -330,16 +330,10 @@ impl ClockPicker {
             return;
         };
         // B BACK first, as the quick menu's own legend has it, and the pair centred as one row
-        // by what shows of each.
-        let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
-        let x = ((OUT_W as f32 - (seen(bw) + LEGEND_GAP + seen(hw))) / 2.0).round();
-        let pair = [
-            Some((back, bw, x)),
-            hint.map(|tex| (tex, hw, (x + seen(bw) + LEGEND_GAP).round())),
-        ];
-        for (tex, w, at) in pair.into_iter().flatten() {
+        // the same way that legend is.
+        for (tex, w, x) in centred_hints(&[back, (tex, hw)], LEGEND_GAP) {
             out.push(Draw::Tex {
-                x: at,
+                x,
                 y: hint_y,
                 w: w as f32,
                 h: HINT_H as f32,

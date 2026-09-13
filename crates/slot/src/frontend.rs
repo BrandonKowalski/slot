@@ -92,6 +92,7 @@ struct AboutFace {
 #[derive(Default)]
 struct Clocks {
     line: Option<TexId>,
+    /// Uploaded once, at boot: it never changes what it says.
     hint: Option<TexId>,
     shelf: Option<TexId>,
     picked: Option<String>,
@@ -294,6 +295,10 @@ impl Frontend {
         self.session.app_mut().set_toast_faces(toasts);
         let legend = legend_faces(compositor, &LEGEND);
         self.session.app_mut().set_legend_faces(legend);
+        // The clock screen's one instruction, which never changes what it says. Uploaded here
+        // with the other key caps, so moving the caret rasterises only the line above it.
+        let hint = set_clock_hint_face();
+        self.clocks.hint = Some(compositor.create_texture(hint.w, hint.h, &hint.rgba));
         let shadow = cart_shadow();
         let id = compositor.create_texture(shadow.w, shadow.h, &shadow.rgba);
         self.session.app_mut().set_cart_shadow(id);
@@ -520,9 +525,11 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
     let picked = app.picker().map(|p| p.text());
     if picked != clocks.picked {
         clocks.picked = picked;
-        if let Some(face) = app.picker().map(|p| p.face()) {
+        // Only the line. The hint under it never changes what it says and was uploaded with the
+        // other key caps at boot: the screen can be opened at any time from the quick menu, and
+        // every press here is a rasterisation on the H700.
+        if let (Some(face), Some(hint)) = (app.picker().map(|p| p.face()), clocks.hint) {
             let line = upload(compositor, &mut clocks.line, face);
-            let hint = upload(compositor, &mut clocks.hint, set_clock_hint_face());
             app.set_clock_faces(line, hint);
         }
     }

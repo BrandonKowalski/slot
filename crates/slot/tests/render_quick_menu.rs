@@ -132,12 +132,13 @@ fn the_quick_menu_renders_full_screen() {
     }
 
     // Ruling S6: Date & Time opens the clock with B BACK beside its own key. Centred as a pair,
-    // the B cap starts well left of where the first boot's lone key would.
+    // B's cap runs from about x 225 to 244. The first boot's lone key is centred on its own and
+    // its cap starts near x 279, so only ink left of x 270 on this row can be B BACK.
     tap(&mut f, &mut input, Btn::Up);
     tap(&mut f, &mut input, Btn::A);
     let px = composed(&mut f, &mut c, "clock");
     assert!(
-        (215..280).any(|x| at(&px, x, 298) == [0xf6, 0xf4, 0xef]),
+        (200..270).any(|x| at(&px, x, 298) == [0xf6, 0xf4, 0xef]),
         "the clock from the menu does not offer B BACK"
     );
 }

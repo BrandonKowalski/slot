@@ -1,7 +1,7 @@
 //! The quick menu on the carousel: its rows, their faces, and where each lands on the panel.
 
 use crate::draw::{Draw, TexId, OUT_H, OUT_W};
-use crate::plate::{arrows_hint_face, hint_face, UndoFace, HINT_EDGE, HINT_H};
+use crate::plate::{arrows_hint_face, centred_hints, hint_face, UndoFace, HINT_H, LEGEND_GAP};
 use crate::power_menu::{MENU_H, MENU_INK, MENU_PAD, MENU_PX};
 use crate::slot_chrome::{edge, opening};
 use crate::text;
@@ -128,9 +128,6 @@ const CARET_PX: f32 = 24.0;
 /// The legend's key caps are centred 41 px off the bottom of the panel, where the mockup has
 /// them.
 const LEGEND_Y: f32 = 427.0;
-/// Between the end of one hint and the start of the next. The clock screen opened from the
-/// menu uses it too, so its pair reads like this legend.
-pub(crate) const LEGEND_GAP: f32 = 36.0;
 /// The value on every row but the one in hand.
 const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
 
@@ -295,18 +292,11 @@ impl QuickMenu<'_> {
             push(out, tex, vx, y, w, h);
             push(out, left_tex, vx + pad - CARET_GAP - lw as f32, y, lw, lh);
         }
-        // B BACK always, and beside it whatever the row in hand answers to. Centred by what
-        // shows of each hint, not by the transparent strip every hint face carries after its
-        // label.
+        // B BACK always, and beside it whatever the row in hand answers to.
         let [back, change, open] = faces.legend;
         let other = if self.row.opens() { open } else { change };
-        let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
-        let x = ((OUT_W as f32 - (seen(back.1) + LEGEND_GAP + seen(other.1))) / 2.0).round();
-        for (tex, w, at) in [
-            (back.0, back.1, x),
-            (other.0, other.1, x + seen(back.1) + LEGEND_GAP),
-        ] {
-            push(out, tex, at, LEGEND_Y, w, HINT_H);
+        for (tex, w, x) in centred_hints(&[back, other], LEGEND_GAP) {
+            push(out, tex, x, LEGEND_Y, w, HINT_H);
         }
     }
 }

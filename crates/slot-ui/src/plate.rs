@@ -1,4 +1,4 @@
-use crate::draw::{Draw, TexId};
+use crate::draw::{Draw, TexId, OUT_W};
 use crate::text;
 
 /// A hint is a key cap and what that key does, sized to what it says: four of them share the
@@ -156,6 +156,29 @@ pub fn hint_quad(x: f32, y: f32, w: f32, face: Option<TexId>) -> Draw {
             colour: [1.0, 1.0, 1.0, 0.12],
         },
     }
+}
+
+/// Between the end of one hint and the start of the next, in a legend laid out as one row: the
+/// quick menu's, and the clock screen's when it offers a way back.
+pub const LEGEND_GAP: f32 = 36.0;
+
+/// Where each of a row of hints goes so the row is centred on the panel as one legend. Measured
+/// by what shows of each hint, not by the transparent strip every hint face carries after its
+/// label, with `gap` between one hint and the next. Each face comes back with its width and the
+/// x it lands on, on a whole pixel.
+pub fn centred_hints(hints: &[(TexId, u32)], gap: f32) -> Vec<(TexId, u32, f32)> {
+    let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
+    let total = hints.iter().map(|&(_, w)| seen(w)).sum::<f32>()
+        + gap * hints.len().saturating_sub(1) as f32;
+    let mut x = ((OUT_W as f32 - total) / 2.0).round();
+    hints
+        .iter()
+        .map(|&(tex, w)| {
+            let at = x.round();
+            x += seen(w) + gap;
+            (tex, w, at)
+        })
+        .collect()
 }
 
 /// How wide the type alone comes out, which is what the hint is sized around. A label the
