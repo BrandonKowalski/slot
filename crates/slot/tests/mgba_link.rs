@@ -37,6 +37,30 @@ fn keys_rom() -> Vec<u8> {
     rom
 }
 
+/// `common::gba_rom` wired to the link port. At start it clears RCNT, which puts the port in
+/// serial mode rather than GPIO. Every vblank it writes SIOCNT for multiplayer mode and paints
+/// what SIOCNT reads back into the first pixel. mGBA fills in SIOCNT's multiplayer id from the
+/// cable on each write, so the picture says which player a GBA is on a cable, if it is on one
+/// at all.
+fn sio_rom() -> Vec<u8> {
+    let mut rom = common::gba_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(5, 0xea000008); // b     setup                  (was mov r3, #0)
+    set(9, 0xea000009); // b     poke                   (was add r3, r3, #1)
+    set(15, 0xe2805c01); // setup: add  r5, r0, #0x100
+    set(16, 0xe3a06000); //        mov  r6, #0
+    set(17, 0xe1c563b4); //        strh r6, [r5, #0x34]   RCNT = 0: serial, not GPIO
+    set(18, 0xe3a06a02); //        mov  r6, #0x2000       SIOCNT: multiplayer mode
+    set(19, 0xeafffff1); //        b    vb
+    set(20, 0xe1c562b8); // poke:  strh r6, [r5, #0x28]   write SIOCNT
+    set(21, 0xe1d532b8); //        ldrh r3, [r5, #0x28]   read it back
+    set(22, 0xeafffff2); //        b    strh r3, [r2]
+    rom
+}
+
 fn single_core(dylib: &Path) -> LibretroCore {
     LibretroCore::open(dylib).expect("vendored core is present but would not open")
 }
@@ -76,7 +100,7 @@ fn split_slk1(container: &[u8]) -> [Vec<u8>; 2] {
     let states = [take(), take()];
     assert!(
         rest.is_empty(),
-        "{} bytes after player 2's state",
+        "{} bytes after player 1's state",
         rest.len()
     );
     states
@@ -92,7 +116,7 @@ fn single_picture(dylib: &Path, rom: &Path, keys: u16, frames: usize) -> Vec<u8>
     core.video_xrgb8888().to_vec()
 }
 
-/// Player 1 holds A on port 0 and player 2 holds B on port 1. Each device must show its own
+/// Player 0 holds A on port 0 and player 1 holds B on port 1. Each device must show its own
 /// player's GBA, and that GBA must be holding its own player's buttons.
 #[test]
 fn link_mode_shows_the_local_players_gba_holding_its_own_port() {
@@ -206,7 +230,7 @@ fn a_link_state_of_two_single_gba_states_restores_each_player_where_they_were() 
 }
 
 /// Plan 2 restores what came over the network, so anything but a whole link state is refused, and
-/// refused before either GBA is touched.
+/// the core still takes its own link state afterwards.
 #[test]
 fn link_mode_refuses_anything_but_a_whole_link_state() {
     let _g = common::core_lock();
@@ -232,11 +256,11 @@ fn link_mode_refuses_anything_but_a_whole_link_state() {
         ("a one-GBA state", player_0.as_slice()),
         ("a different magic", wrong_magic.as_slice()),
         ("a length past the end", long_length.as_slice()),
-        ("bytes after player 2", trailing.as_slice()),
+        ("bytes after player 1", trailing.as_slice()),
         ("the magic alone", b"SLK1".as_slice()),
-        ("player 2 missing", &good[..8 + player_0.len()]),
+        ("player 1 missing", &good[..8 + player_0.len()]),
         ("two empty states", empty.as_slice()),
-        ("a player 2 state too short to be one", short.as_slice()),
+        ("a player 1 state too short to be one", short.as_slice()),
     ] {
         assert!(core.unserialize(bytes).is_err(), "link mode took {what}");
     }
@@ -244,9 +268,9 @@ fn link_mode_refuses_anything_but_a_whole_link_state() {
         .expect("link mode refused its own link state");
 }
 
-/// A restore the core refuses part way leaves both GBAs where they were. Player 1's state here
-/// is sound, but player 2's claims a savestate version from the future, which the core refuses
-/// only once it is already loading. Stopping there would leave player 1 restored and player 2
+/// A restore the core refuses part way leaves both GBAs where they were. Player 0's state here
+/// is sound, but player 1's claims a savestate version from the future, which the core refuses
+/// only once it is already loading. Stopping there would leave player 0 restored and player 1
 /// not, so both have to go back.
 #[test]
 fn a_link_state_the_core_refuses_leaves_both_gbas_where_they_were() {
@@ -296,7 +320,7 @@ fn a_link_state_the_core_refuses_leaves_both_gbas_where_they_were() {
     }
     assert!(
         core.video_xrgb8888() == want.as_slice(),
-        "a refused restore left player 1's GBA restored instead of where it was"
+        "a refused restore left player 0's GBA restored instead of where it was"
     );
 }
 
@@ -310,17 +334,17 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// Different buttons on each port, changing often, so a port read by the wrong GBA, or a frame
 /// late, would change the machines.
 fn script(frame: usize) -> (ButtonMask, ButtonMask) {
-    let p1 = if frame.is_multiple_of(3) {
+    let p0 = if frame.is_multiple_of(3) {
         ButtonMask::A
     } else {
         ButtonMask::RIGHT
     };
-    let p2 = if frame % 5 < 2 {
+    let p1 = if frame % 5 < 2 {
         ButtonMask::B | ButtonMask::L
     } else {
         0
     };
-    (ButtonMask(p1), ButtonMask(p2))
+    (ButtonMask(p0), ButtonMask(p1))
 }
 
 /// Each SP runs both GBAs and shows its own player's. The two SPs stay in lockstep only if both
@@ -352,8 +376,8 @@ fn both_players_devices_compute_the_same_machines() {
         core.unserialize(&container)
             .expect("link mode refused the link state");
         for frame in 0..600 {
-            let (p1, p2) = script(frame);
-            core.run_frame_linked(p1, p2);
+            let (p0, p1) = script(frame);
+            core.run_frame_linked(p0, p1);
         }
         hashes.push(fnv1a(&core.serialize().expect("no link state")));
     }
@@ -363,7 +387,7 @@ fn both_players_devices_compute_the_same_machines() {
     );
     assert_eq!(
         hashes[0], hashes[1],
-        "player 1's and player 2's devices computed different machines"
+        "player 0's and player 1's devices computed different machines"
     );
 }
 
@@ -427,6 +451,115 @@ fn mario_kart_super_circuit_is_the_same_race_on_both_devices() {
     }
     assert_eq!(
         hashes[0], hashes[1],
-        "player 1's and player 2's devices computed different races"
+        "player 0's and player 1's devices computed different races"
+    );
+}
+
+/// The Mario Kart walk, started the way every link session starts: both players' GBAs restored
+/// from a one-GBA state taken at the title screen (frame 1400), then linked from there. The two
+/// devices must still compute the same machines. The last pictures show how far the link got,
+/// and that is an open problem. Restored like this, the pair stalls at character select behind a
+/// "WAIT" box. The same walk from a reset, from the pair's own link state at 1400, or from
+/// one-GBA states taken at frame 600 races. The stall follows player 1's slot holding a one-GBA
+/// state. Found 2026-09-15; Plan 2 has to understand it before sessions start from restored states.
+/// `SLOT_MKSC_ROM=/path/to/mksc.gba cargo test --release -p slot --test mgba_link -- --ignored`.
+#[test]
+#[ignore]
+fn mario_kart_super_circuit_after_a_restore_is_the_same_on_both_devices() {
+    let _g = common::core_lock();
+    let dylib = common::vendored_core().expect("no vendored mGBA core: run `task core`");
+    let rom = PathBuf::from(
+        std::env::var_os("SLOT_MKSC_ROM")
+            .expect("set SLOT_MKSC_ROM to a Mario Kart: Super Circuit ROM"),
+    );
+
+    let mut single = single_core(&dylib);
+    single.load(&rom).expect("mGBA refused Mario Kart");
+    for frame in 1..=1400 {
+        single.run_frame(race_script(frame));
+    }
+    let title = single.serialize().expect("no state");
+    drop(single);
+    let container = slk1([&title, &title]);
+
+    let mut hashes = Vec::new();
+    for player in [0u8, 1] {
+        let mut core = link_core(&dylib, player);
+        core.load(&rom).expect("link mode refused Mario Kart");
+        core.unserialize(&container)
+            .expect("link mode refused the title-screen link state");
+        for frame in 1401..=25_000 {
+            let keys = race_script(frame);
+            core.run_frame_linked(keys, keys);
+        }
+        let picture = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("mksc-restored-player{player}.ppm"));
+        write_ppm(&picture, core.video_xrgb8888());
+        eprintln!("last picture: {}", picture.display());
+        hashes.push(fnv1a(&core.serialize().expect("no link state")));
+    }
+    assert_eq!(
+        hashes[0], hashes[1],
+        "player 0's and player 1's devices computed different machines after a restore"
+    );
+}
+
+/// Every link session starts by restoring two one-GBA states, so the cable has to be plugged in
+/// after a restore as well as after a fresh load. mGBA sets SIOCNT's multiplayer id from the cable
+/// each time the game writes it, so player 1's GBA paints something different from player 0's, and
+/// from a lone GBA's, only while a cable joins it to player 0's. The test asserts "different" rather
+/// than exact bits because mGBA ORs SIOCNT's old bits back in: a restored state keeps the slave bit
+/// it had while it ran alone.
+#[test]
+fn the_cable_is_plugged_in_after_a_load_and_after_a_restore() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-sio.gba", sio_rom());
+
+    let alone = single_picture(&dylib, &rom, 0, 30);
+
+    let pictures = |container: Option<&[u8]>| -> Vec<Vec<u8>> {
+        (0..2u8)
+            .map(|player| {
+                let mut core = link_core(&dylib, player);
+                core.load(&rom).expect("link mode refused the rom");
+                if let Some(container) = container {
+                    core.unserialize(container)
+                        .expect("link mode refused the link state");
+                }
+                for _ in 0..30 {
+                    core.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+                }
+                core.video_xrgb8888().to_vec()
+            })
+            .collect()
+    };
+
+    let loaded = pictures(None);
+    assert!(
+        loaded[1] != loaded[0],
+        "after a load, player 1's GBA read the same SIOCNT as player 0's: no cable"
+    );
+    assert!(
+        loaded[1] != alone,
+        "after a load, player 1's GBA read what a lone GBA reads: no cable"
+    );
+
+    let mut single = single_core(&dylib);
+    single.load(&rom).expect("load");
+    for _ in 0..30 {
+        single.run_frame(ButtonMask::default());
+    }
+    let state = single.serialize().expect("no state");
+    drop(single);
+
+    let restored = pictures(Some(&slk1([&state, &state])));
+    assert!(
+        restored[1] != restored[0],
+        "after a restore, player 1's GBA read the same SIOCNT as player 0's: no cable"
+    );
+    assert!(
+        restored[1] != alone,
+        "after a restore, player 1's GBA read what a lone GBA reads: no cable"
     );
 }
