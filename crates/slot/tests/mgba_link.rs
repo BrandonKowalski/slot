@@ -89,6 +89,29 @@ fn transfer_rom() -> Vec<u8> {
     rom
 }
 
+/// `keys_rom` that starts a long DMA before its first vblank, as Mario Kart: Super Circuit's boot
+/// does: 0x10000 32-bit words from the cartridge into EWRAM. A DMA holds the CPU until it is done,
+/// almost three frames here, so the GBA reaches its first frame ends with its CPU blocked. Branches
+/// are to `0xc0 + index * 4 + 8 + offset * 4`.
+fn dma_rom() -> Vec<u8> {
+    let mut rom = common::gba_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(5, 0xea000008); // 0x0d4:        b    setup (0x0fc)          (was mov r3, #0)
+    set(9, 0xe1d533b0); // 0x0e4:        ldrh r3, [r5, #0x30]   KEYINPUT (was add r3, r3, #1)
+    set(15, 0xe2805c01); // 0x0fc: setup: add  r5, r0, #0x100
+    set(16, 0xe3a06408); // 0x100:        mov  r6, #0x08000000
+    set(17, 0xe58060d4); // 0x104:        str  r6, [r0, #0xd4]   DMA3SAD: the cartridge
+    set(18, 0xe3a06402); // 0x108:        mov  r6, #0x02000000
+    set(19, 0xe58060d8); // 0x10c:        str  r6, [r0, #0xd8]   DMA3DAD: EWRAM
+    set(20, 0xe3a06484); // 0x110:        mov  r6, #0x84000000
+    set(21, 0xe58060dc); // 0x114:        str  r6, [r0, #0xdc]   DMA3CNT: 0x10000 words, 32-bit, now
+    set(22, 0xeaffffee); // 0x118:        b    vb (0x0d8)
+    rom
+}
+
 fn single_core(dylib: &Path) -> LibretroCore {
     LibretroCore::open(dylib).expect("vendored core is present but would not open")
 }
@@ -511,44 +534,128 @@ fn two_identical_gbas_read_the_same_buttons_on_the_same_frame() {
     );
 }
 
-/// The mirror of the test above, and a problem the frame-end sync does not reach, so it is
-/// ignored: it fails. When player 1's frames end before player 0's, player 1 finishes first. Then
-/// player 0 sleeps waiting on player 1, at the end of a transfer or at the cable's periodic hard
-/// sync, and the cable needs player 1 to reach that moment. So player 1 runs on past the end of
-/// its frame, still holding that frame's buttons, and reads them where it should read the next
-/// frame's. Player 1's GBA here starts from a state taken straight after a load, 41,888 cycles
-/// short of its first vblank, so its frames end 239,008 cycles before player 0's. Player 0's
-/// transfer ends 63,427 cycles into its frame, about 21,500 after player 1's frame ended. A reset
-/// boot of Mario Kart: Super Circuit runs its GBAs out of phase the same way. Found 2026-09-15: the
-/// pictures differ from frame 10, and on the same frames before the frame-end sync was added.
-/// Without transfers, the hard sync alone makes some reads late too. A session started from two
-/// states taken at a frame's end runs in phase, and never gets here. The first frame is left out:
-/// player 1's GBA has painted nothing by the end of it.
+/// Every way we know a linked pair can start, by name, with the rom it runs and the link state it
+/// restores, if any. Five starts of `transfer_rom`: a fresh load, and a restore of each pairing of
+/// a state taken at a frame end, 20 frames in, with a state taken straight after a load, which
+/// stands at VCOUNT 126, 41,000 cycles short of its first vblank. And a fresh load of `dma_rom`,
+/// whose GBAs are blocked by a DMA at their first frame ends.
+fn every_start(dylib: &Path) -> Vec<(&'static str, PathBuf, Option<Vec<u8>>)> {
+    let transfers = rom("mgba-link-starts.gba", transfer_rom());
+    let blocked = rom("mgba-link-starts-dma.gba", dma_rom());
+    let end = single_state(dylib, &transfers, 20);
+    let reset = single_state(dylib, &transfers, 0);
+    vec![
+        ("a fresh load", transfers.clone(), None),
+        ("[end, end]", transfers.clone(), Some(slk1([&end, &end]))),
+        (
+            "[end, reset]",
+            transfers.clone(),
+            Some(slk1([&end, &reset])),
+        ),
+        (
+            "[reset, end]",
+            transfers.clone(),
+            Some(slk1([&reset, &end])),
+        ),
+        ("[reset, reset]", transfers, Some(slk1([&reset, &reset]))),
+        ("a fresh load blocked by a DMA", blocked, None),
+    ]
+}
+
+/// When a GBA's next frame ends on the cable's shared clock, read from its half of a link state.
+/// The core state gives the GBA's own clock, masterCycles at 0x0c plus the CPU's cycles at 0x68,
+/// and how far its video is from the next vblank: the video event's countdown at 0x1f4, VCOUNT at
+/// 0x406, and DISPSTAT's hblank bit at 0x404, which says whether that countdown ends a line's
+/// hdraw or its hblank. The lockstep driver's cycleOffset turns the GBA's clock into the shared
+/// one. mGBA appends the driver's state as extdata after the 0x61000-byte core state: headers of
+/// {u32 tag, i32 size, i64 offset} ending at tag 0, where tag 0x41 is a u32 driver id followed by
+/// the driver's state, with cycleOffset 0x34 into it. The arithmetic wraps, as mGBA's clocks do.
+fn next_frame_end(gba: &[u8]) -> u32 {
+    let u32_at = |at: usize| u32::from_le_bytes(gba[at..at + 4].try_into().unwrap());
+    let u16_at = |at: usize| u16::from_le_bytes(gba[at..at + 2].try_into().unwrap());
+    let mut header = 0x61000;
+    let driver = loop {
+        let tag = u32_at(header);
+        assert_ne!(tag, 0, "a GBA in a link state has no lockstep driver state");
+        if tag == 0x41 {
+            break u32_at(header + 8) as usize + 4;
+        }
+        header += 16;
+    };
+    let clock = u32_at(0x0c)
+        .wrapping_add(u32_at(0x68))
+        .wrapping_sub(u32_at(driver + 0x34));
+    let lines = (159 + 228 - u32::from(u16_at(0x406))) % 228;
+    let hblank = if u16_at(0x404) & 2 == 0 { 224 } else { 0 };
+    clock
+        .wrapping_add(u32_at(0x1f4))
+        .wrapping_add(hblank + lines * 1232)
+}
+
+/// Two GBAs given the same buttons have to read each change on the same frame however a session
+/// starts, or two games that wait on each other's input start a frame apart. A link state may pair
+/// any two GBA states, so the cable goes in only once both GBAs stand at a frame end. Before it
+/// waited for that, [end, reset] ended player 1's frames about 240,000 cycles before player 0's:
+/// while player 0 slept waiting on player 1, at a transfer or a hard sync, player 1 ran on into
+/// its next frame still holding the old buttons. And a GBA that reached the frame end where the
+/// cable syncs with its CPU blocked by a DMA, as Mario Kart: Super Circuit's does at boot, ran on
+/// through that sync to its next vblank, which left player 1 a whole frame behind for the rest of
+/// the session. Every frame is compared, the first too: a GBA restored mid-frame has finished
+/// that frame before the cable goes in.
 #[test]
-#[ignore]
-fn player_1_reads_the_same_buttons_on_the_same_frame_while_player_0_waits_on_it() {
+fn every_start_gives_both_gbas_the_same_buttons_on_the_same_frame() {
     let _g = common::core_lock();
     let Some(dylib) = vendored() else { return };
-    let rom = rom("mgba-link-transfers.gba", transfer_rom());
 
-    let frame_end = single_state(&dylib, &rom, 20);
-    let loaded = single_state(&dylib, &rom, 0);
-    let pictures = linked_pictures(
-        &dylib,
-        &rom,
-        Some(&slk1([&frame_end, &loaded])),
-        120,
-        shared_script,
-    );
-    let differing: Vec<usize> = differing_frames(&pictures)
-        .into_iter()
-        .filter(|&frame| frame > 0)
-        .collect();
+    let mut late = Vec::new();
+    for (what, rom, container) in every_start(&dylib) {
+        let pictures = linked_pictures(&dylib, &rom, container.as_deref(), 120, shared_script);
+        let differing = differing_frames(&pictures);
+        if !differing.is_empty() {
+            late.push(format!("{what}: frames {differing:?}"));
+        }
+    }
     assert!(
-        differing.is_empty(),
-        "player 1's GBA read the buttons on a different frame from player 0's, first on frame {:?} \
-         (all: {differing:?})",
-        differing.first()
+        late.is_empty(),
+        "two GBAs given the same buttons painted different buttons: {late:#?}"
+    );
+}
+
+/// The pictures cannot catch every wrong start. A pair whose player 1 ends each frame after player
+/// 0's reads its buttons on time, but [reset, end] ran at under a third of the speed of the other
+/// starts. So each start also has to leave the two GBAs' frames ending together, read off the link
+/// state after 120 frames: each GBA's next frame end on the cable's shared clock has to be within
+/// a scanline of the other's. Two GBAs whose frames end together can stand a few cycles apart,
+/// since each frame ends on whichever instruction or event crosses its vblank; out of phase they
+/// stood about 240,000 cycles apart, and a GBA a frame behind stands 280,896 cycles behind.
+#[test]
+fn every_start_joins_the_two_gbas_with_their_frames_ending_together() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+
+    let mut apart = Vec::new();
+    for (what, rom, container) in every_start(&dylib) {
+        let mut core = link_core(&dylib, 0);
+        core.load(&rom).expect("link mode refused the rom");
+        if let Some(container) = &container {
+            core.unserialize(container)
+                .expect("link mode refused the link state");
+        }
+        for frame in 0..120 {
+            let keys = shared_script(frame);
+            core.run_frame_linked(keys, keys);
+        }
+        let [player_0, player_1] = split_slk1(&core.serialize().expect("no link state"));
+        let gap = next_frame_end(&player_1).wrapping_sub(next_frame_end(&player_0)) as i32;
+        if gap.unsigned_abs() >= 1232 {
+            apart.push(format!(
+                "{what}: player 1's next frame ends {gap} cycles after player 0's"
+            ));
+        }
+    }
+    assert!(
+        apart.is_empty(),
+        "the two GBAs' frames do not end together: {apart:#?}"
     );
 }
 
@@ -577,8 +684,8 @@ fn write_ppm(path: &Path, xrgb: &[u8]) {
 }
 
 /// Needs a Mario Kart: Super Circuit ROM, which is not in the tree. With `SLOT_MKSC_ROM` set to
-/// it, `cargo test --release -p slot --test mgba_link mario_kart -- --ignored` runs both Mario
-/// Kart tests and leaves out the ignored test that fails on purpose.
+/// it, `cargo test --release -p slot --test mgba_link mario_kart -- --ignored` runs the Mario Kart
+/// tests.
 /// 25,000 frames covers the menus, the link handshake and minutes of racing. Each device's last
 /// picture lands in the test's temp directory as a PPM.
 #[test]
@@ -619,14 +726,14 @@ fn mario_kart_super_circuit_is_the_same_race_on_both_devices() {
 
 /// The Mario Kart walk, started the way every link session starts: both players' GBAs restored
 /// from a one-GBA state taken at the title screen (frame 1400), then linked from there. It has to
-/// race exactly as a reset boot does. At frame 25,000, player 0's device shows the very picture
-/// a reset boot's shows, mid-race, and both devices compute the same machines. Before the cable
-/// synced at player 0's frame end, player 0 read the lobby's A press a frame late here, and the
-/// pair stalled at character select behind a "WAIT" box. Only player 0's picture is compared. A
-/// reset boot ends player 1's frames 204,248 cycles before player 0's, while a restore of two
-/// frame-end states ends them together, so player 1 draws what it has been sent at a different
-/// moment. And a one-GBA state's clock is not a linked boot's, so neither GBA's state can match
-/// the boot's byte for byte. It needs the ROM too, and runs the way the test above says.
+/// race exactly as a reset boot does. At frame 25,000, each device shows the very picture a reset
+/// boot's shows, mid-race, and both devices compute the same machines. Before the cable synced at
+/// player 0's frame end, player 0 read the lobby's A press a frame late here, and the pair stalled
+/// at character select behind a "WAIT" box. Player 1's picture only matches since a reset boot
+/// stopped leaving player 1 a frame behind: its boot reaches its first frame end inside a DMA,
+/// and the cable's sync there used to carry player 0 through a second frame. The states are not
+/// compared: a one-GBA state's clock is not a linked boot's, so neither GBA's state can match the
+/// boot's byte for byte. It needs the ROM too, and runs the way the test above says.
 #[test]
 #[ignore]
 fn mario_kart_super_circuit_races_linked_after_a_restore() {
@@ -637,14 +744,18 @@ fn mario_kart_super_circuit_races_linked_after_a_restore() {
             .expect("set SLOT_MKSC_ROM to a Mario Kart: Super Circuit ROM"),
     );
 
-    let mut boot = link_core(&dylib, 0);
-    boot.load(&rom).expect("link mode refused Mario Kart");
-    for frame in 1..=25_000 {
-        let keys = race_script(frame);
-        boot.run_frame_linked(keys, keys);
-    }
-    let raced = boot.video_xrgb8888().to_vec();
-    drop(boot);
+    let raced: Vec<Vec<u8>> = [0u8, 1]
+        .into_iter()
+        .map(|player| {
+            let mut boot = link_core(&dylib, player);
+            boot.load(&rom).expect("link mode refused Mario Kart");
+            for frame in 1..=25_000 {
+                let keys = race_script(frame);
+                boot.run_frame_linked(keys, keys);
+            }
+            boot.video_xrgb8888().to_vec()
+        })
+        .collect();
 
     let mut single = single_core(&dylib);
     single.load(&rom).expect("mGBA refused Mario Kart");
@@ -683,11 +794,13 @@ fn mario_kart_super_circuit_races_linked_after_a_restore() {
         hashes[0], hashes[1],
         "player 0's and player 1's devices computed different machines after a restore"
     );
-    assert!(
-        pictures[0] == raced,
-        "restored at the title screen, player 0's device is not showing the race a reset boot \
-         shows at frame 25,000"
-    );
+    for (player, (restored, booted)) in pictures.iter().zip(&raced).enumerate() {
+        assert!(
+            restored == booted,
+            "restored at the title screen, player {player}'s device is not showing the race a \
+             reset boot shows at frame 25,000"
+        );
+    }
 }
 
 /// Every link session starts by restoring two one-GBA states, so the cable has to be plugged in
