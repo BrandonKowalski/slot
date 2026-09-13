@@ -45,7 +45,7 @@ index f714cf8..3759ede 100644
  	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
  	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..c6b9a6a 100644
+index d4de13f..2f512da 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,11 @@
@@ -558,6 +558,117 @@ index d4de13f..c6b9a6a 100644
  	mCoreConfigDeinit(&core->config);
  	core->deinit(core);
  	mappedMemoryFree(data, dataSize);
+@@ -2132,12 +2437,86 @@ void retro_unload_game(void) {
+ 	savedata = 0;
+ }
+ 
++#ifdef M_CORE_GBA
++/* The link state: "SLK1", then for each player a little-endian u32 length and that GBA's state,
++ * player 0 first. Each state is the core's usual one without SAVESTATE_RTC, so link mode's fixed
++ * clock never follows a player's own GBA out of the session. */
++static struct VFile* _linkSaveState(void) {
++	struct VFile* out = VFileMemChunk(NULL, 0);
++	out->write(out, "SLK1", 4);
++	int i;
++	for (i = 0; i < 2; ++i) {
++		struct VFile* state = VFileMemChunk(NULL, 0);
++		mCoreSaveStateNamed(linkGba[i].core, state, SAVESTATE_SAVEDATA);
++		size_t size = state->size(state);
++		uint8_t length[4];
++		STORE_32LE((uint32_t) size, 0, length);
++		out->write(out, length, sizeof(length));
++		void* bytes = state->map(state, size, MAP_READ);
++		out->write(out, bytes, size);
++		state->unmap(state, bytes, size);
++		state->close(state);
++	}
++	return out;
++}
++
++/* Takes a link state apart, then pulls the cable, restores each GBA with its cartridge save and
++ * plugs a fresh cable in, so what follows depends only on these bytes. The states need not come
++ * from link mode: two ordinary one-GBA states are how a session starts. Nothing is touched unless
++ * the whole container is sound. */
++static bool _linkLoadState(const void* state, size_t size) {
++	const uint8_t* bytes = state;
++	const uint8_t* parts[2];
++	uint32_t lengths[2];
++	size_t offset = 4;
++	if (size < 4 || memcmp(bytes, "SLK1", 4) != 0) {
++		return false;
++	}
++	int i;
++	for (i = 0; i < 2; ++i) {
++		if (size - offset < 4) {
++			return false;
++		}
++		LOAD_32LE(lengths[i], offset, bytes);
++		offset += 4;
++		if (size - offset < lengths[i]) {
++			return false;
++		}
++		parts[i] = &bytes[offset];
++		offset += lengths[i];
++	}
++	if (offset != size) {
++		return false;
++	}
++
++	_linkUnplug();
++	bool success = true;
++	for (i = 0; i < 2; ++i) {
++		struct VFile* vf = VFileFromConstMemory(parts[i], lengths[i]);
++		success = mCoreLoadStateNamed(linkGba[i].core, vf, SAVESTATE_SAVEDATA) && success;
++		vf->close(vf);
++	}
++	_linkPlugIn();
++	return success;
++}
++#endif
++
++static struct VFile* _saveState(void) {
++#ifdef M_CORE_GBA
++	if (linkMode) {
++		return _linkSaveState();
++	}
++#endif
++	struct VFile* vfm = VFileMemChunk(NULL, 0);
++	mCoreSaveStateNamed(core, vfm, SAVESTATE_SAVEDATA | SAVESTATE_RTC);
++	return vfm;
++}
++
+ size_t retro_serialize_size(void) {
+ 	if (deferredSetup) {
+ 		_doDeferredSetup();
+ 	}
+-	struct VFile* vfm = VFileMemChunk(NULL, 0);
+-	mCoreSaveStateNamed(core, vfm, SAVESTATE_SAVEDATA | SAVESTATE_RTC);
++	struct VFile* vfm = _saveState();
+ 	size_t size = vfm->size(vfm);
+ 	vfm->close(vfm);
+ 	return size;
+@@ -2147,8 +2526,7 @@ bool retro_serialize(void* data, size_t size) {
+ 	if (deferredSetup) {
+ 		_doDeferredSetup();
+ 	}
+-	struct VFile* vfm = VFileMemChunk(NULL, 0);
+-	mCoreSaveStateNamed(core, vfm, SAVESTATE_SAVEDATA | SAVESTATE_RTC);
++	struct VFile* vfm = _saveState();
+ 	if ((ssize_t) size > vfm->size(vfm)) {
+ 		size = vfm->size(vfm);
+ 	} else if ((ssize_t) size < vfm->size(vfm)) {
+@@ -2165,6 +2543,11 @@ bool retro_unserialize(const void* data, size_t size) {
+ 	if (deferredSetup) {
+ 		_doDeferredSetup();
+ 	}
++#ifdef M_CORE_GBA
++	if (linkMode) {
++		return _linkLoadState(data, size);
++	}
++#endif
+ 	struct VFile* vfm = VFileFromConstMemory(data, size);
+ 	bool success = mCoreLoadStateNamed(core, vfm, SAVESTATE_RTC);
+ 	vfm->close(vfm);
 diff --git a/src/platform/libretro/libretro_core_options.h b/src/platform/libretro/libretro_core_options.h
 index 9bd553b..12eba69 100644
 --- a/src/platform/libretro/libretro_core_options.h
