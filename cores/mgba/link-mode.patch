@@ -12,8 +12,40 @@ index 9d528e7..afbff7b 100644
  	list(FILTER LIBRETRO_CORE_SRC EXCLUDE REGEX "/core/(scripting|library|mem-search|rewind|input)\\.c$")
  	list(FILTER LIBRETRO_CORE_SRC EXCLUDE REGEX "/util/(audio-resampler|interpolator)\\.c$")
  	if(CMAKE_TRY_COMPILE_TARGET_TYPE STREQUAL "STATIC_LIBRARY" AND NOT APPLE)
+diff --git a/include/mgba/internal/gba/cart/gpio.h b/include/mgba/internal/gba/cart/gpio.h
+index 1f870cf..9b52892 100644
+--- a/include/mgba/internal/gba/cart/gpio.h
++++ b/include/mgba/internal/gba/cart/gpio.h
+@@ -59,6 +59,10 @@ struct GBARTC {
+ 	uint8_t time[7];
+ 	time_t lastLatch;
+ 	time_t offset;
++	/* slot's link mode: read the RTC source's time as UTC rather than the device's local time, so
++	 * two devices in different timezones give a game the same date. Never saved in a state: link
++	 * mode sets it each time it plugs the cable in. */
++	bool utc;
+ };
+ 
+ DECL_BITFIELD(GPIOPin, uint16_t);
+diff --git a/src/gba/cart/gpio.c b/src/gba/cart/gpio.c
+index f714cf8..3759ede 100644
+--- a/src/gba/cart/gpio.c
++++ b/src/gba/cart/gpio.c
+@@ -312,7 +312,11 @@ void _rtcUpdateClock(struct GBACartridgeHardware* hw) {
+ 	t -= hw->rtc.offset;
+ 
+ 	struct tm date;
+-	localtime_r(&t, &date);
++	if (hw->rtc.utc) {
++		gmtime_r(&t, &date);
++	} else {
++		localtime_r(&t, &date);
++	}
+ 	hw->rtc.time[0] = _rtcBCD(date.tm_year - 100);
+ 	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
+ 	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..80cd69b 100644
+index d4de13f..c6b9a6a 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,11 @@
@@ -103,7 +135,7 @@ index d4de13f..80cd69b 100644
  	deferredSetup = false;
  }
  
-@@ -1534,6 +1583,262 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
+@@ -1534,6 +1583,263 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
  	return buttons;
  }
  
@@ -178,8 +210,8 @@ index d4de13f..80cd69b 100644
 +/* Plugs a fresh coordinator and cable into both GBAs, in the order mGBA's own
 + * MultiplayerController uses: attach, then set the peripheral, whose reset registers the
 + * player. Player 0 goes first, so the ids handed out match the players. Both clocks stop
-+ * following the device too: each SP runs both GBAs, and a wall clock would tell the copies
-+ * apart. */
++ * following the device too: a fixed epoch plus emulated time, read as UTC, since each SP runs
++ * both GBAs and a wall clock or a timezone would tell the copies apart. */
 +static void _linkPlugIn(void) {
 +	GBASIOLockstepCoordinatorInit(&linkCoordinator);
 +	int i;
@@ -193,6 +225,7 @@ index d4de13f..80cd69b 100644
 +		player->d.playerIdChanged = _linkPlayerIdChanged;
 +		player->core->rtc.override = RTC_FAKE_EPOCH;
 +		player->core->rtc.value = LINK_RTC_EPOCH_MS;
++		((struct GBA*) player->core->board)->memory.hw.rtc.utc = true;
 +		GBASIOLockstepDriverCreate(&player->driver, &player->d);
 +		GBASIOLockstepCoordinatorAttach(&linkCoordinator, &player->driver);
 +		player->core->setPeripheral(player->core, mPERIPH_GBA_LINK_PORT, &player->driver.d);
@@ -366,7 +399,7 @@ index d4de13f..80cd69b 100644
  void retro_run(void) {
  	if (deferredSetup) {
  		_doDeferredSetup();
-@@ -1543,6 +1848,15 @@ void retro_run(void) {
+@@ -1543,6 +1849,15 @@ void retro_run(void) {
  
  	inputPollCallback();
  
@@ -382,7 +415,7 @@ index d4de13f..80cd69b 100644
  	bool updated = false;
  	if (environCallback(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
  		envVarsUpdated = true;
-@@ -1670,8 +1984,6 @@ void retro_run(void) {
+@@ -1670,8 +1985,6 @@ void retro_run(void) {
     }
  
  	core->runFrame(core);
@@ -391,7 +424,7 @@ index d4de13f..80cd69b 100644
  
  	/* If using 'Fixed Interval' frameskipping, check
  	 * whether a frame is currently available  */
-@@ -1692,49 +2004,7 @@ void retro_run(void) {
+@@ -1692,49 +2005,7 @@ void retro_run(void) {
  		}
  	}
  
@@ -442,7 +475,7 @@ index d4de13f..80cd69b 100644
  }
  
  static void _setupMaps(struct mCore* core) {
-@@ -1931,9 +2201,20 @@ static void _setupMaps(struct mCore* core) {
+@@ -1931,9 +2202,20 @@ static void _setupMaps(struct mCore* core) {
  }
  
  void retro_reset(void) {
@@ -463,7 +496,7 @@ index d4de13f..80cd69b 100644
  }
  
  #ifdef GEKKO
-@@ -1977,6 +2258,7 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -1977,6 +2259,7 @@ bool retro_load_game(const struct retro_game_info* game) {
  	if (!game) {
  		return false;
  	}
@@ -471,7 +504,7 @@ index d4de13f..80cd69b 100644
  
  	if (game->data) {
  		data = anonymousMemoryMap(game->size);
-@@ -2048,7 +2330,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2048,7 +2331,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  	core->setAVStream(core, &stream);
  	core->setPeripheral(core, mPERIPH_RUMBLE, &rumble);
@@ -482,7 +515,7 @@ index d4de13f..80cd69b 100644
  
  	savedata = anonymousMemoryMap(GBA_SIZE_FLASH1M);
  	memset(savedata, 0xFF, GBA_SIZE_FLASH1M);
-@@ -2064,7 +2348,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2064,7 +2349,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  #ifdef M_CORE_GBA
  	if (core->platform(core) == mPLATFORM_GBA) {
@@ -493,7 +526,7 @@ index d4de13f..80cd69b 100644
  		biosName = "gba_bios.bin";
  
  	}
-@@ -2117,6 +2403,19 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2117,6 +2404,19 @@ bool retro_load_game(const struct retro_game_info* game) {
  	}
  #endif
  
@@ -513,7 +546,7 @@ index d4de13f..80cd69b 100644
  	return true;
  }
  
-@@ -2124,6 +2423,11 @@ void retro_unload_game(void) {
+@@ -2124,6 +2424,11 @@ void retro_unload_game(void) {
  	if (!core) {
  		return;
  	}
