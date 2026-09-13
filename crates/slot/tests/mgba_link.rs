@@ -7,7 +7,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use slot_retro::{ButtonMask, LibretroCore, RetroCore};
+use slot_retro::{ButtonMask, LibretroCore, RetroCore, GBA_H, GBA_W};
 
 fn vendored() -> Option<PathBuf> {
     let dylib = common::vendored_core();
@@ -297,5 +297,136 @@ fn a_link_state_the_core_refuses_leaves_both_gbas_where_they_were() {
     assert!(
         core.video_xrgb8888() == want.as_slice(),
         "a refused restore left player 1's GBA restored instead of where it was"
+    );
+}
+
+/// FNV-1a 64: the hash the lockstep's checksums will use.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// Different buttons on each port, changing often, so a port read by the wrong GBA, or a frame
+/// late, would change the machines.
+fn script(frame: usize) -> (ButtonMask, ButtonMask) {
+    let p1 = if frame.is_multiple_of(3) {
+        ButtonMask::A
+    } else {
+        ButtonMask::RIGHT
+    };
+    let p2 = if frame % 5 < 2 {
+        ButtonMask::B | ButtonMask::L
+    } else {
+        0
+    };
+    (ButtonMask(p1), ButtonMask(p2))
+}
+
+/// Each SP runs both GBAs and shows its own player's. The two SPs stay in lockstep only if both
+/// compute the same pair of machines whichever player they show. So after the same start and
+/// the same buttons, the link state must hash the same for `mgba_link_player` 0 and 1, and the
+/// same again on a second run.
+#[test]
+fn both_players_devices_compute_the_same_machines() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-lockstep.gba", keys_rom());
+
+    let mut single = single_core(&dylib);
+    single.load(&rom).expect("load");
+    let mut starts = Vec::new();
+    for frames in [20, 45] {
+        for _ in 0..frames {
+            single.run_frame(ButtonMask::default());
+        }
+        starts.push(single.serialize().expect("no state"));
+    }
+    drop(single);
+    let container = slk1([&starts[0], &starts[1]]);
+
+    let mut hashes = Vec::new();
+    for player in [0u8, 1, 0] {
+        let mut core = link_core(&dylib, player);
+        core.load(&rom).expect("link mode refused the rom");
+        core.unserialize(&container)
+            .expect("link mode refused the link state");
+        for frame in 0..600 {
+            let (p1, p2) = script(frame);
+            core.run_frame_linked(p1, p2);
+        }
+        hashes.push(fnv1a(&core.serialize().expect("no link state")));
+    }
+    assert_eq!(
+        hashes[0], hashes[2],
+        "the same device computed two different machines"
+    );
+    assert_eq!(
+        hashes[0], hashes[1],
+        "player 1's and player 2's devices computed different machines"
+    );
+}
+
+/// Mario Kart: Super Circuit's scripted walk from the title screen into a linked two-player race.
+/// It is DOWN and A at the title, then A for 3 frames every 30 from frame 4300, which carries both
+/// players through the menus into the race. The spike that proved link mode on the SP ran exactly
+/// this script.
+fn race_script(frame: usize) -> ButtonMask {
+    let mut keys = 0;
+    if (1500..=1506).contains(&frame) {
+        keys |= ButtonMask::DOWN;
+    }
+    if (1560..=1566).contains(&frame) || (frame >= 4300 && (frame - 4300) % 30 <= 3) {
+        keys |= ButtonMask::A;
+    }
+    ButtonMask(keys)
+}
+
+/// A picture a person can open, to see where the scripted walk got to.
+fn write_ppm(path: &Path, xrgb: &[u8]) {
+    let mut out = format!("P6\n{GBA_W} {GBA_H}\n255\n").into_bytes();
+    for pixel in xrgb.chunks(4) {
+        out.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+    }
+    std::fs::write(path, out).expect("write picture");
+}
+
+/// Needs a Mario Kart: Super Circuit ROM, which is not in the tree:
+/// `SLOT_MKSC_ROM=/path/to/mksc.gba cargo test --release -p slot --test mgba_link -- --ignored`.
+/// 25,000 frames covers the menus, the link handshake and minutes of racing. Each device's last
+/// picture lands in the test's temp directory as a PPM.
+#[test]
+#[ignore]
+fn mario_kart_super_circuit_is_the_same_race_on_both_devices() {
+    let _g = common::core_lock();
+    let dylib = common::vendored_core().expect("no vendored mGBA core: run `task core`");
+    let rom = PathBuf::from(
+        std::env::var_os("SLOT_MKSC_ROM")
+            .expect("set SLOT_MKSC_ROM to a Mario Kart: Super Circuit ROM"),
+    );
+
+    let mut hashes = Vec::new();
+    for player in [0u8, 1] {
+        let mut core = link_core(&dylib, player);
+        core.load(&rom).expect("link mode refused Mario Kart");
+        let started = std::time::Instant::now();
+        for frame in 1..=25_000 {
+            let keys = race_script(frame);
+            core.run_frame_linked(keys, keys);
+        }
+        let secs = started.elapsed().as_secs_f64();
+        eprintln!(
+            "mgba_link_player={player}: 25000 frame pairs in {secs:.1} s, {:.0} pairs/s",
+            25_000.0 / secs
+        );
+        let picture =
+            Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("mksc-player{player}.ppm"));
+        write_ppm(&picture, core.video_xrgb8888());
+        eprintln!("last picture: {}", picture.display());
+        hashes.push(fnv1a(&core.serialize().expect("no link state")));
+    }
+    assert_eq!(
+        hashes[0], hashes[1],
+        "player 1's and player 2's devices computed different races"
     );
 }
