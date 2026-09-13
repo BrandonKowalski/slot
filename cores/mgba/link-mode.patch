@@ -45,7 +45,7 @@ index f714cf8..3759ede 100644
  	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
  	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..2f512da 100644
+index d4de13f..18cc881 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,11 @@
@@ -558,21 +558,27 @@ index d4de13f..2f512da 100644
  	mCoreConfigDeinit(&core->config);
  	core->deinit(core);
  	mappedMemoryFree(data, dataSize);
-@@ -2132,12 +2437,86 @@ void retro_unload_game(void) {
+@@ -2132,12 +2437,112 @@ void retro_unload_game(void) {
  	savedata = 0;
  }
  
 +#ifdef M_CORE_GBA
++/* One GBA's state, the core's usual one without SAVESTATE_RTC. */
++static struct VFile* _linkSaveGBA(int player) {
++	struct VFile* state = VFileMemChunk(NULL, 0);
++	mCoreSaveStateNamed(linkGba[player].core, state, SAVESTATE_SAVEDATA);
++	return state;
++}
++
 +/* The link state: "SLK1", then for each player a little-endian u32 length and that GBA's state,
-+ * player 0 first. Each state is the core's usual one without SAVESTATE_RTC, so link mode's fixed
-+ * clock never follows a player's own GBA out of the session. */
++ * player 0 first. Each state leaves out SAVESTATE_RTC, so link mode's fixed clock never follows a
++ * player's own GBA out of the session. */
 +static struct VFile* _linkSaveState(void) {
 +	struct VFile* out = VFileMemChunk(NULL, 0);
 +	out->write(out, "SLK1", 4);
 +	int i;
 +	for (i = 0; i < 2; ++i) {
-+		struct VFile* state = VFileMemChunk(NULL, 0);
-+		mCoreSaveStateNamed(linkGba[i].core, state, SAVESTATE_SAVEDATA);
++		struct VFile* state = _linkSaveGBA(i);
 +		size_t size = state->size(state);
 +		uint8_t length[4];
 +		STORE_32LE((uint32_t) size, 0, length);
@@ -587,8 +593,12 @@ index d4de13f..2f512da 100644
 +
 +/* Takes a link state apart, then pulls the cable, restores each GBA with its cartridge save and
 + * plugs a fresh cable in, so what follows depends only on these bytes. The states need not come
-+ * from link mode: two ordinary one-GBA states are how a session starts. Nothing is touched unless
-+ * the whole container is sound. */
++ * from link mode: two ordinary one-GBA states are how a session starts.
++ *
++ * A container whose framing is wrong, or whose states are too short to be states, is refused
++ * before anything is touched. A state the core itself refuses once loading has begun (another
++ * game, a newer savestate version) puts both GBAs back where they were, saves included, on a
++ * fresh cable. */
 +static bool _linkLoadState(const void* state, size_t size) {
 +	const uint8_t* bytes = state;
 +	const uint8_t* parts[2];
@@ -604,6 +614,9 @@ index d4de13f..2f512da 100644
 +		}
 +		LOAD_32LE(lengths[i], offset, bytes);
 +		offset += 4;
++		if (lengths[i] < linkGba[i].core->stateSize(linkGba[i].core)) {
++			return false;
++		}
 +		if (size - offset < lengths[i]) {
 +			return false;
 +		}
@@ -614,12 +627,25 @@ index d4de13f..2f512da 100644
 +		return false;
 +	}
 +
++	struct VFile* before[2];
++	for (i = 0; i < 2; ++i) {
++		before[i] = _linkSaveGBA(i);
++	}
++
 +	_linkUnplug();
 +	bool success = true;
-+	for (i = 0; i < 2; ++i) {
++	for (i = 0; i < 2 && success; ++i) {
 +		struct VFile* vf = VFileFromConstMemory(parts[i], lengths[i]);
-+		success = mCoreLoadStateNamed(linkGba[i].core, vf, SAVESTATE_SAVEDATA) && success;
++		success = mCoreLoadStateNamed(linkGba[i].core, vf, SAVESTATE_SAVEDATA);
 +		vf->close(vf);
++	}
++	if (!success) {
++		for (i = 0; i < 2; ++i) {
++			mCoreLoadStateNamed(linkGba[i].core, before[i], SAVESTATE_SAVEDATA);
++		}
++	}
++	for (i = 0; i < 2; ++i) {
++		before[i]->close(before[i]);
 +	}
 +	_linkPlugIn();
 +	return success;
@@ -647,7 +673,7 @@ index d4de13f..2f512da 100644
  	size_t size = vfm->size(vfm);
  	vfm->close(vfm);
  	return size;
-@@ -2147,8 +2526,7 @@ bool retro_serialize(void* data, size_t size) {
+@@ -2147,8 +2552,7 @@ bool retro_serialize(void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
@@ -657,7 +683,7 @@ index d4de13f..2f512da 100644
  	if ((ssize_t) size > vfm->size(vfm)) {
  		size = vfm->size(vfm);
  	} else if ((ssize_t) size < vfm->size(vfm)) {
-@@ -2165,6 +2543,11 @@ bool retro_unserialize(const void* data, size_t size) {
+@@ -2165,6 +2569,11 @@ bool retro_unserialize(const void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}

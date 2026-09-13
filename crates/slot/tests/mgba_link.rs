@@ -225,6 +225,8 @@ fn link_mode_refuses_anything_but_a_whole_link_state() {
     long_length[4..8].copy_from_slice(&(good.len() as u32).to_le_bytes());
     let mut trailing = good.clone();
     trailing.push(0);
+    let empty = slk1([&[], &[]]);
+    let short = slk1([&player_0, &player_0[..100]]);
 
     for (what, bytes) in [
         ("a one-GBA state", player_0.as_slice()),
@@ -233,9 +235,67 @@ fn link_mode_refuses_anything_but_a_whole_link_state() {
         ("bytes after player 2", trailing.as_slice()),
         ("the magic alone", b"SLK1".as_slice()),
         ("player 2 missing", &good[..8 + player_0.len()]),
+        ("two empty states", empty.as_slice()),
+        ("a player 2 state too short to be one", short.as_slice()),
     ] {
         assert!(core.unserialize(bytes).is_err(), "link mode took {what}");
     }
     core.unserialize(&good)
         .expect("link mode refused its own link state");
+}
+
+/// A restore the core refuses part way leaves both GBAs where they were. Player 1's state here
+/// is sound, but player 2's claims a savestate version from the future, which the core refuses
+/// only once it is already loading. Stopping there would leave player 1 restored and player 2
+/// not, so both have to go back.
+#[test]
+fn a_link_state_the_core_refuses_leaves_both_gbas_where_they_were() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-rollback.gba", common::gba_rom());
+
+    let mut single = single_core(&dylib);
+    single.load(&rom).expect("load");
+    for _ in 0..10 {
+        single.run_frame(ButtonMask::default());
+    }
+    let early = single.serialize().expect("no state");
+    drop(single);
+    let mut refused = early.clone();
+    refused[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+
+    // Where the pair is before the refused restore, 60 frames in, and where it goes 5 frames on.
+    let mut control = link_core(&dylib, 0);
+    control.load(&rom).expect("link mode refused the rom");
+    for _ in 0..60 {
+        control.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+    }
+    let here = control.serialize().expect("no link state");
+    drop(control);
+    let mut control = link_core(&dylib, 0);
+    control.load(&rom).expect("link mode refused the rom");
+    control
+        .unserialize(&here)
+        .expect("link mode refused its own link state");
+    for _ in 0..5 {
+        control.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+    }
+    let want = control.video_xrgb8888().to_vec();
+    drop(control);
+
+    let mut core = link_core(&dylib, 0);
+    core.load(&rom).expect("link mode refused the rom");
+    core.unserialize(&here)
+        .expect("link mode refused its own link state");
+    assert!(
+        core.unserialize(&slk1([&early, &refused])).is_err(),
+        "link mode took a state the core refuses"
+    );
+    for _ in 0..5 {
+        core.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+    }
+    assert!(
+        core.video_xrgb8888() == want.as_slice(),
+        "a refused restore left player 1's GBA restored instead of where it was"
+    );
 }
