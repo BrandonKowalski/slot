@@ -21,3 +21,12 @@ gilrs = "0.11"
 tempfile = "3"
 resvg = { version = "0.48", default-features = false }
 usvg = { version = "0.48", default-features = false }
+
+# Fat LTO in one codegen unit, for every release build, the Mac's included. Measured on the SP
+# with core_bench: up to 2.2% less time per frame where slot's own work is the biggest share,
+# for slower builds (a Mac rebuild after touching one slot source goes from 3 s to 22 s).
+# -C target-cpu=cortex-a53 was measured too and is left out: no faster alone, and it cancelled
+# LTO's gain when combined.
+[profile.release]
+lto = "fat"
+codegen-units = 1
