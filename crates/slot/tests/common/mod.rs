@@ -123,6 +123,20 @@ pub fn gba_rom() -> Vec<u8> {
     rom
 }
 
+/// `gba_rom` wearing a different title and code, with the header checksum put right to match: a
+/// real ROM a core will actually load, identifying itself as the game a test needs the shelf to
+/// read off it. `write_retail_header`'s 256 bytes are a header and not a ROM, so anything that
+/// wants both a real core and a particular identity needs this instead.
+pub fn write_real_cart_as(d: &TempDir, stem: &str, title: &str, code: &str) {
+    let mut rom = gba_rom();
+    rom[0xa0..0xac].fill(0);
+    rom[0xa0..0xa0 + title.len()].copy_from_slice(title.as_bytes());
+    rom[0xac..0xac + code.len()].copy_from_slice(code.as_bytes());
+    let sum = rom[0xa0..0xbd].iter().fold(0u8, |a, b| a.wrapping_add(*b));
+    rom[0xbd] = 0u8.wrapping_sub(sum).wrapping_sub(0x19);
+    std::fs::write(rom_path(d, stem), rom).expect("write rom");
+}
+
 /// Stands in for the emulator worker at a flush point.
 pub struct StubSnapshot {
     pub state: Vec<u8>,

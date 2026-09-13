@@ -1,4 +1,4 @@
-use slot::link_kind::{link_kind, serial_option, LinkKind};
+use slot::link_kind::{link_carried, link_kind, serial_option, LinkKind};
 
 #[test]
 fn the_wireless_adapter_games_are_wireless() {
@@ -130,5 +130,83 @@ fn any_other_cart_switched_to_the_cable_stays_on_auto() {
             "auto",
             "{code}"
         );
+    }
+}
+
+/// The three sets gpSP has a protocol for, which are exactly the ones `serial_option` can name.
+#[test]
+fn gpsp_carries_the_adapter_list_the_pokemon_family_and_advance_wars() {
+    for (code, title) in [
+        ("BMGE", "MARIOGOLFADV"), // the adapter list
+        ("BTME", "MARIOKARTADV"),
+        ("B2WE", "WARIOWARE"),
+        ("BPEE", "POKEMON EMER"), // the Pokémon family, by code
+        ("AXVE", "POKEMON RUBY"),
+        ("AXPE", "POKEMON SAPP"),
+        ("ZZZZ", "POKEMON FIRE"), // and by title, whatever the code says
+        ("AWRE", "ADVANCEWARS"),  // Advance Wars 1, both its codes
+        ("AWRP", "ADVANCEWARS"),
+        ("AW2E", "ADVANCEWARS2"), // and 2
+        ("AW2P", "ADVANCEWARS2"),
+    ] {
+        assert!(link_carried(code, title), "{code} {title}");
+    }
+}
+
+/// Apotris is the one on the card: a real cable game, absent from gpSP's `gba_over.h`, so gpSP
+/// leaves it on `SERIAL_MODE_AUTO` — takes the session, then drops every packet. Mario & Luigi
+/// and Super Mario Advance 4 are the other shape of it: gpSP knows them and gives them
+/// `SERIAL_MODE_GBP`, the GBA Player, which its netpacket hooks have no case for either.
+#[test]
+fn gpsp_carries_nothing_else() {
+    for (code, title) in [
+        ("2ATE", "APOTRIS"),
+        ("SLTE", "SLOT TEST"),
+        ("AMTE", "METROIDFUSION"),
+        ("A88E", "MARIO&LUIGIRPG"),
+        ("AX4E", "SUPER MARIOD"),
+        ("", ""),
+    ] {
+        assert!(!link_carried(code, title), "{code} {title}");
+    }
+}
+
+/// A hack is still carried: gpSP hands a Pokémon ROM it will not take for retail to `mul_poke`
+/// rather than leaving it on `auto`. Whether the header is clean decides which mode carries it,
+/// never whether one does, which is why `link_carried` does not ask.
+#[test]
+fn a_pokemon_hack_is_carried_the_same_as_the_retail_game() {
+    for (code, title) in [
+        ("BPEE", "PKMN RADICAL"), // family by code, title altered
+        ("ZZZZ", "POKEMON"),      // family by title, code gpSP does not know
+        ("BPPE", "POKEMON PINB"), // the GBA Player entry gpSP overrides to mul_poke
+    ] {
+        assert!(link_carried(code, title), "{code} {title}");
+    }
+}
+
+/// The predicate and the modes agree, and this is the pair that must not drift: a carried cart is
+/// exactly one gpSP either picks the adapter for on its own or has a cable protocol to name for.
+///
+/// Switching to the adapter is deliberately not part of that test. `serial_option` answers `rfu`
+/// for any cart at all, because the adapter is one mode for every game, so "names something other
+/// than `auto`" is true even of a cart gpSP cannot link — gpSP would run the adapter emulation for
+/// it and the game would never speak to it. The cable side is the one that distinguishes.
+#[test]
+fn the_carried_carts_are_exactly_the_ones_with_a_mode_of_their_own() {
+    for (code, title) in [
+        ("BMGE", "MARIOGOLFADV"),
+        ("BPEE", "POKEMON EMER"),
+        ("AXVE", "POKEMON RUBY"),
+        ("AWRE", "ADVANCEWARS"),
+        ("AW2E", "ADVANCEWARS2"),
+        ("2ATE", "APOTRIS"),
+        ("SLTE", "SLOT TEST"),
+        ("A88E", "MARIO&LUIGIRPG"),
+        ("", ""),
+    ] {
+        let own = link_kind(code, title, true) == LinkKind::Wireless
+            || serial_option(LinkKind::Cable, LinkKind::Wireless, code, title) != "auto";
+        assert_eq!(link_carried(code, title), own, "{code} {title}");
     }
 }

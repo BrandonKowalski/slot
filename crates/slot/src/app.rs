@@ -21,7 +21,7 @@ use slot_ui::{
 
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
-use crate::link_kind::{link_kind, serial_option, LinkKind};
+use crate::link_kind::{link_carried, link_kind, serial_option, LinkKind};
 use crate::link_radio::LinkRole;
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
@@ -2341,13 +2341,18 @@ impl App {
                 alpha: 1.0,
             });
         }
+        // SELECT is named only where it does something. A game gpSP would link the same way on
+        // either hardware refuses the press, and a legend offering it there is the screen
+        // promising a choice the core will not honour.
+        let switchable = self.seated().is_some_and(|stem| self.link_switchable(stem));
         let keys: &[LinkLegend] = match menu {
-            GameMenu::Pick(_) => &[
+            GameMenu::Pick(_) if switchable => &[
                 LinkLegend::Cancel,
                 LinkLegend::Mode,
                 LinkLegend::Swap,
                 LinkLegend::Link,
             ],
+            GameMenu::Pick(_) => &[LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link],
             GameMenu::Working { .. } => &[LinkLegend::Cancel],
             GameMenu::Linked { .. } => &[],
             GameMenu::Failed { .. } => &[LinkLegend::Ok],
@@ -2728,6 +2733,19 @@ impl App {
             self.hud.toast(Toast::NeedsGpsp, self.now());
             return;
         }
+        // gpSP fakes named protocols rather than emulating the cable, so for a cart it has none
+        // for there is nothing on the far side of the link to reach. Offering it anyway is the
+        // worst of the three answers: the radio comes up, the two devices find each other, the
+        // screen says LINKED, and both games sit there — gpSP accepts the peer and then drops
+        // every packet. Refused before any of that starts, and the banner says why.
+        let carried = self
+            .seated()
+            .and_then(|stem| self.auto_link(stem))
+            .is_some_and(|(cart, _)| link_carried(&cart.code, &cart.title));
+        if !carried {
+            self.hud.toast(Toast::NoLink, self.now());
+            return;
+        }
         // It opens on what this cart was last switched to, or on what gpSP picks for it.
         let hardware = self
             .seated()
@@ -2813,16 +2831,24 @@ impl App {
         let Some(stem) = self.seated().map(str::to_string) else {
             return;
         };
-        let other = self.link_hardware.other();
-        let honoured = self.auto_link(&stem).is_some_and(|(cart, auto)| {
-            serial_option(other, auto, &cart.code, &cart.title)
-                != serial_option(self.link_hardware, auto, &cart.code, &cart.title)
-        });
-        if !honoured {
+        if !self.link_switchable(&stem) {
             return self.refuse();
         }
+        let other = self.link_hardware.other();
         self.link_hardware = other;
         self.link_choices.insert(stem, other);
+    }
+
+    /// Whether SELECT has anything to switch this cart to: whether the other hardware would load
+    /// it with a `gpsp_serial` it is not already on. It would not for a game with no cable
+    /// protocol of its own, which loads on `auto` either way and links over the adapter
+    /// regardless. Both the press and the legend that advertises it read this, so the screen
+    /// never names a key that can only shake.
+    fn link_switchable(&self, stem: &str) -> bool {
+        self.auto_link(stem).is_some_and(|(cart, auto)| {
+            serial_option(self.link_hardware.other(), auto, &cart.code, &cart.title)
+                != serial_option(self.link_hardware, auto, &cart.code, &cart.title)
+        })
     }
 
     /// A on Pick. A link in the mode the core was loaded with starts now. A link in another

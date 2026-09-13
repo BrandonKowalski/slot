@@ -14,6 +14,42 @@ fn the_link_shortcut_on_the_wrong_core_says_to_switch() {
     assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
 }
 
+/// gpSP fakes named protocols and has no generic cable, so for any other cart there is no link
+/// to make. The shortcut says so in the same banner rather than bringing a radio up for a game
+/// that will never see a packet.
+#[test]
+fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
+    assert_eq!(Toast::NoLink.text(), "No link for this game");
+    let f = toast_face(Toast::NoLink);
+    assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
+}
+
+/// Every line is rastered into one box at one size, so a line too long for it would be shrunk on
+/// its own and read as a different banner from the others. Measured off the pixels rather than
+/// off the layout: the type is uppercased and has no descenders, so every banner that rastered
+/// at the same size covers exactly the same rows.
+#[test]
+fn no_toast_is_shrunk_to_fit_its_box() {
+    let rows = |t: Toast| {
+        let f = toast_face(t);
+        let inked: Vec<usize> = (0..f.h as usize)
+            .filter(|y| (0..f.w as usize).any(|x| f.rgba[(y * f.w as usize + x) * 4 + 3] > 0))
+            .collect();
+        let first = *inked.first().expect("the banner is blank");
+        let last = *inked.last().expect("the banner is blank");
+        (first, last)
+    };
+    let want = rows(Toast::StateSaved);
+    for t in Toast::ALL {
+        assert_eq!(
+            rows(t),
+            want,
+            "{:?} does not sit on the same rows as the others, so it was shrunk to fit",
+            t
+        );
+    }
+}
+
 #[test]
 fn a_toast_fades_on_the_same_curve_as_the_bar() {
     let mut h = Hud::new();

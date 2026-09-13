@@ -71,6 +71,33 @@ pub fn serial_option(chosen: LinkKind, auto: LinkKind, code: &str, title: &str) 
     }
 }
 
+/// Whether gpSP can actually carry this cart's link.
+///
+/// gpSP does not emulate the link cable. `serial.c` has no generic multiplayer path at all: it
+/// speaks the Wireless Adapter and three named cable protocols — Pokémon Gen3, Advance Wars 1
+/// and Advance Wars 2 — and a cart it recognises none of is left on `SERIAL_MODE_AUTO`, which
+/// `netpacket_receive` has no case for. The session still comes up, which is what makes this
+/// worth asking before the radio does: `netpacket_connected` tests against
+/// `maxpl[SERIAL_MODE_AUTO] - 1U`, and that entry is 0, so the subtraction underflows and every
+/// peer is accepted. Two devices join, and then every packet is dropped in silence — a link
+/// that looks made from both panels and does nothing in either game.
+///
+/// True for the three sets gpSP has a protocol for, which are exactly the ones `serial_option`
+/// can name: the adapter list, the Pokémon family, and Advance Wars 1 and 2. `code` and `title`
+/// are the header's, as `Cart` has them.
+///
+/// Whether the header is clean does not enter into it, unlike `link_kind`, which is why this
+/// does not ask for it. gpSP reaches a protocol for each of these either way: an adapter cart
+/// keeps its `FLAGS_RFU` however its header reads, and a Pokémon ROM gets the adapter or the
+/// cable when gpSP takes it for retail and `mul_poke` when it takes it for a hack. The cart is
+/// carried in both cases, so a clean header can only change which mode it is carried in.
+pub fn link_carried(code: &str, title: &str) -> bool {
+    WIRELESS.contains(&code)
+        || pokemon(code, title)
+        || code.starts_with("AWR")
+        || code.starts_with("AW2")
+}
+
 /// The Pokémon family, by title or by any of its codes. gpSP's own test, and the one both its
 /// automatic pick and its cable protocol hang off.
 fn pokemon(code: &str, title: &str) -> bool {

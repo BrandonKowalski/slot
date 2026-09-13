@@ -5,18 +5,25 @@ use crate::icon::{haloed, HALO_PX};
 use crate::text;
 use crate::CartFace;
 
-/// Everything the HUD ever says in words. Each answers something the user just did: two
-/// confirm it, and the third answers the link shortcut on a core that cannot link, which would
+/// Everything the HUD ever says in words. Each answers something the user just did: two confirm
+/// it, and the other two answer the link shortcut where it cannot be carried out — on a core
+/// that cannot link at all, and on a cart whose link gpSP cannot carry — either of which would
 /// otherwise do nothing and say nothing.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
     StateSaved,
     StateLoaded,
     NeedsGpsp,
+    NoLink,
 }
 
 impl Toast {
-    pub const ALL: [Toast; 3] = [Toast::StateSaved, Toast::StateLoaded, Toast::NeedsGpsp];
+    pub const ALL: [Toast; 4] = [
+        Toast::StateSaved,
+        Toast::StateLoaded,
+        Toast::NeedsGpsp,
+        Toast::NoLink,
+    ];
 
     /// Position in `ALL`, which is the order faces are uploaded in.
     pub fn index(self) -> usize {
@@ -28,6 +35,7 @@ impl Toast {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
             Toast::NeedsGpsp => "Please switch to gpSP",
+            Toast::NoLink => "No link for this game",
         }
     }
 }

@@ -35,8 +35,15 @@ const BAIL: Duration = Duration::from_secs(5);
 /// link screen exists at all.
 ///
 /// Two carts, so `single_cart` does not turn this into a dedicated device.
+///
+/// The seated one is a cart gpSP can carry — Ruby's code, which puts it in the Pokémon family
+/// and so on `mul_poke` — because the link screen does not open for a cart gpSP has no protocol
+/// for. It is a cable cart on gpSP's own pick, which is what the hardware tests below switch
+/// away from. A header with no code at all, which is what `tmp_root_with_carts` writes, is a
+/// cart gpSP would take a session for and then ignore.
 fn playing_on(core: Core) -> (App, TempDir) {
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
     let mut app = common::boot(d.path());
     app.apply(Action::Insert);
     app.set_core(core);
@@ -481,6 +488,8 @@ fn the_link_screen_draws_its_role_over_the_game() {
 /// `selected_core.ini` says gpSP, because that is what decides the link screen exists.
 fn session_playing_on_gpsp() -> (Session, TempDir, Millis) {
     let d = common::tmp_root_with_carts(&["Emerald"]);
+    // A cart gpSP can carry, as in `playing_on`: the link screen does not open otherwise.
+    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).expect("write core");
     write_slot_state(
         d.path(),
@@ -1349,6 +1358,8 @@ fn a_link_in_a_switched_mode_reloads_the_game_and_then_starts_the_link() {
 fn session_on_a_real_core() -> Option<(Session, TempDir, Millis)> {
     let core = common::vendored_core()?;
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
+    // A real ROM, but carrying Ruby's identity, so the link screen this test drives will open.
+    common::write_real_cart_as(&d, "Emerald", "POKEMON RUBY", "AXVE");
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).expect("write core");
     std::fs::copy(
         &core,
@@ -1437,5 +1448,116 @@ fn a_game_that_will_not_load_again_comes_back_out_of_the_slot() {
         );
         step(&mut s, &mut now, &[]);
         std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+// --- the carts gpSP cannot link ----------------------------------------------------------
+//
+// gpSP does not emulate the link cable. It speaks the Wireless Adapter and three named cable
+// protocols, and a cart it has none of is left on `SERIAL_MODE_AUTO`, which its netpacket hooks
+// have no case for. The session still comes up — gpSP accepts the peer — and then every packet
+// is dropped, which is a screen saying LINKED over two games that cannot hear each other.
+
+/// Apotris is the one on the card: a real cable game, absent from gpSP's `gba_over.h`. The
+/// screen stays shut and the banner says so, rather than bringing a radio up and joining two
+/// devices for a game that will never see a packet.
+#[test]
+fn a_cart_gpsp_cannot_carry_is_refused_the_link_screen_and_told_why() {
+    let d = common::tmp_root_with_carts(&["Apotris", "Zzz"]);
+    // "Apotris" sorts before "Zzz", so `Action::Insert` seats it.
+    common::write_retail_header(&d, "Apotris", "APOTRIS", "2ATE");
+    let mut app = seated_on_gpsp(&d);
+    app.apply(Action::GameMenu);
+    assert!(
+        !app.game_menu_open(),
+        "a cart gpSP has no protocol for was offered a link screen"
+    );
+    assert_eq!(
+        app.toast(),
+        Some(slot_ui::Toast::NoLink),
+        "the press did nothing and said nothing"
+    );
+    assert!(
+        matches!(app.phase(), Phase::Playing { .. }),
+        "the refusal took the game away: {:?}",
+        app.phase()
+    );
+    assert!(
+        !app.link_active(),
+        "a session started for a cart gpSP will not link"
+    );
+}
+
+/// The other half of it: a cart gpSP does carry still opens the screen, and says nothing in the
+/// banner. Without this the refusal above passes just as well with the link screen removed.
+#[test]
+fn a_cart_gpsp_carries_still_opens_the_link_screen() {
+    for (stem, title, code) in [
+        ("Mario Golf", "MARIO GOLF", "BMGE"),    // the adapter list
+        ("Emerald", "POKEMON EMER", "BPEE"),     // the Pokémon family
+        ("Advance Wars", "ADVANCEWARS", "AWRE"), // Advance Wars
+    ] {
+        let d = common::tmp_root_with_carts(&["Zzz"]);
+        common::write_retail_header(&d, stem, title, code);
+        let mut app = seated_on_gpsp(&d);
+        app.apply(Action::GameMenu);
+        assert!(app.game_menu_open(), "{code} was refused its link screen");
+        assert_eq!(
+            app.toast(),
+            None,
+            "{code} opened the screen and said so too"
+        );
+    }
+}
+
+/// The legend names SELECT only where SELECT does something. A game gpSP links the same way on
+/// either hardware refuses the press — `select_is_refused_where_gpsp_would_link_the_same_either_way`
+/// is that refusal — so a legend offering Mode over it is the screen promising a choice the core
+/// will not honour.
+#[test]
+fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
+    let faces: Vec<(TexId, u32)> = LinkLegend::ALL
+        .iter()
+        .map(|k| (TexId::from_raw(900 + k.index()), 40))
+        .collect();
+    let mode = faces[LinkLegend::Mode.index()].0;
+    let drawn = |app: &App| {
+        let mut out = Vec::new();
+        app.draw(&mut out);
+        out
+    };
+
+    // A Pokémon cart: the cable is `mul_poke` and the adapter `rfu`, two modes gpSP really does
+    // load it differently with, so the switch is a choice and the legend says so.
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.set_link_legend_faces(faces.clone());
+    app.apply(Action::GameMenu);
+    assert!(
+        drawn(&app)
+            .iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == mode)),
+        "a cart whose hardware can be switched did not offer SELECT"
+    );
+
+    // An adapter-list game with no cable protocol of its own: it loads on `auto` either way and
+    // gpSP links it over the adapter regardless.
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    common::write_retail_header(&d, "Mario Golf", "MARIO GOLF", "BMGE");
+    let mut app = seated_on_gpsp(&d);
+    app.set_link_legend_faces(faces.clone());
+    app.apply(Action::GameMenu);
+    let out = drawn(&app);
+    assert!(
+        !out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == mode)),
+        "the screen offered SELECT over a game gpSP links the same either way"
+    );
+    for k in [LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link] {
+        let want = faces[k.index()].0;
+        assert!(
+            out.iter()
+                .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == want)),
+            "{k:?} left the legend along with Mode"
+        );
     }
 }
