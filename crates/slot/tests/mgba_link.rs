@@ -112,6 +112,103 @@ fn dma_rom() -> Vec<u8> {
     rom
 }
 
+/// `common::gba_rom` as a multiplayer game that talks over the cable every frame and paints what it
+/// last heard. At start it clears RCNT, for serial mode, and sets SIOCNT's multiplayer mode. Every
+/// vblank it paints SIOCNT into the second pixel, and SIOMULTI0 and SIOMULTI1, what the last
+/// transfer carried from player 0 and from player 1, into the third and fourth. Then it writes
+/// SIOCNT's mode again, which has mGBA fill in the GBA's multiplayer id from the cable, puts
+/// 0x1000 plus that id times 0x10 into SIOMLT_SEND (0x1000 on player 0's GBA, 0x1010 on player
+/// 1's) and starts a transfer. Like a game, it fills SIOMLT_SEND before every transfer: mGBA does
+/// not keep that register in a savestate. Branches are to `0xc0 + index * 4 + 8 + offset * 4`.
+fn multiplayer_rom() -> Vec<u8> {
+    let mut rom = common::gba_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(5, 0xea000008); // 0x0d4:        b    setup (0x0fc)          (was mov r3, #0)
+    set(9, 0xea00000a); // 0x0e4:        b    poke (0x114)           (was add r3, r3, #1)
+    set(15, 0xe2805c01); // 0x0fc: setup: add  r5, r0, #0x100
+    set(16, 0xe3a06000); // 0x100:        mov  r6, #0
+    set(17, 0xe1c563b4); // 0x104:        strh r6, [r5, #0x34]   RCNT = 0: serial, not GPIO
+    set(18, 0xe3a06a02); // 0x108:        mov  r6, #0x2000
+    set(19, 0xe1c562b8); // 0x10c:        strh r6, [r5, #0x28]   SIOCNT: multiplayer mode
+    set(20, 0xeafffff0); // 0x110:        b    vb (0x0d8)
+    set(21, 0xe1d532b8); // 0x114: poke:  ldrh r3, [r5, #0x28]   SIOCNT
+    set(22, 0xe1c230b2); // 0x118:        strh r3, [r2, #2]      into the second pixel
+    set(23, 0xe1d532b0); // 0x11c:        ldrh r3, [r5, #0x20]   SIOMULTI0
+    set(24, 0xe1c230b4); // 0x120:        strh r3, [r2, #4]      into the third
+    set(25, 0xe1d532b2); // 0x124:        ldrh r3, [r5, #0x22]   SIOMULTI1
+    set(26, 0xe1c230b6); // 0x128:        strh r3, [r2, #6]      into the fourth
+    set(27, 0xe1c562b8); // 0x12c:        strh r6, [r5, #0x28]   SIOCNT: the mode, and the id
+    set(28, 0xe1d532b8); // 0x130:        ldrh r3, [r5, #0x28]
+    set(29, 0xe2033030); // 0x134:        and  r3, r3, #0x30     the id, times 0x10
+    set(30, 0xe3833a01); // 0x138:        orr  r3, r3, #0x1000
+    set(31, 0xe1c532ba); // 0x13c:        strh r3, [r5, #0x2a]   SIOMLT_SEND
+    set(32, 0xe3863080); // 0x140:        orr  r3, r6, #0x80
+    set(33, 0xe1c532b8); // 0x144:        strh r3, [r5, #0x28]   SIOCNT: start a transfer
+    set(34, 0xeaffffe7); // 0x148:        b    dr (0x0ec)
+    rom
+}
+
+/// The 15-bit colour a rom wrote into pixel `x` of the first row, read back from the picture. A
+/// register painted this way loses its top bit.
+fn painted(picture: &[u8], x: usize) -> u16 {
+    let pixel = &picture[x * 4..x * 4 + 4];
+    u16::from(pixel[2] >> 3) | u16::from(pixel[1] >> 3) << 5 | u16::from(pixel[0] >> 3) << 10
+}
+
+/// A player can open a game's link menu before the two SPs connect, so a session can start from
+/// states already in multiplayer mode: the game chose that mode before there was a cable, and does
+/// not write it again. The cable has to take up the mode each GBA's registers hold as it goes in,
+/// as if the game had just written them. From the first transfer after the restore, each GBA has
+/// to hear the other's value, and SIOCNT has to show every GBA on the cable ready. Before, the
+/// fresh cable only learned a GBA's mode when its game wrote a new one, so player 0's GBA never
+/// saw player 1's as ready. A link state of a pair that was transferring restores the same way.
+/// The first frame is left out: what it paints was heard before the restore.
+#[test]
+fn a_pair_restored_in_multiplayer_mode_talks_from_the_first_transfer() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-multiplayer.gba", multiplayer_rom());
+
+    let alone = single_state(&dylib, &rom, 20);
+    let mut pair = link_core(&dylib, 0);
+    pair.load(&rom).expect("link mode refused the rom");
+    for _ in 0..30 {
+        pair.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+    }
+    let transferring = pair.serialize().expect("no link state");
+    drop(pair);
+
+    let mut deaf = Vec::new();
+    for (what, container) in [
+        ("two one-GBA states", slk1([&alone, &alone])),
+        ("a link state of a pair that was transferring", transferring),
+    ] {
+        let pictures = linked_pictures(&dylib, &rom, Some(&container), 10, |_| {
+            ButtonMask::default()
+        });
+        for (player, frames) in pictures.iter().enumerate() {
+            let heard = frames.iter().enumerate().skip(1).find_map(|(frame, picture)| {
+                let (siocnt, from_0, from_1) =
+                    (painted(picture, 1), painted(picture, 2), painted(picture, 3));
+                (siocnt & 0x0008 == 0 || from_0 != 0x1000 || from_1 != 0x1010).then(|| {
+                    format!(
+                        "{what}: player {player}'s GBA, first on frame {frame}: SIOCNT {siocnt:04x}, \
+                         SIOMULTI0 {from_0:04x}, SIOMULTI1 {from_1:04x}"
+                    )
+                })
+            });
+            deaf.extend(heard);
+        }
+    }
+    assert!(
+        deaf.is_empty(),
+        "a pair restored in multiplayer mode was not ready or did not hear each other: {deaf:#?}"
+    );
+}
+
 fn single_core(dylib: &Path) -> LibretroCore {
     LibretroCore::open(dylib).expect("vendored core is present but would not open")
 }

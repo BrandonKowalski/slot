@@ -45,7 +45,7 @@ index f714cf8..3759ede 100644
  	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
  	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..a9431be 100644
+index d4de13f..49bac3b 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,12 @@
@@ -136,7 +136,7 @@ index d4de13f..a9431be 100644
  	deferredSetup = false;
  }
  
-@@ -1534,6 +1584,327 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
+@@ -1534,6 +1584,340 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
  	return buttons;
  }
  
@@ -242,7 +242,15 @@ index d4de13f..a9431be 100644
 + * timezone), since each SP runs both GBAs and a wall clock or a timezone would tell the copies
 + * apart. The cable then goes in the order mGBA's own MultiplayerController uses: attach, then set
 + * the peripheral, whose reset registers the player. Player 0 goes first, so the ids handed out
-+ * match the players. */
++ * match the players.
++ *
++ * Last, the cable takes up the serial mode each GBA's registers already hold. It only learns a
++ * GBA's mode the way a game's register write teaches it, when the mode changes, and a GBA restored
++ * mid-game is already in the mode its game chose, which the game will not write again: player 0
++ * would never see player 1 as ready. So each GBA goes onto the cable with its mode forgotten, as
++ * GBASIOReset leaves one, and once both are on, its RCNT is written back unchanged. That write
++ * takes the mode switch a game's own write takes, from the registers: each GBA's driver announces
++ * the mode to the other, and player 0 waits for player 1 to take it up. */
 +static void _linkPlugIn(void) {
 +	int i;
 +	for (i = 0; i < 2; ++i) {
@@ -254,6 +262,7 @@ index d4de13f..a9431be 100644
 +	}
 +	for (i = 0; i < 2; ++i) {
 +		_linkRunToFrameEnd(linkGba[i].core);
++		((struct GBA*) linkGba[i].core->board)->sio.mode = -1;
 +	}
 +	GBASIOLockstepCoordinatorInit(&linkCoordinator);
 +	for (i = 0; i < 2; ++i) {
@@ -267,6 +276,10 @@ index d4de13f..a9431be 100644
 +		GBASIOLockstepDriverCreate(&player->driver, &player->d);
 +		GBASIOLockstepCoordinatorAttach(&linkCoordinator, &player->driver);
 +		player->core->setPeripheral(player->core, mPERIPH_GBA_LINK_PORT, &player->driver.d);
++	}
++	for (i = 0; i < 2; ++i) {
++		struct GBASIO* sio = &((struct GBA*) linkGba[i].core->board)->sio;
++		GBASIOWriteRCNT(sio, sio->rcnt);
 +	}
 +	linkPlugged = true;
 +	linkStuck = false;
@@ -464,7 +477,7 @@ index d4de13f..a9431be 100644
  void retro_run(void) {
  	if (deferredSetup) {
  		_doDeferredSetup();
-@@ -1543,6 +1914,15 @@ void retro_run(void) {
+@@ -1543,6 +1927,15 @@ void retro_run(void) {
  
  	inputPollCallback();
  
@@ -480,7 +493,7 @@ index d4de13f..a9431be 100644
  	bool updated = false;
  	if (environCallback(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
  		envVarsUpdated = true;
-@@ -1670,8 +2050,6 @@ void retro_run(void) {
+@@ -1670,8 +2063,6 @@ void retro_run(void) {
     }
  
  	core->runFrame(core);
@@ -489,7 +502,7 @@ index d4de13f..a9431be 100644
  
  	/* If using 'Fixed Interval' frameskipping, check
  	 * whether a frame is currently available  */
-@@ -1692,49 +2070,7 @@ void retro_run(void) {
+@@ -1692,49 +2083,7 @@ void retro_run(void) {
  		}
  	}
  
@@ -540,7 +553,7 @@ index d4de13f..a9431be 100644
  }
  
  static void _setupMaps(struct mCore* core) {
-@@ -1931,9 +2267,20 @@ static void _setupMaps(struct mCore* core) {
+@@ -1931,9 +2280,20 @@ static void _setupMaps(struct mCore* core) {
  }
  
  void retro_reset(void) {
@@ -561,7 +574,7 @@ index d4de13f..a9431be 100644
  }
  
  #ifdef GEKKO
-@@ -1977,6 +2324,7 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -1977,6 +2337,7 @@ bool retro_load_game(const struct retro_game_info* game) {
  	if (!game) {
  		return false;
  	}
@@ -569,7 +582,7 @@ index d4de13f..a9431be 100644
  
  	if (game->data) {
  		data = anonymousMemoryMap(game->size);
-@@ -2048,7 +2396,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2048,7 +2409,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  	core->setAVStream(core, &stream);
  	core->setPeripheral(core, mPERIPH_RUMBLE, &rumble);
@@ -580,7 +593,7 @@ index d4de13f..a9431be 100644
  
  	savedata = anonymousMemoryMap(GBA_SIZE_FLASH1M);
  	memset(savedata, 0xFF, GBA_SIZE_FLASH1M);
-@@ -2064,7 +2414,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2064,7 +2427,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  #ifdef M_CORE_GBA
  	if (core->platform(core) == mPLATFORM_GBA) {
@@ -591,7 +604,7 @@ index d4de13f..a9431be 100644
  		biosName = "gba_bios.bin";
  
  	}
-@@ -2117,6 +2469,19 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2117,6 +2482,19 @@ bool retro_load_game(const struct retro_game_info* game) {
  	}
  #endif
  
@@ -611,7 +624,7 @@ index d4de13f..a9431be 100644
  	return true;
  }
  
-@@ -2124,6 +2489,11 @@ void retro_unload_game(void) {
+@@ -2124,6 +2502,11 @@ void retro_unload_game(void) {
  	if (!core) {
  		return;
  	}
@@ -623,7 +636,7 @@ index d4de13f..a9431be 100644
  	mCoreConfigDeinit(&core->config);
  	core->deinit(core);
  	mappedMemoryFree(data, dataSize);
-@@ -2132,12 +2502,113 @@ void retro_unload_game(void) {
+@@ -2132,12 +2515,113 @@ void retro_unload_game(void) {
  	savedata = 0;
  }
  
@@ -739,7 +752,7 @@ index d4de13f..a9431be 100644
  	size_t size = vfm->size(vfm);
  	vfm->close(vfm);
  	return size;
-@@ -2147,8 +2618,7 @@ bool retro_serialize(void* data, size_t size) {
+@@ -2147,8 +2631,7 @@ bool retro_serialize(void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
@@ -749,7 +762,7 @@ index d4de13f..a9431be 100644
  	if ((ssize_t) size > vfm->size(vfm)) {
  		size = vfm->size(vfm);
  	} else if ((ssize_t) size < vfm->size(vfm)) {
-@@ -2165,6 +2635,11 @@ bool retro_unserialize(const void* data, size_t size) {
+@@ -2165,6 +2648,11 @@ bool retro_unserialize(const void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
