@@ -332,25 +332,28 @@ tasks:
     desc: Build for the H700, in an arm64 container unless this is already one
     cmds:
       # Relative paths only: they have to mean the same thing from the repo root and from /src.
+      # The `device` profile is release plus fat LTO (see Cargo.toml's note on it), and a
+      # custom profile builds into a directory of its own name: target-device/device/.
       - task: device:sh
         vars:
           CMD: >-
-            cargo build --release --target-dir target-device
+            cargo build --profile device --target-dir target-device
             -p slot --no-default-features --features device
-      - file target-device/release/slot | grep -q aarch64
-      - 'echo "built target-device/release/slot"'
+      - file target-device/device/slot | grep -q aarch64
+      - 'echo "built target-device/device/slot"'
 
   bench:device:
     desc: Build core_bench, slot-retro's headless core benchmark, for the H700. It never ships
     cmds:
-      # The same box and target dir as build:device, so it measures what the device build would.
+      # The same box, target dir and profile as build:device, so it measures what the device
+      # build would.
       - task: device:sh
         vars:
           CMD: >-
-            cargo build --release --target-dir target-device
+            cargo build --profile device --target-dir target-device
             -p slot-retro --example core_bench
-      - file target-device/release/examples/core_bench | grep -q aarch64
-      - 'echo "built target-device/release/examples/core_bench, adb push it to /tmp/core_bench"'
+      - file target-device/device/examples/core_bench | grep -q aarch64
+      - 'echo "built target-device/device/examples/core_bench, adb push it to /tmp/core_bench"'
 
   dist:device:
     desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
@@ -368,8 +371,8 @@ tasks:
       # which is what lets a CI runner build this without a desktop's worth of headers.
       - task: device:sh
         vars:
-          CMD: ./target-device/release/slot --init-root {{.OUT}}
-      - cp target-device/release/slot {{.OUT}}/System/slot
+          CMD: ./target-device/device/slot --init-root {{.OUT}}
+      - cp target-device/device/slot {{.OUT}}/System/slot
       # `core:device` and `core:gpsp`'s own arch check only runs on a fresh fetch: their
       # `status` skips the whole task, check included, whenever a file of that name already
       # exists — so a hand-placed x86 `.so` sails through unchecked from here on. Re-checked
@@ -419,7 +422,7 @@ tasks:
       # Onto the card the device is already running from, rather than a tree to copy by hand.
       # The binary is replaced under the running process, which is why the reboot below is
       # part of the task and not left to be remembered.
-      - adb push target-device/release/slot '{{.SD}}/System/slot'
+      - adb push target-device/device/slot '{{.SD}}/System/slot'
       - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
       - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
       # Into System/, not onto System/licenses: adb copies a folder inside a destination that

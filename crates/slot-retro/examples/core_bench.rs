@@ -16,7 +16,7 @@
 //! Build it for the SP with `task bench:device`, then:
 //!
 //! ```text
-//! adb push target-device/release/examples/core_bench /tmp/core_bench
+//! adb push target-device/device/examples/core_bench /tmp/core_bench
 //! adb shell '/tmp/core_bench /mnt/sdcard/System/gpsp_libretro.so /mnt/sdcard/Games/Apotris.gba \
 //!     --state /mnt/sdcard/States/gpsp/Apotris/resume.state --system /mnt/sdcard/BIOS \
 //!     --steps 4 --frameskip'

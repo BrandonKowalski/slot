@@ -22,11 +22,13 @@ tempfile = "3"
 resvg = { version = "0.48", default-features = false }
 usvg = { version = "0.48", default-features = false }
 
-# Fat LTO in one codegen unit, for every release build, the Mac's included. Measured on the SP
-# with core_bench: up to 2.2% less time per frame where slot's own work is the biggest share,
-# for slower builds (a Mac rebuild after touching one slot source goes from 3 s to 22 s).
-# -C target-cpu=cortex-a53 was measured too and is left out: no faster alone, and it cancelled
-# LTO's gain when combined.
-[profile.release]
+# The SP's builds use this profile: build:device and bench:device, and so whatever dist:device
+# and deploy:device ship. It is release plus fat LTO in one codegen unit, which measured on the
+# SP with core_bench takes up to 2.2% off a frame where slot's own work is the biggest share.
+# The Mac's release builds stay plain: LTO turned a 3 s rebuild after one edit into 22 s there,
+# for a speed-up only the SP needs. -C target-cpu=cortex-a53 was measured too and is left out:
+# no faster alone, and it cancelled LTO's gain when combined.
+[profile.device]
+inherits = "release"
 lto = "fat"
 codegen-units = 1
