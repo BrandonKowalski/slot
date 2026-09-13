@@ -61,6 +61,34 @@ fn sio_rom() -> Vec<u8> {
     rom
 }
 
+/// `common::gba_rom` as a multiplayer game that starts a transfer every frame. At start it clears
+/// RCNT, for serial mode, and sets SIOCNT's multiplayer mode on its own: player 0's GBA waits on
+/// player 1's to take a new mode, so a start bit in the same write would wait twice. Every vblank
+/// it writes SIOCNT again with the start bit, which starts a transfer on player 0's GBA and does
+/// nothing on player 1's, then paints the buttons into the first pixel as `keys_rom` does. Player
+/// 0's GBA waits on player 1's when a transfer starts and again when it ends, 63,427 cycles later.
+/// Branches are to `0xc0 + index * 4 + 8 + offset * 4`.
+fn transfer_rom() -> Vec<u8> {
+    let mut rom = common::gba_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(5, 0xea000008); // 0x0d4:        b    setup (0x0fc)          (was mov r3, #0)
+    set(9, 0xea00000b); // 0x0e4:        b    poke (0x118)           (was add r3, r3, #1)
+    set(15, 0xe2805c01); // 0x0fc: setup: add  r5, r0, #0x100
+    set(16, 0xe3a06000); // 0x100:        mov  r6, #0
+    set(17, 0xe1c563b4); // 0x104:        strh r6, [r5, #0x34]   RCNT = 0: serial, not GPIO
+    set(18, 0xe3a06a02); // 0x108:        mov  r6, #0x2000
+    set(19, 0xe1c562b8); // 0x10c:        strh r6, [r5, #0x28]   SIOCNT: multiplayer mode
+    set(20, 0xe3866080); // 0x110:        orr  r6, r6, #0x80     r6: multiplayer mode and start
+    set(21, 0xeaffffef); // 0x114:        b    vb (0x0d8)
+    set(22, 0xe1c562b8); // 0x118: poke:  strh r6, [r5, #0x28]   SIOCNT: start a transfer
+    set(23, 0xe1d533b0); // 0x11c:        ldrh r3, [r5, #0x30]   KEYINPUT
+    set(24, 0xeafffff0); // 0x120:        b    strh r3, [r2] (0x0e8)
+    rom
+}
+
 fn single_core(dylib: &Path) -> LibretroCore {
     LibretroCore::open(dylib).expect("vendored core is present but would not open")
 }
@@ -388,6 +416,139 @@ fn both_players_devices_compute_the_same_machines() {
     assert_eq!(
         hashes[0], hashes[1],
         "player 0's and player 1's devices computed different machines"
+    );
+}
+
+/// The same buttons for both players, pressed on frame 10 and released on 40, then B on 50 to 53
+/// and for frame 70 alone, then RIGHT for three frames in every seven from 84 to 119. Every change
+/// is an edge a GBA reading its buttons a frame late would paint differently.
+fn shared_script(frame: usize) -> ButtonMask {
+    let mut keys = 0;
+    if (10..40).contains(&frame) {
+        keys |= ButtonMask::A;
+    }
+    if (50..53).contains(&frame) || frame == 70 {
+        keys |= ButtonMask::B;
+    }
+    if (80..120).contains(&frame) && frame % 7 < 3 {
+        keys |= ButtonMask::RIGHT;
+    }
+    ButtonMask(keys)
+}
+
+/// Every frame's picture from each player's device, running `rom` as a linked pair from
+/// `container` (or from a load, when there is none) with `buttons(frame)` on both ports. Player 0
+/// first.
+fn linked_pictures(
+    dylib: &Path,
+    rom: &Path,
+    container: Option<&[u8]>,
+    frames: usize,
+    buttons: fn(usize) -> ButtonMask,
+) -> [Vec<Vec<u8>>; 2] {
+    [0u8, 1].map(|player| {
+        let mut core = link_core(dylib, player);
+        core.load(rom).expect("link mode refused the rom");
+        if let Some(container) = container {
+            core.unserialize(container)
+                .expect("link mode refused the link state");
+        }
+        (0..frames)
+            .map(|frame| {
+                let keys = buttons(frame);
+                core.run_frame_linked(keys, keys);
+                core.video_xrgb8888().to_vec()
+            })
+            .collect()
+    })
+}
+
+/// The frames on which player 0's device and player 1's device showed different pictures.
+fn differing_frames(pictures: &[Vec<Vec<u8>>; 2]) -> Vec<usize> {
+    (0..pictures[0].len())
+        .filter(|&frame| pictures[0][frame] != pictures[1][frame])
+        .collect()
+}
+
+/// A lone GBA's state, `frames` frames into `rom`. A state taken between `run_frame` calls is
+/// always at the end of a frame.
+fn single_state(dylib: &Path, rom: &Path, frames: usize) -> Vec<u8> {
+    let mut single = single_core(dylib);
+    single.load(rom).expect("load");
+    for _ in 0..frames {
+        single.run_frame(ButtonMask::default());
+    }
+    single.serialize().expect("no state")
+}
+
+/// Two identical GBAs given the same buttons have to read each change on the same frame, or two
+/// games that wait on each other's input start a frame apart. Restoring one one-GBA state into
+/// both slots puts the two GBAs' frames in phase, ending at the same emulated moment, and every
+/// link session starts from two such states. The cable keeps player 1 a little behind player 0,
+/// so player 0 finishes each frame while player 1 is still short of its own. Had player 0 run on
+/// into its next frame there, it would read that frame's buttons before they were set. Mario
+/// Kart: Super Circuit's two GBAs did that, entered the link lobby a frame apart and stalled.
+#[test]
+fn two_identical_gbas_read_the_same_buttons_on_the_same_frame() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-same-buttons.gba", keys_rom());
+
+    let state = single_state(&dylib, &rom, 20);
+    let pictures = linked_pictures(
+        &dylib,
+        &rom,
+        Some(&slk1([&state, &state])),
+        120,
+        shared_script,
+    );
+    let differing = differing_frames(&pictures);
+    assert!(
+        differing.is_empty(),
+        "two identical GBAs given the same buttons painted different buttons, first on frame {:?} \
+         (all: {differing:?})",
+        differing.first()
+    );
+}
+
+/// The mirror of the test above, and a problem the frame-end sync does not reach, so it is
+/// ignored: it fails. When player 1's frames end before player 0's, player 1 finishes first. Then
+/// player 0 sleeps waiting on player 1, at the end of a transfer or at the cable's periodic hard
+/// sync, and the cable needs player 1 to reach that moment. So player 1 runs on past the end of
+/// its frame, still holding that frame's buttons, and reads them where it should read the next
+/// frame's. Player 1's GBA here starts from a state taken straight after a load, 41,888 cycles
+/// short of its first vblank, so its frames end 239,008 cycles before player 0's. Player 0's
+/// transfer ends 63,427 cycles into its frame, about 21,500 after player 1's frame ended. A reset
+/// boot of Mario Kart: Super Circuit runs its GBAs out of phase the same way. Found 2026-09-15: the
+/// pictures differ from frame 10, and on the same frames before the frame-end sync was added.
+/// Without transfers, the hard sync alone makes some reads late too. A session started from two
+/// states taken at a frame's end runs in phase, and never gets here. The first frame is left out:
+/// player 1's GBA has painted nothing by the end of it.
+#[test]
+#[ignore]
+fn player_1_reads_the_same_buttons_on_the_same_frame_while_player_0_waits_on_it() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-transfers.gba", transfer_rom());
+
+    let frame_end = single_state(&dylib, &rom, 20);
+    let loaded = single_state(&dylib, &rom, 0);
+    let pictures = linked_pictures(
+        &dylib,
+        &rom,
+        Some(&slk1([&frame_end, &loaded])),
+        120,
+        shared_script,
+    );
+    let differing: Vec<usize> = differing_frames(&pictures)
+        .into_iter()
+        .filter(|&frame| frame > 0)
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "player 1's GBA read the buttons on a different frame from player 0's, first on frame {:?} \
+         (all: {differing:?})",
+        differing.first()
     );
 }
 

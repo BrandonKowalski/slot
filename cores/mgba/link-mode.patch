@@ -45,7 +45,7 @@ index f714cf8..3759ede 100644
  	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
  	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..a3dc416 100644
+index d4de13f..7cc44f3 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,11 @@
@@ -135,7 +135,7 @@ index d4de13f..a3dc416 100644
  	deferredSetup = false;
  }
  
-@@ -1534,6 +1583,265 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
+@@ -1534,6 +1583,285 @@ int16_t cycleturbo(bool a, bool b, bool l, bool r) {
  	return buttons;
  }
  
@@ -336,11 +336,23 @@ index d4de13f..a3dc416 100644
 +/* Steps both GBAs one video frame, taking turns on this thread.
 + *
 + * The coordinator puts a GBA to sleep while it waits on the other, and a sleeping GBA only
-+ * flips its flag, so whichever GBA is awake and short of its frame runs next. A GBA that has
-+ * finished its frame runs on, with the same buttons, only while the other sleeps waiting on
-+ * it: stopping it there is the deadlock a strict per-frame barrier falls into. Every choice
++ * flips its flag, so whichever GBA is awake and short of its frame runs next. Every choice
 + * depends only on emulated state, so the same starting states and buttons make the same
 + * machines on every device.
++ *
++ * A GBA that has finished its frame cannot simply stop while the other sleeps waiting on it:
++ * that is the deadlock a strict per-frame barrier falls into. The cable keeps player 1 behind
++ * player 0's clock, so when both frames end at the same emulated moment, as two states taken at
++ * a frame's end restore, player 0 finishes while player 1 still sleeps short of its own frame.
++ * A finished player 0 syncs the cable there, at its frame boundary, instead of running on: its
++ * lockstep event fires at once, which moves the shared clock to player 0's frame end and wakes
++ * player 1 to finish. Run on, player 0 would reach its next frame's KEYINPUT read before that
++ * frame's buttons are set, and read them a frame late.
++ *
++ * A finished player 1 may still run on, with the same buttons, while player 0 sleeps waiting on
++ * it for a transfer or a hard sync, since the cable needs player 1 to reach that moment first.
++ * When player 1's frames end before player 0's, that run-on can reach player 1's next KEYINPUT
++ * read, which then sees this frame's buttons.
 + *
 + * A frame is done when the video frame counter moves, or after as many cycles as
 + * _GBACoreRunFrame allows one, so a GBA whose video has stopped cannot hold this loop. */
@@ -366,6 +378,14 @@ index d4de13f..a3dc416 100644
 +				continue;
 +			}
 +			struct GBA* gba = self->core->board;
++			/* Here a finished player 0 only runs because player 1 sleeps short of its frame.
++			 * With no transfer or hard sync pending, firing the lockstep event now syncs the
++			 * cable at player 0's frame boundary, where running would carry it into the next
++			 * frame on this frame's buttons. */
++			if (i == 0 && done[0] && !linkCoordinator.transferActive && !linkCoordinator.waiting) {
++				mTimingDeschedule(&gba->timing, &self->driver.event);
++				mTimingSchedule(&gba->timing, &self->driver.event, 0);
++			}
 +			self->core->runLoop(self->core);
 +			ran = true;
 +			if (gba->video.frameCounter >= target[i] ||
@@ -401,7 +421,7 @@ index d4de13f..a3dc416 100644
  void retro_run(void) {
  	if (deferredSetup) {
  		_doDeferredSetup();
-@@ -1543,6 +1851,15 @@ void retro_run(void) {
+@@ -1543,6 +1871,15 @@ void retro_run(void) {
  
  	inputPollCallback();
  
@@ -417,7 +437,7 @@ index d4de13f..a3dc416 100644
  	bool updated = false;
  	if (environCallback(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
  		envVarsUpdated = true;
-@@ -1670,8 +1987,6 @@ void retro_run(void) {
+@@ -1670,8 +2007,6 @@ void retro_run(void) {
     }
  
  	core->runFrame(core);
@@ -426,7 +446,7 @@ index d4de13f..a3dc416 100644
  
  	/* If using 'Fixed Interval' frameskipping, check
  	 * whether a frame is currently available  */
-@@ -1692,49 +2007,7 @@ void retro_run(void) {
+@@ -1692,49 +2027,7 @@ void retro_run(void) {
  		}
  	}
  
@@ -477,7 +497,7 @@ index d4de13f..a3dc416 100644
  }
  
  static void _setupMaps(struct mCore* core) {
-@@ -1931,9 +2204,20 @@ static void _setupMaps(struct mCore* core) {
+@@ -1931,9 +2224,20 @@ static void _setupMaps(struct mCore* core) {
  }
  
  void retro_reset(void) {
@@ -498,7 +518,7 @@ index d4de13f..a3dc416 100644
  }
  
  #ifdef GEKKO
-@@ -1977,6 +2261,7 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -1977,6 +2281,7 @@ bool retro_load_game(const struct retro_game_info* game) {
  	if (!game) {
  		return false;
  	}
@@ -506,7 +526,7 @@ index d4de13f..a3dc416 100644
  
  	if (game->data) {
  		data = anonymousMemoryMap(game->size);
-@@ -2048,7 +2333,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2048,7 +2353,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  	core->setAVStream(core, &stream);
  	core->setPeripheral(core, mPERIPH_RUMBLE, &rumble);
@@ -517,7 +537,7 @@ index d4de13f..a3dc416 100644
  
  	savedata = anonymousMemoryMap(GBA_SIZE_FLASH1M);
  	memset(savedata, 0xFF, GBA_SIZE_FLASH1M);
-@@ -2064,7 +2351,9 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2064,7 +2371,9 @@ bool retro_load_game(const struct retro_game_info* game) {
  
  #ifdef M_CORE_GBA
  	if (core->platform(core) == mPLATFORM_GBA) {
@@ -528,7 +548,7 @@ index d4de13f..a3dc416 100644
  		biosName = "gba_bios.bin";
  
  	}
-@@ -2117,6 +2406,19 @@ bool retro_load_game(const struct retro_game_info* game) {
+@@ -2117,6 +2426,19 @@ bool retro_load_game(const struct retro_game_info* game) {
  	}
  #endif
  
@@ -548,7 +568,7 @@ index d4de13f..a3dc416 100644
  	return true;
  }
  
-@@ -2124,6 +2426,11 @@ void retro_unload_game(void) {
+@@ -2124,6 +2446,11 @@ void retro_unload_game(void) {
  	if (!core) {
  		return;
  	}
@@ -560,7 +580,7 @@ index d4de13f..a3dc416 100644
  	mCoreConfigDeinit(&core->config);
  	core->deinit(core);
  	mappedMemoryFree(data, dataSize);
-@@ -2132,12 +2439,113 @@ void retro_unload_game(void) {
+@@ -2132,12 +2459,113 @@ void retro_unload_game(void) {
  	savedata = 0;
  }
  
@@ -676,7 +696,7 @@ index d4de13f..a3dc416 100644
  	size_t size = vfm->size(vfm);
  	vfm->close(vfm);
  	return size;
-@@ -2147,8 +2555,7 @@ bool retro_serialize(void* data, size_t size) {
+@@ -2147,8 +2575,7 @@ bool retro_serialize(void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
@@ -686,7 +706,7 @@ index d4de13f..a3dc416 100644
  	if ((ssize_t) size > vfm->size(vfm)) {
  		size = vfm->size(vfm);
  	} else if ((ssize_t) size < vfm->size(vfm)) {
-@@ -2165,6 +2572,11 @@ bool retro_unserialize(const void* data, size_t size) {
+@@ -2165,6 +2592,11 @@ bool retro_unserialize(const void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
