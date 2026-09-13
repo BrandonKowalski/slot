@@ -340,6 +340,18 @@ tasks:
       - file target-device/release/slot | grep -q aarch64
       - 'echo "built target-device/release/slot"'
 
+  bench:device:
+    desc: Build core_bench, slot-retro's headless core benchmark, for the H700. It never ships
+    cmds:
+      # The same box and target dir as build:device, so it measures what the device build would.
+      - task: device:sh
+        vars:
+          CMD: >-
+            cargo build --release --target-dir target-device
+            -p slot-retro --example core_bench
+      - file target-device/release/examples/core_bench | grep -q aarch64
+      - 'echo "built target-device/release/examples/core_bench, adb push it to /tmp/core_bench"'
+
   dist:device:
     desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
     # Both cores now ship: crates/slot/src/core.rs resolves the dylib from a cart's own
