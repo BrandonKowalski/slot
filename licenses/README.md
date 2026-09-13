@@ -12,8 +12,9 @@ gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core abov
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
 libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba.
 
-gpSP is conveyed unmodified, in the executable form the libretro buildbot publishes, fetched by
-`taskfile.yml`'s `core:gpsp`. mGBA is built by this repo instead: `cores/mgba/build.sh`, run by
+Both cores are built by this repo. gpSP is unmodified: `cores/gpsp/build.sh`, run by
+`taskfile.yml`'s `core:gpsp`, builds libretro/gpsp at a pinned commit from the source archive
+that ships here, with gpSP's own arm64 recipe. mGBA is patched: `cores/mgba/build.sh`, run by
 `core:device` and `core:mgba:host`, builds libretro/mgba at a pinned commit with the patches in
 `cores/mgba/` applied. `slot` never links against either. `taskfile.yml`'s `dist:device` task
 copies this directory into the shipped tree alongside the cores it licenses, so a card built
@@ -37,50 +38,31 @@ from this repo carries the same notice the release zip does.
   the same zip and on the same card as the binary it corresponds to. There is nothing to
   request and nobody to request it from.
 
-  `taskfile.yml`'s `core:gpsp` task fetches the binary, resolves a matching source commit,
-  downloads that commit's source archive from GitHub, and records the commit — all as one
-  fetch (see below). `dist:device` and `deploy:device` carry the result
-  right here, next to this notice, as:
+  `taskfile.yml`'s `core:gpsp` task downloads the source archive of the commit pinned as
+  `GPSP_COMMIT` from GitHub, then compiles the binary from that archive with
+  `cores/gpsp/build.sh` — all as one set (see below). `dist:device` and `deploy:device` carry
+  the result right here, next to this notice, as:
 
   ```
   licenses/gpsp-<commit>.tar.gz
   licenses/gpsp-<commit>.meta
   ```
 
-  named for the exact commit fetched, so the archive identifies its own source without needing
-  a release page to point back to — which matters, because a card built and copied by hand
-  never has one. The `.meta` file records, in `key=value` form, the same three facts this
-  section explains: the resolved `commit`, the `binary_date` it was anchored to, and which
-  `resolved_via` method (`github-api` or `git-ls-remote-fallback`) actually produced it.
+  named for the exact commit built, so the archive identifies its own source without needing a
+  release page to point back to — which matters, because a card built and copied by hand never
+  has one. The `.meta` file is the build's own record, in `key=value` form: the `commit`, the
+  `source` archive's URL, the `recipe` it was built with (`make platform=arm64`, gpSP's own
+  Makefile target), and the `device_cflags` added to that recipe's flags.
 
-  What "corresponding" can mean in practice, stated honestly rather than glossed over: the
-  libretro buildbot builds gpSP's `master` continuously and does not publish which commit
-  produced a given nightly build — that gap is real and this process does not close it. What
-  it does do is anchor the *source's* commit to the *binary's own build timestamp* rather than
-  to whenever we happened to fetch: `core:gpsp` reads the timestamp the buildbot itself stamped
-  onto the `.so` file inside its nightly zip (closer to actual compile time than the zip's HTTP
-  `Last-Modified` header, which we observed move forward by two days against a binary that had
-  not changed at all — storage or CDN behavior, not a rebuild), then asks GitHub for
-  `libretro/gpsp`'s `master` tip as of that exact moment. That is a materially closer inference
-  than "master's HEAD whenever our fetch script happened to run," which could — and, in the
-  commit this replaced, did — land on a commit made *after* the binary it was meant to describe,
-  which is not "corresponding" source in even a good-faith sense. It is still an inference, not
-  a proof: the buildbot could have built from a commit slightly before or after our anchor
-  point even with perfect anchoring, since it does not expose which commit it actually built.
-  Anchoring by timestamp narrows that gap; it does not eliminate it.
+  "Corresponding" is exact here, not inferred: the binary is compiled from this archive and
+  nothing else. The archive is GitHub's snapshot of `libretro/gpsp` at that commit, unmodified,
+  its Makefile included, and the build adds only the compiler flags the `.meta` names. Earlier,
+  slot shipped the libretro buildbot's nightly binary, which does not say which commit built
+  it, and could only infer the source from the binary's timestamp. Building from the archive
+  closed that gap.
 
-  When GitHub's commit-history API can't be reached — it is unauthenticated and rate-limited to
-  60 requests/hour — `core:gpsp` falls back to `git ls-remote`, which can only name `master`'s
-  tip *right now*, not as of the binary's timestamp. Which path actually ran is recorded in
-  `resolved_via` above rather than left implicit, so a fallback-resolved archive is never
-  presented as if it carried the same anchoring as the normal path.
-
-  **The binary and the source are fetched, and refetched, as one set.** `core:gpsp`'s status
-  check requires the binary, the source archive, the recorded commit and the metadata all to
-  already exist; if any one is missing, all four are cleared and refetched together in the
-  same run.
-  Earlier, the binary and the source were fetched by independent tasks with independent
-  presence checks, so deleting only the `.so` — to pick up a newer nightly, say — would refetch
-  a new binary and silently leave it paired with whatever source an earlier run had recorded.
-  That coupling is gone: nothing here can pair a binary from one fetch with a source recorded
-  by another.
+  **The binary and the source are made, and remade, as one set.** `core:gpsp`'s status check
+  requires the archive, the recorded commit, the binary and both metadata files to agree with
+  the pin and with the build script's stamp. If any one does not, all of them are cleared, and
+  the archive is refetched and the binary rebuilt from it in the same run, so nothing here can
+  pair a binary from one build with a source recorded by another.
