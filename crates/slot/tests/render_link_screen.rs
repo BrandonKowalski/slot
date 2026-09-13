@@ -2,13 +2,48 @@
 //!
 //! `SCRATCH_PNG_DIR=/tmp cargo test -p slot --test render_link_screen -- --nocapture`
 
-use slot::app::{GameMenu, LinkRow};
+mod common;
+
+use slot::app::{GameMenu, LinkLegend, LinkRow};
 use slot::link_kind::LinkKind;
 use slot::link_screen::{draw_link_art, LinkSprites, Sprite};
 use slot::link_start::{LinkFail, LinkStep};
-use slot_ui::{link_art, CartFace, Draw, TexId, OUT_H, OUT_W};
+use slot_input::Action;
+use slot_store::Core;
+use slot_ui::{
+    arrows_hint_face, hint_face, link_art, CartFace, Draw, TexId, UndoFace, OUT_H, OUT_W,
+};
 
-fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, CartFace)>) {
+/// One rastered face, whatever rasterised it. `CartFace` and `UndoFace` are the same three
+/// fields under two names — the art builders hand back one and the key caps the other — and the
+/// compositor below wants only the pixels and their size, so both arrive here.
+struct Face {
+    rgba: Vec<u8>,
+    w: u32,
+    h: u32,
+}
+
+impl From<CartFace> for Face {
+    fn from(f: CartFace) -> Self {
+        Face {
+            rgba: f.rgba,
+            w: f.w,
+            h: f.h,
+        }
+    }
+}
+
+impl From<UndoFace> for Face {
+    fn from(f: UndoFace) -> Self {
+        Face {
+            rgba: f.rgba,
+            w: f.w,
+            h: f.h,
+        }
+    }
+}
+
+fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, Face)>) {
     let art = link_art();
     let mut faces = Vec::new();
     let mut n = 0;
@@ -20,7 +55,7 @@ fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, CartFace)>) {
             w: f.w,
             h: f.h,
         };
-        faces.push((tex, f));
+        faces.push((tex, f.into()));
         sprite
     };
     let [ar0, ar1, ar2] = art.arcs_right;
@@ -40,7 +75,7 @@ fn sprites_and_faces() -> (LinkSprites, Vec<(TexId, CartFace)>) {
 }
 
 /// Straight-alpha over-compositing, nearest neighbour, with `Turned` rotated about its centre.
-fn composite(out: &[Draw], faces: &[(TexId, CartFace)]) -> Vec<u8> {
+fn composite(out: &[Draw], faces: &[(TexId, Face)]) -> Vec<u8> {
     let (w, h) = (OUT_W as usize, OUT_H as usize);
     let mut px = vec![0u8; w * h * 4];
     for i in 0..w * h {
@@ -119,16 +154,22 @@ fn render(menu: GameMenu, kind: LinkKind, now: u64, name: &str) -> Vec<u8> {
     let mut out = Vec::new();
     draw_link_art(menu, kind, now, &sprites, &mut out);
     let px = composite(&out, &faces);
-    if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
-        let path = format!("{dir}/link-{name}.png");
-        let file = std::fs::File::create(&path).unwrap();
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
-        e.set_color(png::ColorType::Rgba);
-        e.set_depth(png::BitDepth::Eight);
-        e.write_header().unwrap().write_image_data(&px).unwrap();
-        println!("wrote {path}");
-    }
+    dump(&px, name);
     px
+}
+
+/// The composited frame, written out to look at when `SCRATCH_PNG_DIR` names somewhere to put it.
+fn dump(px: &[u8], name: &str) {
+    let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") else {
+        return;
+    };
+    let path = format!("{dir}/link-{name}.png");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    e.set_color(png::ColorType::Rgba);
+    e.set_depth(png::BitDepth::Eight);
+    e.write_header().unwrap().write_image_data(px).unwrap();
+    println!("wrote {path}");
 }
 
 #[test]
@@ -204,4 +245,141 @@ fn a_failed_plug_leaves_where_it_waited() {
         at(&gone, spot.0, spot.1),
         "the plug never lifted away"
     );
+}
+
+// --- the key legend -----------------------------------------------------------------------
+//
+// Everything above composites `draw_link_art`, which is a pure function. The legend is not: it
+// is laid out in `App::draw_game_menu`, from the seated cart, so it takes a whole `App` to get
+// at. A draw list is not evidence that it reached the screen — a cap placed off the panel, at
+// zero alpha or at zero size is in the list and not on the glass — so it is rendered here.
+
+/// Whether a lit pixel is there at all: anything the compositor left other than the ground.
+fn lit(px: &[u8], o: usize) -> bool {
+    px[o] != 0x05 || px[o + 1] != 0x05 || px[o + 2] != 0x08
+}
+
+/// How much type the frame actually carries.
+fn ink(px: &[u8]) -> usize {
+    (0..px.len() / 4).filter(|i| lit(px, i * 4)).count()
+}
+
+/// The rows the frame has anything on, top and bottom.
+fn inked_rows(px: &[u8]) -> (usize, usize) {
+    let rows: Vec<usize> = (0..OUT_H as usize)
+        .filter(|y| (0..OUT_W as usize).any(|x| lit(px, (y * OUT_W as usize + x) * 4)))
+        .collect();
+    (
+        *rows.first().expect("nothing on the frame"),
+        *rows.last().expect("nothing on the frame"),
+    )
+}
+
+/// The real key caps, rastered the way the device rasters them, in `LinkLegend::ALL` order.
+fn legend_faces() -> Vec<(TexId, Face)> {
+    LinkLegend::ALL
+        .iter()
+        .map(|k| {
+            let f: Face = match k {
+                LinkLegend::Cancel => hint_face("B", "Cancel"),
+                LinkLegend::Mode => hint_face("SELECT", "Mode"),
+                LinkLegend::Swap => arrows_hint_face("Swap"),
+                LinkLegend::Link => hint_face("A", "Link"),
+                LinkLegend::Ok => hint_face("A", "OK"),
+            }
+            .into();
+            (TexId::from_raw(900 + k.index()), f)
+        })
+        .collect()
+}
+
+/// The link screen's legend for a cart with the given header, composited into a frame.
+///
+/// Only the legend's textures are looked up. The rest of a playing app's draw list — the game
+/// picture, the HUD, the cart — has no face in this table, and the row of key caps is the thing
+/// under test, so the filter decides which textures get a face and never which pixels count.
+fn legend_pixels(title: &str, code: &str, name: &str) -> Vec<u8> {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    // "Cart" sorts before "Zzz", so `Action::Insert` seats it.
+    common::write_retail_header(&d, "Cart", title, code);
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(Core::Gpsp);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    let faces = legend_faces();
+    app.set_link_legend_faces(faces.iter().map(|(t, f)| (*t, f.w)).collect());
+    app.apply(Action::GameMenu);
+    assert!(app.game_menu_open(), "{code} never opened its link screen");
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    let legend: Vec<Draw> = out
+        .into_iter()
+        .filter(|d| matches!(*d, Draw::Tex { tex, .. } if faces.iter().any(|(t, _)| *t == tex)))
+        .collect();
+    let px = composite(&legend, &faces);
+    dump(&px, name);
+    px
+}
+
+/// The SELECT Mode cap alone, composited the same way, which is the exact amount of type the
+/// switchable screen should carry over the other one.
+fn mode_cap_ink() -> usize {
+    let f: Face = hint_face("SELECT", "Mode").into();
+    let (w, h) = (f.w as f32, f.h as f32);
+    let tex = TexId::from_raw(1);
+    let draw = Draw::Tex {
+        x: 100.0,
+        y: 422.0,
+        w,
+        h,
+        tex,
+        alpha: 1.0,
+    };
+    ink(&composite(&[draw], &[(tex, f)]))
+}
+
+/// The legend names SELECT only where SELECT does something, on the glass and not merely in the
+/// draw list. Ruby loads as `mul_poke` by cable and `rfu` by adapter, two modes gpSP really does
+/// run it differently in, so the switch is a choice. Mario Golf has no cable protocol of its own
+/// and gpSP links it over the adapter whichever hardware is picked, so the press only shakes.
+///
+/// What the first frame carries over the second is exactly one SELECT Mode cap's worth of type,
+/// which is the assertion a missing, blank, clipped or zero-sized cap all fail.
+#[test]
+fn the_legend_shows_select_mode_only_where_the_hardware_can_be_switched() {
+    let switchable = legend_pixels("POKEMON RUBY", "AXVE", "legend-switchable");
+    let fixed = legend_pixels("MARIO GOLF", "BMGE", "legend-fixed");
+
+    assert!(
+        ink(&fixed) > 0,
+        "the legend put no type on the frame at all"
+    );
+    assert!(
+        ink(&switchable) > ink(&fixed),
+        "both screens carry the same type: {} and {}",
+        ink(&switchable),
+        ink(&fixed)
+    );
+    assert_eq!(
+        ink(&switchable) - ink(&fixed),
+        mode_cap_ink(),
+        "the difference between the two frames is not one SELECT Mode cap"
+    );
+
+    // On the strip, and the whole of it on the panel: a cap placed off the bottom would be in
+    // the draw list and missing from every one of these rows.
+    for (px, what) in [(&switchable, "switchable"), (&fixed, "fixed")] {
+        let (first, last) = inked_rows(px);
+        assert!(
+            first >= OUT_H as usize * 3 / 4,
+            "the {what} legend is not down on the strip: rows {first}..{last}"
+        );
+        assert!(
+            last < OUT_H as usize,
+            "the {what} legend runs off the bottom of the panel"
+        );
+    }
 }
