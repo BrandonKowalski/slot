@@ -228,6 +228,12 @@ impl Clock {
     pub fn get(&self) -> i64 {
         self.0.load(Ordering::Relaxed)
     }
+
+    /// Moves the clock on by hand, standing in for however long a screen was up. It still does
+    /// not run by itself.
+    pub fn advance(&self, secs: i64) {
+        self.0.fetch_add(secs, Ordering::Relaxed);
+    }
 }
 
 /// Stands in for the device the power path acts on.

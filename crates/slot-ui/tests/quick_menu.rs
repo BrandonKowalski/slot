@@ -105,8 +105,9 @@ fn the_date_and_time_read_as_a_month_a_day_and_the_carousels_24_hour_clock() {
     assert_eq!(at("2027-01-05_04-07-59"), "JAN 5 04:07");
 }
 
-/// Opened from the menu, the clock starts where it already is: the time on the wall, and the
-/// offset already chosen, so confirming it untouched changes nothing.
+/// Opened from the menu, the clock starts where it already is: the time on the wall, to the
+/// minute, and the offset already chosen. The seconds it cannot show are not lost on confirming:
+/// the app applies only what was changed, which `tests/clock.rs` in the slot crate holds.
 #[test]
 fn a_picker_for_a_set_clock_starts_at_the_local_time_and_its_offset() {
     let utc = parse_stamp("2026-09-15_21-35-42").expect("a stamp");
@@ -115,7 +116,7 @@ fn a_picker_for_a_set_clock_starts_at_the_local_time_and_its_offset() {
     assert_eq!(
         p.secs(),
         utc - 42,
-        "confirming it untouched would move the clock"
+        "the picker does not show the minute it was opened in"
     );
     assert!(p.text().starts_with("2026-09-15 16:35"), "{}", p.text());
 }

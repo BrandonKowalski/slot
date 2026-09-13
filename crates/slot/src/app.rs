@@ -319,6 +319,10 @@ pub enum Phase {
     /// quick menu's Date & Time, which is the same screen opened again.
     SetClock {
         picker: ClockPicker,
+        /// The UTC the picker opened on, to the minute it shows. The clock keeps running under
+        /// the screen, so confirming sets it to now plus however far the picker was moved from
+        /// here, never to the picker's own reading.
+        seed: i64,
         /// Opened from the quick menu, so B goes back to it and confirming returns to it. At
         /// first boot there is nothing behind the screen, and confirming goes on to the shelf.
         from_menu: bool,
@@ -642,10 +646,7 @@ impl App {
         } else {
             // Seeded from the system clock and re-seeded by `set_power`, which is the first
             // moment there is a platform whose clock is the device's rather than the host's.
-            app.phase = Phase::SetClock {
-                picker: ClockPicker::from_secs(system_secs()),
-                from_menu: false,
-            };
+            app.phase = clock_screen(system_secs(), 0, false);
         }
         app
     }
@@ -687,15 +688,25 @@ impl App {
     /// however the screen was reached. At first boot this is the only way off it and it goes on
     /// to the shelf; opened from the quick menu, it goes back to the menu.
     pub fn confirm_clock(&mut self) {
-        let Phase::SetClock { picker, from_menu } = &self.phase else {
+        let Phase::SetClock {
+            picker,
+            seed,
+            from_menu,
+        } = &self.phase
+        else {
             return;
         };
         // All read off before the borrow ends. The platform is given utc, because that is
         // what the base system's clock and its ntp both assume the card holds; the offset is
         // kept beside it as the only thing that turns it back into the time on the wall.
-        let (secs, offset, from_menu) = (picker.secs(), picker.offset_min(), *from_menu);
+        let (moved, offset, from_menu) = (picker.secs() - *seed, picker.offset_min(), *from_menu);
+        // Only what was changed, on top of the clock as it stands. The picker shows the minute
+        // and stands still while it is up, so setting the clock to what it says turned it back
+        // by the seconds past that minute and by however long the screen was open, on the clock
+        // every cartridge RTC reads.
+        let utc = self.utc_secs() + moved;
         if let Some(power) = &mut self.power {
-            power.set_clock(secs);
+            power.set_clock(utc);
         }
         self.state.utc_offset_min = offset as i16;
         self.state.clock_set = true;
@@ -720,8 +731,12 @@ impl App {
     /// named by all come through here, so the offset is applied once rather than at each of
     /// them, and none of them can disagree with the others about what time it is.
     pub fn wall_secs(&self) -> i64 {
-        let utc = self.power.as_ref().map_or_else(system_secs, |p| p.now());
-        utc + i64::from(self.state.utc_offset_min) * 60
+        self.utc_secs() + i64::from(self.state.utc_offset_min) * 60
+    }
+
+    /// The clock the card keeps, in UTC: the platform's once there is one, the host's before.
+    fn utc_secs(&self) -> i64 {
+        self.power.as_ref().map_or_else(system_secs, |p| p.now())
     }
 
     /// What the clock screen is showing, or `None` off it. The binary rasterises from it and
@@ -953,15 +968,8 @@ impl App {
         // taken `clock_set` at its word by here, which is exactly the case that leaves a
         // dead RTC with no way back to the one screen that could fix it.
         let secs = power.now();
-        match &mut self.phase {
-            Phase::SetClock { picker, .. } => *picker = ClockPicker::from_secs(secs),
-            _ if secs < CLOCK_FLOOR => {
-                self.phase = Phase::SetClock {
-                    picker: ClockPicker::from_secs(secs),
-                    from_menu: false,
-                }
-            }
-            _ => {}
+        if matches!(self.phase, Phase::SetClock { .. }) || secs < CLOCK_FLOOR {
+            self.phase = clock_screen(secs, 0, false);
         }
         self.power = Some(power);
         // There is nothing to read before this call — no gauge for `battery_at`, no charge
@@ -1187,7 +1195,10 @@ impl App {
         }
         // Ahead of the levels too. The clock owns all four directions, and at first boot it is
         // a screen with no way back, which is not one to be adjusting the backlight from.
-        if let Phase::SetClock { picker, from_menu } = &mut self.phase {
+        if let Phase::SetClock {
+            picker, from_menu, ..
+        } = &mut self.phase
+        {
             match action {
                 Action::GbaDown(Btn::Left) | Action::ShelfLeft => picker.left(),
                 Action::GbaDown(Btn::Right) | Action::ShelfRight => picker.right(),
@@ -1326,11 +1337,7 @@ impl App {
             QuickRow::DateTime => {
                 // Started from the clock as it stands, offset and all: this is a clock being
                 // corrected, not one being asked for the first time.
-                let utc = self.power.as_ref().map_or_else(system_secs, |p| p.now());
-                self.phase = Phase::SetClock {
-                    picker: ClockPicker::local(utc, self.state.utc_offset_min),
-                    from_menu: true,
-                };
+                self.phase = clock_screen(self.utc_secs(), self.state.utc_offset_min, true);
             }
             QuickRow::About => self.phase = Phase::About,
             QuickRow::FastForward | QuickRow::FastForwardSound | QuickRow::Rumble => {}
@@ -1837,7 +1844,9 @@ impl App {
         match &self.phase {
             // Nothing else is on screen and nothing goes over it, the HUD included: the
             // levels are unreachable here and there is no game to say anything about.
-            Phase::SetClock { picker, from_menu } => {
+            Phase::SetClock {
+                picker, from_menu, ..
+            } => {
                 let (line, hint) = match self.clock_faces {
                     Some((line, hint)) => (Some(line), Some(hint)),
                     None => (None, None),
@@ -3430,6 +3439,17 @@ fn trusted_write(
 
 fn up(level: u8, step: u8, max: u8) -> u8 {
     level.saturating_add(step).min(max)
+}
+
+/// The clock screen, opened on `utc` with `offset_min` already chosen. The picker shows only the
+/// minute, so the minute it opened on is kept beside it as the seed `confirm_clock` measures the
+/// user's change from.
+fn clock_screen(utc: i64, offset_min: i16, from_menu: bool) -> Phase {
+    Phase::SetClock {
+        picker: ClockPicker::local(utc, offset_min),
+        seed: utc - utc.rem_euclid(60),
+        from_menu,
+    }
 }
 
 /// The host's own clock, which is all there is before `set_power` hands over the device's.

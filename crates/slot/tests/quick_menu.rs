@@ -218,7 +218,7 @@ fn a_on_date_and_time_opens_the_clock_at_the_time_it_already_has() {
     assert_eq!(
         picker.secs(),
         CLOCK_IS_SET - CLOCK_IS_SET % 60,
-        "confirming it untouched would move the clock"
+        "the picker does not show the minute the clock is in"
     );
 }
 
@@ -235,10 +235,16 @@ fn confirming_the_clock_from_the_menu_sets_it_and_comes_back_to_the_menu() {
         press(&mut a, Btn::Right);
     }
     press(&mut a, Btn::Down); // half an hour further west
-    let want = a.picker().expect("not on the clock").secs();
+                              // What was changed on the screen, applied to the clock as it stands: the picker opened on
+                              // the minute the clock was in and cannot show its seconds.
+    let changed = a.picker().expect("not on the clock").secs() - (CLOCK_IS_SET - CLOCK_IS_SET % 60);
     press(&mut a, Btn::A);
     assert_eq!(a.quick_menu(), Some(QuickRow::DateTime), "{:?}", a.phase());
-    assert_eq!(clock.get(), want, "the platform clock was not set");
+    assert_eq!(
+        clock.get(),
+        CLOCK_IS_SET + changed,
+        "the platform clock was not set"
+    );
     let s = read_slot_state(d.path());
     assert_eq!(s.utc_offset_min, -330, "the offset was not saved");
     assert!(s.clock_set);
