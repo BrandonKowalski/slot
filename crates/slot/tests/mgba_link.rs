@@ -576,8 +576,9 @@ fn write_ppm(path: &Path, xrgb: &[u8]) {
     std::fs::write(path, out).expect("write picture");
 }
 
-/// Needs a Mario Kart: Super Circuit ROM, which is not in the tree:
-/// `SLOT_MKSC_ROM=/path/to/mksc.gba cargo test --release -p slot --test mgba_link -- --ignored`.
+/// Needs a Mario Kart: Super Circuit ROM, which is not in the tree. With `SLOT_MKSC_ROM` set to
+/// it, `cargo test --release -p slot --test mgba_link mario_kart -- --ignored` runs both Mario
+/// Kart tests and leaves out the ignored test that fails on purpose.
 /// 25,000 frames covers the menus, the link handshake and minutes of racing. Each device's last
 /// picture lands in the test's temp directory as a PPM.
 #[test]
@@ -617,22 +618,33 @@ fn mario_kart_super_circuit_is_the_same_race_on_both_devices() {
 }
 
 /// The Mario Kart walk, started the way every link session starts: both players' GBAs restored
-/// from a one-GBA state taken at the title screen (frame 1400), then linked from there. The two
-/// devices must still compute the same machines. The last pictures show how far the link got,
-/// and that is an open problem. Restored like this, the pair stalls at character select behind a
-/// "WAIT" box. The same walk from a reset, from the pair's own link state at 1400, or from
-/// one-GBA states taken at frame 600 races. The stall follows player 1's slot holding a one-GBA
-/// state. Found 2026-09-15; Plan 2 has to understand it before sessions start from restored states.
-/// `SLOT_MKSC_ROM=/path/to/mksc.gba cargo test --release -p slot --test mgba_link -- --ignored`.
+/// from a one-GBA state taken at the title screen (frame 1400), then linked from there. It has to
+/// race exactly as a reset boot does. At frame 25,000, player 0's device shows the very picture
+/// a reset boot's shows, mid-race, and both devices compute the same machines. Before the cable
+/// synced at player 0's frame end, player 0 read the lobby's A press a frame late here, and the
+/// pair stalled at character select behind a "WAIT" box. Only player 0's picture is compared. A
+/// reset boot ends player 1's frames 204,248 cycles before player 0's, while a restore of two
+/// frame-end states ends them together, so player 1 draws what it has been sent at a different
+/// moment. And a one-GBA state's clock is not a linked boot's, so neither GBA's state can match
+/// the boot's byte for byte. It needs the ROM too, and runs the way the test above says.
 #[test]
 #[ignore]
-fn mario_kart_super_circuit_after_a_restore_is_the_same_on_both_devices() {
+fn mario_kart_super_circuit_races_linked_after_a_restore() {
     let _g = common::core_lock();
     let dylib = common::vendored_core().expect("no vendored mGBA core: run `task core`");
     let rom = PathBuf::from(
         std::env::var_os("SLOT_MKSC_ROM")
             .expect("set SLOT_MKSC_ROM to a Mario Kart: Super Circuit ROM"),
     );
+
+    let mut boot = link_core(&dylib, 0);
+    boot.load(&rom).expect("link mode refused Mario Kart");
+    for frame in 1..=25_000 {
+        let keys = race_script(frame);
+        boot.run_frame_linked(keys, keys);
+    }
+    let raced = boot.video_xrgb8888().to_vec();
+    drop(boot);
 
     let mut single = single_core(&dylib);
     single.load(&rom).expect("mGBA refused Mario Kart");
@@ -644,24 +656,37 @@ fn mario_kart_super_circuit_after_a_restore_is_the_same_on_both_devices() {
     let container = slk1([&title, &title]);
 
     let mut hashes = Vec::new();
+    let mut pictures = Vec::new();
     for player in [0u8, 1] {
         let mut core = link_core(&dylib, player);
         core.load(&rom).expect("link mode refused Mario Kart");
         core.unserialize(&container)
             .expect("link mode refused the title-screen link state");
+        let started = std::time::Instant::now();
         for frame in 1401..=25_000 {
             let keys = race_script(frame);
             core.run_frame_linked(keys, keys);
         }
+        let secs = started.elapsed().as_secs_f64();
+        eprintln!(
+            "restored, mgba_link_player={player}: 23600 frame pairs in {secs:.1} s, {:.0} pairs/s",
+            23_600.0 / secs
+        );
         let picture = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("mksc-restored-player{player}.ppm"));
         write_ppm(&picture, core.video_xrgb8888());
         eprintln!("last picture: {}", picture.display());
+        pictures.push(core.video_xrgb8888().to_vec());
         hashes.push(fnv1a(&core.serialize().expect("no link state")));
     }
     assert_eq!(
         hashes[0], hashes[1],
         "player 0's and player 1's devices computed different machines after a restore"
+    );
+    assert!(
+        pictures[0] == raced,
+        "restored at the title screen, player 0's device is not showing the race a reset boot \
+         shows at frame 25,000"
     );
 }
 
