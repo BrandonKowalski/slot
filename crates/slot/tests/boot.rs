@@ -112,6 +112,7 @@ fn seating_a_cart_preserves_the_levels_already_in_the_file() {
             muted: false,
             clock_set: true,
             utc_offset_min: 0,
+            ..SlotState::default()
         },
     )
     .unwrap();

@@ -12,6 +12,11 @@ pub const VOLUME_MAX: u8 = 100;
 pub const UTC_OFFSET_MIN: i16 = -720;
 pub const UTC_OFFSET_MAX: i16 = 840;
 
+/// The fast forward speeds the quick menu offers, in game frames per screen refresh. Four is
+/// the most an H700 can serve (see `FAST_STEPS` in the emulator), and one is not fast at all.
+pub const FF_SPEED_MIN: u8 = 2;
+pub const FF_SPEED_MAX: u8 = 4;
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
     /// Filename stem. `None` is an empty slot, which is the shelf.
@@ -28,10 +33,17 @@ pub struct SlotState {
     /// Minutes to add to the card's UTC to get local time. Zero is a device that never left
     /// Greenwich, which is also what a card that has never been asked reads as.
     pub utc_offset_min: i16,
+    /// Whether the motor may move. Off, a game still asks for it and is simply never obeyed.
+    pub rumble: bool,
+    /// Game frames per screen refresh while fast forwarding, `FF_SPEED_MIN` to `FF_SPEED_MAX`.
+    pub ff_speed: u8,
+    /// Whether fast forward is heard, sped up, rather than dropped.
+    pub ff_sound: bool,
 }
 
 /// Not derived. `read_slot_state` falls back here on a first boot, and all zeroes would
-/// be a device with the backlight off and the mixer muted.
+/// be a device with the backlight off and the mixer muted. The quick menu's three settings
+/// default to what slot did before they were settings.
 impl Default for SlotState {
     fn default() -> Self {
         SlotState {
@@ -42,6 +54,9 @@ impl Default for SlotState {
             muted: false,
             clock_set: false,
             utc_offset_min: 0,
+            rumble: true,
+            ff_speed: FF_SPEED_MAX,
+            ff_sound: false,
         }
     }
 }
@@ -60,20 +75,29 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\n",
+        "cart={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.brightness,
         s.blue_light,
         s.volume,
         s.muted as u8,
         s.clock_set as u8,
-        s.utc_offset_min
+        s.utc_offset_min,
+        s.rumble as u8,
+        s.ff_speed,
+        s.ff_sound as u8
     );
     atomic_write(&state_path(root), text.as_bytes())
 }
 
-/// All or nothing. A file we only half recognise is not one we wrote, and inheriting the
-/// missing fields from the defaults would hide the corruption behind plausible values.
+/// The lines every build has written are all or nothing. A file missing one of those, or
+/// holding one out of range, is not one we wrote, and inheriting the missing fields from the
+/// defaults would hide the corruption behind plausible values.
+///
+/// Everything else is forgiven. A line this build does not know was written by a later one,
+/// and is skipped rather than costing the user their levels and their clock. The quick menu's
+/// settings arrived after cards were already in use, so each of those that is missing or
+/// unreadable reads as its own default and leaves the rest of the card alone.
 fn parse(text: &str) -> Option<SlotState> {
     let mut cart = None;
     let mut brightness = None;
@@ -82,8 +106,13 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut muted = None;
     let mut clock_set = None;
     let mut utc_offset_min = None;
+    let mut rumble = None;
+    let mut ff_speed = None;
+    let mut ff_sound = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
-        let (key, value) = line.split_once('=')?;
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         match key {
             "cart" => cart = Some(value.to_string()),
             "brightness" => brightness = Some(level(value, BRIGHTNESS_MAX)?),
@@ -92,10 +121,14 @@ fn parse(text: &str) -> Option<SlotState> {
             "muted" => muted = Some(level(value, 1)? == 1),
             "clock_set" => clock_set = Some(level(value, 1)? == 1),
             "utc_offset_min" => utc_offset_min = Some(offset(value)?),
-            _ => return None,
+            "rumble" => rumble = flag(value),
+            "ff_speed" => ff_speed = level(value, FF_SPEED_MAX).filter(|n| *n >= FF_SPEED_MIN),
+            "ff_sound" => ff_sound = flag(value),
+            _ => {}
         }
     }
     let cart = cart?;
+    let fallback = SlotState::default();
     Some(SlotState {
         cart: (!cart.is_empty()).then_some(cart),
         brightness: brightness?,
@@ -104,6 +137,9 @@ fn parse(text: &str) -> Option<SlotState> {
         muted: muted?,
         clock_set: clock_set?,
         utc_offset_min: utc_offset_min?,
+        rumble: rumble.unwrap_or(fallback.rumble),
+        ff_speed: ff_speed.unwrap_or(fallback.ff_speed),
+        ff_sound: ff_sound.unwrap_or(fallback.ff_sound),
     })
 }
 
@@ -116,4 +152,8 @@ fn offset(value: &str) -> Option<i16> {
 
 fn level(value: &str, max: u8) -> Option<u8> {
     value.parse().ok().filter(|n| *n <= max)
+}
+
+fn flag(value: &str) -> Option<bool> {
+    level(value, 1).map(|n| n == 1)
 }

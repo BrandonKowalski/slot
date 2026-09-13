@@ -192,6 +192,7 @@ fn eject_preserves_the_levels() {
             muted: true,
             clock_set: true,
             utc_offset_min: 0,
+            ..SlotState::default()
         },
     )
     .unwrap();
