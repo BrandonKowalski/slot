@@ -20,7 +20,7 @@ A bespoke, GBA-only frontend for the Anbernic RG SP.
 | `L` / `R` | Browse the carousel                 |
 | Tap `A`   | Resume the last save state          |
 | Hold `A`  | Start the game fresh                |
-| `MENU`    | Open the about screen               |
+| `MENU`    | Open the quick menu                 |
 | `START`   | Choose which emulator runs the cart |
 
 ### In game
@@ -81,6 +81,19 @@ build does not carry:
 ```
 Emerald = gpsp
 ```
+
+`System/slot.state` is written by slot itself. The quick menu's settings are kept there as
+three lines, and a card without them gets what slot always did:
+
+```
+rumble=1
+ff_speed=4
+ff_sound=0
+```
+
+- `rumble`: `0` keeps the motor still.
+- `ff_speed`: how fast fast-forward runs, `2`, `3` or `4` times.
+- `ff_sound`: `1` plays fast-forward sped up instead of silently.
 
 ## Installing on your RG SP
 
