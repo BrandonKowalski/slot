@@ -3,7 +3,8 @@ use slot_store::{
     civil_from_days, days_from_civil, days_in_month, parse_stamp, UTC_OFFSET_MAX, UTC_OFFSET_MIN,
 };
 
-use crate::plate::{blit, hint_width, UndoFace, HINT_H};
+use crate::plate::{blit, hint_width, UndoFace, HINT_EDGE, HINT_H};
+use crate::quick_menu::LEGEND_GAP;
 use crate::text;
 
 const DAY: i64 = 86_400;
@@ -54,6 +55,21 @@ pub fn hhmm(secs: i64) -> String {
     format!("{:02}:{:02}", rem / 3600, rem / 60 % 60)
 }
 
+const MONTHS: [&str; 12] = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+/// The quick menu's date and time: the month by name, the day, and the time the way the
+/// carousel prints it. No year and no seconds, since it is read at a glance rather than kept.
+pub fn date_time_text(secs: i64) -> String {
+    let (_, month, day) = civil_from_days(secs.div_euclid(DAY));
+    let name = MONTHS
+        .get((month - 1) as usize)
+        .copied()
+        .unwrap_or_default();
+    format!("{name} {day} {}", hhmm(secs))
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Field {
     Year,
@@ -76,8 +92,8 @@ impl Field {
     ];
 }
 
-/// Year, month, day, hour, minute, with one of them under the caret. Asked once on slot's
-/// first launch and never reachable again, which is what keeps it from being a setting.
+/// Year, month, day, hour, minute, with one of them under the caret. Asked on slot's first
+/// launch, and reachable again only from the quick menu's Date & Time.
 #[derive(Clone, Debug)]
 pub struct ClockPicker {
     year: i64,
@@ -105,6 +121,17 @@ impl ClockPicker {
             minute: rem / 60 % 60,
             offset_min: 0,
             cursor: 0,
+        }
+    }
+
+    /// A clock that is already set, opened again from the quick menu: the fields read the time
+    /// on the wall that `offset_min` makes of `utc`, and the offset is the one already chosen,
+    /// so confirming it untouched changes nothing.
+    pub fn local(utc: i64, offset_min: i16) -> Self {
+        let offset = i64::from(offset_min);
+        ClockPicker {
+            offset_min: offset,
+            ..ClockPicker::from_secs(utc + offset * 60)
         }
     }
 
@@ -244,7 +271,16 @@ impl ClockPicker {
         format!("{sign}{:02}:{:02}", mins / 60, mins % 60)
     }
 
-    pub fn draw(&self, line: Option<TexId>, hint: Option<TexId>, out: &mut Vec<Draw>) {
+    /// `back` is the quick menu's B BACK and its width, offered beside the screen's own key when
+    /// the clock was opened from the menu. At first boot there is nothing behind the screen, so
+    /// there is nothing to offer and the one key sits alone in the middle as it always has.
+    pub fn draw(
+        &self,
+        line: Option<TexId>,
+        hint: Option<TexId>,
+        back: Option<(TexId, u32)>,
+        out: &mut Vec<Draw>,
+    ) {
         out.push(Draw::Rect {
             x: 0.0,
             y: 0.0,
@@ -278,12 +314,34 @@ impl ClockPicker {
                 1.0,
             ],
         });
-        if let Some(tex) = hint {
-            let hw = hint_width(SET_CLOCK_KEY, SET_CLOCK_LABEL) as f32;
+        let hint_y = y + PICKER_H as f32 + HINT_DROP;
+        let hw = hint_width(SET_CLOCK_KEY, SET_CLOCK_LABEL);
+        let Some((back, bw)) = back else {
+            if let Some(tex) = hint {
+                out.push(Draw::Tex {
+                    x: (OUT_W as f32 - hw as f32) / 2.0,
+                    y: hint_y,
+                    w: hw as f32,
+                    h: HINT_H as f32,
+                    tex,
+                    alpha: 1.0,
+                });
+            }
+            return;
+        };
+        // B BACK first, as the quick menu's own legend has it, and the pair centred as one row
+        // by what shows of each.
+        let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
+        let x = ((OUT_W as f32 - (seen(bw) + LEGEND_GAP + seen(hw))) / 2.0).round();
+        let pair = [
+            Some((back, bw, x)),
+            hint.map(|tex| (tex, hw, (x + seen(bw) + LEGEND_GAP).round())),
+        ];
+        for (tex, w, at) in pair.into_iter().flatten() {
             out.push(Draw::Tex {
-                x: (OUT_W as f32 - hw) / 2.0,
-                y: y + PICKER_H as f32 + HINT_DROP,
-                w: hw,
+                x: at,
+                y: hint_y,
+                w: w as f32,
                 h: HINT_H as f32,
                 tex,
                 alpha: 1.0,

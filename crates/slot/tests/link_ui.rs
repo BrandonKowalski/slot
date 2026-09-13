@@ -146,8 +146,8 @@ fn b_on_pick_hands_the_game_back() {
     assert!(matches!(app.phase(), Phase::Playing { .. }));
 }
 
-/// The shelf's About sticker is a different screen on a different button, and this must not
-/// have replaced it.
+/// The shelf's quick menu is a different screen on a different button, and this must not have
+/// replaced it.
 #[test]
 fn the_game_menu_does_not_open_on_the_shelf() {
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
@@ -155,10 +155,10 @@ fn the_game_menu_does_not_open_on_the_shelf() {
     app.apply(Action::GameMenu);
     assert!(!app.game_menu_open(), "the shelf raised the in-game menu");
     assert!(matches!(app.phase(), Phase::Shelf));
-    app.apply(Action::OpenAbout);
+    app.apply(Action::QuickMenu);
     assert!(
-        matches!(app.phase(), Phase::About),
-        "the shelf lost its About screen"
+        matches!(app.phase(), Phase::QuickMenu { .. }),
+        "the shelf lost its quick menu"
     );
 }
 

@@ -8,10 +8,12 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face, hhmm,
-    hint_face, icon_face, menu_face, photo_face, set_clock_hint_face, socket_face, sticker_face,
-    title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge, PowerChoice, StickerFields,
-    Toast, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
+    date_time_text, hhmm, hint_face, icon_face, menu_face, photo_face, quick_caret_face,
+    quick_label_face, quick_legend_faces, quick_value_face, set_clock_hint_face, socket_face,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge, PowerChoice,
+    QuickMenuFaces, QuickRow, QuickValue, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
+    HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -63,6 +65,15 @@ pub struct Frontend {
     switcher: Switcher,
     clocks: Clocks,
     about: AboutFace,
+    quick_clock: QuickClock,
+}
+
+/// Date & Time's value in the quick menu, grey and lit, and the text they were built for.
+#[derive(Default)]
+struct QuickClock {
+    dim: Option<TexId>,
+    lit: Option<TexId>,
+    shown: String,
 }
 
 /// The about label, and what it was last built for. The gauge is the only thing on it that
@@ -122,6 +133,7 @@ impl Frontend {
             switcher: Switcher::default(),
             clocks: Clocks::default(),
             about: AboutFace::default(),
+            quick_clock: QuickClock::default(),
         }
     }
 
@@ -187,6 +199,30 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_power_menu_faces(menu);
+        // The quick menu's rows, every value a row can hold in both inks, its two arrows and its
+        // legend. At boot, like the power menu's rows, so moving through the menu or changing a
+        // value never waits on a font. Only Date & Time's value is left to `sync_quick_clock`:
+        // it is the one thing on the menu that changes by itself.
+        let mut up = |f: UndoFace| (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h);
+        let labels = QuickRow::ALL
+            .iter()
+            .map(|r| up(quick_label_face(*r)))
+            .collect();
+        let values = QuickValue::ALL
+            .iter()
+            .map(|v| [false, true].map(|lit| up(quick_value_face(v.text(), lit))))
+            .collect();
+        let carets = [false, true].map(|right| up(quick_caret_face(right)));
+        let legend = quick_legend_faces().map(|f| {
+            let (tex, w, _) = up(f);
+            (tex, w)
+        });
+        self.session.app_mut().set_quick_menu_faces(QuickMenuFaces {
+            labels,
+            values,
+            carets,
+            legend,
+        });
         // The open cart's parts that never change: each socket, the chip seated in each, the
         // blank chip in flight and its shadow, in `Core::ALL` order. At boot like the power
         // menu's rows, so the first frame of a lid coming off is not spent in a rasteriser.
@@ -290,6 +326,13 @@ impl Frontend {
     /// One frame into the offscreen target and out to a surface of `window` pixels. The
     /// caller swaps: only it knows what presenting costs.
     pub fn render(&mut self, compositor: &mut Compositor, window: (u32, u32)) {
+        self.compose(compositor);
+        compositor.end_frame(window);
+    }
+
+    /// One frame into the offscreen target and no further: what `render` presents, and what a
+    /// test with no window to present to reads back with `Compositor::read_frame`.
+    pub fn compose(&mut self, compositor: &mut Compositor) {
         // Set every frame rather than on the edge: the grade is part of the final blit, so
         // it has to be right whether or not anything just changed it.
         compositor.set_blue_light(self.session.app().blue_light());
@@ -301,6 +344,7 @@ impl Frontend {
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_about(self.session.app_mut(), compositor, &mut self.about);
+        sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
         sync_core_picker(
             self.session.app_mut(),
             compositor,
@@ -353,7 +397,6 @@ impl Frontend {
         self.draws.clear();
         self.session.app().draw(&mut self.draws);
         compositor.draw_list(&self.draws);
-        compositor.end_frame(window);
     }
 
     /// Input and time, after the frame is on screen. The gesture windows expire on this
@@ -504,6 +547,29 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
             app.set_battery_percent_face(id, w);
         }
     }
+}
+
+/// Date & Time's value, in both inks so the bar can land on it without anything being rastered.
+/// Built only while the quick menu is up, and then only when the minute has turned since it was
+/// last built, as the shelf clock is: a clock nobody is looking at is not worth a rasterisation a
+/// minute on the H700.
+fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut QuickClock) {
+    if app.quick_menu().is_none() {
+        return;
+    }
+    let text = date_time_text(app.wall_secs());
+    if text == state.shown {
+        return;
+    }
+    let (dim, lit) = (
+        quick_value_face(&text, false),
+        quick_value_face(&text, true),
+    );
+    let (dim_size, lit_size) = ((dim.w, dim.h), (lit.w, lit.h));
+    let dim = upload(compositor, &mut state.dim, dim);
+    let lit = upload(compositor, &mut state.lit, lit);
+    app.set_quick_clock_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
+    state.shown = text;
 }
 
 /// Built only once the screen is up: it is a 660 by 228 rasterisation and most sessions never

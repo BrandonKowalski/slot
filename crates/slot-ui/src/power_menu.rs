@@ -37,13 +37,13 @@ impl PowerChoice {
 /// they cannot undo, so it is set well above the key-caption type the rest of the chrome
 /// uses. The shutdown line that follows a choice is rastered at the same size: the words
 /// change but the voice should not.
-const MENU_PX: f32 = 30.0;
+pub(crate) const MENU_PX: f32 = 30.0;
 const MENU_MIN_PX: f32 = 18.0;
-const MENU_H: u32 = 40;
+pub(crate) const MENU_H: u32 = 40;
 /// Breathing room either side of the ink, which is also what the highlight bar is padded by
 /// so the bar hugs the words rather than the panel.
 pub const MENU_PAD: u32 = 18;
-const MENU_INK: [u8; 3] = [0xf6, 0xf4, 0xef];
+pub(crate) const MENU_INK: [u8; 3] = [0xf6, 0xf4, 0xef];
 
 /// Sized to its own text rather than to a fixed box, so a caller can put a bar behind it
 /// that fits the words. A fixed width would make the bar the same size under "Restart" and

@@ -464,10 +464,11 @@ fn eject_is_the_insert_backwards() {
     assert!(a.screen_power() < first, "the screen is not closing");
 }
 
-/// The about screen is a shelf affordance. MENU means eject and polaroids once a cart is in,
-/// and a label over a running game is a pause screen nobody asked for.
+/// The quick menu, and the about screen inside it, are shelf affordances. MENU means eject and
+/// polaroids once a cart is in, and a menu over a running game is a pause screen nobody asked
+/// for.
 #[test]
-fn about_opens_from_the_shelf_and_nowhere_else() {
+fn the_quick_menu_opens_from_the_shelf_and_nowhere_else() {
     // Two carts, or `single_cart` makes this a dedicated device: one cart is seated at boot
     // whatever the state says, and the shelf is never on screen to press MENU from.
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
@@ -478,36 +479,46 @@ fn about_opens_from_the_shelf_and_nowhere_else() {
         "not on the shelf: {:?}",
         s.app().phase()
     );
-    s.app_mut().apply(slot_input::Action::OpenAbout);
-    assert!(matches!(s.app().phase(), slot::app::Phase::About));
+    s.app_mut().apply(slot_input::Action::QuickMenu);
+    assert!(matches!(
+        s.app().phase(),
+        slot::app::Phase::QuickMenu { .. }
+    ));
 
-    // And a seated cart has no about screen at all.
+    // And a seated cart has no quick menu at all.
     s.app_mut()
         .apply(slot_input::Action::GbaDown(slot_input::Btn::B));
     s.app_mut().apply(slot_input::Action::Insert);
-    s.app_mut().apply(slot_input::Action::OpenAbout);
+    s.app_mut().apply(slot_input::Action::QuickMenu);
     assert!(
-        !matches!(s.app().phase(), slot::app::Phase::About),
-        "a label opened over a seated cart"
+        !matches!(s.app().phase(), slot::app::Phase::QuickMenu { .. }),
+        "a menu opened over a seated cart"
     );
 }
 
-/// Both ways out land on the shelf. MENU is the one that matters: the button that opened it
-/// should close it without the user having to know that B works too.
+/// Both ways out of the label land back on the quick menu, on its About row. MENU works as well
+/// as B, so the button that brought the user here gets them back.
 #[test]
-fn both_b_and_menu_close_the_about_screen() {
+fn both_b_and_menu_take_the_about_screen_back_to_the_quick_menu() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
     for out in [
         slot_input::Action::GbaDown(slot_input::Btn::B),
-        slot_input::Action::OpenAbout,
+        slot_input::Action::QuickMenu,
     ] {
         let (mut s, _motor) = common::session_with_platform(d.path());
-        s.app_mut().apply(slot_input::Action::OpenAbout);
+        s.app_mut().apply(slot_input::Action::QuickMenu);
+        for _ in 0..slot_ui::QuickRow::About.index() {
+            s.app_mut()
+                .apply(slot_input::Action::GbaDown(slot_input::Btn::Down));
+        }
+        s.app_mut()
+            .apply(slot_input::Action::GbaDown(slot_input::Btn::A));
         assert!(matches!(s.app().phase(), slot::app::Phase::About));
         s.app_mut().apply(out);
-        assert!(
-            matches!(s.app().phase(), slot::app::Phase::Shelf),
-            "{out:?} did not close the label"
+        assert_eq!(
+            s.app().quick_menu(),
+            Some(slot_ui::QuickRow::About),
+            "{out:?} did not take the label back to the menu"
         );
     }
 }

@@ -13,6 +13,7 @@ mod link_art;
 mod plate;
 mod polaroids;
 mod power_menu;
+mod quick_menu;
 mod refusal;
 mod shelf;
 mod shell;
@@ -36,7 +37,7 @@ pub use cart::{
     cart_face, cart_shadow, clean_label, label_colour, label_panel, label_tags, label_text,
     CartFace, CART_H, CART_W, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
 };
-pub use clock::{clock_label, hhmm, set_clock_hint_face, ClockPicker, Field};
+pub use clock::{clock_label, date_time_text, hhmm, set_clock_hint_face, ClockPicker, Field};
 pub use draw::{Draw, TexId, OUT_H, OUT_W};
 pub use footer::{draw_footer, Printed};
 pub use hud::{
@@ -56,6 +57,10 @@ pub use plate::{
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
 pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
+pub use quick_menu::{
+    quick_caret_face, quick_label_face, quick_legend_faces, quick_value_face, QuickMenu,
+    QuickMenuFaces, QuickRow, QuickValue, QUICK_EDGE, QUICK_PITCH, QUICK_TOP,
+};
 pub use refusal::Refusal;
 pub use shelf::Shelf;
 pub use shell::{

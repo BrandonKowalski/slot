@@ -45,18 +45,18 @@ fn select_released_inside_the_window_still_reaches_the_game() {
     assert!(g.tick(1_000).is_empty());
 }
 
-/// A tap of MENU opens the about screen, on the release. The other two MENU gestures are
+/// A tap of MENU opens the quick menu, on the release. The other two MENU gestures are
 /// unchanged: a tap was the one press this button did not already mean something by.
 #[test]
-fn menu_single_tap_opens_the_about_screen() {
+fn menu_single_tap_opens_the_quick_menu() {
     let mut g = Gestures::new();
     assert!(g.feed(Down(Menu), 0).is_empty(), "acted on the press");
-    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
+    assert_eq!(g.feed(Up(Menu), 100), vec![QuickMenu]);
     assert!(g.tick(451).is_empty(), "fired a second time on the timer");
 }
 
 /// The hold is an eject and nothing else. A press long enough to eject is not also a tap, or
-/// letting go of one would drop the about screen over the shelf the cart just came back to.
+/// letting go of one would drop the quick menu over the shelf the cart just came back to.
 #[test]
 fn a_menu_hold_is_not_also_a_tap() {
     let mut g = Gestures::new();
@@ -343,7 +343,7 @@ fn a_chorded_menu_never_arms_the_eject_hold() {
 fn a_chord_after_a_recent_menu_tap_is_still_the_menu() {
     let mut g = Gestures::new();
     g.feed(Down(Menu), 0);
-    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
+    assert_eq!(g.feed(Up(Menu), 100), vec![QuickMenu]);
     g.feed(Down(Select), 150);
     assert_eq!(
         g.feed(Down(Menu), 200),
@@ -363,20 +363,20 @@ fn menu_under_a_select_the_game_already_has_is_not_the_menu() {
         g.feed(Down(Menu), 700).is_empty(),
         "a SELECT the game already owns still chorded"
     );
-    assert_eq!(g.feed(Up(Menu), 800), vec![OpenAbout]);
+    assert_eq!(g.feed(Up(Menu), 800), vec![QuickMenu]);
 }
 
 /// The chord clears both of MENU's own windows, so the press after it has to start its own.
 ///
 /// It has to begin with a real tap, or the half of that which matters is invisible: the tap
 /// leaves a double tap window open, the chord lands inside it, and a chord that does not
-/// close that window leaves the very next MENU tap opening the switcher instead of the about
-/// screen — a press whose meaning depends on a chord two presses ago.
+/// close that window leaves the very next MENU tap opening the switcher instead of the quick
+/// menu — a press whose meaning depends on a chord two presses ago.
 #[test]
 fn the_menu_button_still_works_after_a_chord() {
     let mut g = Gestures::new();
     g.feed(Down(Menu), 0);
-    assert_eq!(g.feed(Up(Menu), 100), vec![OpenAbout]);
+    assert_eq!(g.feed(Up(Menu), 100), vec![QuickMenu]);
     g.feed(Down(Select), 150);
     assert_eq!(g.feed(Down(Menu), 200), vec![GameMenu]);
     assert!(g.feed(Up(Menu), 250).is_empty());
@@ -387,7 +387,7 @@ fn the_menu_button_still_works_after_a_chord() {
     );
     assert_eq!(
         g.feed(Up(Menu), 450),
-        vec![OpenAbout],
+        vec![QuickMenu],
         "the chord left the menu button dead"
     );
 }
