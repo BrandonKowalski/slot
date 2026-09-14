@@ -20,18 +20,43 @@ use crate::rewind::{RewindThread, REWIND_BYTES};
 /// 0.456% the GBA runs slow lands entirely on audio rate control.
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
-/// The most core frames a present runs while fast forwarding, and the speed a card that never
-/// chose one gets. The quick menu picks 2, 3 or this, through `EmuHandle::set_fast_steps`. There
-/// is no ramp and no adaptive cap: the core is stepped the chosen number of times and the
-/// deadline below absorbs whatever that costs.
-///
-/// Four at most, because an H700 cannot serve more. Eight was measured on hardware and pegged the
-/// worker at the same 100.5% of one core that four does — a thread already at 100% does the
-/// same work per second either way, so the extra steps bought no speed at all. What they cost
-/// was presents: the deadline sleep was never reached, so the picture fell from 60 Hz to
-/// around 30 at the same ~4x. A step count the hardware cannot serve does not run faster, it
-/// runs choppier.
+/// The speed a card that never chose one gets, and what the quick menu's 4× asks for. The menu
+/// picks 2, 3, this, or adaptive, through `EmuHandle::set_fast_steps`.
 pub const FAST_STEPS: u32 = 4;
+
+/// The most core frames one present will ever run, whatever is asked. This is adaptive fast
+/// forward's safety cap rather than a speed anyone chooses: the budget below is what normally
+/// stops a present, and this only binds on content cheap enough that it otherwise would not.
+///
+/// Sixteen, from measurement rather than from the old number. The fastest core frame anyone has
+/// timed on an H700 is gpSP's dynarec with its render skipped, 0.762 ms (Apotris,
+/// `.superpowers/flags/report.md`); `FAST_BUDGET` divided by that is about 17.7 frames, so on
+/// the lightest content measured the cap and the budget bind at nearly the same place and
+/// neither one dominates. Sixteen of those frames is 12.2 ms, which leaves the rest of the
+/// present for the one conversion, the snapshot and the audio and still reaches the deadline
+/// sleep. It is also well under the 30 consecutive skips both cores force a render after
+/// (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a picture
+/// mid-present that nothing goes on to show.
+///
+/// The old ceiling was four, on the reasoning that an H700 could not serve more. That was
+/// measured against gpSP's *interpreter*, at 2.07-2.96 ms a frame. The core slot builds now
+/// runs its dynarec and is three to four times quicker, so four stopped being what the hardware
+/// could serve and became merely what it was told.
+pub const FAST_STEPS_MAX: u32 = 16;
+
+/// How much of a present a fast forward may spend inside the core.
+///
+/// The spike held a steady 60 Hz with about 15 ms of each present used in total, still reaching
+/// the deadline sleep every frame. What is left of the present after the core is the measured
+/// fixed cost of one: 0.44 ms converting the one frame that is shown, a snapshot every second
+/// present (0.57 ms on gpSP, 2.05 on mGBA), and under 0.1 ms of publish, audio and link pump.
+/// Reserving the worst of that off 15 ms leaves this for core frames.
+const FAST_BUDGET: Duration = Duration::from_micros(13_500);
+
+/// How much of the running per-frame estimate one present's measurement replaces: a quarter.
+/// Slow enough that one descheduled present does not collapse the next one to a single frame,
+/// quick enough to follow a game walking from a menu into a busy scene within a few presents.
+const COST_BLEND: u32 = 4;
 
 /// Snapshot every other frame, so rewinding at one pop per present runs back at 2x.
 ///
@@ -117,8 +142,9 @@ struct Shared {
     stop: AtomicBool,
     /// 0 to 100. Read by the worker every batch, so a change lands within one frame.
     volume: AtomicU8,
-    /// Core frames a fast forward present runs, 1 to `FAST_STEPS`. Read by the worker every
-    /// present, so a change lands on the next one.
+    /// The most core frames a fast forward present may run, 1 to `FAST_STEPS_MAX`. A ceiling
+    /// rather than a count: the worker runs as many frames as the present's budget affords, up
+    /// to this. Read by the worker every present, so a change lands on the next one.
     fast_steps: AtomicU32,
     /// Whether fast forward is heard, sped up, rather than dropped.
     ff_sound: AtomicBool,
@@ -295,15 +321,21 @@ impl EmuHandle {
         self.shared.volume.store(level.min(100), Ordering::Relaxed);
     }
 
-    /// How many core frames a fast forward present runs: the quick menu's 2, 3 or 4. Never more
-    /// than `FAST_STEPS`, which is all an H700 can serve, and never none, which is a pause.
+    /// The most core frames a fast forward present may run: the quick menu's 2, 3 or 4, or
+    /// adaptive. Never none, which is a pause, and never more than `FAST_STEPS_MAX`.
+    ///
+    /// The clamp is what turns adaptive into a number. `slot.state` spells adaptive as
+    /// `FF_SPEED_ADAPTIVE`, which is 255 — larger than any ceiling the hardware could serve, so
+    /// it lands on the safety cap here rather than needing a separate value to be carried down
+    /// and matched on. A ceiling the machine cannot reach costs nothing: the budget stops the
+    /// present first.
     pub fn set_fast_steps(&self, steps: u32) {
         self.shared
             .fast_steps
-            .store(steps.clamp(1, FAST_STEPS), Ordering::Relaxed);
+            .store(steps.clamp(1, FAST_STEPS_MAX), Ordering::Relaxed);
     }
 
-    /// What the worker will step its next fast forward present by.
+    /// The ceiling the worker will hold its next fast forward present to.
     pub fn fast_steps(&self) -> u32 {
         self.shared.fast_steps.load(Ordering::Relaxed)
     }
@@ -485,6 +517,15 @@ impl Worker {
         let mut gated = (false, false);
         let rewind = RewindThread::spawn(REWIND_BYTES);
         let mut since_snapshot = 0;
+        // What one core frame has been costing, kept across presents so a fast forward present
+        // can tell before it runs a frame whether there is room for another one after it.
+        //
+        // Seeded at a whole present, which is pessimistic on purpose: an estimate that starts
+        // too low would let the very first fast present run to the ceiling before anything had
+        // been measured. Normal play updates it too — one frame a present is still a
+        // measurement — so by the time anyone reaches for the trigger this already holds the
+        // real cost of a drawn frame on this machine, for this game.
+        let mut frame_cost = PRESENT;
         let mut deadline = Instant::now();
         let mut paced = 0u64;
         // `None` until a session begins. Held here rather than on `Shared`: the transport is
@@ -594,7 +635,7 @@ impl Worker {
             }
             let input = ButtonMask(self.shared.input.load(Ordering::Relaxed));
             let rewinding = speed != Speed::Paused && self.shared.rewind.load(Ordering::Relaxed);
-            let steps = match speed {
+            let ceiling = match speed {
                 Speed::Paused => 0,
                 Speed::Normal => 1,
                 Speed::Fast => self.shared.fast_steps.load(Ordering::Relaxed),
@@ -615,6 +656,12 @@ impl Worker {
                     // state landed on when the trigger was released inherited the
                     // difference. Nothing was being replayed faithfully; it was being
                     // re-played.
+                    //
+                    // Drawn, not skipped: this frame is the picture the rewind shows. Every
+                    // present already leaves the core with skipping off — the last frame of one
+                    // is always a drawn frame — but saying so here keeps that a property of
+                    // this branch rather than an inheritance from whatever ran before it.
+                    core.set_frame_skip(false);
                     core.run_frame(ButtonMask(0));
                     self.publish(core.video_xrgb8888());
                 }
@@ -623,10 +670,33 @@ impl Worker {
                     .store(rewind.fill(), Ordering::Relaxed);
                 // Reverse audio is noise, and the sink runs itself dry into silence.
                 let _ = core.take_audio();
-            } else if steps > 0 {
-                for _ in 0..steps {
+            } else if ceiling > 0 {
+                // As many core frames as this present can afford, up to the ceiling, and only
+                // the last of them draws a picture.
+                //
+                // A count rather than a multiplier is what makes a heavy game slow down
+                // smoothly instead of falling off 60 Hz: 2×, 3× and 4× are the most this may
+                // run, not what it must, so content that cannot afford the whole ceiling gives
+                // back speed a frame at a time while still presenting every 16.67 ms. Adaptive
+                // is the same loop with the ceiling set out of reach.
+                //
+                // Whether a frame is the last has to be decided *before* it runs, because that
+                // is the only moment either core can still be told not to draw it — so the test
+                // is predictive: there is room for another frame after this one only if the
+                // present has time for both. Being wrong costs one frame of speed, never a
+                // dropped present.
+                let began = Instant::now();
+                let mut ran = 0u32;
+                loop {
+                    ran += 1;
+                    let last = ran >= ceiling || began.elapsed() + frame_cost * 2 > FAST_BUDGET;
+                    core.set_frame_skip(!last);
                     core.run_frame(input);
+                    if last {
+                        break;
+                    }
                 }
+                frame_cost = blend(frame_cost, began.elapsed() / ran);
                 // Immediately, and this is the one that decides whether a link is playable.
                 // The emulated serial hardware only executes inside `run_frame`, so every
                 // packet a session actually produces is born here. Sending them from the top
@@ -639,8 +709,8 @@ impl Worker {
 
                 // Counted per present rather than per frame, so a fast forward pays the
                 // same snapshot cost per present as normal play and simply records a
-                // coarser trail that follows the chosen speed: four frames apart at 2x and
-                // eight at 4x, rather than two.
+                // coarser trail that follows the speed actually reached: twice however many
+                // frames a present ran, rather than two.
                 //
                 // This used to sit inside the `Normal` arm below, which exists to gate the
                 // audio, and was swept in with it. The effect was a hole: nothing recorded
@@ -668,7 +738,9 @@ impl Worker {
                 if speed == Speed::Normal || ff_sound {
                     let target = drc_target(ring.capacity_frames());
                     let queued = ring.queued_frames();
-                    resampler.set_ratio(drc_ratio(queued, target) / f64::from(steps));
+                    // `ran`, not the ceiling: the audio squeezed into this present is however
+                    // many frames of it the present actually produced.
+                    resampler.set_ratio(drc_ratio(queued, target) / f64::from(ran));
                     resampler.process(&audio, &mut out);
                     crate::audio::volume::apply(
                         &mut out,
@@ -742,6 +814,12 @@ fn flush_outbound(transport: &mut Option<Box<dyn LinkChannel>>, link: &Link) {
     while let Some(packet) = link.take_outbound() {
         t.send(NETPACKET_RELIABLE, &packet);
     }
+}
+
+/// Folds one present's measured per-frame cost into the running estimate, `COST_BLEND` being
+/// how much of the old value the new measurement replaces.
+fn blend(estimate: Duration, measured: Duration) -> Duration {
+    (estimate * (COST_BLEND - 1) + measured) / COST_BLEND
 }
 
 fn drain_transport(transport: &mut dyn LinkChannel, link: &Link, cap: u32) {

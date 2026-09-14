@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
-use slot::emu::{CoreState, EmuHandle, Speed, FAST_STEPS};
+use slot::emu::{CoreState, EmuHandle, Speed, FAST_STEPS, FAST_STEPS_MAX};
 use slot::persist::Snapshot;
 use slot_retro::{
     AvInfo, ButtonMask, CoreError, LinkChannel, MockCore, RetroCore, NETPACKET_RELIABLE,
@@ -199,13 +199,23 @@ fn held_counts(emu: &EmuHandle) -> (u64, u64) {
     (frame_count(emu), emu.published_count())
 }
 
-/// The quick menu's speed is how many core frames each present runs. Counted against presents
-/// rather than against time, so a loaded machine running the suite moves neither side of it.
-/// Never more than `FAST_STEPS`, whatever is asked: that is all an H700 can serve.
+/// The quick menu's speed is the most core frames each present may run. Counted against presents
+/// rather than against time, so a loaded machine running the suite moves neither side of it. A
+/// mock frame costs almost nothing, so every present here can afford its whole ceiling and the
+/// ceiling is what binds — `a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling`
+/// below is the other half, where the budget binds first. Never more than `FAST_STEPS_MAX`,
+/// whatever is asked: that is adaptive's safety cap.
 #[test]
 fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
     let emu = spawn();
-    for (asked, runs) in [(2, 2), (3, 3), (4, 4), (FAST_STEPS + 4, FAST_STEPS)] {
+    // Normal play first, because that is the state anyone presses the trigger from. The worker's
+    // per-frame estimate starts at a whole present on purpose — an estimate that began too low
+    // would let the very first fast present run to the ceiling before anything had been measured
+    // — and every present at normal speed is a measurement that walks it down to what a frame
+    // here really costs. A test that jumped straight from spawn into a fast stretch would be
+    // measuring that climb rather than the ceiling.
+    std::thread::sleep(Duration::from_millis(300));
+    for (asked, runs) in [(2, 2), (3, 3), (4, 4), (FAST_STEPS_MAX + 4, FAST_STEPS_MAX)] {
         emu.set_fast_steps(asked);
         let (frames, presents) = held_counts(&emu);
         emu.set_speed(Speed::Fast);
@@ -213,12 +223,200 @@ fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
         let (frames_after, presents_after) = held_counts(&emu);
         let (ran, shown) = (frames_after - frames, presents_after - presents);
         assert!(shown > 0, "nothing was presented asking for {asked}");
-        assert_eq!(
-            ran,
-            shown * u64::from(runs),
-            "{ran} frames over {shown} presents, asking for {asked}"
+        let want = shown * u64::from(runs);
+        // The ceiling is a hard cap, so going over it is always wrong.
+        assert!(
+            ran <= want,
+            "{ran} frames over {shown} presents ran past the ceiling of {runs}, asking for {asked}"
+        );
+        // Under it is only ever the budget cutting a present short, which on a core this cheap
+        // means the suite descheduled the worker rather than the ceiling failing to bind. Allow
+        // a present or two of that without letting a genuine collapse to a lower speed pass.
+        assert!(
+            ran * 5 >= want * 4,
+            "{ran} frames over {shown} presents is well short of the ceiling of {runs}, asking \
+             for {asked}: the ceiling is not what bound"
         );
     }
+}
+
+/// A `MockCore` a test can slow down and listen to: it spends `cost` of wall clock on every
+/// frame, and records what it was told about drawing before each one. One probe rather than two
+/// cores, because the tests below need one property each and the delegation is identical.
+struct Probe {
+    inner: MockCore,
+    cost: Duration,
+    skip: bool,
+    log: Arc<Mutex<Vec<bool>>>,
+}
+
+impl Probe {
+    fn new(cost: Duration) -> (Box<Probe>, Arc<Mutex<Vec<bool>>>) {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let probe = Box::new(Probe {
+            inner: MockCore::new(),
+            cost,
+            skip: false,
+            log: log.clone(),
+        });
+        (probe, log)
+    }
+}
+
+impl RetroCore for Probe {
+    fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
+        self.inner.load(rom)
+    }
+    fn run_frame(&mut self, input: ButtonMask) {
+        self.log.lock().expect("the skip log").push(self.skip);
+        if !self.cost.is_zero() {
+            std::thread::sleep(self.cost);
+        }
+        self.inner.run_frame(input);
+    }
+    fn set_frame_skip(&mut self, skip: bool) {
+        self.skip = skip;
+        self.inner.set_frame_skip(skip);
+    }
+    fn video_xrgb8888(&self) -> &[u8] {
+        self.inner.video_xrgb8888()
+    }
+    fn take_audio(&mut self) -> Vec<i16> {
+        self.inner.take_audio()
+    }
+    fn serialize(&mut self) -> Result<Vec<u8>, CoreError> {
+        self.inner.serialize()
+    }
+    fn unserialize(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.unserialize(data)
+    }
+    fn save_ram(&self) -> Option<Vec<u8>> {
+        self.inner.save_ram()
+    }
+    fn load_save_ram(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.load_save_ram(data)
+    }
+    fn av_info(&self) -> AvInfo {
+        self.inner.av_info()
+    }
+}
+
+fn spawn_probe(cost: Duration) -> (EmuHandle, Arc<Mutex<Vec<bool>>>) {
+    let mut sink = StubSink::new();
+    sink.open(32_768).expect("the stub refused to open");
+    drain(sink.clone());
+    let (core, log) = Probe::new(cost);
+    let emu = EmuHandle::spawn(core, PathBuf::from("mock"), sink.ring(), None, None);
+    assert!(
+        wait_for(|| emu.state() == CoreState::Ready),
+        "the core never finished loading"
+    );
+    (emu, log)
+}
+
+/// The picture on screen has to be the frame the core last ran, at every speed. Checked against
+/// the frame itself rather than against a claim about the draw: `MockCore` paints a pattern that
+/// is a pure function of its frame counter and leaves the buffer alone on a frame it was told to
+/// skip, exactly as both real cores leave theirs — so a reference core wound to the same count
+/// gives the exact bytes that frame should be. A present that published before its last frame,
+/// or that skipped the frame it went on to show, lands on a different pattern.
+///
+/// This is the regression mGBA's fixed-interval frameskip walks into: it reports the frame it
+/// just drew as skipped, so the picture handed over is one present old. Nothing here depends on
+/// which core is loaded, because what is being pinned is slot's own order of operations.
+#[test]
+fn every_speed_publishes_the_frame_the_core_last_ran() {
+    let emu = spawn();
+    for ceiling in [2, 3, 4, FAST_STEPS_MAX] {
+        emu.set_fast_steps(ceiling);
+        emu.set_speed(Speed::Fast);
+        std::thread::sleep(Duration::from_millis(120));
+        // Held, so the count and the picture cannot move between the two reads.
+        let (frames, _) = held_counts(&emu);
+        let shown = emu.latest_frame().expect("nothing was ever published");
+
+        let mut reference = MockCore::new();
+        reference
+            .unserialize(&frames.to_le_bytes())
+            .expect("the reference core refused the frame count");
+        assert_eq!(
+            &shown[..],
+            reference.video_xrgb8888(),
+            "at a ceiling of {ceiling} the picture shown is not frame {frames}"
+        );
+    }
+}
+
+/// Only the frame that is shown may cost a render. Every frame of a present but its last is
+/// told to skip, which is the one change the spike measured that moves the speed cap at all —
+/// so the pattern the core is actually told is worth pinning, not just the picture that comes
+/// out of it.
+#[test]
+fn a_fast_present_draws_only_its_last_frame() {
+    let ceiling = 3;
+    let (emu, log) = spawn_probe(Duration::ZERO);
+    emu.set_fast_steps(ceiling);
+    emu.set_speed(Speed::Fast);
+    // Let the speed settle before the stretch that is read back, so the log holds whole fast
+    // presents rather than the normal-speed one the worker was part way through.
+    std::thread::sleep(Duration::from_millis(60));
+    log.lock().expect("the skip log").clear();
+    std::thread::sleep(Duration::from_millis(150));
+    let (_, presents) = held_counts(&emu);
+    assert!(presents > 0, "nothing was presented");
+
+    let got = log.lock().expect("the skip log").clone();
+    assert!(!got.is_empty(), "no core frames ran");
+    let mut drawn = 0;
+    let mut skipped_in_a_row = 0;
+    for (i, skipped) in got.iter().enumerate() {
+        if *skipped {
+            skipped_in_a_row += 1;
+            assert!(
+                skipped_in_a_row < ceiling,
+                "frame {i} is the {skipped_in_a_row}th skipped in a row, so a present ran more \
+                 than its ceiling of {ceiling} or never drew"
+            );
+        } else {
+            drawn += 1;
+            skipped_in_a_row = 0;
+        }
+    }
+    assert!(
+        drawn > 1,
+        "only {drawn} frames were drawn over {presents} presents"
+    );
+}
+
+/// 2x, 3x and 4x are ceilings rather than multipliers, and adaptive has only the safety cap:
+/// either way a present runs as many core frames as it can afford and stops. A core that costs
+/// 5 ms a frame cannot fit sixteen of them into one present, so asking for the cap has to come
+/// back with a handful — a game too heavy for the speed asked gives the speed back a frame at a
+/// time instead of overrunning the present and dropping off 60 Hz.
+#[test]
+fn a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling() {
+    let (emu, _log) = spawn_probe(Duration::from_millis(5));
+    emu.set_fast_steps(FAST_STEPS_MAX);
+    let (frames, presents) = held_counts(&emu);
+    emu.set_speed(Speed::Fast);
+    // Long enough for the running per-frame estimate to walk down from its pessimistic seed
+    // and settle on what this core really costs.
+    std::thread::sleep(Duration::from_millis(400));
+    let (frames_after, presents_after) = held_counts(&emu);
+
+    let (ran, shown) = (frames_after - frames, presents_after - presents);
+    assert!(shown > 0, "nothing was presented");
+    let per = ran as f64 / shown as f64;
+    assert!(
+        per >= 1.0,
+        "{per:.1} frames a present is less than one, so a present ran nothing"
+    );
+    assert!(
+        per <= 4.0,
+        "{per:.1} frames a present at 5 ms each is {:.0} ms of a 16.67 ms present: the budget \
+         never stopped it and the ceiling of {FAST_STEPS_MAX} did",
+        per * 5.0
+    );
 }
 
 /// A device that counts what it took, in frames. It drains everything it is handed, as `drain`
