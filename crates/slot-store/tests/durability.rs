@@ -2,8 +2,7 @@ mod common;
 
 use common::tmp_root;
 use slot_store::{
-    atomic_write, read_slot_state, write_slot_state, SlotState, FF_SPEED_ADAPTIVE, FF_SPEED_MAX,
-    FF_SPEED_MIN,
+    atomic_write, read_slot_state, write_slot_state, SlotState, FF_SPEEDS, FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -187,41 +186,45 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
     }
 }
 
-/// ADAPTIVE travels in `ff_speed` itself rather than in a key of its own, so it has to survive
-/// a round trip through the card like any other value of that line.
+/// Every speed the row offers travels in `ff_speed` itself, so each of the five has to survive a
+/// round trip through the card and be written as the plain number it is.
 #[test]
-fn adaptive_round_trips_as_the_fast_forward_speed() {
-    let d = tmp_root();
-    let s = SlotState {
-        clock_set: true,
-        ff_speed: FF_SPEED_ADAPTIVE,
-        ..SlotState::default()
-    };
-    write_slot_state(d.path(), &s).unwrap();
-    assert_eq!(read_slot_state(d.path()), s);
-    let text = std::fs::read_to_string(d.path().join("System/slot.state")).unwrap();
-    assert!(
-        text.lines().any(|l| l == "ff_speed=255"),
-        "adaptive is not written as the sentinel: {text:?}"
-    );
+fn every_speed_the_row_offers_round_trips_as_its_own_number() {
+    for speed in FF_SPEEDS {
+        let d = tmp_root();
+        let s = SlotState {
+            clock_set: true,
+            ff_speed: speed,
+            ..SlotState::default()
+        };
+        write_slot_state(d.path(), &s).unwrap();
+        assert_eq!(read_slot_state(d.path()), s, "{speed}x did not come back");
+        let text = std::fs::read_to_string(d.path().join("System/slot.state")).unwrap();
+        let want = format!("ff_speed={speed}");
+        assert!(text.lines().any(|l| l == want), "no {want} in {text:?}");
+    }
 }
 
-/// The whole reason the sentinel is 255 and not a new key. Every build that has ever shipped
-/// reads this line as "a number from 2 to 4, anything else is not mine" and falls back to the
-/// default — so a card written by this build and read by an older one comes back as 4x, the
-/// fastest fixed ceiling there was, rather than as a speed nothing can explain. This is that
-/// older reader's rule, kept honest so the sentinel cannot drift into the range it relies on
-/// being outside of.
+/// What an older build does with the two speeds it never had, pinned rather than assumed. Every
+/// slot that shipped before this one reads this line as "a number from 2 to 4, anything else is
+/// not mine", so a card written here at 6 or 8 falls back to that build's own default on it —
+/// acceptable, and the reason 6 and 8 must stay outside 2..=4 rather than, say, the row growing
+/// a 5 that an older build would read as a speed the user never chose.
+///
+/// The other half is the default: it stays a number every build can read, so the card in the
+/// common case reads identically on all of them.
 #[test]
-fn an_older_build_reads_adaptive_as_its_default_rather_than_a_nonsense_speed() {
+fn an_older_build_reads_the_two_new_speeds_as_its_own_default() {
+    for speed in FF_SPEEDS.iter().filter(|&&n| n > 4) {
+        assert!(
+            !(2..=4).contains(speed),
+            "{speed}x is inside the range an older build accepts, so it would read as a speed"
+        );
+    }
+    assert_eq!(SlotState::default().ff_speed, FF_SPEED_DEFAULT);
     assert!(
-        !(FF_SPEED_MIN..=FF_SPEED_MAX).contains(&FF_SPEED_ADAPTIVE),
-        "the sentinel is inside the range an older build accepts, so it would read as a speed"
-    );
-    assert_eq!(
-        SlotState::default().ff_speed,
-        FF_SPEED_MAX,
-        "the fallback an older build lands on is no longer the fastest fixed ceiling"
+        (2..=4).contains(&FF_SPEED_DEFAULT),
+        "the default is not a speed an older build can read"
     );
 }
 
@@ -236,6 +239,11 @@ fn an_out_of_range_setting_falls_back_to_its_default() {
         "rumble=\nff_speed=1\nff_sound=on\n",
         "rumble=-1\nff_speed=0\nff_sound=-1\n",
         "ff_speed=x\n",
+        // Inside the row's ends but not on it: the row steps 4 to 6 to 8.
+        "ff_speed=7\n",
+        "ff_speed=9\n",
+        // 255, which a card written by a build between these two can still be holding.
+        "ff_speed=255\n",
     ] {
         std::fs::write(d.path().join("System/slot.state"), format!("{known}{bad}")).unwrap();
         let s = read_slot_state(d.path());

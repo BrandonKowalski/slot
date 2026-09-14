@@ -143,12 +143,13 @@ fn the_quick_menu_renders_full_screen() {
     );
 }
 
-/// The Fast Forward row's fourth value is a word, not a number, and it is by some way the widest
-/// thing that row can show. Read off the panel rather than off the draw list: what matters is
-/// that the set type lands on the same right edge every other value does and still leaves a gap
-/// before the label, which only the rendered pixels can answer.
+/// Every value the Fast Forward row can show, each one rendered and read off the panel rather
+/// than off the draw list. What matters is that the set type lands on the same right edge as
+/// every other value, arrows and all, and still leaves the label its side of the row — and only
+/// the rendered pixels can answer that. Walked end to end because a row whose values are all one
+/// shape is exactly where a draw-list assertion would pass on a screen that was wrong.
 #[test]
-fn adaptive_sits_on_the_rows_right_edge_and_still_clears_the_label() {
+fn every_fast_forward_speed_sits_on_the_rows_right_edge_and_clears_the_label() {
     let Ok(surface) = HeadlessSurface::new() else {
         return;
     };
@@ -161,27 +162,36 @@ fn adaptive_sits_on_the_rows_right_edge_and_still_clears_the_label() {
     f.upload_faces(&mut c);
     let mut input = Script(VecDeque::new());
     tap(&mut f, &mut input, Btn::Menu);
-    // The menu opens on Fast Forward, showing the default 4x. Adaptive is one step right of it.
-    tap(&mut f, &mut input, Btn::Right);
-    let px = composed(&mut f, &mut c, "adaptive");
+    // The menu opens on Fast Forward, showing the default 4×. Two presses left is the bottom of
+    // the row, and from there each value is one press right of the last.
+    tap(&mut f, &mut input, Btn::Left);
+    tap(&mut f, &mut input, Btn::Left);
 
     let top = QUICK_TOP as usize;
-    let value = inked(&px, 360..OUT_W as usize, top);
-    let last = *value.last().expect("the Fast Forward row has no value");
-    assert!(
-        (679..=688).contains(&last),
-        "the adaptive row ends at x {last}, off the edge every other value keeps"
-    );
-    // The row in hand carries an arrow either side of its value, so the widest value is also
-    // the one that could run into the label. Nothing may be inked across the middle of the row.
-    assert!(
-        inked(&px, 350..370, top).is_empty(),
-        "adaptive and its arrows reach the middle of the row, where the label is heading"
-    );
-    let label = inked(&px, 0..350, top);
-    let first = *label.first().expect("the Fast Forward row has no label");
-    assert!(
-        (32..=36).contains(&first),
-        "the label moved to x {first} to make room for adaptive"
-    );
+    for name in ["2x", "3x", "4x", "6x", "8x"] {
+        let px = composed(&mut f, &mut c, name);
+        let value = inked(&px, 360..OUT_W as usize, top);
+        let last = *value
+            .last()
+            .unwrap_or_else(|| panic!("{name}: the Fast Forward row has no value"));
+        assert!(
+            (679..=688).contains(&last),
+            "{name} ends at x {last}, off the edge every other value keeps"
+        );
+        // The row in hand carries an arrow either side of its value, so nothing on it may be
+        // inked across the middle of the row, where the label is heading.
+        assert!(
+            inked(&px, 350..370, top).is_empty(),
+            "{name} and its arrows reach the middle of the row"
+        );
+        let label = inked(&px, 0..350, top);
+        let first = *label
+            .first()
+            .unwrap_or_else(|| panic!("{name}: the Fast Forward row has no label"));
+        assert!(
+            (32..=36).contains(&first),
+            "the label moved to x {first} to make room for {name}"
+        );
+        tap(&mut f, &mut input, Btn::Right);
+    }
 }

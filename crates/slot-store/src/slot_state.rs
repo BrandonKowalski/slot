@@ -12,25 +12,26 @@ pub const VOLUME_MAX: u8 = 100;
 pub const UTC_OFFSET_MIN: i16 = -720;
 pub const UTC_OFFSET_MAX: i16 = 840;
 
-/// The fast forward ceilings the quick menu offers, in game frames per screen refresh. One is
-/// not fast at all, and above four the row offers adaptive instead of a number.
-pub const FF_SPEED_MIN: u8 = 2;
-pub const FF_SPEED_MAX: u8 = 4;
-
-/// What `ff_speed` says when the user chose ADAPTIVE: no ceiling of their own, only the
-/// emulator's safety cap (`FAST_STEPS_MAX`), which `EmuHandle::set_fast_steps` clamps this down
-/// to. Deliberately larger than any ceiling the hardware could serve, so it needs no separate
-/// field to travel in and cannot be mistaken for a step count anywhere it is read.
+/// The fast forward ceilings the quick menu offers, in game frames per screen refresh, left to
+/// right along the row. These five and nothing else are what `ff_speed` may hold.
 ///
-/// 255 rather than a new key, because it degrades correctly in the build that matters. Every
-/// slot that has ever shipped reads this line as "a number from 2 to 4, anything else is not
-/// mine", so a card written by this build and read by an older one falls back to the default,
-/// 4× — the fastest fixed ceiling there was, which is the closest thing to adaptive it can do.
-/// A card can therefore move between builds without either one finding a speed it cannot
-/// explain. The cost, accepted: an older build that goes on to *write* the card spells 4 here,
-/// so a round trip through it quietly forgets the choice. A second key would have had the same
-/// failure and added a way for the two to disagree with each other.
-pub const FF_SPEED_ADAPTIVE: u8 = 255;
+/// A list rather than a range. The row steps 2, 3, 4, 6, 8 because past four a single frame of
+/// difference is not a speed anyone can tell apart, so 5 and 7 are not on it — and a
+/// `MIN..=MAX` check, which is what this used to be, would have quietly accepted both.
+///
+/// What an older build does with the two new numbers, said plainly rather than left to be
+/// found out: every slot that shipped before this one reads this line as "a number from 2 to 4,
+/// anything else is not mine", so a card written here at 6 or 8 falls back to that build's
+/// default, 4×, when read by it. That is acceptable — 4× was the fastest speed it had, so it is
+/// as close to what was asked as that build can get, and neither build ever finds a speed it
+/// cannot explain. The cost, accepted: an older build that goes on to *write* the card spells 4
+/// here, so a round trip through one forgets the choice.
+pub const FF_SPEEDS: [u8; 5] = [2, 3, 4, 6, 8];
+
+/// The speed a card that never chose one gets, and the one the row opens on. Deliberately a
+/// number every build that has ever shipped can read, so the common card reads the same on all
+/// of them.
+pub const FF_SPEED_DEFAULT: u8 = 4;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
@@ -50,8 +51,7 @@ pub struct SlotState {
     pub utc_offset_min: i16,
     /// Whether the motor may move. Off, a game still asks for it and is simply never obeyed.
     pub rumble: bool,
-    /// The most game frames a screen refresh runs while fast forwarding: `FF_SPEED_MIN` to
-    /// `FF_SPEED_MAX`, or `FF_SPEED_ADAPTIVE` for no ceiling but the emulator's own.
+    /// The most game frames a screen refresh runs while fast forwarding: one of `FF_SPEEDS`.
     pub ff_speed: u8,
     /// Whether fast forward is heard, sped up, rather than dropped.
     pub ff_sound: bool,
@@ -71,7 +71,7 @@ impl Default for SlotState {
             clock_set: false,
             utc_offset_min: 0,
             rumble: true,
-            ff_speed: FF_SPEED_MAX,
+            ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
         }
     }
@@ -166,15 +166,11 @@ fn offset(value: &str) -> Option<i16> {
         .filter(|n| (UTC_OFFSET_MIN..=UTC_OFFSET_MAX).contains(n))
 }
 
-/// A fast forward ceiling the menu offers, or the adaptive sentinel. Anything else was not
-/// written by a build of slot and reads as the default, the way every other quick menu setting
-/// out of range does.
+/// A fast forward ceiling the menu offers. Anything else was not written by a build of slot and
+/// reads as the default, the way every other quick menu setting out of range does — 5 and 7
+/// included, which sit between the row's ends without being on it.
 fn ff_speed_value(value: &str) -> Option<u8> {
-    match value.parse().ok()? {
-        FF_SPEED_ADAPTIVE => Some(FF_SPEED_ADAPTIVE),
-        n if (FF_SPEED_MIN..=FF_SPEED_MAX).contains(&n) => Some(n),
-        _ => None,
-    }
+    value.parse().ok().filter(|n| FF_SPEEDS.contains(n))
 }
 
 fn level(value: &str, max: u8) -> Option<u8> {

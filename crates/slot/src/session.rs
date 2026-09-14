@@ -394,8 +394,7 @@ impl Session {
             // quick menu lives on the shelf and these cannot change under a seated cart, but the
             // next cart seated after they did picks them up here.
             // A ceiling, not a multiplier: the worker runs as many core frames as each present
-            // can afford up to this. ADAPTIVE arrives here as `FF_SPEED_ADAPTIVE`, which is
-            // past anything the hardware could serve and lands on the emulator's safety cap.
+            // can afford, up to this.
             emu.set_fast_steps(u32::from(self.app.ff_speed()));
             emu.set_ff_sound(self.app.ff_sound());
             // Loading a core and running one are separate things. The insert animation

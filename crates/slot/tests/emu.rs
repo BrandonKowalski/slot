@@ -204,7 +204,7 @@ fn held_counts(emu: &EmuHandle) -> (u64, u64) {
 /// mock frame costs almost nothing, so every present here can afford its whole ceiling and the
 /// ceiling is what binds — `a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling`
 /// below is the other half, where the budget binds first. Never more than `FAST_STEPS_MAX`,
-/// whatever is asked: that is adaptive's safety cap.
+/// whatever is asked: that is the top of the row.
 #[test]
 fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
     let emu = spawn();
@@ -215,7 +215,14 @@ fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
     // here really costs. A test that jumped straight from spawn into a fast stretch would be
     // measuring that climb rather than the ceiling.
     std::thread::sleep(Duration::from_millis(300));
-    for (asked, runs) in [(2, 2), (3, 3), (4, 4), (FAST_STEPS_MAX + 4, FAST_STEPS_MAX)] {
+    for (asked, runs) in [
+        (2, 2),
+        (3, 3),
+        (4, 4),
+        (6, 6),
+        (FAST_STEPS_MAX, FAST_STEPS_MAX),
+        (FAST_STEPS_MAX + 4, FAST_STEPS_MAX),
+    ] {
         emu.set_fast_steps(asked);
         let (frames, presents) = held_counts(&emu);
         emu.set_speed(Speed::Fast);
@@ -327,7 +334,7 @@ fn spawn_probe(cost: Duration) -> (EmuHandle, Arc<Mutex<Vec<bool>>>) {
 #[test]
 fn every_speed_publishes_the_frame_the_core_last_ran() {
     let emu = spawn();
-    for ceiling in [2, 3, 4, FAST_STEPS_MAX] {
+    for ceiling in [2, 3, 4, 6, FAST_STEPS_MAX] {
         emu.set_fast_steps(ceiling);
         emu.set_speed(Speed::Fast);
         std::thread::sleep(Duration::from_millis(120));
@@ -388,11 +395,11 @@ fn a_fast_present_draws_only_its_last_frame() {
     );
 }
 
-/// 2x, 3x and 4x are ceilings rather than multipliers, and adaptive has only the safety cap:
-/// either way a present runs as many core frames as it can afford and stops. A core that costs
-/// 5 ms a frame cannot fit twenty-eight of them into one present, so asking for the cap has to come
-/// back with a handful — a game too heavy for the speed asked gives the speed back a frame at a
-/// time instead of overrunning the present and dropping off 60 Hz.
+/// Every value on the row is a ceiling rather than a multiplier: a present runs as many core
+/// frames as it can afford and stops. A core that costs 5 ms a frame cannot fit eight of them
+/// into one present, so asking for the top of the row has to come back with a handful — a game
+/// too heavy for the speed asked gives the speed back a frame at a time instead of overrunning
+/// the present and dropping off 60 Hz. This is what lets the row offer eight at all.
 #[test]
 fn a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling() {
     let (emu, _log) = spawn_probe(Duration::from_millis(5));

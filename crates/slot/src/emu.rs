@@ -21,33 +21,30 @@ use crate::rewind::{RewindThread, REWIND_BYTES};
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
 /// The speed a card that never chose one gets, and what the quick menu's 4× asks for. The menu
-/// picks 2, 3, this, or adaptive, through `EmuHandle::set_fast_steps`.
+/// picks 2, 3, this, 6 or 8, through `EmuHandle::set_fast_steps`.
 pub const FAST_STEPS: u32 = 4;
 
-/// The most core frames one present will ever run, whatever is asked. This is adaptive fast
-/// forward's safety cap rather than a speed anyone chooses: the budget below is what normally
-/// stops a present, and this only binds on content cheap enough that it otherwise would not.
+/// The top of the Fast Forward row, and so the most core frames one present will ever run.
 ///
-/// Twenty-eight, from measurement on the device. The cheapest core frame anyone has timed on an
-/// H700 is 0.482 ms — Apotris on gpSP's dynarec, render skipped, driven frame by frame exactly
-/// as this loop drives it (`.superpowers/flags/results.md`) — and `FAST_BUDGET` divided by that
-/// is 28.0 frames, so on the lightest content measured the cap and the budget bind at the same
-/// place and neither one dominates. It stays under the 30 consecutive skips both cores force a
-/// render after (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a
-/// picture mid-present that nothing goes on to show: a present of 28 frames skips 27 in a row,
+/// A ceiling is not a multiplier. It is the most a present may run, never what it must: the
+/// budget below stops a present that cannot afford the whole of it, so a game too heavy for the
+/// speed asked gives that speed back a frame at a time instead of overrunning the present and
+/// dropping off 60 Hz. That is the whole reason a number this high can sit on the row at all.
+///
+/// Eight, from measurement on the device (`.superpowers/flags/results.md`). At eight frames a
+/// present the light gpSP content finishes well inside the 13.5 ms budget and runs a genuinely
+/// constant 8× — Apotris 0.76 ms a frame, 6.1 ms of work; Recharged Yellow 0.84 ms, 6.7 ms —
+/// while heavier mGBA content backs off on its own: Metroid Fusion at 2.05 ms a frame settles
+/// near six, Drill Dozer at 5.65 ms near two. Across those four the speed swings from 2 to 6,
+/// which is the point of the number. Light content can sustain 24 to 28 frames a present and
+/// that is deliberately left on the table: a speed that holds still is worth more than the
+/// highest one the hardware can reach.
+///
+/// It also stays well under the 30 consecutive skips both cores force a render after
+/// (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a picture
+/// mid-present that nothing goes on to show: a present of eight frames skips seven in a row,
 /// because its last frame always draws and resets their counters.
-///
-/// Sixteen was the previous number, measured when the cheapest frame anyone had timed was
-/// 0.762 ms. A sweep on the device found the floor lower and the cap binding first: at sixteen,
-/// adaptive ran 14.8 of a possible 16 frames a present on Recharged Yellow and 14.9 on Apotris,
-/// while those two held 60 Hz at 24 and 28 frames a present. A cap that decides the speed on
-/// ordinary content is doing the budget's job.
-///
-/// The ceiling before that was four, on the reasoning that an H700 could not serve more. That
-/// was measured against gpSP's *interpreter*, at 2.07-2.96 ms a frame. The core slot builds now
-/// runs its dynarec and is three to four times quicker, so four stopped being what the hardware
-/// could serve and became merely what it was told.
-pub const FAST_STEPS_MAX: u32 = 28;
+pub const FAST_STEPS_MAX: u32 = 8;
 
 /// How much of a present a fast forward may spend inside the core.
 ///
@@ -344,14 +341,10 @@ impl EmuHandle {
         self.shared.volume.store(level.min(100), Ordering::Relaxed);
     }
 
-    /// The most core frames a fast forward present may run: the quick menu's 2, 3 or 4, or
-    /// adaptive. Never none, which is a pause, and never more than `FAST_STEPS_MAX`.
-    ///
-    /// The clamp is what turns adaptive into a number. `slot.state` spells adaptive as
-    /// `FF_SPEED_ADAPTIVE`, which is 255 — larger than any ceiling the hardware could serve, so
-    /// it lands on the safety cap here rather than needing a separate value to be carried down
-    /// and matched on. A ceiling the machine cannot reach costs nothing: the budget stops the
-    /// present first.
+    /// The most core frames a fast forward present may run: one of the quick menu's five
+    /// ceilings. Never none, which is a pause, and never more than `FAST_STEPS_MAX`, which is
+    /// the top of that row — the clamp is there so a number from anywhere else cannot ask the
+    /// worker for a present it was never measured to finish.
     pub fn set_fast_steps(&self, steps: u32) {
         self.shared
             .fast_steps
@@ -719,10 +712,9 @@ impl Worker {
                 // the last of them draws a picture.
                 //
                 // A count rather than a multiplier is what makes a heavy game slow down
-                // smoothly instead of falling off 60 Hz: 2×, 3× and 4× are the most this may
+                // smoothly instead of falling off 60 Hz: the chosen speed is the most this may
                 // run, not what it must, so content that cannot afford the whole ceiling gives
-                // back speed a frame at a time while still presenting every 16.67 ms. Adaptive
-                // is the same loop with the ceiling set out of reach.
+                // back speed a frame at a time while still presenting every 16.67 ms.
                 //
                 // Whether a frame is the last has to be decided *before* it runs, because that
                 // is the only moment either core can still be told not to draw it — so the test
