@@ -1,4 +1,4 @@
-use slot_store::parse_stamp;
+use slot_store::{parse_stamp, FF_SPEED_ADAPTIVE};
 use slot_ui::{
     date_time_text, quick_caret_face, quick_label_face, quick_value_face, ClockPicker, QuickRow,
     QuickValue, UndoFace, MENU_PAD,
@@ -29,6 +29,7 @@ fn the_type_sits_exactly_menu_pad_in_from_both_sides_of_its_face() {
         quick_label_face(QuickRow::FastForwardSound),
         quick_label_face(QuickRow::Rumble),
         quick_value_face("Off", false),
+        quick_value_face(QuickValue::Adaptive.text(), true),
         quick_value_face("SEP 15 16:35", true),
     ] {
         let (first, last) = ink_columns(&f);
@@ -60,6 +61,23 @@ fn a_long_label_is_set_as_large_as_a_short_one() {
     assert!(long + 1 >= short, "{long} rows of ink against {short}");
 }
 
+/// The Fast Forward row offers three ceilings and then adaptive, and `QuickValue::speed` is the
+/// one place the number on the card becomes the value on the row — including the sentinel, which
+/// names no number at all.
+#[test]
+fn the_fast_forward_row_offers_three_ceilings_and_then_adaptive() {
+    assert_eq!(QuickValue::speed(2), Some(QuickValue::Speed2));
+    assert_eq!(QuickValue::speed(3), Some(QuickValue::Speed3));
+    assert_eq!(QuickValue::speed(4), Some(QuickValue::Speed4));
+    assert_eq!(
+        QuickValue::speed(FF_SPEED_ADAPTIVE),
+        Some(QuickValue::Adaptive),
+        "the card's adaptive sentinel is not the row's fourth value"
+    );
+    assert_eq!(QuickValue::speed(5), None, "5x is not a value the row has");
+    assert_eq!(QuickValue::Adaptive.text(), "ADAPTIVE");
+}
+
 /// The order the user chose on 2026-09-15, top to bottom.
 #[test]
 fn the_rows_run_in_the_order_the_user_chose() {
@@ -82,7 +100,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
 fn the_values_read_as_the_menu_prints_them() {
     assert_eq!(
         QuickValue::ALL.map(QuickValue::text),
-        ["2×", "3×", "4×", "On", "Off"]
+        ["2×", "3×", "4×", "ADAPTIVE", "On", "Off"]
     );
     assert_eq!(
         [2, 3, 4].map(QuickValue::speed),

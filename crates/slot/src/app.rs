@@ -7,8 +7,7 @@ use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, SlotState, StateEntry,
-    StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEED_MAX, FF_SPEED_MIN, RING_MAX,
-    VOLUME_MAX,
+    StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEED_ADAPTIVE, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
@@ -1370,11 +1369,7 @@ impl App {
         let s = &mut self.state;
         match row {
             QuickRow::FastForward => {
-                let to = if right {
-                    up(s.ff_speed, 1, FF_SPEED_MAX)
-                } else {
-                    s.ff_speed.saturating_sub(1).max(FF_SPEED_MIN)
-                };
+                let to = ff_next(s.ff_speed, right);
                 if to == s.ff_speed {
                     return;
                 }
@@ -3577,6 +3572,19 @@ fn trusted_write(
 
 fn up(level: u8, step: u8, max: u8) -> u8 {
     level.saturating_add(step).min(max)
+}
+
+/// The Fast Forward row's values, left to right: three ceilings and then adaptive, which sets
+/// no ceiling of its own. Not a range, because the last one is a sentinel rather than the next
+/// number along — see `FF_SPEED_ADAPTIVE`.
+const FF_LADDER: [u8; 4] = [2, 3, 4, FF_SPEED_ADAPTIVE];
+
+/// One step along that row. It does not wrap, as no menu here does, so a press against either
+/// end answers with the value already showing and `change_setting` writes nothing.
+fn ff_next(from: u8, right: bool) -> u8 {
+    let at = FF_LADDER.iter().position(|&v| v == from).unwrap_or(0);
+    let to = if right { at + 1 } else { at.saturating_sub(1) };
+    FF_LADDER[to.min(FF_LADDER.len() - 1)]
 }
 
 /// The clock screen, opened on `utc` with `offset_min` already chosen. The picker shows only the

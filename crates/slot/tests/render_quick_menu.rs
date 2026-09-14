@@ -142,3 +142,46 @@ fn the_quick_menu_renders_full_screen() {
         "the clock from the menu does not offer B BACK"
     );
 }
+
+/// The Fast Forward row's fourth value is a word, not a number, and it is by some way the widest
+/// thing that row can show. Read off the panel rather than off the draw list: what matters is
+/// that the set type lands on the same right edge every other value does and still leaves a gap
+/// before the label, which only the rendered pixels can answer.
+#[test]
+fn adaptive_sits_on_the_rows_right_edge_and_still_clears_the_label() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::Menu);
+    // The menu opens on Fast Forward, showing the default 4x. Adaptive is one step right of it.
+    tap(&mut f, &mut input, Btn::Right);
+    let px = composed(&mut f, &mut c, "adaptive");
+
+    let top = QUICK_TOP as usize;
+    let value = inked(&px, 360..OUT_W as usize, top);
+    let last = *value.last().expect("the Fast Forward row has no value");
+    assert!(
+        (679..=688).contains(&last),
+        "the adaptive row ends at x {last}, off the edge every other value keeps"
+    );
+    // The row in hand carries an arrow either side of its value, so the widest value is also
+    // the one that could run into the label. Nothing may be inked across the middle of the row.
+    assert!(
+        inked(&px, 350..370, top).is_empty(),
+        "adaptive and its arrows reach the middle of the row, where the label is heading"
+    );
+    let label = inked(&px, 0..350, top);
+    let first = *label.first().expect("the Fast Forward row has no label");
+    assert!(
+        (32..=36).contains(&first),
+        "the label moved to x {first} to make room for adaptive"
+    );
+}

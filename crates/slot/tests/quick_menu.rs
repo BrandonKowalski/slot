@@ -6,7 +6,7 @@ use common::{
 };
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
-use slot_store::{read_slot_state, write_slot_state, SlotState};
+use slot_store::{read_slot_state, write_slot_state, SlotState, FF_SPEED_ADAPTIVE};
 use slot_ui::{
     edge, Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, MENU_PAD, OUT_W, QUICK_EDGE,
     QUICK_PITCH, QUICK_TOP,
@@ -138,7 +138,10 @@ fn fast_forward_steps_through_its_speeds_and_saves_each_one() {
         (Btn::Left, 2),
         (Btn::Right, 3),
         (Btn::Right, 4),
-        (Btn::Right, 4),
+        // Past the last number is adaptive, which is where the row now ends.
+        (Btn::Right, FF_SPEED_ADAPTIVE),
+        (Btn::Right, FF_SPEED_ADAPTIVE),
+        (Btn::Left, 4),
     ] {
         press(&mut a, btn);
         assert_eq!(a.ff_speed(), want, "{btn:?}");
@@ -324,7 +327,7 @@ fn fake_faces(a: &mut App) {
     let id = TexId::from_raw;
     a.set_quick_menu_faces(QuickMenuFaces {
         labels: (0..5).map(|i| (id(100 + i), 200, 40)).collect(),
-        values: (0..5)
+        values: (0..QuickValue::ALL.len())
             .map(|i| [(id(200 + i), 60, 40), (id(210 + i), 60, 40)])
             .collect(),
         carets: [(id(300), 10, 40), (id(301), 10, 40)],
