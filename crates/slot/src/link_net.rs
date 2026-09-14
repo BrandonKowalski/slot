@@ -43,6 +43,39 @@ const POLL_MS: u64 = 50;
 /// What a host waits for a friend before deciding nobody is coming.
 pub const HOST_BOUND: Duration = Duration::from_secs(30);
 
+/// The wire's control channel: a word about the session itself rather than a byte of the
+/// core's serial traffic.
+///
+/// A zero-length frame is the marker, and the frame straight after it carries the message —
+/// one byte of opcode, and room behind it for whatever a later message wants to add. Nothing a
+/// core produces can be mistaken for that marker: `netpacket_send` (slot-retro's `libretro.rs`)
+/// drops a null or zero-length packet before it can reach the outbound queue, and `send` below
+/// refuses one again at this end, so an empty frame can only ever have been meant as this.
+///
+/// The opcode is what lets a later message be added without breaking an older build. A control
+/// frame whose opcode this build does not know is read, recognised as control, and dropped: it
+/// never reaches the core and it never ends the session. That is the whole reason for spending
+/// a second frame on a byte rather than letting the bare marker itself mean "ended" — a build
+/// that did that would have to read every future message as an ending.
+const CONTROL_ENDED: u8 = 0x00;
+
+/// How long `send_end` gives the writer thread to get the goodbye onto the socket before the
+/// teardown goes ahead without it.
+///
+/// The frame is five bytes onto a socket whose send buffer is empty, which is microseconds on a
+/// link measured at about 2 ms. This bound is only ever actually paid by a peer that has already
+/// stopped reading — and paying it once is better than a teardown that can block the emulator
+/// thread for as long as that peer feels like.
+const BYE_MS: u64 = 100;
+
+/// What the writer thread is asked to put on the wire.
+enum Out {
+    /// A core's packet, framed with its own length.
+    Packet(Vec<u8>),
+    /// A control message, and the ack that tells `send_end` it has actually been written.
+    Control(u8, Sender<()>),
+}
+
 /// One TCP connection carrying a core's serial traffic.
 ///
 /// Reads run on their own thread into a queue, so `try_recv` is a queue poll rather than a
@@ -58,7 +91,7 @@ pub const HOST_BOUND: Duration = Duration::from_secs(30);
 /// answer to, not a bound on how much can pile up first.
 pub struct TcpLink {
     /// The writer thread's queue. `send` never touches the socket itself.
-    outbox: Sender<Vec<u8>>,
+    outbox: Sender<Out>,
     inbox: Receiver<Vec<u8>>,
     /// Kept so `Drop` can shut the socket down directly, and so a test can ask what was
     /// actually set on it (`nodelay`) — the reader and writer threads each hold their own
@@ -68,6 +101,11 @@ pub struct TcpLink {
     /// Set by the reader thread the moment a read on the socket fails — the peer is gone, not
     /// merely quiet. `try_recv` alone cannot tell the two apart: both look like `None` forever.
     closed: Arc<AtomicBool>,
+    /// Set by the reader thread when the peer sends the "ended" control frame. Deliberately
+    /// separate from `closed`, which goes up moments later when that same peer drops its wire:
+    /// a session whose far end said it was going ends now and says who ended it, where one that
+    /// merely went quiet waits out the broken badge first.
+    ended: Arc<AtomicBool>,
 }
 
 impl TcpLink {
@@ -193,12 +231,19 @@ impl TcpLink {
         let mut reader = stream.try_clone()?;
         let mut writer = stream.try_clone()?;
         let (rtx, inbox) = channel();
-        let (wtx, wrx) = channel::<Vec<u8>>();
+        let (wtx, wrx) = channel::<Out>();
         let closed = Arc::new(AtomicBool::new(false));
         let reader_closed = closed.clone();
+        let ended = Arc::new(AtomicBool::new(false));
+        let reader_ended = ended.clone();
 
         std::thread::spawn(move || {
             let mut header = [0u8; 2];
+            // Whether the frame just read was the control marker, and so whether the next one
+            // is a control message rather than a packet for the core. One frame of memory is
+            // the whole state machine: the marker and its message are written together, so
+            // they can only ever be separated by the socket dying between them.
+            let mut control = false;
             loop {
                 if reader.read_exact(&mut header).is_err() {
                     // The peer is gone. Said out loud now, so the session can end the link
@@ -207,10 +252,28 @@ impl TcpLink {
                     return;
                 }
                 let len = u16::from_be_bytes(header) as usize;
+                // The marker. Guarded on `control` so that a marker arriving where a control
+                // message was expected resets to waiting for one rather than being read as an
+                // empty message — which is what a build sending some future message this one
+                // does not know could leave behind.
+                if len == 0 && !control {
+                    control = true;
+                    continue;
+                }
                 let mut buf = vec![0u8; len];
                 if len > 0 && reader.read_exact(&mut buf).is_err() {
                     reader_closed.store(true, Ordering::Release);
                     return;
+                }
+                if std::mem::take(&mut control) {
+                    // An opcode this build does not know is dropped: not acted on, and not
+                    // handed to the core either. That is what lets a later build add a message
+                    // without this one mistaking it for an ending or feeding it to gpSP as
+                    // serial traffic.
+                    if buf.first() == Some(&CONTROL_ENDED) {
+                        reader_ended.store(true, Ordering::Release);
+                    }
+                    continue;
                 }
                 if rtx.send(buf).is_err() {
                     return; // our own end hung up
@@ -224,18 +287,31 @@ impl TcpLink {
             // does. A `write_all` blocked on a stalled peer at that moment is unblocked by
             // that same drop's `shutdown(Both)` on a clone of this socket, exactly like the
             // reader thread's blocked `read_exact` is.
-            for buf in wrx.iter() {
-                // Framed here rather than in `send`: the boundary is TCP's problem to solve,
-                // not the caller's, and a packet longer than u16 cannot come from GBA serial
-                // hardware, so refusing one is better than truncating it.
-                let Ok(len) = u16::try_from(buf.len()) else {
-                    continue;
-                };
-                if writer.write_all(&len.to_be_bytes()).is_err() {
-                    return;
-                }
-                if writer.write_all(&buf).is_err() {
-                    return;
+            for out in wrx.iter() {
+                match out {
+                    // Framed here rather than in `send`: the boundary is TCP's problem to
+                    // solve, not the caller's, and a packet longer than u16 cannot come from
+                    // GBA serial hardware, so refusing one is better than truncating it.
+                    Out::Packet(buf) => {
+                        let Ok(len) = u16::try_from(buf.len()) else {
+                            continue;
+                        };
+                        if writer.write_all(&len.to_be_bytes()).is_err() {
+                            return;
+                        }
+                        if writer.write_all(&buf).is_err() {
+                            return;
+                        }
+                    }
+                    // Marker and message in one `write_all`, so no packet can land between
+                    // them: a reader that saw the marker alone would take whatever came next
+                    // for the control message and swallow a frame of real serial traffic.
+                    Out::Control(op, ack) => {
+                        if writer.write_all(&[0, 0, 0, 1, op]).is_err() {
+                            return;
+                        }
+                        let _ = ack.send(());
+                    }
                 }
             }
         });
@@ -245,7 +321,25 @@ impl TcpLink {
             inbox,
             stream,
             closed,
+            ended,
         })
+    }
+
+    /// Tell the peer this session is ending, and wait — briefly — for the word to actually
+    /// leave.
+    ///
+    /// The wait is the entire point. `Drop` shuts the socket down to unblock the reader and
+    /// writer threads, and a goodbye still sitting in the writer's queue when that happens
+    /// never reaches the wire at all — which would leave the far end to discover the ending
+    /// from the FIN, exactly as it did before any of this existed. `BYE_MS` bounds it: a peer
+    /// that has stopped reading cannot hold the teardown up longer than that, and the session
+    /// then ends without the message, the same way it does for a peer whose battery went flat.
+    pub fn send_end(&mut self) {
+        let (ack, wrote) = channel();
+        if self.outbox.send(Out::Control(CONTROL_ENDED, ack)).is_err() {
+            return;
+        }
+        let _ = wrote.recv_timeout(Duration::from_millis(BYE_MS));
     }
 
     /// Whether Nagle's algorithm is disabled on the wrapped socket. Nothing in this crate
@@ -278,7 +372,16 @@ impl LinkChannel for TcpLink {
         // which the old direct `write_all` here could hang on indefinitely. `Sender::send`
         // on this unbounded channel never blocks its caller, whatever the writer thread is
         // doing.
-        let _ = self.outbox.send(buf.to_vec());
+        //
+        // An empty payload is refused rather than framed: an empty frame is the control
+        // channel's marker (see `CONTROL_ENDED`), so letting one through here would forge a
+        // control message out of a packet. `netpacket_send` already drops one two crates away,
+        // and this keeps the invariant the framing actually rests on inside the module that
+        // rests on it.
+        if buf.is_empty() {
+            return;
+        }
+        let _ = self.outbox.send(Out::Packet(buf.to_vec()));
     }
 
     fn try_recv(&mut self) -> Option<Vec<u8>> {
@@ -290,5 +393,13 @@ impl LinkChannel for TcpLink {
 
     fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Acquire)
+    }
+
+    fn send_end(&mut self) {
+        TcpLink::send_end(self);
+    }
+
+    fn peer_ended(&self) -> bool {
+        self.ended.load(Ordering::Acquire)
     }
 }

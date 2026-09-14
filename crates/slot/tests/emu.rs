@@ -950,3 +950,94 @@ fn ending_or_beginning_a_link_clears_the_lost_flag() {
     assert!(wait_for(|| emu.net().is_active()));
     assert!(!emu.link_lost(), "a new session started already lost");
 }
+
+/// The order that makes the whole thing work: the goodbye goes out *before* the transport is
+/// dropped. Dropping first shuts the socket down, and a word queued behind that never reaches
+/// the wire at all — leaving the far end to infer the ending from a FIN, which is precisely
+/// the slow, ambiguous behaviour this replaces.
+///
+/// `Cmd::EndLink` is the single seam every ending passes through — the menu's A, a power press,
+/// a shut lid, an eject, a critical battery — so proving it here proves it for all of them.
+#[test]
+fn ending_a_link_says_goodbye_before_it_drops_the_transport() {
+    struct Bye {
+        order: Arc<Mutex<Vec<&'static str>>>,
+    }
+    impl LinkChannel for Bye {
+        fn send(&mut self, _flags: i32, _buf: &[u8]) {}
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            None
+        }
+        fn send_end(&mut self) {
+            self.order.lock().expect("order").push("bye");
+        }
+    }
+    impl Drop for Bye {
+        fn drop(&mut self) {
+            self.order.lock().expect("order").push("drop");
+        }
+    }
+
+    let emu = spawn();
+    let order = Arc::new(Mutex::new(Vec::new()));
+    emu.begin_link(
+        0,
+        Box::new(Bye {
+            order: order.clone(),
+        }),
+    );
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    assert!(
+        wait_for(|| order.lock().expect("order").len() == 2),
+        "the transport was never told, or never dropped"
+    );
+    assert_eq!(
+        *order.lock().expect("order"),
+        vec!["bye", "drop"],
+        "the wire was dropped before the peer was told the link had ended"
+    );
+}
+
+/// A transport that can tell a deliberate ending from a dead socket is believed, and the flag
+/// is cleared by a session beginning or ending exactly as `link_lost` is — so a new session
+/// never starts already believing its peer has left.
+#[test]
+fn a_transport_whose_peer_ended_is_reported_as_ended_not_merely_lost() {
+    struct EndedLink {
+        ended: Arc<AtomicBool>,
+    }
+    impl LinkChannel for EndedLink {
+        fn send(&mut self, _flags: i32, _buf: &[u8]) {}
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            None
+        }
+        fn peer_ended(&self) -> bool {
+            self.ended.load(Ordering::SeqCst)
+        }
+    }
+
+    let emu = spawn();
+    let ended = Arc::new(AtomicBool::new(false));
+    emu.begin_link(
+        0,
+        Box::new(EndedLink {
+            ended: ended.clone(),
+        }),
+    );
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+    assert!(!emu.peer_ended(), "ended before the peer said anything");
+
+    ended.store(true, Ordering::SeqCst);
+    assert!(
+        wait_for(|| emu.peer_ended()),
+        "the peer's ending was never noticed"
+    );
+
+    emu.end_link();
+    assert!(
+        wait_for(|| !emu.peer_ended()),
+        "the flag outlived the session it belonged to"
+    );
+}

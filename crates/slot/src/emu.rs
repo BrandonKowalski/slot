@@ -166,6 +166,12 @@ struct Shared {
     /// The transport's far end went away during a session. Cleared when a session begins or
     /// ends. See `EmuHandle::link_lost`.
     link_lost: AtomicBool,
+    /// The transport's far end said it was ending the session, rather than merely going away.
+    /// Cleared when a session begins or ends, exactly like `link_lost` — and deliberately a
+    /// flag of its own, because a peer that says goodbye and then drops its wire sets both,
+    /// and only this one can tell the screen which of the two actually happened. See
+    /// `EmuHandle::peer_ended`.
+    peer_ended: AtomicBool,
 }
 
 impl EmuHandle {
@@ -206,6 +212,7 @@ impl EmuHandle {
             resume_refused: AtomicBool::new(false),
             sav_refused: AtomicBool::new(false),
             link_lost: AtomicBool::new(false),
+            peer_ended: AtomicBool::new(false),
         });
         let (tx, rx) = channel();
         let worker = Worker {
@@ -252,6 +259,17 @@ impl EmuHandle {
     /// ends.
     pub fn link_lost(&self) -> bool {
         self.shared.link_lost.load(Ordering::Relaxed)
+    }
+
+    /// The transport's far end said it was ending the session, rather than merely vanishing.
+    /// Cleared when a session begins or ends.
+    ///
+    /// Read ahead of `link_lost` by whoever acts on either (`Session::update`), because the
+    /// peer that sends this drops its wire immediately behind it: both flags are up within a
+    /// frame of each other, and only the order they are asked in decides whether the player is
+    /// told the link was ended or that it broke.
+    pub fn peer_ended(&self) -> bool {
+        self.shared.peer_ended.load(Ordering::Relaxed)
     }
 
     /// Wires a transport into the core's serial traffic, on the emulator thread — the only
@@ -554,6 +572,7 @@ impl Worker {
                     }
                     Cmd::BeginLink(client_id, t) => {
                         self.shared.link_lost.store(false, Ordering::Relaxed);
+                        self.shared.peer_ended.store(false, Ordering::Relaxed);
                         core.start_link(client_id);
                         // Set here as well as by `LibretroCore::start_link` itself: this is
                         // the thing that actually knows a transport is wired and about to be
@@ -566,6 +585,7 @@ impl Worker {
                     }
                     Cmd::EndLink => {
                         self.shared.link_lost.store(false, Ordering::Relaxed);
+                        self.shared.peer_ended.store(false, Ordering::Relaxed);
                         // `Cmd::BeginLink`'s counterpart: tells the core the session is over,
                         // if it registered a `stop` to hear it through (`RetroCore::stop_link`
                         // — libretro documents `stop` as OPTIONAL, unlike `start`, so this is
@@ -573,6 +593,20 @@ impl Worker {
                         // keeps believing a session is live and keeps producing packets
                         // nobody is left to carry.
                         core.stop_link();
+                        // Word to the far end before the wire goes, so a deliberate ending
+                        // arrives as one rather than as a peer that fell silent. This is the
+                        // single seam every ending already passes through — the menu's own A,
+                        // a power press, a shut lid, an eject, a critical battery — so none of
+                        // them has to remember to say goodbye for itself.
+                        //
+                        // Ahead of the drop, and bounded inside `send_end`: the drop is what
+                        // unblocks the transport's own threads, and a goodbye still queued when
+                        // that happens would never reach the wire. Harmless on a wire the peer
+                        // has already dropped, which is the lost-peer timeout arriving here —
+                        // the write simply fails or goes nowhere.
+                        if let Some(t) = transport.as_mut() {
+                            t.send_end();
+                        }
                         // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
                         // this is just letting go of it.
                         transport = None;
@@ -597,8 +631,13 @@ impl Worker {
             // `try_recv` already never does — so this is always safe to run.
             if let Some(t) = transport.as_mut() {
                 drain_transport(t.as_mut(), &link, MAX_LINK_PACKETS_PER_PRESENT);
-                // Checked after the drain, so the last packets a peer sent before leaving still
-                // reach the core.
+                // Both checked after the drain, so the last packets a peer sent before leaving
+                // still reach the core. Which of the two the screen acts on is decided by
+                // whoever reads them (`Session::update`), not here: a peer that ends a session
+                // deliberately sets this one and then, a moment later, the other.
+                if t.peer_ended() {
+                    self.shared.peer_ended.store(true, Ordering::Relaxed);
+                }
                 if t.is_closed() {
                     self.shared.link_lost.store(true, Ordering::Relaxed);
                 }

@@ -256,10 +256,23 @@ impl Session {
         if let Some((stem, serial)) = self.app.take_link_reload() {
             self.reload_for_link(&stem, serial);
         }
-        // The far end went away. `App` breaks the badge and ends the session itself later, from
-        // inside `update`, where `bridge_link` carries the ending to the emulator thread.
-        if self.app.link_active() && self.emu.as_ref().is_some_and(EmuHandle::link_lost) {
-            self.app.peer_lost();
+        // The far end going, which happens two ways, and the order between them is the whole
+        // point. A peer that ends a link deliberately sends word and *then* drops its wire, so
+        // by the time this runs both flags can be up on the same frame. Asking the deliberate
+        // question first is what keeps "they ended it" from being reported as "they vanished".
+        //
+        // The two also end the session by different routes. `peer_ended` ends it outright, so
+        // it goes through `bridge_link` — the one hop that carries an ending to the emulator
+        // thread. `peer_lost` only breaks the badge; `App::timers` is what ends that one,
+        // `LINK_LOST_MS` later, from inside the `update` above that `bridge_link` already
+        // wraps. That timeout stays underneath this for every ending nobody could send word
+        // about: a crash, a flat battery, an SP carried out of range.
+        if self.app.link_active() {
+            if self.emu.as_ref().is_some_and(EmuHandle::peer_ended) {
+                self.bridge_link(|app| app.peer_ended());
+            } else if self.emu.as_ref().is_some_and(EmuHandle::link_lost) {
+                self.app.peer_lost();
+            }
         }
         if let Some(sfx) = self.app.take_sfx() {
             self.play_sfx(sfx);

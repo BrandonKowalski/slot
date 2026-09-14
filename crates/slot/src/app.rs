@@ -949,6 +949,32 @@ impl App {
         self.sync_link_badge();
     }
 
+    /// The other player ended the link and sent word before going.
+    ///
+    /// What separates this from `peer_lost` is that there is nothing to wait out and nothing
+    /// ambiguous to report: the session ends on this frame and the banner says which device
+    /// ended it. It is the same ending `end_link_from_menu` performs on the device that pressed
+    /// the key, seen from the other end — same teardown, same radio jobs, same game carrying on
+    /// in the mode it was loaded with.
+    ///
+    /// `peer_lost` and its timeout stay underneath this rather than being replaced by it: a
+    /// crash, a flat battery or an SP carried out of range never sends this word, and the
+    /// broken badge is still the only honest thing to show for those.
+    pub fn peer_ended(&mut self) {
+        if !self.link_active() {
+            return;
+        }
+        self.end_link();
+        self.hud.toast(Toast::PeerEnded, self.now());
+        // The screen a live session was being shown on is a screen about that session, and it
+        // has just ended. Closed the way `peer_lost` closes it rather than through
+        // `close_game_menu`, which would ask the radio to cool a second time behind the `down`
+        // `end_link` has already queued.
+        if matches!(self.game_menu, Some(GameMenu::Linked { .. })) {
+            self.game_menu = None;
+        }
+    }
+
     pub fn link_badge(&self) -> LinkBadge {
         self.hud.link()
     }

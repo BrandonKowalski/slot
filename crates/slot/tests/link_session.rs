@@ -15,7 +15,7 @@ use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_power::{Battery, Charge};
 use slot_retro::{LinkChannel, LoopbackLink, NETPACKET_RELIABLE};
 use slot_store::{write_slot_state, Core, SlotState, StateRing};
-use slot_ui::LinkBadge;
+use slot_ui::{LinkBadge, Toast};
 
 /// Both ends on loopback: no radio, no peer device, no BaseOS. This proves the framing and
 /// the threading, which is everything the transport is responsible for.
@@ -1056,6 +1056,112 @@ fn a_quiet_link_is_not_closed() {
     assert!(!slot_retro::LoopbackLink::default().is_closed());
 }
 
+// --- the control channel: a link that ends says so, and says it in a way a later build can
+// --- add to without breaking this one -----------------------------------------------------
+//
+// The framing carries no type field: a frame is a length and that many bytes. A zero-length
+// frame is therefore free to mean something, because no core packet can ever be one —
+// `netpacket_send` drops a null or empty packet two crates away, and `TcpLink::send` refuses
+// one again at this end (proved below). That marker plus a one-byte opcode is the whole
+// protocol, and the opcode is what makes it extensible rather than a single dead-end signal.
+
+/// The deliberate ending, on the wire. The far end learns it was ended rather than merely
+/// discovering a dead socket — which is the entire difference between the two sentences the
+/// screen can show, and the difference between ending now and ending `LINK_LOST_MS` later.
+///
+/// The control frame must also not reach the core: it is a word about the session, not serial
+/// traffic, and a gpSP handed it would be handed a byte its partner never sent.
+#[test]
+fn ending_a_link_tells_the_peer_rather_than_only_dropping_the_socket() {
+    let port = 45896;
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    let mut client = TcpLink::join("127.0.0.1", port).expect("join");
+    let mut host = server.join().expect("host thread");
+
+    assert!(!client.peer_ended(), "ended before anyone said so");
+    host.send_end();
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !client.peer_ended() {
+        assert!(
+            Instant::now() < deadline,
+            "the peer was never told the link had ended"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(
+        client.try_recv(),
+        None,
+        "the control frame was delivered to the core as if it were a packet"
+    );
+}
+
+/// The degradation this design exists for: a control frame whose opcode this build does not
+/// know is dropped, not acted on and not handed to the core — and, critically, the stream
+/// stays in step behind it, so the very next real packet still arrives intact.
+///
+/// Written as raw bytes from a plain socket rather than through a second `TcpLink`, because
+/// the point is to send something this build has no way to produce: a future message. If the
+/// marker were taken to mean "ended" on its own, this would end the session; if the opcode
+/// frame were mistaken for a packet, `after` would arrive as the opcode byte instead.
+#[test]
+fn an_unknown_control_frame_is_ignored_and_the_stream_stays_in_step() {
+    let port = 45897;
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    let mut raw = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut host = server.join().expect("host thread");
+
+    let mut batch = Vec::new();
+    // The marker, an opcode from some later build, and an ordinary packet behind it — all in
+    // one write, so they land in the receive buffer together and the reader has to separate
+    // them itself.
+    batch.extend_from_slice(&0u16.to_be_bytes());
+    batch.extend_from_slice(&1u16.to_be_bytes());
+    batch.push(0x7f);
+    batch.extend_from_slice(&5u16.to_be_bytes());
+    batch.extend_from_slice(b"after");
+    raw.write_all(&batch).expect("write");
+
+    let got = wait_for(&mut host);
+    assert_eq!(
+        got.as_deref(),
+        Some(&b"after"[..]),
+        "the packet behind an unknown control frame was lost or misread"
+    );
+    assert!(
+        !host.peer_ended(),
+        "an opcode this build does not know ended the session anyway"
+    );
+}
+
+/// The invariant the marker rests on, held at this end rather than only two crates away: an
+/// empty payload cannot be put on the wire, so it can never be mistaken for the marker. Were
+/// it framed, a core that sent a zero-length packet would silently end its own session.
+#[test]
+fn an_empty_payload_is_refused_rather_than_framed_as_the_control_marker() {
+    let port = 45898;
+    let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    let mut client = TcpLink::join("127.0.0.1", port).expect("join");
+    let mut host = server.join().expect("host thread");
+
+    host.send(NETPACKET_RELIABLE, b"");
+    host.send(NETPACKET_RELIABLE, b"real");
+
+    let got = wait_for(&mut client);
+    assert_eq!(
+        got.as_deref(),
+        Some(&b"real"[..]),
+        "an empty packet was framed and arrived as one"
+    );
+    assert!(
+        !client.peer_ended(),
+        "an empty packet forged a control frame and ended the session"
+    );
+}
+
 // --- the badge follows the session, and a lost peer breaks it then ends it ----------------
 
 #[test]
@@ -1100,4 +1206,29 @@ fn a_session_ended_on_this_device_shows_no_broken_badge() {
     app.apply(Action::PowerPress);
     assert!(!app.link_active());
     assert_eq!(app.link_badge(), LinkBadge::Off);
+}
+
+/// A peer that said it was going is nothing like one that vanished, and the badge is where the
+/// difference shows: there is nothing to wait out and nothing broken to report, so the session
+/// ends on this frame with the banner saying what happened to it.
+///
+/// Held against `a_peer_that_leaves_breaks_the_badge_for_two_seconds_then_ends_the_session`
+/// directly above, which is the same ending arriving the only other way it can.
+#[test]
+fn a_peer_that_ends_the_link_ends_the_session_at_once_and_says_so() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut app = common::app_playing_in(d.path(), "Emerald");
+    app.begin_link(0);
+    app.peer_ended();
+
+    assert!(
+        !app.link_active(),
+        "a session whose far end ended it deliberately was left running"
+    );
+    assert_eq!(
+        app.link_badge(),
+        LinkBadge::Off,
+        "a deliberate ending broke the badge as if the peer had vanished"
+    );
+    assert_eq!(app.toast(), Some(Toast::PeerEnded));
 }

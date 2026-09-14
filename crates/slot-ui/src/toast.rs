@@ -17,15 +17,20 @@ pub enum Toast {
     NeedsGpsp,
     NoLink,
     LinkEnded,
+    /// The far end of a live session ended it and sent word before going. The other side of
+    /// `LinkEnded`, and a separate sentence because which device ended it is the one thing the
+    /// player on this one cannot see.
+    PeerEnded,
 }
 
 impl Toast {
-    pub const ALL: [Toast; 5] = [
+    pub const ALL: [Toast; 6] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
         Toast::NoLink,
         Toast::LinkEnded,
+        Toast::PeerEnded,
     ];
 
     /// Position in `ALL`, which is the order faces are uploaded in.
@@ -40,6 +45,12 @@ impl Toast {
             Toast::NeedsGpsp => "Please switch to gpSP",
             Toast::NoLink => "No link support",
             Toast::LinkEnded => "Link ended",
+            // Passive, and deliberately so: on this device the link was ended by somebody else,
+            // and "Link was ended" reads as something that happened to you rather than
+            // something you did — which is the one distinction this end cannot see for itself.
+            // Impersonal too, like every other line here ("No link support", "Nobody arrived");
+            // the product says "friend" nowhere, so this is not the screen to start.
+            Toast::PeerEnded => "Link was ended",
         }
     }
 }

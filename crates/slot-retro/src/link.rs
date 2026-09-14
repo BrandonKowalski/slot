@@ -27,6 +27,26 @@ pub trait LinkChannel: Send {
     fn is_closed(&self) -> bool {
         false
     }
+
+    /// Tell the far end this session is over, before the wire goes.
+    ///
+    /// A transport with a control channel of its own puts a word on it and waits, briefly, for
+    /// it to actually leave; the default is a transport with nothing to say it with, for which
+    /// dropping the wire is the only message there is. Called on the emulator thread with the
+    /// drop immediately behind it, so an implementation must be bounded — never "until the peer
+    /// answers", which is a peer that stopped reading holding a teardown open forever.
+    fn send_end(&mut self) {}
+
+    /// Whether the far end said it was ending the session, as opposed to merely vanishing.
+    ///
+    /// The two are a different sentence on screen and a different speed: a peer that said so
+    /// ends the session now, a peer that went quiet ends it once the broken badge has been
+    /// seen. The default is a transport with no control channel, which can only ever be the
+    /// second — which is why the timeout stays underneath this rather than being replaced by
+    /// it.
+    fn peer_ended(&self) -> bool {
+        false
+    }
 }
 
 /// Hands back whatever was put in, in the order it was sent. No network, no peer, no

@@ -22,7 +22,7 @@ use slot::link_start::{LinkFail, LinkStarter, LinkStep};
 use slot::persist::{self, Snapshot};
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
-use slot_retro::ButtonMask;
+use slot_retro::{ButtonMask, LinkChannel};
 use slot_store::{write_slot_state, Core, SlotState};
 use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, Toast, HINT_EDGE, OUT_H, OUT_W};
 use tempfile::TempDir;
@@ -720,6 +720,95 @@ fn a_dropped_peer_breaks_the_badge_and_ends_the_session_end_to_end() {
 
     // The proof this test exists for: the ending reached the emulator thread too, which only
     // happens through `Session::bridge_link` — `App`'s own bookkeeping ending is not enough.
+    let deadline = Instant::now() + BAIL;
+    while s.emu().is_some_and(|e| e.net().is_active()) {
+        assert!(
+            Instant::now() < deadline,
+            "bridge_link never carried the ending to the emulator thread"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// The ending the user actually asked for: a link ended on the *far* device ends on this one
+/// too, promptly, and the banner says which of the two it was.
+///
+/// The far end is a real `TcpLink` the test keeps hold of. It sends the control frame and then
+/// stays open, deliberately — that is what isolates the message as the cause. The lost-peer
+/// path cannot explain this ending: nothing is dropped, no FIN is sent, `is_closed` stays
+/// false, and with the control frame removed this session would simply carry on running rather
+/// than fail. It is the difference between proving the message works and proving a socket
+/// closed.
+///
+/// Promptness is held against `LINK_LOST_MS` itself rather than a frame count, because that
+/// bound *is* the claim: a deliberate ending must not sit through the broken-badge timeout a
+/// peer that vanished has to.
+#[test]
+fn a_peer_that_ends_the_link_ends_this_session_without_waiting_out_the_timeout() {
+    let (mut s, _d, mut now) = session_playing_on_gpsp();
+    let port = 45914;
+    let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
+    std::thread::sleep(Duration::from_millis(150));
+    s.app_mut().start_link(
+        fake_starter(move |_, _| TcpLink::join("127.0.0.1", port)),
+        1,
+    );
+    let deadline = Instant::now() + BAIL;
+    while s.app().game_menu_open() {
+        assert!(Instant::now() < deadline, "the link never came up");
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut far = far.join().expect("host thread");
+
+    let deadline = Instant::now() + BAIL;
+    while !(s.app().link_active() && s.emu().is_some_and(|e| e.net().is_active())) {
+        assert!(
+            Instant::now() < deadline,
+            "the link never went live on both sides"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    // The far player choosing to end it. Nothing else happens to the wire: this side has not
+    // stepped yet, so its own teardown cannot have run and closed anything.
+    far.send_end();
+    assert!(
+        !far.is_closed(),
+        "the far socket was already closed, so nothing below is about the message"
+    );
+
+    let began = now;
+    let deadline = Instant::now() + BAIL;
+    while s.app().link_active() {
+        assert!(
+            Instant::now() < deadline,
+            "the far end's ending never reached this session"
+        );
+        step(&mut s, &mut now, &[]);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    assert!(
+        now - began < LINK_LOST_MS,
+        "the session took {}ms to end, which is the lost-peer timeout rather than the message",
+        now - began
+    );
+    assert_eq!(
+        s.app().toast(),
+        Some(Toast::PeerEnded),
+        "the banner did not say the link had been ended from the other end"
+    );
+    assert_eq!(
+        s.app().link_badge(),
+        slot_ui::LinkBadge::Off,
+        "a deliberate ending broke the badge as if the peer had vanished"
+    );
+
+    // And it reached the emulator thread, which only `bridge_link` does — the same second half
+    // the dropped-peer test above insists on.
     let deadline = Instant::now() + BAIL;
     while s.emu().is_some_and(|e| e.net().is_active()) {
         assert!(
