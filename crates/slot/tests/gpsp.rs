@@ -144,12 +144,17 @@ fn gpsp_is_left_on_its_own_boot_default_when_the_card_has_no_bios() {
 
 /// mGBA has no `gpsp_serial` option at all; handing it one anyway would be silently ignored
 /// by mGBA today and a landmine the moment mGBA ever grows an option by that name. Handed a
-/// mode that is not `auto`, it still gets nothing.
+/// mode that is not `auto`, it still gets none of gpSP's.
 ///
 /// Told a BIOS is present as well, since that is the state of the user's own card: mGBA's own
 /// boot switch is spelled `mgba_skip_bios`, so gpSP's spelling must not reach it either.
+///
+/// What it does get is a frameskip option under its own prefix, and that is worth pinning
+/// rather than assuming. It is what makes mGBA register the audio buffer status callback at
+/// all: a key spelled wrong would leave the callback unregistered, `set_frame_skip` a silent
+/// no-op, and every frame of a fast forward drawn — slower, with nothing failing anywhere.
 #[test]
-fn mgba_is_given_no_options() {
+fn mgba_is_given_its_own_frameskip_and_none_of_gpsps() {
     let path = dylib_for(Core::Mgba);
     if !path.exists() {
         eprintln!("no mGBA dylib on this host, skipping");
@@ -167,6 +172,40 @@ fn mgba_is_given_no_options() {
         core.option("gpsp_boot_mode"),
         None,
         "gpSP's boot switch reached mGBA, which spells its own mgba_skip_bios"
+    );
+    assert_eq!(
+        core.option("mgba_frameskip").as_deref(),
+        Some("auto"),
+        "mGBA was never put on auto frameskip, so nothing can tell it which frame to draw"
+    );
+    assert_eq!(
+        core.option("gpsp_frameskip"),
+        None,
+        "gpSP's frameskip key reached mGBA, which reads only its own prefix"
+    );
+}
+
+/// gpSP's half of the same contract, and the same reasoning: its own frameskip key, under its
+/// own prefix, and none of mGBA's.
+#[test]
+fn gpsp_is_put_on_auto_frameskip() {
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let _g = common::core_lock();
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
+    assert_eq!(
+        core.option("gpsp_frameskip").as_deref(),
+        Some("auto"),
+        "gpSP was never put on auto frameskip, so nothing can tell it which frame to draw"
+    );
+    assert_eq!(
+        core.option("mgba_frameskip"),
+        None,
+        "mGBA's frameskip key reached gpSP, which reads only its own prefix"
     );
 }
 

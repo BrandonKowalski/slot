@@ -121,8 +121,9 @@ pub fn open_core_for(
 /// does not, and a save state does not carry it. `auto` resolves the protocol from the ROM, so
 /// two devices running the same game agree on a mode without either being told which, and it
 /// is what every cart loads with until its link screen is switched to the other hardware (see
-/// `link_kind::serial_option`). mGBA gets nothing: it has no `gpsp_serial` option, and handing
-/// it one anyway is a landmine the day it grows one.
+/// `link_kind::serial_option`). mGBA gets none of gpSP's options: it has no `gpsp_serial`, and
+/// handing it one anyway is a landmine the day it grows one. It does get a frameskip option,
+/// below, but under its own prefix — neither core reads the other's.
 ///
 /// `bios` is whether the card carries a real BIOS (`root::has_real_bios`), and it buys the
 /// player the boot logo and chime. gpSP defaults to `game`, which drops straight into the
@@ -144,6 +145,19 @@ pub fn open_core_for(
 /// anything reaches the screen. That covers a reload for a link too — `session::reload_for_link`
 /// flushes and resumes through the same path.
 pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str, bios: bool) {
+    // Auto frameskip, on whichever core this is, for the whole session. Nothing is skipped by
+    // merely turning it on: both cores only skip a frame when the frontend says its audio
+    // buffer is about to run dry, and `RetroCore::set_frame_skip` is the one thing that ever
+    // says so — once per frame of a fast forward present, for every frame but the one that
+    // will be shown. At normal speed the answer is always no and every frame draws.
+    //
+    // Set here with the rest, rather than switched on and off around a fast forward, because
+    // a libretro core reads its options during `retro_load_game`; changing this one later
+    // would mean re-entering `set_option`, whose doc comment spells out the aliasing that
+    // invites. The option is the standing arrangement; the callback is the per-frame lever.
+    //
+    // The key is the core's own name with `_frameskip` after it, which is how both spell it.
+    core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
         if bios {
