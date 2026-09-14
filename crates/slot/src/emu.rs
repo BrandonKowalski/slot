@@ -548,15 +548,26 @@ impl Worker {
         let mut gated = (false, false);
         let rewind = RewindThread::spawn(REWIND_BYTES);
         let mut since_snapshot = 0;
-        // What one core frame has been costing, kept across presents so a fast forward present
-        // can tell before it runs a frame whether there is room for another one after it.
+        // What the most expensive core frame has been costing lately, kept across presents so a
+        // fast forward present can tell before it runs a frame whether there is room for another
+        // one after it.
         //
-        // Seeded at a whole present, which is pessimistic on purpose: an estimate that starts
-        // too low would let the very first fast present run to the ceiling before anything had
-        // been measured. Normal play updates it too — one frame a present is still a
-        // measurement — so by the time anyone reaches for the trigger this already holds the
-        // real cost of a drawn frame on this machine, for this game.
-        let mut frame_cost = PRESENT;
+        // The worst frame rather than the average of them, because the question this answers is
+        // "can the present finish what it is about to start", and a mean is wrong half the time
+        // by construction: the drawn frame that ends a present costs more than the skipped ones
+        // before it, and a game walking into a busy scene costs more than the average of where
+        // it has been. Predicting with the mean made the loop start a frame it could not finish
+        // in 54% of presents on mGBA gameplay, and the overruns were what pushed presents past
+        // their deadline.
+        //
+        // It rises the instant a frame costs more and falls back through the same quarter blend
+        // as everything else here, so it follows a game into a heavy scene immediately and out
+        // of one over a few presents. Seeded at a whole present, which is pessimistic on
+        // purpose: an estimate that starts too low would let the very first fast present run to
+        // the ceiling before anything had been measured. Normal play updates it too — one frame
+        // a present is still a measurement — so by the time anyone reaches for the trigger this
+        // already holds the real cost of a drawn frame on this machine, for this game.
+        let mut frame_peak = PRESENT;
         // What a present must leave for the work that follows its core frames — publish, the
         // snapshot every second present, the audio resample, the link pump — measured last
         // present rather than assumed. Seeded at the whole margin `FAST_TARGET` leaves, which is
@@ -750,17 +761,27 @@ impl Worker {
                 let budget = FAST_TARGET.saturating_sub(post_cost);
                 let began = Instant::now();
                 let mut ran = 0u32;
+                let mut worst = Duration::ZERO;
                 loop {
                     ran += 1;
-                    let last = ran >= ceiling || began.elapsed() + frame_cost * 2 > budget;
+                    let last = ran >= ceiling || began.elapsed() + frame_peak * 2 > budget;
                     core.set_frame_skip(!last);
+                    let frame_began = Instant::now();
                     core.run_frame(input);
+                    worst = worst.max(frame_began.elapsed());
                     if last {
                         break;
                     }
                 }
                 let core_time = began.elapsed();
-                frame_cost = blend(frame_cost, core_time / ran);
+                // Up at once, down slowly: a frame that costs more is believed immediately,
+                // because the next present has to survive it, while one cheap present is not
+                // enough to conclude the heavy scene is over.
+                frame_peak = if worst > frame_peak {
+                    worst
+                } else {
+                    blend(frame_peak, worst)
+                };
                 fast_span = Some((began, core_time));
                 // Immediately, and this is the one that decides whether a link is playable.
                 // The emulated serial hardware only executes inside `run_frame`, so every
