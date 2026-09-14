@@ -11,7 +11,8 @@ use slot::link_start::{LinkFail, LinkStep};
 use slot_input::Action;
 use slot_store::Core;
 use slot_ui::{
-    arrows_hint_face, hint_face, link_art, CartFace, Draw, TexId, UndoFace, OUT_H, OUT_W,
+    arrows_hint_face, hint_face, link_art, toast_face, CartFace, Draw, TexId, Toast, UndoFace,
+    OUT_H, OUT_W,
 };
 
 /// One rastered face, whatever rasterised it. `CartFace` and `UndoFace` are the same three
@@ -386,6 +387,116 @@ fn the_connected_screen_shows_back_and_end_link() {
         ink(&px),
         cap_ink("B", "Back") + cap_ink("A", "End Link"),
         "the row is not exactly a Back cap and an End Link cap"
+    );
+}
+
+// --- the banner a refused press gets -------------------------------------------------------
+//
+// Two refusals can apply to one press: the cart nothing can link, and the core that cannot link
+// anything. Which sentence the player reads is the whole of the fix, and `app.toast()` is the
+// app's own bookkeeping rather than the glass — a face uploaded in the wrong order, or a banner
+// drawn at zero alpha, agrees with it and says nothing. So the sentence is read off the pixels.
+
+/// The real banner faces, in `Toast::ALL` order, which is how `App` finds each one.
+fn toast_faces() -> Vec<(TexId, Face)> {
+    Toast::ALL
+        .iter()
+        .map(|t| (TexId::from_raw(800 + t.index()), toast_face(*t).into()))
+        .collect()
+}
+
+/// The banner on the glass after SELECT+MENU over a cart this core is running, composited from
+/// the real faces. Only the banner's own textures are looked up; the game picture, the HUD plate
+/// and the cart have no face in this table, so the filter decides which textures get a face and
+/// never which pixels count.
+fn banner_pixels(core: Core, title: &str, code: &str, name: &str) -> Vec<u8> {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    // "Cart" sorts before "Zzz", so `Action::Insert` seats it.
+    common::write_retail_header(&d, "Cart", title, code);
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(core);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    let faces = toast_faces();
+    app.set_toast_faces(faces.iter().map(|(t, _)| *t).collect());
+    app.apply(Action::GameMenu);
+    assert!(
+        !app.game_menu_open(),
+        "{code} on {core:?} opened a link screen instead of refusing"
+    );
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    // Drawn on the frame the press landed on, which is where the fade is still at full.
+    let banner: Vec<Draw> = out
+        .into_iter()
+        .filter(|d| matches!(*d, Draw::Tex { tex, .. } if faces.iter().any(|(t, _)| *t == tex)))
+        .collect();
+    let px = composite(&banner, &faces);
+    dump(&px, name);
+    px
+}
+
+/// One banner's ink, composited alone, for holding a frame against the sentence it should be.
+fn banner_ink(t: Toast) -> usize {
+    let f: Face = toast_face(t).into();
+    let (w, h) = (f.w as f32, f.h as f32);
+    let tex = TexId::from_raw(1);
+    let draw = Draw::Tex {
+        x: 100.0,
+        y: 20.0,
+        w,
+        h,
+        tex,
+        alpha: 1.0,
+    };
+    ink(&composite(&[draw], &[(tex, f)]))
+}
+
+/// Apotris on mGBA, which is the press the user made: two refusals apply and only one of them is
+/// true advice. NO LINK SUPPORT has to be the sentence that reaches the glass — PLEASE SWITCH TO
+/// GPSP would send them to a core that cannot carry this cart either.
+#[test]
+fn a_cart_nothing_can_link_reads_no_link_support_on_the_glass() {
+    let px = banner_pixels(Core::Mgba, "APOTRIS", "2ATE", "banner-apotris-mgba");
+    assert!(
+        ink(&px) > 0,
+        "the refusal put no banner on the frame at all"
+    );
+    assert_eq!(
+        ink(&px),
+        banner_ink(Toast::NoLink),
+        "the banner is not the NO LINK SUPPORT line"
+    );
+    assert_ne!(
+        banner_ink(Toast::NoLink),
+        banner_ink(Toast::NeedsGpsp),
+        "the two sentences carry the same ink, so this frame proves nothing"
+    );
+    // In the plate band at the top, whole: a banner placed off the panel is in the draw list and
+    // on none of these rows.
+    let (first, last) = inked_rows(&px);
+    assert!(
+        last < OUT_H as usize / 4,
+        "the banner is not up in the plate band: rows {first}..{last}"
+    );
+}
+
+/// The other half of the order on the glass: a cart gpSP really can carry, sitting on mGBA, reads
+/// the sentence that names the core which would link it.
+#[test]
+fn a_cart_gpsp_can_link_reads_please_switch_to_gpsp() {
+    let px = banner_pixels(Core::Mgba, "POKEMON RUBY", "AXVE", "banner-ruby-mgba");
+    assert!(
+        ink(&px) > 0,
+        "the refusal put no banner on the frame at all"
+    );
+    assert_eq!(
+        ink(&px),
+        banner_ink(Toast::NeedsGpsp),
+        "the banner is not the PLEASE SWITCH TO GPSP line"
     );
 }
 

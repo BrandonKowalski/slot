@@ -755,9 +755,15 @@ fn fake_link_sprites() -> slot::link_screen::LinkSprites {
 /// The first cart on the card in the slot and running on gpSP, with `fake_link_sprites`' faces
 /// to tell the plug from the adapter.
 fn seated_on_gpsp(d: &TempDir) -> App {
+    seated_on(d, Core::Gpsp)
+}
+
+/// The same, on whichever core the test is about. The core decides whether the link screen can
+/// open at all, so a test about which refusal a press earns has to be able to name it.
+fn seated_on(d: &TempDir, core: Core) -> App {
     let mut app = common::boot(d.path());
     app.apply(Action::Insert);
-    app.set_core(Core::Gpsp);
+    app.set_core(core);
     app.on_core_ready();
     for _ in 0..120 {
         app.update(1.0 / 60.0);
@@ -1552,6 +1558,50 @@ fn a_cart_gpsp_carries_still_opens_the_link_screen() {
             "{code} opened the screen and said so too"
         );
     }
+}
+
+/// Which refusal wins when both apply. Apotris on mGBA is the cart the user pressed this on:
+/// nothing on the card can link it, and the old order answered with the core instead, sending
+/// them to gpSP for a game gpSP cannot carry either — a core swap and a reload to arrive back at
+/// a refusal they could not reach from here. The cart's own answer is the one that survives a
+/// switch, so it is the one the banner gives.
+#[test]
+fn a_cart_nothing_can_link_is_refused_whatever_core_is_selected() {
+    for core in [Core::Mgba, Core::Gpsp] {
+        let d = common::tmp_root_with_carts(&["Apotris", "Zzz"]);
+        common::write_retail_header(&d, "Apotris", "APOTRIS", "2ATE");
+        let mut app = seated_on(&d, core);
+        app.apply(Action::GameMenu);
+        assert!(
+            !app.game_menu_open(),
+            "{core:?} offered a link screen for a cart nothing can link"
+        );
+        assert_eq!(
+            app.toast(),
+            Some(Toast::NoLink),
+            "{core:?} answered a cart nothing can link with the wrong banner"
+        );
+    }
+}
+
+/// The other half of the order, and the half that keeps "switch to gpSP" worth saying: a cart
+/// gpSP really can link, sitting on mGBA, is still told which core would carry it. Without this
+/// the refusal above passes just as well with `Toast::NeedsGpsp` deleted outright.
+#[test]
+fn a_cart_gpsp_can_link_still_says_to_switch_to_it() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
+    let mut app = seated_on(&d, Core::Mgba);
+    app.apply(Action::GameMenu);
+    assert!(
+        !app.game_menu_open(),
+        "mGBA opened a link screen it has no netpacket interface for"
+    );
+    assert_eq!(
+        app.toast(),
+        Some(Toast::NeedsGpsp),
+        "a cart gpSP can carry was told there is no link support for it"
+    );
 }
 
 /// The legend names SELECT only where SELECT does something. A game gpSP links the same way on

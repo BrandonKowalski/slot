@@ -2758,23 +2758,40 @@ impl App {
         if self.link_active() {
             return self.refuse();
         }
-        // gpSP is the only core with a netpacket interface to link over. The screen stays shut,
-        // and the save-state banner says what would open it, so the press is not simply lost.
-        if self.core != Core::Gpsp {
-            self.hud.toast(Toast::NeedsGpsp, self.now());
-            return;
-        }
         // gpSP fakes named protocols rather than emulating the cable, so for a cart it has none
         // for there is nothing on the far side of the link to reach. Offering it anyway is the
         // worst of the three answers: the radio comes up, the two devices find each other, the
         // screen says LINKED, and both games sit there — gpSP accepts the peer and then drops
         // every packet. Refused before any of that starts, and the banner says why.
+        //
+        // Ahead of the core check, and that order is the whole point: this reads the cart's own
+        // header through `auto_link`, which never looks at the selected core, so the answer is
+        // the same whichever core is loaded. Asking about the core first told the player of an
+        // mGBA cart to switch to gpSP for a game gpSP cannot carry either — advice that costs
+        // them a core swap and a reload to arrive back at this same refusal, which they could
+        // not even reach from here. "Nothing can link this" outranks "something else could".
+        //
+        // The day this inverts: slot's mGBA lockstep link route is being built, and it links by
+        // running both machines in step rather than by speaking a game's protocol, so it carries
+        // every cart — Apotris included. When that route lands, a cart refused here is linkable
+        // on mGBA, and this refusal starts lying in the other direction: it will be saying "no
+        // link support" about the one core that does support it. `link_carried` is gpSP's
+        // question, and by then it is the wrong one to ask first. The order then wants to be the
+        // core's route first — mGBA links it, so open the screen — and this refusal kept only
+        // for the carts whose selected core really has nothing for them.
         let carried = self
             .seated()
             .and_then(|stem| self.auto_link(stem))
             .is_some_and(|(cart, _)| link_carried(&cart.code, &cart.title));
         if !carried {
             self.hud.toast(Toast::NoLink, self.now());
+            return;
+        }
+        // gpSP is the only core with a netpacket interface to link over. The screen stays shut,
+        // and the save-state banner says what would open it, so the press is not simply lost.
+        // Reached only for a cart gpSP really can carry, so switching to it is advice that works.
+        if self.core != Core::Gpsp {
+            self.hud.toast(Toast::NeedsGpsp, self.now());
             return;
         }
         // It opens on what this cart was last switched to, or on what gpSP picks for it.
