@@ -133,6 +133,8 @@ fn fast_forward_steps_through_its_speeds_and_saves_each_one() {
     let (d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::FastForward);
     for (btn, want) in [
+        // The row opens on the default, 6x, so Left walks down through the slow end first.
+        (Btn::Left, 4),
         (Btn::Left, 3),
         (Btn::Left, 2),
         (Btn::Left, 2),
@@ -392,8 +394,8 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
         "no arrows on Fast Forward"
     );
     assert!(
-        drawn(&out, value(QuickValue::Speed4, true)),
-        "4× is not lit"
+        drawn(&out, value(QuickValue::Speed6, true)),
+        "6× is not lit"
     );
     assert!(
         drawn(&out, value(QuickValue::Off, false)),
@@ -415,8 +417,8 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
     );
     assert!(drawn(&out, 501), "the date and time in hand is not lit");
     assert!(
-        drawn(&out, value(QuickValue::Speed4, false)),
-        "4× stayed lit after the bar left it"
+        drawn(&out, value(QuickValue::Speed6, false)),
+        "6× stayed lit after the bar left it"
     );
 }
 

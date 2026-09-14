@@ -20,9 +20,13 @@ use crate::rewind::{RewindThread, REWIND_BYTES};
 /// 0.456% the GBA runs slow lands entirely on audio rate control.
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
-/// The speed a card that never chose one gets, and what the quick menu's 4× asks for. The menu
-/// picks 2, 3, this, 6 or 8, through `EmuHandle::set_fast_steps`.
-pub const FAST_STEPS: u32 = 4;
+/// The speed a card that never chose one gets, and what the quick menu's 6× asks for. The menu
+/// picks 2, 3, 4, this or 8, through `EmuHandle::set_fast_steps`.
+///
+/// Kept equal to `slot_store::FF_SPEED_DEFAULT` on purpose: a worker that starts before a card
+/// has been read must fast forward at the speed that card is about to ask for, or the first
+/// press after boot runs at a speed nobody chose.
+pub const FAST_STEPS: u32 = 6;
 
 /// The top of the Fast Forward row, and so the most core frames one present will ever run.
 ///

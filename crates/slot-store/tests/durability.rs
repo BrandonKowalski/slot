@@ -131,13 +131,14 @@ fn a_line_the_reader_does_not_know_is_skipped() {
     );
 }
 
-/// What slot did before any of these were settings: the motor on, fast forward at four times
-/// and silent. A card that has never been asked goes on doing exactly that.
+/// What a card that has never been asked gets: the motor on, fast forward at the default, and
+/// silent. The speed is the one constant here that has moved — it was four, inherited from when
+/// gpSP ran its interpreter and could not serve more, and is now six, chosen on the device.
 #[test]
-fn a_first_boot_rumbles_and_fast_forwards_silently_at_four() {
+fn a_first_boot_rumbles_and_fast_forwards_silently_at_the_default() {
     let s = SlotState::default();
     assert!(s.rumble, "boots with the motor off");
-    assert_eq!(s.ff_speed, 4);
+    assert_eq!(s.ff_speed, FF_SPEED_DEFAULT);
     assert!(!s.ff_sound, "boots with fast forward audible");
 }
 
@@ -162,7 +163,7 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             clock_set: true,
             utc_offset_min: -300,
             rumble: true,
-            ff_speed: 4,
+            ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
         }
     );
@@ -211,8 +212,12 @@ fn every_speed_the_row_offers_round_trips_as_its_own_number() {
 /// acceptable, and the reason 6 and 8 must stay outside 2..=4 rather than, say, the row growing
 /// a 5 that an older build would read as a speed the user never chose.
 ///
-/// The other half is the default: it stays a number every build can read, so the card in the
-/// common case reads identically on all of them.
+/// The default is deliberately *not* that any more. It was 4x, held inside 2..=4 so the common
+/// card read identically everywhere; it is now 6x, chosen on the device, and a fresh card reads
+/// as 4x on a build that predates this row — the same fallback the two new speeds already take.
+/// The property kept here is the one that still earns its place: every speed on the row either
+/// reads as itself on an older build or falls back to that build's own default, and none of
+/// them reads as a *different* speed the player never chose.
 #[test]
 fn an_older_build_reads_the_two_new_speeds_as_its_own_default() {
     for speed in FF_SPEEDS.iter().filter(|&&n| n > 4) {
@@ -223,8 +228,8 @@ fn an_older_build_reads_the_two_new_speeds_as_its_own_default() {
     }
     assert_eq!(SlotState::default().ff_speed, FF_SPEED_DEFAULT);
     assert!(
-        (2..=4).contains(&FF_SPEED_DEFAULT),
-        "the default is not a speed an older build can read"
+        FF_SPEEDS.contains(&FF_SPEED_DEFAULT),
+        "the default is not one of the speeds the row offers"
     );
 }
 
@@ -249,7 +254,7 @@ fn an_out_of_range_setting_falls_back_to_its_default() {
         let s = read_slot_state(d.path());
         assert_eq!(
             (s.rumble, s.ff_speed, s.ff_sound),
-            (true, 4, false),
+            (true, FF_SPEED_DEFAULT, false),
             "accepted {bad:?}"
         );
         assert_eq!(

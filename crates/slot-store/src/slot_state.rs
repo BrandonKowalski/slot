@@ -28,10 +28,21 @@ pub const UTC_OFFSET_MAX: i16 = 840;
 /// here, so a round trip through one forgets the choice.
 pub const FF_SPEEDS: [u8; 5] = [2, 3, 4, 6, 8];
 
-/// The speed a card that never chose one gets, and the one the row opens on. Deliberately a
-/// number every build that has ever shipped can read, so the common card reads the same on all
-/// of them.
-pub const FF_SPEED_DEFAULT: u8 = 4;
+/// The speed a card that never chose one gets, and the one the row opens on.
+///
+/// Six, chosen on the device rather than reasoned about: 8x is affordable on gpSP content by
+/// every measurement taken, and 6x is the one that reads as fast without feeling like a
+/// different game. The old default of 4x was inherited from when gpSP ran its interpreter and
+/// could not serve more; the core slot builds now runs its dynarec, so 4x had stopped being
+/// what the hardware could do and become merely what it was told.
+///
+/// This deliberately sits outside the 2..=4 an older build accepts, which the default used to
+/// stay inside so the common card read identically everywhere. A fresh card written here now
+/// reads as 4x on any build that predates the five-ceiling row — the same fallback 6x and 8x
+/// already take as choices. Accepted knowingly: the compatibility being given up is with
+/// builds nobody runs, and pinning the default to what the oldest build could read would keep
+/// a number the hardware outgrew.
+pub const FF_SPEED_DEFAULT: u8 = 6;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
