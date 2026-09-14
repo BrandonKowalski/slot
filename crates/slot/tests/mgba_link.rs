@@ -175,6 +175,56 @@ fn probe_rom() -> Vec<u8> {
     rom
 }
 
+/// `dma_rom` that starts its long DMA when it reads A rather than before its first vblank, so a
+/// test can choose which frame end the two GBAs reach with player 0's CPU blocked. The boot DMA is
+/// the one the join now plays alone, before the cable goes in; this one lands mid-session, where
+/// the cable is already in and the next hard sync is a long way off. Branches are to
+/// `0xc0 + index * 4 + 8 + offset * 4`.
+fn dma_a_rom() -> Vec<u8> {
+    let mut rom = dma_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(10, 0xea00000b); // 0x0e8:        b    test (0x11c)      (was strh r3, [r2])
+    set(21, 0xeaffffef); // 0x114:        b    vb (0x0d8)        setup now only loads the registers
+    set(23, 0xe3130001); // 0x11c: test:  tst  r3, #1            A held? (KEYINPUT is active low)
+    set(24, 0x058060dc); // 0x120:        streq r6, [r0, #0xdc]  DMA3CNT, only on the frame A is read
+    set(25, 0xe1c230b0); // 0x124:        strh r3, [r2]          paint the buttons
+    set(26, 0xeaffffef); // 0x128:        b    dr (0x0ec)
+    rom
+}
+
+/// `common::gba_rom` as a game sitting in the serial port's normal 8-bit mode rather than in
+/// multiplayer mode. At start it clears RCNT, for serial rather than GPIO, and writes SIOCNT for
+/// normal 8-bit with an external clock, which is the mode a game holds while it waits to be
+/// clocked. Every vblank it writes SIODATA8 and paints the buttons into the first pixel, as
+/// `keys_rom` does. Nothing transfers, and that is the point: a normal-mode slave waits for a clock
+/// that never comes, so the cable has to take up the mode the restored registers hold with no
+/// transfer to carry it. It paints the buttons rather than SIOCNT because SIOCNT on a cable is
+/// player-dependent by design - `sio_rom`'s test turns on the two GBAs reading different values -
+/// and these starts compare the two devices' pictures. Branches are to
+/// `0xc0 + index * 4 + 8 + offset * 4`.
+fn normal_rom() -> Vec<u8> {
+    let mut rom = common::gba_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(5, 0xea000008); // 0x0d4:        b    setup (0x0fc)          (was mov r3, #0)
+    set(9, 0xea00000b); // 0x0e4:        b    poke (0x118)           (was add r3, r3, #1)
+    set(15, 0xe2805c01); // 0x0fc: setup: add  r5, r0, #0x100
+    set(16, 0xe3a06000); // 0x100:        mov  r6, #0
+    set(17, 0xe1c563b4); // 0x104:        strh r6, [r5, #0x34]   RCNT = 0: serial, not GPIO
+    set(18, 0xe1c562b8); // 0x108:        strh r6, [r5, #0x28]   SIOCNT: normal 8-bit, external clock
+    set(19, 0xe3a06001); // 0x10c:        mov  r6, #1
+    set(20, 0xeafffff0); // 0x110:        b    vb (0x0d8)
+    set(22, 0xe1c562ba); // 0x118: poke:  strh r6, [r5, #0x2a]   SIODATA8
+    set(23, 0xe1d533b0); // 0x11c:        ldrh r3, [r5, #0x30]   KEYINPUT
+    set(24, 0xeafffff0); // 0x120:        b    strh r3, [r2] (0x0e8)
+    rom
+}
+
 /// The 15-bit colour a rom wrote into pixel `x` of the first row, read back from the picture. A
 /// register painted this way loses its top bit.
 fn painted(picture: &[u8], x: usize) -> u16 {
@@ -580,6 +630,26 @@ fn shared_script(frame: usize) -> ButtonMask {
     ButtonMask(keys)
 }
 
+/// `dma_a_rom`'s buttons: A on frame 3 alone, which is the frame that starts the long DMA, then
+/// RIGHT for frames 60 to 62 and again for frame 70, then B for frames 80 to 83. A is pressed on an
+/// odd frame on purpose. A DMA started on frame 3, 5, 7, 9 or 11 leaves the two GBAs at a frame end
+/// with player 0's CPU blocked while the cable's next hard sync is still more than a frame away,
+/// which is the one case the sync's early exit is there for. Every later change is an edge a GBA a
+/// frame behind would paint differently.
+fn dma_script(frame: usize) -> ButtonMask {
+    let mut keys = 0;
+    if frame == 3 {
+        keys |= ButtonMask::A;
+    }
+    if (60..63).contains(&frame) || frame == 70 {
+        keys |= ButtonMask::RIGHT;
+    }
+    if (80..84).contains(&frame) {
+        keys |= ButtonMask::B;
+    }
+    ButtonMask(keys)
+}
+
 /// Every frame's picture from each player's device, running `rom` as a linked pair from
 /// `container` (or from a load, when there is none) with `buttons(frame)` on both ports. Player 0
 /// first.
@@ -655,31 +725,73 @@ fn two_identical_gbas_read_the_same_buttons_on_the_same_frame() {
     );
 }
 
-/// Every way we know a linked pair can start, by name, with the rom it runs and the link state it
-/// restores, if any. Five starts of `transfer_rom`: a fresh load, and a restore of each pairing of
-/// a state taken at a frame end, 20 frames in, with a state taken straight after a load, which
-/// stands at VCOUNT 126, 41,000 cycles short of its first vblank. And a fresh load of `dma_rom`,
-/// whose GBAs are blocked by a DMA at their first frame ends.
-fn every_start(dylib: &Path) -> Vec<(&'static str, PathBuf, Option<Vec<u8>>)> {
+/// Every way we know a linked pair can start, by name, with the rom it runs, the link state it
+/// restores, if any, and the buttons both ports hold on each frame. Five starts of `transfer_rom`:
+/// a fresh load, and a restore of each pairing of a state taken at a frame end, 20 frames in, with
+/// a state taken straight after a load, which stands at VCOUNT 126, 41,000 cycles short of its
+/// first vblank. A fresh load of `dma_rom`, whose GBAs are blocked by a DMA at their first frame
+/// ends, which the join plays alone. A fresh load of `dma_a_rom`, which blocks them at a frame end
+/// mid-session instead, with the cable already in. And a restore of two `normal_rom` states, which
+/// hold the serial port's normal 8-bit mode rather than multiplayer mode.
+type Start = (
+    &'static str,
+    PathBuf,
+    Option<Vec<u8>>,
+    fn(usize) -> ButtonMask,
+);
+
+fn every_start(dylib: &Path) -> Vec<Start> {
     let transfers = rom("mgba-link-starts.gba", transfer_rom());
     let blocked = rom("mgba-link-starts-dma.gba", dma_rom());
+    let blocked_late = rom("mgba-link-starts-dma-a.gba", dma_a_rom());
+    let normal = rom("mgba-link-starts-normal.gba", normal_rom());
     let end = single_state(dylib, &transfers, 20);
     let reset = single_state(dylib, &transfers, 0);
+    let normal_end = single_state(dylib, &normal, 20);
     vec![
-        ("a fresh load", transfers.clone(), None),
-        ("[end, end]", transfers.clone(), Some(slk1([&end, &end]))),
+        ("a fresh load", transfers.clone(), None, shared_script),
+        (
+            "[end, end]",
+            transfers.clone(),
+            Some(slk1([&end, &end])),
+            shared_script,
+        ),
         (
             "[end, reset]",
             transfers.clone(),
             Some(slk1([&end, &reset])),
+            shared_script,
         ),
         (
             "[reset, end]",
             transfers.clone(),
             Some(slk1([&reset, &end])),
+            shared_script,
         ),
-        ("[reset, reset]", transfers, Some(slk1([&reset, &reset]))),
-        ("a fresh load blocked by a DMA", blocked, None),
+        (
+            "[reset, reset]",
+            transfers,
+            Some(slk1([&reset, &reset])),
+            shared_script,
+        ),
+        (
+            "a fresh load blocked by a DMA",
+            blocked,
+            None,
+            shared_script,
+        ),
+        (
+            "a DMA started mid-session, on frame 3",
+            blocked_late,
+            None,
+            dma_script,
+        ),
+        (
+            "[end, end] in normal serial mode",
+            normal,
+            Some(slk1([&normal_end, &normal_end])),
+            shared_script,
+        ),
     ]
 }
 
@@ -718,19 +830,21 @@ fn next_frame_end(gba: &[u8]) -> u32 {
 /// any two GBA states, so the cable goes in only once both GBAs stand at a frame end. Before it
 /// waited for that, [end, reset] ended player 1's frames about 240,000 cycles before player 0's:
 /// while player 0 slept waiting on player 1, at a transfer or a hard sync, player 1 ran on into
-/// its next frame still holding the old buttons. And a GBA that reached the frame end where the
-/// cable syncs with its CPU blocked by a DMA, as Mario Kart: Super Circuit's does at boot, ran on
-/// through that sync to its next vblank, which left player 1 a whole frame behind for the rest of
-/// the session. Every frame is compared, the first too: a GBA restored mid-frame has finished
-/// that frame before the cable goes in.
+/// its next frame still holding the old buttons. And a GBA that reaches the frame end where the
+/// cable syncs with its CPU blocked by a DMA runs on through that sync to its next vblank unless
+/// the sync asks it to stop, which leaves player 1 a whole frame behind for the rest of the
+/// session. Mario Kart: Super Circuit's boot reaches its first frame end that way, but the join
+/// now plays that first frame alone, so `dma_a_rom` starts its DMA mid-session instead, with the
+/// cable already in and the next hard sync more than a frame away. Every frame is compared, the
+/// first too: a GBA restored mid-frame has finished that frame before the cable goes in.
 #[test]
 fn every_start_gives_both_gbas_the_same_buttons_on_the_same_frame() {
     let _g = common::core_lock();
     let Some(dylib) = vendored() else { return };
 
     let mut late = Vec::new();
-    for (what, rom, container) in every_start(&dylib) {
-        let pictures = linked_pictures(&dylib, &rom, container.as_deref(), 120, shared_script);
+    for (what, rom, container, buttons) in every_start(&dylib) {
+        let pictures = linked_pictures(&dylib, &rom, container.as_deref(), 120, buttons);
         let differing = differing_frames(&pictures);
         if !differing.is_empty() {
             late.push(format!("{what}: frames {differing:?}"));
@@ -746,16 +860,21 @@ fn every_start_gives_both_gbas_the_same_buttons_on_the_same_frame() {
 /// 0's reads its buttons on time, but [reset, end] ran at under a third of the speed of the other
 /// starts. So each start also has to leave the two GBAs' frames ending together, read off the link
 /// state after 120 frames: each GBA's next frame end on the cable's shared clock has to be within
-/// a scanline of the other's. Two GBAs whose frames end together can stand a few cycles apart,
-/// since each frame ends on whichever instruction or event crosses its vblank; out of phase they
-/// stood about 240,000 cycles apart, and a GBA a frame behind stands 280,896 cycles behind.
+/// 256 cycles of the other's. Two GBAs whose frames end together can stand a few cycles apart,
+/// since each frame ends on whichever instruction or event crosses its vblank, but only a few:
+/// every start here has measured 0. The threshold is well inside a scanline's 1,232 cycles on
+/// purpose. The join calls a GBA standing anywhere in the 1,008 cycles between its vblank and that
+/// line's hblank "at a frame end" and joins it as it is, so a link state from before the join
+/// waited for a frame end, or a run-on regression, could put the two GBAs that far apart while
+/// still reading their buttons on time. Out of phase they stood about 240,000 cycles apart, and a
+/// GBA a frame behind stands 280,896 cycles behind.
 #[test]
 fn every_start_joins_the_two_gbas_with_their_frames_ending_together() {
     let _g = common::core_lock();
     let Some(dylib) = vendored() else { return };
 
     let mut apart = Vec::new();
-    for (what, rom, container) in every_start(&dylib) {
+    for (what, rom, container, buttons) in every_start(&dylib) {
         let mut core = link_core(&dylib, 0);
         core.load(&rom).expect("link mode refused the rom");
         if let Some(container) = &container {
@@ -763,12 +882,12 @@ fn every_start_joins_the_two_gbas_with_their_frames_ending_together() {
                 .expect("link mode refused the link state");
         }
         for frame in 0..120 {
-            let keys = shared_script(frame);
+            let keys = buttons(frame);
             core.run_frame_linked(keys, keys);
         }
         let [player_0, player_1] = split_slk1(&core.serialize().expect("no link state"));
         let gap = next_frame_end(&player_1).wrapping_sub(next_frame_end(&player_0)) as i32;
-        if gap.unsigned_abs() >= 1232 {
+        if gap.unsigned_abs() >= 256 {
             apart.push(format!(
                 "{what}: player 1's next frame ends {gap} cycles after player 0's"
             ));
