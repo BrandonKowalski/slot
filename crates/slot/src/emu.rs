@@ -50,14 +50,22 @@ pub const FAST_STEPS: u32 = 6;
 /// because its last frame always draws and resets their counters.
 pub const FAST_STEPS_MAX: u32 = 8;
 
-/// How much of a present a fast forward may spend inside the core.
+/// What one fast forward present aims to spend altogether: its core frames, and the publish,
+/// snapshot, audio and link pump that always follow them.
 ///
-/// The spike held a steady 60 Hz with about 15 ms of each present used in total, still reaching
-/// the deadline sleep every frame. What is left of the present after the core is the measured
-/// fixed cost of one: 0.44 ms converting the one frame that is shown, a snapshot every second
-/// present (0.57 ms on gpSP, 2.05 on mGBA), and under 0.1 ms of publish, audio and link pump.
-/// Reserving the worst of that off 15 ms leaves this for core frames.
-const FAST_BUDGET: Duration = Duration::from_micros(13_500);
+/// The constant this replaces was a core-only budget of 13.5 ms, reserving the rest of the
+/// present for that trailing work. The reserve was honest arithmetic on dishonest numbers: it
+/// came from a spike that timed the core alone and never paid the trailing cost, and from a
+/// benchmark that did the same. Measured inside this loop on the SP, the trailing work is 0.4 ms
+/// on gpSP and 1.2 to 1.3 ms on mGBA — less than was reserved — and yet presents ran to 15.2 ms
+/// on Apotris with only four fifths of them reaching the deadline sleep. What overran was the
+/// tail, not the mean: a present runs about 1.5 ms past its own average, because the snapshot
+/// lands every second present and the last frame regularly costs more than the estimate said.
+///
+/// Aiming the whole present at 14 ms puts that tail at about 15.5, inside the 16.67 ms deadline
+/// with a millisecond of sleep still to come, and leaves the lightest content where it already
+/// was: gpSP pays 0.4 ms of trailing work, so its core still gets 13.6.
+const FAST_TARGET: Duration = Duration::from_micros(14_000);
 
 /// How much of the running per-frame estimate one present's measurement replaces: a quarter.
 /// Slow enough that one descheduled present does not collapse the next one to a single frame,
@@ -546,6 +554,16 @@ impl Worker {
         // measurement — so by the time anyone reaches for the trigger this already holds the
         // real cost of a drawn frame on this machine, for this game.
         let mut frame_cost = PRESENT;
+        // What a present must leave for the work that follows its core frames — publish, the
+        // snapshot every second present, the audio resample, the link pump — measured last
+        // present rather than assumed. Seeded at the whole margin `FAST_TARGET` leaves, which is
+        // the pessimistic direction and the only honest guess before anything has been timed; a
+        // quarter of each measurement replaces it, so it reaches the truth for this core and
+        // this game within about four presents of the trigger going down.
+        let mut post_cost = PRESENT - FAST_TARGET;
+        // Set by a fast present for the pacing below to measure its trailing work from: when the
+        // present began, and how much of it the core frames took.
+        let mut fast_span: Option<(Instant, Duration)> = None;
         let mut deadline = Instant::now();
         let mut paced = 0u64;
         // `None` until a session begins. Held here rather than on `Shared`: the transport is
@@ -725,18 +743,22 @@ impl Worker {
                 // is predictive: there is room for another frame after this one only if the
                 // present has time for both. Being wrong costs one frame of speed, never a
                 // dropped present.
+                // What is left of the present for core frames once what follows them is paid.
+                let budget = FAST_TARGET.saturating_sub(post_cost);
                 let began = Instant::now();
                 let mut ran = 0u32;
                 loop {
                     ran += 1;
-                    let last = ran >= ceiling || began.elapsed() + frame_cost * 2 > FAST_BUDGET;
+                    let last = ran >= ceiling || began.elapsed() + frame_cost * 2 > budget;
                     core.set_frame_skip(!last);
                     core.run_frame(input);
                     if last {
                         break;
                     }
                 }
-                frame_cost = blend(frame_cost, began.elapsed() / ran);
+                let core_time = began.elapsed();
+                frame_cost = blend(frame_cost, core_time / ran);
+                fast_span = Some((began, core_time));
                 // Immediately, and this is the one that decides whether a link is playable.
                 // The emulated serial hardware only executes inside `run_frame`, so every
                 // packet a session actually produces is born here. Sending them from the top
@@ -802,6 +824,11 @@ impl Worker {
             // The write above holds this thread whenever the device has no room, which is
             // the backstop. This is the pacing the rest of the time, and the only pacing at
             // all with no audio to pace against: paused, fast forwarding, rewinding.
+            // Everything this present did after its core frames, which is what the next one
+            // budgets around. Taken here, before the sleep, or it would measure the sleep too.
+            if let Some((began, core_time)) = fast_span.take() {
+                post_cost = blend(post_cost, began.elapsed().saturating_sub(core_time));
+            }
             deadline += PRESENT;
             let now = Instant::now();
             match deadline.checked_duration_since(now) {
