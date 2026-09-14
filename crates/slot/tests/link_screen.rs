@@ -46,6 +46,7 @@ fn linked_seats_the_plug_from_where_it_was_and_clicks_as_it_lands() {
         role: LinkRow::Host,
         worked,
         since,
+        opened: false,
     };
     assert!(
         (plug_tip(m, since) - before).abs() < 0.01,
@@ -85,6 +86,7 @@ fn the_arcs_call_in_turn_hold_when_linked_and_die_on_failure() {
         role: LinkRow::Host,
         worked: 0,
         since: 4000,
+        opened: false,
     };
     assert_eq!(arc_alphas(linked, 4160), [1.0; 3]);
     assert_eq!(arc_alphas(failed(4000), 4250), [0.0; 3]);

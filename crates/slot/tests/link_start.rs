@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use slot::link_net::{Cancel, TcpLink};
-use slot::link_radio::LinkRole;
+use slot::link_radio::{LinkRole, RadioFail};
 use slot::link_start::{LinkFail, LinkProgress, LinkStarter, LinkStep};
 
 /// How long a test waits for a worker to reach an outcome before deciding it never will.
@@ -61,7 +61,7 @@ fn a_radio_that_will_not_come_up_stops_before_the_socket() {
     let downs = Arc::new(AtomicUsize::new(0));
     let count = downs.clone();
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_role| Err(io::Error::other("no ap"))),
+        Box::new(|_role, _| Err(RadioFail::Radio("no ap".into()))),
         Box::new(move || {
             count.fetch_add(1, Ordering::SeqCst);
         }),
@@ -92,7 +92,7 @@ fn a_failure_always_takes_the_radio_back_down() {
     let downs = Arc::new(AtomicUsize::new(0));
     let count = downs.clone();
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(move || {
             count.fetch_add(1, Ordering::SeqCst);
         }),
@@ -130,7 +130,7 @@ fn a_link_that_comes_up_leaves_the_radio_up() {
         TcpLink::join("127.0.0.1", port)
     });
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(move || {
             count.fetch_add(1, Ordering::SeqCst);
         }),
@@ -164,7 +164,7 @@ fn the_steps_are_reported_in_order_before_the_outcome() {
     // The screen says "bringing the radio up" then "waiting for a friend"; a worker that
     // only reports the outcome leaves 30 s of blank screen.
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(|| {}),
         LinkRole::Host,
         0,
@@ -177,7 +177,7 @@ fn the_steps_are_reported_in_order_before_the_outcome() {
 #[test]
 fn cancelling_reports_cancelled_rather_than_a_timeout() {
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(|| {}),
         LinkRole::Host,
         0,
@@ -201,7 +201,7 @@ fn cancelling_reports_cancelled_rather_than_a_timeout() {
 #[test]
 fn a_socket_fault_that_is_neither_a_deadline_nor_a_cancel_blames_the_wire() {
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(|| {}),
         LinkRole::Join,
         0,
@@ -219,7 +219,7 @@ fn a_socket_fault_that_is_neither_a_deadline_nor_a_cancel_blames_the_wire() {
 #[test]
 fn a_worker_that_dies_is_reported_rather_than_polled_forever() {
     let mut starter = LinkStarter::spawn_with(
-        Box::new(|_| panic!("the radio call blew up")),
+        Box::new(|_, _| panic!("the radio call blew up")),
         Box::new(|| {}),
         LinkRole::Host,
         0,
@@ -257,7 +257,7 @@ fn a_link_that_comes_up_after_the_player_left_puts_the_radio_back() {
     let open = gate.clone();
 
     let starter = LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(move || {
             count.fetch_add(1, Ordering::SeqCst);
         }),
@@ -286,4 +286,55 @@ fn a_link_that_comes_up_after_the_player_left_puts_the_radio_back() {
         "a link nobody was left to receive must still put the radio back"
     );
     let _ = peer.join();
+}
+
+/// `ags-net link join` exits 3 when its search ran and no host answered. That is the other
+/// player's absence, not a radio fault, and the screen has a sentence for each — so the one
+/// blaming the radio must not be the one shown.
+#[test]
+fn a_join_that_found_no_host_says_nobody_arrived() {
+    let tried_socket = Arc::new(AtomicBool::new(false));
+    let seen = tried_socket.clone();
+    let mut starter = LinkStarter::spawn_with(
+        Box::new(|_, _| Err(RadioFail::NoHost)),
+        Box::new(|| {}),
+        LinkRole::Join,
+        0,
+        Box::new(move |_, _| {
+            seen.store(true, Ordering::SeqCst);
+            Err(io::Error::other("must not be reached"))
+        }),
+    );
+    assert!(matches!(
+        drain(&mut starter),
+        LinkProgress::Failed(LinkFail::NobodyCame)
+    ));
+    assert!(
+        !tried_socket.load(Ordering::SeqCst),
+        "there was no host to reach, so there is nothing to open a socket to"
+    );
+}
+
+/// A cancel during the radio step is the player backing out, and the real `up` kills the child
+/// to make it so: a joiner searches for half a minute, and the screen waits for this worker's
+/// answer. Reported as cancelled, which closes the screen, rather than as a fault.
+#[test]
+fn a_cancel_while_the_radio_is_coming_up_is_not_a_fault() {
+    let mut starter = LinkStarter::spawn_with(
+        Box::new(|_, cancel: &Cancel| {
+            while !cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(RadioFail::Cancelled)
+        }),
+        Box::new(|| {}),
+        LinkRole::Join,
+        0,
+        Box::new(|_, _| Err(io::Error::other("must not be reached"))),
+    );
+    starter.cancel();
+    assert!(matches!(
+        drain(&mut starter),
+        LinkProgress::Failed(LinkFail::Cancelled)
+    ));
 }

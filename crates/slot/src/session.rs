@@ -393,12 +393,19 @@ impl Session {
             //
             // Fast forward belongs to the game, so a cart still sliding in runs at its own
             // pace no matter what R2 is doing.
+            // `held()` stops pausing for as long as a session is live, and only here. A
+            // paused GBA cannot hold a link open: the far end keeps running and gpSP drops a
+            // peer after 240 frames of silence, so pausing a live session does not protect it
+            // — it ends it about four seconds later. It is also what the hardware does, since
+            // the other player's machine cannot be paused from this one. `Session::overlaid`
+            // is what keeps the menu's buttons out of the game underneath it, which is the
+            // part a pause was doing by accident.
             emu.set_speed(
                 if self.inserting()
                     || self.ejecting()
                     || self.showing_polaroids()
                     || self.dozing()
-                    || self.held()
+                    || (self.held() && !self.app.link_active())
                 {
                     Speed::Paused
                 } else if self.actually_fast_forwarding() {

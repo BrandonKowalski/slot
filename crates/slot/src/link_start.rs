@@ -16,7 +16,7 @@
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
 use crate::link_net::{Cancel, TcpLink, HOST_BOUND};
-use crate::link_radio::{self, LinkRole};
+use crate::link_radio::{self, LinkRole, RadioFail};
 
 /// Where the host lives on the private WiFi. `link_net` deliberately refuses to know this —
 /// which handheld is `10.42.0.1` is a fact about the product, not about a TCP transport — so
@@ -169,8 +169,10 @@ fn classify(e: &std::io::Error) -> LinkFail {
     }
 }
 
-/// Bring the private network up. Injectable so tests never shell out to `ags-net`.
-type RadioUp = Box<dyn FnMut(LinkRole) -> std::io::Result<()> + Send>;
+/// Bring the private network up. Injectable so tests never shell out to `ags-net`. It takes
+/// the cancel flag because the real one is a child process that can be killed: a joiner's
+/// search runs for half a minute, and a player who has backed out should not sit through it.
+type RadioUp = Box<dyn FnMut(LinkRole, &Cancel) -> Result<(), RadioFail> + Send>;
 /// Take it back down. Infallible, like the real one: a teardown that can fail is a teardown
 /// callers skip.
 type RadioDown = Box<dyn FnMut() + Send>;
@@ -222,12 +224,23 @@ impl LinkStarter {
             // asked for this is already gone, which is not this thread's problem to report —
             // but finishing the teardown still is.
             let _ = tx.send(LinkProgress::At(LinkStep::Radio));
-            if let Err(e) = radio_up(role) {
-                eprintln!("slot: link: {role:?} could not bring the radio up: {e}");
+            if let Err(e) = radio_up(role, &flag) {
+                // Three outcomes, and only one of them is the radio. A joiner that searched
+                // its whole window without finding a host is reported as nobody arriving,
+                // which is what happened and what the other player can act on; a kill is the
+                // player's own cancel coming back.
+                let fail = match &e {
+                    RadioFail::NoHost => LinkFail::NobodyCame,
+                    RadioFail::Cancelled => LinkFail::Cancelled,
+                    RadioFail::Radio(why) => {
+                        eprintln!("slot: link: {role:?} could not bring the radio up: {why}");
+                        LinkFail::Radio
+                    }
+                };
                 // `up` failing is no promise that nothing came up: `ags-net link` can get an
                 // interface as far as configured and still exit non-zero.
                 radio_down();
-                let _ = tx.send(LinkProgress::Failed(LinkFail::Radio));
+                let _ = tx.send(LinkProgress::Failed(fail));
                 return;
             }
             let _ = tx.send(LinkProgress::At(LinkStep::Waiting));

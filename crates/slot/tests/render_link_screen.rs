@@ -215,6 +215,7 @@ fn a_wireless_link_seats_the_adapter_with_its_label_plate() {
         role: LinkRow::Host,
         worked: 0,
         since: 600,
+        opened: false,
     };
     let px = render(menu, LinkKind::Wireless, 2000, "wireless-linked");
     let plate = at(&px, 360, 388 - 12);
@@ -286,6 +287,8 @@ fn legend_faces() -> Vec<(TexId, Face)> {
                 LinkLegend::Swap => arrows_hint_face("Swap"),
                 LinkLegend::Link => hint_face("A", "Link"),
                 LinkLegend::Ok => hint_face("A", "OK"),
+                LinkLegend::Back => hint_face("B", "Back"),
+                LinkLegend::EndLink => hint_face("A", "End Link"),
             }
             .into();
             (TexId::from_raw(900 + k.index()), f)
@@ -322,6 +325,68 @@ fn legend_pixels(title: &str, code: &str, name: &str) -> Vec<u8> {
     let px = composite(&legend, &faces);
     dump(&px, name);
     px
+}
+
+/// The legend of the screen a player opens over a live session, composited the same way.
+fn connected_legend_pixels(name: &str) -> Vec<u8> {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    common::write_retail_header(&d, "Cart", "POKEMON RUBY", "AXVE");
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(Core::Gpsp);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    let faces = legend_faces();
+    app.set_link_legend_faces(faces.iter().map(|(t, f)| (*t, f.w)).collect());
+    // A session, then the shortcut: which is the screen this is about.
+    app.begin_link(0);
+    app.apply(Action::GameMenu);
+    assert!(
+        matches!(app.game_menu(), Some(GameMenu::Linked { opened: true, .. })),
+        "the shortcut did not open the connected screen over a live session"
+    );
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    let legend: Vec<Draw> = out
+        .into_iter()
+        .filter(|d| matches!(*d, Draw::Tex { tex, .. } if faces.iter().any(|(t, _)| *t == tex)))
+        .collect();
+    let px = composite(&legend, &faces);
+    dump(&px, name);
+    px
+}
+
+/// One cap's ink, composited alone, for holding a row against the caps it should be made of.
+fn cap_ink(key: &'static str, label: &'static str) -> usize {
+    let f: Face = hint_face(key, label).into();
+    let (w, h) = (f.w as f32, f.h as f32);
+    let tex = TexId::from_raw(1);
+    let draw = Draw::Tex {
+        x: 100.0,
+        y: 422.0,
+        w,
+        h,
+        tex,
+        alpha: 1.0,
+    };
+    ink(&composite(&[draw], &[(tex, f)]))
+}
+
+/// The screen opened over a live session offers two keys and no others: B to leave the session
+/// running, A to end it. On the glass rather than in the draw list — a cap that is missing,
+/// blank, clipped or zero-sized all reach the same draw list and none of them reach the same
+/// pixels.
+#[test]
+fn the_connected_screen_shows_back_and_end_link() {
+    let px = connected_legend_pixels("legend-connected");
+    assert!(ink(&px) > 0, "the connected screen drew no legend at all");
+    assert_eq!(
+        ink(&px),
+        cap_ink("B", "Back") + cap_ink("A", "End Link"),
+        "the row is not exactly a Back cap and an End Link cap"
+    );
 }
 
 /// The SELECT Mode cap alone, composited the same way, which is the exact amount of type the

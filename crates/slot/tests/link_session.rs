@@ -764,6 +764,62 @@ fn a_live_session_refuses_fast_forward() {
     );
 }
 
+/// The link screen opened over a live session leaves the core running, which is the whole
+/// reason it is allowed to open at all. A paused GBA cannot hold a link open: the far end
+/// keeps running and gpSP drops a peer after 240 frames of silence, so pausing here would end
+/// the session about four seconds later rather than protect it. Driven through a real
+/// `Session` because the carve-out lives in `sync_speed`, not in `App`.
+#[test]
+fn the_link_screen_over_a_session_leaves_the_core_running() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.app_mut().begin_link(0);
+    s.app_mut().apply(Action::GameMenu);
+    assert!(s.app().game_menu_open(), "the screen never opened");
+    for _ in 0..5 {
+        step(&mut s, &mut now, None);
+    }
+
+    assert!(
+        wait_until(|| s.emu().is_some_and(|e| e.observed_speed() == Speed::Normal)),
+        "the screen paused a session that cannot survive being paused"
+    );
+    assert!(
+        s.app().link_active(),
+        "opening the screen ended the session"
+    );
+
+    // The core runs on, but the buttons belong to the screen: a press taken here would drive
+    // the player's game while they are reading a menu.
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::A)));
+    for _ in 0..3 {
+        step(&mut s, &mut now, None);
+    }
+    assert!(
+        s.emu().is_some_and(|e| e.input().0 == 0),
+        "a press reached the game from under an open menu"
+    );
+}
+
 /// I6: `sync_ff_hud` did not consult `may_fast_forward()`, so the badge kept reading Held or
 /// Latched during a live session even though `sync_speed` — proven above — was already
 /// withholding the speed underneath it. `sync_rewind_hud`'s own `actually_rewinding` already

@@ -276,6 +276,8 @@ impl Frontend {
             arrows_hint_face("Swap"),
             hint_face("A", "Link"),
             hint_face("A", "OK"),
+            hint_face("B", "Back"),
+            hint_face("A", "End Link"),
         ]
         .into_iter()
         .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))

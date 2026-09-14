@@ -15,6 +15,8 @@ use slot_input::{Action, Btn, Millis, RawEvent, POWER_HOLD_MS};
 use slot_store::{read_slot_state, write_slot_state, Core, SlotState, StateRing};
 use slot_ui::PowerChoice;
 
+use slot::link_radio::{RadioJob, RadioJobs};
+
 const FRAME_MS: Millis = 16;
 const DT: f32 = 1.0 / 60.0;
 
@@ -433,4 +435,55 @@ fn play(s: &mut Session, now: &mut Millis) {
         assert!(Instant::now() < deadline, "the core never started");
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+/// What the radio was asked to do, in order.
+#[derive(Clone, Default)]
+struct RadioLog(std::sync::Arc<std::sync::Mutex<Vec<RadioJob>>>);
+
+impl RadioLog {
+    fn jobs(&self) -> Vec<RadioJob> {
+        self.0.lock().expect("radio log").clone()
+    }
+}
+
+impl RadioJobs for RadioLog {
+    fn ask(&mut self, job: RadioJob) {
+        self.0.lock().expect("radio log").push(job);
+    }
+}
+
+/// A doze ends at a power off, and a driver loaded through it is tens of milliamps spent on
+/// nothing: the radio is held off the boot path for exactly that reason, so a shut lid must
+/// not be the way it gets left on.
+#[test]
+fn a_shut_lid_cools_the_radio() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    let log = RadioLog::default();
+    a.set_radio_jobs(Box::new(log.clone()));
+    a.apply(Action::LidClose);
+    assert!(
+        log.jobs().contains(&RadioJob::Cool),
+        "the lid closed with the radio left loaded behind it"
+    );
+}
+
+/// A lid shut over a live session ends the session first, and that teardown is what drops its
+/// network — the cool behind it is for the driver itself.
+#[test]
+fn a_shut_lid_over_a_session_takes_its_network_down_too() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    let log = RadioLog::default();
+    a.set_radio_jobs(Box::new(log.clone()));
+    a.begin_link(0);
+    a.apply(Action::LidClose);
+    let jobs = log.jobs();
+    assert_eq!(
+        jobs.first(),
+        Some(&RadioJob::Down),
+        "the session's own network must come down before the driver does: {jobs:?}"
+    );
+    assert!(jobs.contains(&RadioJob::Cool));
 }

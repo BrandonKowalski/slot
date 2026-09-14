@@ -17,14 +17,14 @@ use slot::app::{App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_
 use slot::emu::{CoreState, EmuHandle, Speed};
 use slot::link_kind::LinkKind;
 use slot::link_net::{Cancel, TcpLink};
-use slot::link_radio::LinkRole;
+use slot::link_radio::{LinkRole, RadioJob, RadioJobs};
 use slot::link_start::{LinkFail, LinkStarter, LinkStep};
 use slot::persist::{self, Snapshot};
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Core, SlotState};
-use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, HINT_EDGE, OUT_H, OUT_W};
+use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, Toast, HINT_EDGE, OUT_H, OUT_W};
 use tempfile::TempDir;
 
 /// How long a test waits on a real worker thread before deciding it never will answer.
@@ -60,7 +60,7 @@ fn fake_starter(
     socket: impl FnMut(u16, &Cancel) -> io::Result<TcpLink> + Send + 'static,
 ) -> LinkStarter {
     LinkStarter::spawn_with(
-        Box::new(|_| Ok(())),
+        Box::new(|_, _| Ok(())),
         Box::new(|| {}),
         LinkRole::Host,
         0,
@@ -354,10 +354,11 @@ fn a_peer_lost_during_the_hold_closes_the_screen_and_breaks_the_badge() {
     assert_eq!(app.link_badge(), slot_ui::LinkBadge::JoinedLost);
 }
 
-/// `link_radio::up` is an opaque blocking process spawn: nothing can interrupt it for one to
-/// five seconds. B asks the worker to stop and the screen stays where it is until it
-/// answers — closing here would put the player back in their game with an access point
-/// still coming up behind them.
+/// B asks the worker to stop, and the screen stays where it is until it answers. The real
+/// `up` now kills its `ags-net` child on a cancel rather than waiting out a joiner's search,
+/// so that answer comes quickly — but it still comes from the worker, and closing before it
+/// would put the player back in their game with an access point still coming up behind them.
+/// This fake ignores the flag, which is the slowest case that shape allows.
 #[test]
 fn b_during_the_radio_step_does_not_hand_the_game_back_early() {
     let (mut app, _d) = playing_on(Core::Gpsp);
@@ -365,9 +366,8 @@ fn b_during_the_radio_step_does_not_hand_the_game_back_early() {
     let (release, held) = channel::<()>();
     app.start_link(
         LinkStarter::spawn_with(
-            // Stands in for the five seconds `ags-net link` can take, and for the fact that
-            // nothing may interrupt it.
-            Box::new(move |_| {
+            // Stands in for an `ags-net link` that has not answered yet.
+            Box::new(move |_, _| {
                 held.recv().expect("released");
                 Ok(())
             }),
@@ -436,19 +436,61 @@ fn a_shut_lid_cancels_the_link_it_interrupted() {
     );
 }
 
-/// The overlay pauses the core underneath it, and pausing is one of the exact manipulations
-/// libretro's netpacket contract forbids while players are connected — the same guard
-/// `open_power_menu` already carries, for the same reason.
+/// The screen opens over a live session now, which it refused to do before: a paused GBA
+/// cannot hold a link open, so `Session::sync_speed` leaves the core running while one is up
+/// and `Session::overlaid` keeps the menu's buttons out of the game. What the screen shows is
+/// the session, with the key that ends it.
 #[test]
-fn the_menu_is_refused_over_a_live_session() {
+fn the_shortcut_opens_the_connected_screen_over_a_live_session() {
     let (mut app, _d) = playing_on(Core::Gpsp);
+    let log = watched(&mut app);
     app.begin_link(0);
     app.apply(Action::GameMenu);
     assert!(
-        !app.game_menu_open(),
-        "the overlay paused a session libretro forbids pausing"
+        matches!(app.game_menu(), Some(GameMenu::Linked { opened: true, .. })),
+        "the shortcut did not open the connected screen"
     );
-    assert!(app.link_active(), "the refusal ended the session instead");
+    assert!(app.link_active(), "opening the screen ended the session");
+    assert_eq!(app.toast(), None, "nothing has happened to announce yet");
+    assert!(
+        log.jobs().is_empty(),
+        "the radio was touched by a screen that only opened"
+    );
+}
+
+/// B is the way out that changes nothing: the session it was opened over is still running,
+/// and the radio under it is still the session's own.
+#[test]
+fn b_leaves_the_session_running() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.begin_link(0);
+    app.apply(Action::GameMenu);
+    let log = watched(&mut app);
+    app.apply(Action::GbaDown(Btn::B));
+    assert!(!app.game_menu_open(), "B did not leave the screen");
+    assert!(app.link_active(), "B ended the session it was opened over");
+    assert!(
+        !log.jobs().contains(&RadioJob::Cool),
+        "leaving a live session cooled the radio it runs on"
+    );
+}
+
+/// A ends it, immediately: the screen that asked is the confirmation, and the far end handles
+/// a partner leaving the same way it handles a flat battery over there. The banner is what
+/// says it happened, since the game underneath carries straight on.
+#[test]
+fn a_ends_the_session_and_says_so() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.begin_link(0);
+    app.apply(Action::GameMenu);
+    let log = watched(&mut app);
+    app.apply(Action::GbaDown(Btn::A));
+    assert!(!app.link_active(), "A left the session running");
+    assert_eq!(app.toast(), Some(Toast::LinkEnded));
+    assert!(!app.game_menu_open(), "the screen stayed up over the game");
+    // Down ends the session's own network; the cool behind it is for a BaseOS whose down does
+    // not unload the driver itself.
+    assert_eq!(log.jobs(), vec![RadioJob::Down, RadioJob::Cool]);
 }
 
 /// A menu that changes `game_menu()` and nothing else does not exist: on a device it reads
@@ -1218,6 +1260,8 @@ fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
         LinkLegend::Swap => arrows_hint_face("Swap").w,
         LinkLegend::Link => hint_face("A", "Link").w,
         LinkLegend::Ok => hint_face("A", "OK").w,
+        LinkLegend::Back => hint_face("B", "Back").w,
+        LinkLegend::EndLink => hint_face("A", "End Link").w,
     };
     let faces: Vec<(TexId, u32)> = LinkLegend::ALL
         .iter()
@@ -1560,4 +1604,76 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
             "{k:?} left the legend along with Mode"
         );
     }
+}
+
+/// What the radio was asked to do, in order. `App` never waits on any of it, so the queue
+/// behind these is replaceable and a test can simply read the list.
+#[derive(Clone, Default)]
+struct RadioLog(Arc<std::sync::Mutex<Vec<RadioJob>>>);
+
+impl RadioLog {
+    fn jobs(&self) -> Vec<RadioJob> {
+        self.0.lock().expect("radio log").clone()
+    }
+}
+
+impl RadioJobs for RadioLog {
+    fn ask(&mut self, job: RadioJob) {
+        self.0.lock().expect("radio log").push(job);
+    }
+}
+
+fn watched(app: &mut App) -> RadioLog {
+    let log = RadioLog::default();
+    app.set_radio_jobs(Box::new(log.clone()));
+    log
+}
+
+/// The driver takes about a second to load and the player is about to spend longer than that
+/// choosing a role, so the screen opening is what pays for it. Nothing waits on it: `link
+/// host` loads the driver itself if this has not finished.
+#[test]
+fn opening_the_link_screen_warms_the_radio() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    let log = watched(&mut app);
+    app.apply(Action::GameMenu);
+    assert_eq!(log.jobs(), vec![RadioJob::Warm]);
+}
+
+/// Leaving without starting anything is what says the driver is not going to be used. Left
+/// warm, it would sit loaded behind the game until the device powered off, which is the drain
+/// the radio is kept off the boot path for.
+#[test]
+fn leaving_the_link_screen_without_a_session_cools_it() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    let log = watched(&mut app);
+    app.apply(Action::GameMenu);
+    app.apply(Action::GbaDown(Btn::B));
+    assert_eq!(log.jobs(), vec![RadioJob::Warm, RadioJob::Cool]);
+}
+
+/// The other half of that rule, and the one that would break a link rather than waste a
+/// battery: the screen also closes when a session starts, and cooling under one takes the
+/// session's own network down with it.
+#[test]
+fn a_screen_that_closes_over_a_live_session_leaves_the_radio_alone() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.apply(Action::GameMenu);
+    let log = watched(&mut app);
+    app.begin_link(0);
+    app.apply(Action::GbaDown(Btn::B));
+    assert!(
+        !log.jobs().contains(&RadioJob::Cool),
+        "cooled the radio a live session was running over"
+    );
+}
+
+/// The same shortcut with no session is what opens the screen, which is the behaviour it had
+/// before it learned to end one.
+#[test]
+fn the_shortcut_still_opens_the_screen_when_nothing_is_linked() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.apply(Action::GameMenu);
+    assert!(app.game_menu_open());
+    assert_eq!(app.toast(), None);
 }

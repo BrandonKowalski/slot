@@ -22,7 +22,7 @@ use slot_ui::{
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
 use crate::link_kind::{link_carried, link_kind, serial_option, LinkKind};
-use crate::link_radio::LinkRole;
+use crate::link_radio::{radio_jobs, LinkRole, RadioJob, RadioJobs};
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
@@ -212,11 +212,16 @@ pub enum GameMenu {
         step: LinkStep,
         since: Millis,
     },
-    /// The link is up and the screen says so for `LINKED_HOLD_MS`. `worked` is when Working began.
+    /// The link is up. `worked` is when Working began.
+    ///
+    /// Two screens in one state. The flash a link comes up on says so for `LINKED_HOLD_MS` and
+    /// then leaves by itself; the one the player opens over a live session stays until they
+    /// choose, and carries the legend that ends it. `opened` is which of the two this is.
     Linked {
         role: LinkRow,
         worked: Millis,
         since: Millis,
+        opened: bool,
     },
     /// A link that did not come up. `worked` is when Working began.
     Failed {
@@ -293,15 +298,19 @@ pub enum LinkLegend {
     Swap,
     Link,
     Ok,
+    Back,
+    EndLink,
 }
 
 impl LinkLegend {
-    pub const ALL: [LinkLegend; 5] = [
+    pub const ALL: [LinkLegend; 7] = [
         LinkLegend::Cancel,
         LinkLegend::Mode,
         LinkLegend::Swap,
         LinkLegend::Link,
         LinkLegend::Ok,
+        LinkLegend::Back,
+        LinkLegend::EndLink,
     ];
 
     pub fn index(self) -> usize {
@@ -555,11 +564,15 @@ pub struct App {
     /// of each one having to grow its own copy of it.
     last_led: Option<LedState>,
     powering_off: bool,
+    /// Where the radio's slow work goes: loading the driver before a link and dropping it
+    /// afterwards. One queue, in order, off the frame loop — see `link_radio::RadioQueue`.
+    radio: Box<dyn RadioJobs>,
 }
 
 impl App {
     pub fn new(carts: Vec<Cart>) -> Self {
         App {
+            radio: radio_jobs(),
             phase: Phase::Shelf,
             shelf: Shelf::new(carts),
             play_held: None,
@@ -916,6 +929,12 @@ impl App {
     pub fn end_link(&mut self) {
         self.link = None;
         self.sync_link_badge();
+        // `down` ends the session's own network and, on a BaseOS that has it, cools on the
+        // way out; the `cool` behind it is for the one that does not, and costs nothing
+        // either way. Both are queued rather than run: a teardown shells out for a second or
+        // two, and this is called from the frame loop.
+        self.radio.ask(RadioJob::Down);
+        self.radio.ask(RadioJob::Cool);
     }
 
     /// The emulator thread found the transport closed. The badge breaks now; `timers` ends the
@@ -1269,7 +1288,7 @@ impl App {
             Phase::Inserting { .. } if action == Action::Eject => self.eject(),
             Phase::Playing { .. } => match action {
                 Action::Eject => self.eject(),
-                Action::GameMenu => self.open_game_menu(),
+                Action::GameMenu => self.game_menu_shortcut(),
                 Action::Polaroids => self.open_polaroids(),
                 Action::SaveState => self.save_state(),
                 Action::LoadState => self.load_newest(),
@@ -1686,7 +1705,12 @@ impl App {
             self.set_led(state);
         }
         // LINKED is only the screen saying the session is up; it has held long enough.
-        if let Some(GameMenu::Linked { since, .. }) = self.game_menu {
+        if let Some(GameMenu::Linked {
+            since,
+            opened: false,
+            ..
+        }) = self.game_menu
+        {
             if self.now().saturating_sub(since) >= LINKED_HOLD_MS {
                 self.game_menu = None;
             }
@@ -2354,6 +2378,9 @@ impl App {
             ],
             GameMenu::Pick(_) => &[LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link],
             GameMenu::Working { .. } => &[LinkLegend::Cancel],
+            // The flash a link comes up on has no buttons to offer: it is leaving on its own.
+            // The screen the player opened over a live session has the only two that matter.
+            GameMenu::Linked { opened: true, .. } => &[LinkLegend::Back, LinkLegend::EndLink],
             GameMenu::Linked { .. } => &[],
             GameMenu::Failed { .. } => &[LinkLegend::Ok],
         };
@@ -2554,6 +2581,10 @@ impl App {
         self.polaroids = None;
         self.phase = Phase::Doze { cart };
         self.dozed_at = self.now();
+        // A doze ends at a power off, and a driver still loaded through it is a drain with
+        // nothing to show for it. A live session has already come through `end_link` above,
+        // whose own `down` covers this; asking again is a no-op by then.
+        self.radio.ask(RadioJob::Cool);
         if let Some(power) = &mut self.power {
             power.on_close();
         }
@@ -2751,7 +2782,50 @@ impl App {
             .seated()
             .map_or(LinkKind::Cable, |stem| self.link_mode(stem).0);
         self.link_hardware = hardware;
+        // The driver takes about a second to load, and the player is about to spend longer
+        // than that choosing a role. Nothing waits on this: `link host` and `link join` load
+        // it themselves if this has not finished, and both go through the same queue.
+        self.radio.ask(RadioJob::Warm);
         self.game_menu = Some(GameMenu::Pick(self.last_role));
+    }
+
+    /// SELECT+MENU, which opens the link screen — or, over a live session, the same screen
+    /// showing that session with the key that ends it.
+    ///
+    /// One screen rather than two: it is the one the player used to start the link, it already
+    /// draws the pair as connected, and its legend row carries the two keys this needs. Ending
+    /// is a choice on it rather than the press itself, because ending a session has no way back
+    /// and is not something to do on the way past.
+    fn game_menu_shortcut(&mut self) {
+        let Some(client_id) = self.link_client_id() else {
+            return self.open_game_menu();
+        };
+        let now = self.now();
+        self.game_menu = Some(GameMenu::Linked {
+            role: LinkRow::from_client_id(client_id),
+            worked: now,
+            since: now,
+            opened: true,
+        });
+    }
+
+    /// A on that screen. Immediate and with no second question: the screen that asked is itself
+    /// the confirmation, and the far end handles a partner leaving because that is what a flat
+    /// battery over there looks like from here. The game carries on in the mode it was loaded
+    /// with, which is `end_link`'s own contract, and the banner is what says it happened.
+    fn end_link_from_menu(&mut self) {
+        self.end_link();
+        self.hud.toast(Toast::LinkEnded, self.now());
+        // Straight to `None` rather than through `close_game_menu`: there is no starter to
+        // cancel and no reload to drop, and that path would ask the radio to cool a second
+        // time behind the `down` `end_link` has already queued.
+        self.game_menu = None;
+    }
+
+    /// What a test installs to watch the radio without one: `App` asks for jobs and never
+    /// waits on them, so the queue behind them is replaceable.
+    pub fn set_radio_jobs(&mut self, jobs: Box<dyn RadioJobs>) {
+        self.radio = jobs;
     }
 
     /// The menu owns every button on the game's side of the device while it is up.
@@ -2785,7 +2859,13 @@ impl App {
                     }
                 }
             }
-            // A second of LINKED takes no presses: the game is about to come back.
+            // The flash takes no presses: the game is about to come back on its own. The
+            // screen the player opened takes two, and answers nothing else.
+            GameMenu::Linked { opened: true, .. } => match action {
+                Action::GbaDown(Btn::A) => self.end_link_from_menu(),
+                Action::GbaDown(Btn::B) | Action::GameMenu => self.close_game_menu(),
+                _ => {}
+            },
             GameMenu::Linked { .. } => {}
             GameMenu::Failed { .. } => {
                 if matches!(
@@ -2928,6 +3008,12 @@ impl App {
         if let Some(mut starting) = self.starting.take() {
             starting.starter.cancel();
         }
+        // The screen warmed the driver on the way in. Leaving without a session is what says
+        // nothing is going to use it — but a session that just started closes this screen
+        // too, and cooling under one would take the link down with it.
+        if !self.link_active() {
+            self.radio.ask(RadioJob::Cool);
+        }
         // A switch nobody has collected yet has not touched the game, so it is simply dropped.
         // One already underway, or on its way back to the mode the game came from, still has to
         // end in a game or on the shelf; only the link that was waiting on it will not start.
@@ -2975,6 +3061,7 @@ impl App {
                     role,
                     worked,
                     since: self.now(),
+                    opened: false,
                 });
                 self.begin_link(starting.client_id);
                 self.link_transport = Some((starting.client_id, Box::new(link)));
