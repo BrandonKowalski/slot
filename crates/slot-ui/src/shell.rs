@@ -1,9 +1,9 @@
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Finish {
     Solid,
-    /// Currently unused: every cart in the table is solid, including the gen 3 Pokemon
-    /// releases that were thought to be translucent. Kept because the rendering path is
-    /// written and a clear shell would only need a table row, not new code.
+    /// Clear plastic: the shell colour lightens and desaturates toward the rim, the way light
+    /// catches the edge of a translucent case. The gen 3 Pokemon releases wear it — they were
+    /// shipped in coloured clear shells, and drawing them solid was the table's one wrong note.
     Translucent,
 }
 
@@ -26,11 +26,11 @@ const fn shell(colour: [u8; 3], finish: Finish) -> Shell {
 /// shipped in. Every code here was read off a real header rather than recalled: a wrong one
 /// paints some other game in the wrong shell, which is worse than defaulting to grey.
 const EXACT: &[(&str, Shell)] = &[
-    ("AXV", shell([0xc2, 0x33, 0x2e], Finish::Solid)), // Pokemon Ruby
-    ("AXP", shell([0x2f, 0x5c, 0xc0], Finish::Solid)), // Pokemon Sapphire
-    ("BPE", shell([0x24, 0x9c, 0x60], Finish::Solid)), // Pokemon Emerald
-    ("BPR", shell([0xd8, 0x52, 0x24], Finish::Solid)), // Pokemon FireRed
-    ("BPG", shell([0x63, 0xb0, 0x44], Finish::Solid)), // Pokemon LeafGreen
+    ("AXV", shell([0xc2, 0x33, 0x2e], Finish::Translucent)), // Pokemon Ruby
+    ("AXP", shell([0x2f, 0x5c, 0xc0], Finish::Translucent)), // Pokemon Sapphire
+    ("BPE", shell([0x24, 0x9c, 0x60], Finish::Translucent)), // Pokemon Emerald
+    ("BPR", shell([0xd8, 0x52, 0x24], Finish::Translucent)), // Pokemon FireRed
+    ("BPG", shell([0x63, 0xb0, 0x44], Finish::Translucent)), // Pokemon LeafGreen
 ];
 
 /// Keyed on the first letter alone. `M` is the Game Boy Advance Video family, thirty odd

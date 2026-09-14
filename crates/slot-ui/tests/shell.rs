@@ -68,16 +68,30 @@ fn an_exact_entry_outranks_the_family_letter() {
     assert!(lookup_order_is_exact_then_family_then_default());
 }
 
-/// Every cart in the table is solid, including the coloured ones. Colour and finish stay
-/// separate axes so a clear shell is a table row rather than a code change.
+/// The Pokemon rows are the clear ones and everything else is solid. Gen 3 shipped in coloured
+/// translucent shells; the table drew them solid until it was noticed, which is the kind of
+/// detail the shelf exists to get right. The Game Boy Advance Video family stays solid, so this
+/// also pins that the finish is per row rather than per colour.
 #[test]
-fn every_shell_in_the_table_is_solid() {
-    for code in ["AXVE", "AXPE", "BPEE", "BPRE", "BPGE", "MSKE", "AMTE", ""] {
-        assert!(
-            matches!(shell_for(code).finish, Finish::Solid),
-            "{code} is marked translucent, but no cart in the table is"
-        );
+fn the_pokemon_shells_are_clear_and_the_rest_are_solid() {
+    for code in table_keys() {
+        let want = if code.starts_with("AX") || code.starts_with("BP") {
+            Finish::Translucent
+        } else {
+            Finish::Solid
+        };
+        assert_eq!(shell_for(code).finish, want, "{code} has the wrong finish");
     }
+    assert_eq!(
+        shell_for("MSKE").finish,
+        Finish::Solid,
+        "the video family is not solid"
+    );
+    assert_eq!(
+        shell_for("ZZZZ").finish,
+        Finish::Solid,
+        "the default is not solid"
+    );
 }
 
 #[test]
