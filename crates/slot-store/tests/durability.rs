@@ -1,7 +1,10 @@
 mod common;
 
 use common::tmp_root;
-use slot_store::{atomic_write, read_slot_state, write_slot_state, SlotState};
+use slot_store::{
+    atomic_write, read_slot_state, write_slot_state, SlotState, FF_SPEED_ADAPTIVE, FF_SPEED_MAX,
+    FF_SPEED_MIN,
+};
 use tempfile::tempdir;
 
 #[test]
@@ -182,6 +185,44 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
     for line in ["rumble=0", "ff_speed=2", "ff_sound=1"] {
         assert!(text.lines().any(|l| l == line), "no {line} in {text:?}");
     }
+}
+
+/// ADAPTIVE travels in `ff_speed` itself rather than in a key of its own, so it has to survive
+/// a round trip through the card like any other value of that line.
+#[test]
+fn adaptive_round_trips_as_the_fast_forward_speed() {
+    let d = tmp_root();
+    let s = SlotState {
+        clock_set: true,
+        ff_speed: FF_SPEED_ADAPTIVE,
+        ..SlotState::default()
+    };
+    write_slot_state(d.path(), &s).unwrap();
+    assert_eq!(read_slot_state(d.path()), s);
+    let text = std::fs::read_to_string(d.path().join("System/slot.state")).unwrap();
+    assert!(
+        text.lines().any(|l| l == "ff_speed=255"),
+        "adaptive is not written as the sentinel: {text:?}"
+    );
+}
+
+/// The whole reason the sentinel is 255 and not a new key. Every build that has ever shipped
+/// reads this line as "a number from 2 to 4, anything else is not mine" and falls back to the
+/// default — so a card written by this build and read by an older one comes back as 4x, the
+/// fastest fixed ceiling there was, rather than as a speed nothing can explain. This is that
+/// older reader's rule, kept honest so the sentinel cannot drift into the range it relies on
+/// being outside of.
+#[test]
+fn an_older_build_reads_adaptive_as_its_default_rather_than_a_nonsense_speed() {
+    assert!(
+        !(FF_SPEED_MIN..=FF_SPEED_MAX).contains(&FF_SPEED_ADAPTIVE),
+        "the sentinel is inside the range an older build accepts, so it would read as a speed"
+    );
+    assert_eq!(
+        SlotState::default().ff_speed,
+        FF_SPEED_MAX,
+        "the fallback an older build lands on is no longer the fastest fixed ceiling"
+    );
 }
 
 /// A setting nobody could have chosen goes back to its default on its own. It is not a reason
