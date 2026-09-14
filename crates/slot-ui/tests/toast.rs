@@ -19,7 +19,7 @@ fn the_link_shortcut_on_the_wrong_core_says_to_switch() {
 /// that will never see a packet.
 #[test]
 fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
-    assert_eq!(Toast::NoLink.text(), "No link for this game");
+    assert_eq!(Toast::NoLink.text(), "No link support");
     let f = toast_face(Toast::NoLink);
     assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
 }

@@ -35,7 +35,7 @@ impl Toast {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
             Toast::NeedsGpsp => "Please switch to gpSP",
-            Toast::NoLink => "No link for this game",
+            Toast::NoLink => "No link support",
         }
     }
 }
