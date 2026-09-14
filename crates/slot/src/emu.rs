@@ -21,7 +21,8 @@ use crate::rewind::{RewindThread, REWIND_BYTES};
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
 
 /// The speed a card that never chose one gets, and what the quick menu's 6× asks for. The menu
-/// picks 2, 3, 4, this or 8, through `EmuHandle::set_fast_steps`.
+/// picks 2, 3, 4 or this, through `EmuHandle::set_fast_steps`, and this is the top of the row as
+/// well as its default: the fastest ceiling offered is the one a card opens on.
 ///
 /// Kept equal to `slot_store::FF_SPEED_DEFAULT` on purpose: a worker that starts before a card
 /// has been read must fast forward at the speed that card is about to ask for, or the first
@@ -33,22 +34,24 @@ pub const FAST_STEPS: u32 = 6;
 /// A ceiling is not a multiplier. It is the most a present may run, never what it must: the
 /// budget below stops a present that cannot afford the whole of it, so a game too heavy for the
 /// speed asked gives that speed back a frame at a time instead of overrunning the present and
-/// dropping off 60 Hz. That is the whole reason a number this high can sit on the row at all.
+/// dropping off 60 Hz. That is what lets a single number sit at the top of the row for both
+/// cores.
 ///
-/// Eight, from measurement on the device (`.superpowers/flags/results.md`). At eight frames a
-/// present the light gpSP content finishes well inside the 13.5 ms budget and runs a genuinely
-/// constant 8× — Apotris 0.76 ms a frame, 6.1 ms of work; Recharged Yellow 0.84 ms, 6.7 ms —
-/// while heavier mGBA content backs off on its own: Metroid Fusion at 2.05 ms a frame settles
-/// near six, Drill Dozer at 5.65 ms near two. Across those four the speed swings from 2 to 6,
-/// which is the point of the number. Light content can sustain 24 to 28 frames a present and
-/// that is deliberately left on the table: a speed that holds still is worth more than the
-/// highest one the hardware can reach.
+/// Six, because eight was measured on the device and bought nothing (`.superpowers/flags/
+/// results.md`). On mGBA gameplay eight ran 281 game frames a second against six's 280, and on
+/// the heaviest content it changed nothing at all: Pokémon under mGBA held 2.1 frames a present
+/// at four, six and eight alike, because the budget ended every present long before the ceiling
+/// did. What eight did change was steadiness — presents running past 16.67 ms went from 1% to
+/// 7%, and the share where the loop started a frame it could not finish went from 19% to 56%.
+/// Only gpSP could reach it at all, at 5.4 frames a present against six's 5.3, and a row that
+/// offers a ceiling one core can never serve is the same dishonesty as offering a link a cart
+/// cannot carry.
 ///
 /// It also stays well under the 30 consecutive skips both cores force a render after
 /// (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a picture
-/// mid-present that nothing goes on to show: a present of eight frames skips seven in a row,
+/// mid-present that nothing goes on to show: a present of six frames skips five in a row,
 /// because its last frame always draws and resets their counters.
-pub const FAST_STEPS_MAX: u32 = 8;
+pub const FAST_STEPS_MAX: u32 = 6;
 
 /// What one fast forward present aims to spend altogether: its core frames, and the publish,
 /// snapshot, audio and link pump that always follow them.

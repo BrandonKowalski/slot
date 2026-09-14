@@ -63,18 +63,16 @@ pub enum QuickValue {
     Speed3,
     Speed4,
     Speed6,
-    Speed8,
     On,
     Off,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 7] = [
+    pub const ALL: [QuickValue; 6] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
         QuickValue::Speed6,
-        QuickValue::Speed8,
         QuickValue::On,
         QuickValue::Off,
     ];
@@ -90,15 +88,14 @@ impl QuickValue {
             QuickValue::Speed3 => "3×",
             QuickValue::Speed4 => "4×",
             QuickValue::Speed6 => "6×",
-            QuickValue::Speed8 => "8×",
             QuickValue::On => "On",
             QuickValue::Off => "Off",
         }
     }
 
     /// A fast forward ceiling the menu offers, and `None` for any other. Each number is how many
-    /// game frames a refresh may run, and the five of them are `FF_SPEEDS`: the card's list and
-    /// the row's have to stay the same five, or a card would hold a speed with no face to show
+    /// game frames a refresh may run, and the four of them are `FF_SPEEDS`: the card's list and
+    /// the row's have to stay the same four, or a card would hold a speed with no face to show
     /// it. `tests/quick_menu.rs` is what holds them together.
     pub fn speed(frames: u8) -> Option<QuickValue> {
         match frames {
@@ -106,7 +103,6 @@ impl QuickValue {
             3 => Some(QuickValue::Speed3),
             4 => Some(QuickValue::Speed4),
             6 => Some(QuickValue::Speed6),
-            8 => Some(QuickValue::Speed8),
             _ => None,
         }
     }

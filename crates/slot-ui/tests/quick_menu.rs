@@ -29,7 +29,7 @@ fn the_type_sits_exactly_menu_pad_in_from_both_sides_of_its_face() {
         quick_label_face(QuickRow::FastForwardSound),
         quick_label_face(QuickRow::Rumble),
         quick_value_face("Off", false),
-        quick_value_face(QuickValue::Speed8.text(), true),
+        quick_value_face(QuickValue::Speed6.text(), true),
         quick_value_face("SEP 15 16:35", true),
     ] {
         let (first, last) = ink_columns(&f);
@@ -61,12 +61,12 @@ fn a_long_label_is_set_as_large_as_a_short_one() {
     assert!(long + 1 >= short, "{long} rows of ink against {short}");
 }
 
-/// The Fast Forward row offers five fixed ceilings, and `QuickValue::speed` is the one place the
+/// The Fast Forward row offers four fixed ceilings, and `QuickValue::speed` is the one place the
 /// number on the card becomes the value on the row. The card's list and the row's have to be the
-/// same five: a card holding a speed this cannot name would leave the row blank.
+/// same four: a card holding a speed this cannot name would leave the row blank.
 #[test]
-fn the_fast_forward_row_offers_the_five_ceilings_the_card_can_hold() {
-    assert_eq!(FF_SPEEDS, [2, 3, 4, 6, 8]);
+fn the_fast_forward_row_offers_the_four_ceilings_the_card_can_hold() {
+    assert_eq!(FF_SPEEDS, [2, 3, 4, 6]);
     assert_eq!(
         FF_SPEEDS.map(QuickValue::speed),
         [
@@ -74,7 +74,6 @@ fn the_fast_forward_row_offers_the_five_ceilings_the_card_can_hold() {
             Some(QuickValue::Speed3),
             Some(QuickValue::Speed4),
             Some(QuickValue::Speed6),
-            Some(QuickValue::Speed8),
         ]
     );
     // The gaps in the row, and numbers no row ever offered: none of them are values it has.
@@ -109,7 +108,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
 fn the_values_read_as_the_menu_prints_them() {
     assert_eq!(
         QuickValue::ALL.map(QuickValue::text),
-        ["2×", "3×", "4×", "6×", "8×", "On", "Off"]
+        ["2×", "3×", "4×", "6×", "On", "Off"]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
     assert_eq!(QuickValue::flag(false), QuickValue::Off);

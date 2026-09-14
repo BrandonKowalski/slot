@@ -13,35 +13,45 @@ pub const UTC_OFFSET_MIN: i16 = -720;
 pub const UTC_OFFSET_MAX: i16 = 840;
 
 /// The fast forward ceilings the quick menu offers, in game frames per screen refresh, left to
-/// right along the row. These five and nothing else are what `ff_speed` may hold.
+/// right along the row. These four and nothing else are what `ff_speed` may hold.
 ///
-/// A list rather than a range. The row steps 2, 3, 4, 6, 8 because past four a single frame of
-/// difference is not a speed anyone can tell apart, so 5 and 7 are not on it — and a
-/// `MIN..=MAX` check, which is what this used to be, would have quietly accepted both.
+/// A list rather than a range. The row steps 2, 3, 4, 6 because past four a single frame of
+/// difference is not a speed anyone can tell apart, so 5 is not on it — and a `MIN..=MAX`
+/// check, which is what this used to be, would have quietly accepted it.
 ///
-/// What an older build does with the two new numbers, said plainly rather than left to be
-/// found out: every slot that shipped before this one reads this line as "a number from 2 to 4,
-/// anything else is not mine", so a card written here at 6 or 8 falls back to that build's
-/// default, 4×, when read by it. That is acceptable — 4× was the fastest speed it had, so it is
-/// as close to what was asked as that build can get, and neither build ever finds a speed it
-/// cannot explain. The cost, accepted: an older build that goes on to *write* the card spells 4
-/// here, so a round trip through one forgets the choice.
-pub const FF_SPEEDS: [u8; 5] = [2, 3, 4, 6, 8];
+/// It stops at six because eight was measured and bought nothing. On mGBA gameplay a ceiling of
+/// eight ran 281 game frames a second against six's 280, while presents that ran past 16.67 ms
+/// went from 1% to 7% and the loop started a frame it could not finish in 56% of presents
+/// rather than 19%. On the heaviest content it changed nothing at all: Pokémon under mGBA held
+/// 2.1 frames a present at four, six and eight alike. A row should not offer a ceiling only one
+/// core can reach.
+///
+/// What an older build does with the number six, said plainly rather than left to be found out:
+/// every slot that shipped before this row reads this line as "a number from 2 to 4, anything
+/// else is not mine", so a card written here at 6 falls back to that build's default, 4×, when
+/// read by it. That is acceptable — 4× was the fastest speed it had, so it is as close to what
+/// was asked as that build can get, and neither build ever finds a speed it cannot explain. A
+/// card written at 8 by a build from the night this row had five ceilings falls back the same
+/// way, through the same list, exactly as the 255 an adaptive-era card can still hold. The cost,
+/// accepted: an older build that goes on to *write* the card spells 4 here, so a round trip
+/// through one forgets the choice.
+pub const FF_SPEEDS: [u8; 4] = [2, 3, 4, 6];
 
 /// The speed a card that never chose one gets, and the one the row opens on.
 ///
-/// Six, chosen on the device rather than reasoned about: 8x is affordable on gpSP content by
-/// every measurement taken, and 6x is the one that reads as fast without feeling like a
-/// different game. The old default of 4x was inherited from when gpSP ran its interpreter and
-/// could not serve more; the core slot builds now runs its dynarec, so 4x had stopped being
-/// what the hardware could do and become merely what it was told.
+/// Six, chosen on the device rather than reasoned about, and now the top of the row as well as
+/// its default. Eight was on the row for a few hours and measured worth nothing: the same speed
+/// as six on mGBA gameplay, no speed at all on heavy content, and less steady on both. Six is
+/// the one that reads as fast without feeling like a different game, and it is a ceiling both
+/// cores can actually reach. The old default of 4x was inherited from when gpSP ran its
+/// interpreter and could not serve more; the core slot builds now runs its dynarec, so 4x had
+/// stopped being what the hardware could do and become merely what it was told.
 ///
 /// This deliberately sits outside the 2..=4 an older build accepts, which the default used to
-/// stay inside so the common card read identically everywhere. A fresh card written here now
-/// reads as 4x on any build that predates the five-ceiling row — the same fallback 6x and 8x
-/// already take as choices. Accepted knowingly: the compatibility being given up is with
-/// builds nobody runs, and pinning the default to what the oldest build could read would keep
-/// a number the hardware outgrew.
+/// stay inside so the common card read identically everywhere. A fresh card written here reads
+/// as 4x on any build that predates this row — the same fallback 6x takes as a choice.
+/// Accepted knowingly: the compatibility being given up is with builds nobody runs, and pinning
+/// the default to what the oldest build could read would keep a number the hardware outgrew.
 pub const FF_SPEED_DEFAULT: u8 = 6;
 
 #[derive(Clone, PartialEq, Eq, Debug)]

@@ -187,7 +187,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
     }
 }
 
-/// Every speed the row offers travels in `ff_speed` itself, so each of the five has to survive a
+/// Every speed the row offers travels in `ff_speed` itself, so each of the four has to survive a
 /// round trip through the card and be written as the plain number it is.
 #[test]
 fn every_speed_the_row_offers_round_trips_as_its_own_number() {
@@ -206,11 +206,11 @@ fn every_speed_the_row_offers_round_trips_as_its_own_number() {
     }
 }
 
-/// What an older build does with the two speeds it never had, pinned rather than assumed. Every
-/// slot that shipped before this one reads this line as "a number from 2 to 4, anything else is
-/// not mine", so a card written here at 6 or 8 falls back to that build's own default on it —
-/// acceptable, and the reason 6 and 8 must stay outside 2..=4 rather than, say, the row growing
-/// a 5 that an older build would read as a speed the user never chose.
+/// What an older build does with the speed it never had, pinned rather than assumed. Every slot
+/// that shipped before this one reads this line as "a number from 2 to 4, anything else is not
+/// mine", so a card written here at 6 falls back to that build's own default on it — acceptable,
+/// and the reason 6 must stay outside 2..=4 rather than, say, the row growing a 5 that an older
+/// build would read as a speed the user never chose.
 ///
 /// The default is deliberately *not* that any more. It was 4x, held inside 2..=4 so the common
 /// card read identically everywhere; it is now 6x, chosen on the device, and a fresh card reads
@@ -219,7 +219,7 @@ fn every_speed_the_row_offers_round_trips_as_its_own_number() {
 /// reads as itself on an older build or falls back to that build's own default, and none of
 /// them reads as a *different* speed the player never chose.
 #[test]
-fn an_older_build_reads_the_two_new_speeds_as_its_own_default() {
+fn an_older_build_reads_the_new_speed_as_its_own_default() {
     for speed in FF_SPEEDS.iter().filter(|&&n| n > 4) {
         assert!(
             !(2..=4).contains(speed),
@@ -244,10 +244,12 @@ fn an_out_of_range_setting_falls_back_to_its_default() {
         "rumble=\nff_speed=1\nff_sound=on\n",
         "rumble=-1\nff_speed=0\nff_sound=-1\n",
         "ff_speed=x\n",
-        // Inside the row's ends but not on it: the row steps 4 to 6 to 8.
+        // Inside the row's ends but not on it: the row steps 4 to 6.
+        "ff_speed=5\n",
         "ff_speed=7\n",
-        "ff_speed=9\n",
-        // 255, which a card written by a build between these two can still be holding.
+        // 8, which a card written on the night the row briefly had five ceilings still holds,
+        // and 255, which one written in the adaptive era does. Both fall back the same way.
+        "ff_speed=8\n",
         "ff_speed=255\n",
     ] {
         std::fs::write(d.path().join("System/slot.state"), format!("{known}{bad}")).unwrap();

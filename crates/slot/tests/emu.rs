@@ -334,7 +334,7 @@ fn spawn_probe(cost: Duration) -> (EmuHandle, Arc<Mutex<Vec<bool>>>) {
 #[test]
 fn every_speed_publishes_the_frame_the_core_last_ran() {
     let emu = spawn();
-    for ceiling in [2, 3, 4, 6, FAST_STEPS_MAX] {
+    for ceiling in [2, 3, 4, FAST_STEPS_MAX] {
         emu.set_fast_steps(ceiling);
         emu.set_speed(Speed::Fast);
         std::thread::sleep(Duration::from_millis(120));
@@ -396,10 +396,11 @@ fn a_fast_present_draws_only_its_last_frame() {
 }
 
 /// Every value on the row is a ceiling rather than a multiplier: a present runs as many core
-/// frames as it can afford and stops. A core that costs 5 ms a frame cannot fit eight of them
+/// frames as it can afford and stops. A core that costs 5 ms a frame cannot fit six of them
 /// into one present, so asking for the top of the row has to come back with a handful — a game
 /// too heavy for the speed asked gives the speed back a frame at a time instead of overrunning
-/// the present and dropping off 60 Hz. This is what lets the row offer eight at all.
+/// the present and dropping off 60 Hz. This is what lets one number sit at the top of the row
+/// for both cores.
 #[test]
 fn a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling() {
     let (emu, _log) = spawn_probe(Duration::from_millis(5));

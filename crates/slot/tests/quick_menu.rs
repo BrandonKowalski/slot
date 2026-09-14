@@ -140,11 +140,11 @@ fn fast_forward_steps_through_its_speeds_and_saves_each_one() {
         (Btn::Left, 2),
         (Btn::Right, 3),
         (Btn::Right, 4),
-        // The row steps over 5 and 7: past four a single frame is not a speed anyone can see.
+        // The row steps over 5: past four a single frame is not a speed anyone can see.
         (Btn::Right, 6),
-        (Btn::Right, 8),
-        (Btn::Right, 8),
-        (Btn::Left, 6),
+        // Six is the top of the row as well as its default, so Right stops there.
+        (Btn::Right, 6),
+        (Btn::Left, 4),
     ] {
         press(&mut a, btn);
         assert_eq!(a.ff_speed(), want, "{btn:?}");
