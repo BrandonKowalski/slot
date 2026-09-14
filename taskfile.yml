@@ -262,6 +262,16 @@ tasks:
         vendor/gpsp-src.sha vendor/gpsp-src.meta
       - task: core:gpsp
 
+  core:gpsp:test:
+    desc: Prove gpSP's Advance Wars session-flip patch still fixes what it was written for
+    # Host native and seconds long: it compiles gpSP's serial HLE out of the shipped archive
+    # twice, unpatched and patched, and requires the first to fail and the second to pass. It
+    # depends on core:gpsp for the archive, which is why `check` does not run it: that has to
+    # work on a machine with nothing fetched.
+    deps: [core:gpsp]
+    cmds:
+      - sh cores/gpsp/test/run.sh vendor/gpsp-src.tar.gz
+
   device:sh:
     desc: Run CMD on the box the device build wants, fetching one if this is not it
     internal: true
@@ -348,6 +358,11 @@ tasks:
         sha="$(cat vendor/gpsp-src.sha)"
         cp vendor/gpsp-src.tar.gz "{{.OUT}}/System/licenses/gpsp-${sha}.tar.gz"
         cp vendor/gpsp-src.meta "{{.OUT}}/System/licenses/gpsp-${sha}.meta"
+        # gpSP ships patched, so the patches travel with the archive they apply to, prefixed
+        # `gpsp-` as mGBA's are. Without them what ships would not match what built it.
+        for p in cores/gpsp/*.patch; do
+          cp "$p" "{{.OUT}}/System/licenses/gpsp-$(basename "$p")"
+        done
       # MPL-2.0: mGBA ships patched, so what changed travels with it. Every patch
       # cores/mgba/build.sh applied lands here, prefixed `mgba-`, beside the .meta naming the
       # libretro/mgba commit they apply to, whose source is public there. The .meta is named for
@@ -392,6 +407,10 @@ tasks:
         sha="$(cat vendor/gpsp-src.sha)"
         adb push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
         adb push vendor/gpsp-src.meta "{{.SD}}/System/licenses/gpsp-${sha}.meta"
+        # Same as dist:device: gpSP ships patched, so its patches go with the archive.
+        for p in cores/gpsp/*.patch; do
+          adb push "$p" "{{.SD}}/System/licenses/gpsp-$(basename "$p")"
+        done
       # Same as dist:device: mGBA's patches, and the .meta naming the commit they apply to.
       - |
         set -euo pipefail

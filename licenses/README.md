@@ -12,9 +12,10 @@ gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core abov
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
 libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba.
 
-Both cores are built by this repo. gpSP is unmodified: `cores/gpsp/build.sh`, run by
+Both cores are built by this repo, and both are patched. `cores/gpsp/build.sh`, run by
 `taskfile.yml`'s `core:gpsp`, builds libretro/gpsp at a pinned commit from the source archive
-that ships here, with gpSP's own arm64 recipe. mGBA is patched: `cores/mgba/build.sh`, run by
+that ships here, with gpSP's own arm64 recipe and the patches in `cores/gpsp/` applied. mGBA
+takes the same treatment: `cores/mgba/build.sh`, run by
 `core:device` and `core:mgba:host`, builds libretro/mgba at a pinned commit with the patches in
 `cores/mgba/` applied. `slot` never links against either. `taskfile.yml`'s `dist:device` task
 copies this directory into the shipped tree alongside the cores it licenses, so a card built
@@ -46,20 +47,30 @@ from this repo carries the same notice the release zip does.
   ```
   licenses/gpsp-<commit>.tar.gz
   licenses/gpsp-<commit>.meta
+  licenses/gpsp-<patch>.patch
   ```
 
   named for the exact commit built, so the archive identifies its own source without needing a
   release page to point back to — which matters, because a card built and copied by hand never
   has one. The `.meta` file is the build's own record, in `key=value` form: the `commit`, the
   `source` archive's URL, the `recipe` it was built with (`make platform=arm64`, gpSP's own
-  Makefile target), and the `device_cflags` added to that recipe's flags.
+  Makefile target), the `device_cflags` added to that recipe's flags, and a `patch=` line per
+  patch with its sha256.
 
-  "Corresponding" is exact here, not inferred: the binary is compiled from this archive and
-  nothing else. The archive is GitHub's snapshot of `libretro/gpsp` at that commit, unmodified,
-  its Makefile included, and the build adds only the compiler flags the `.meta` names. Earlier,
-  slot shipped the libretro buildbot's nightly binary, which does not say which commit built
-  it, and could only infer the source from the binary's timestamp. Building from the archive
-  closed that gap.
+  **This build is modified, and these are the modifications** — that is what GPL-2.0 section
+  2(a) asks be carried in the changed files, and this paragraph is the notice. Every patch
+  `cores/gpsp/` holds ships here beside the archive, its file name prefixed `gpsp-`. Today
+  there is one, slot's own: gpSP never reset its Advance Wars serial state when a netplay
+  session began, so a session started while the game already sat on its link screen drained a
+  master-side buffer as a slave, underflowed a length and overran a fixed array, which killed
+  the frontend. It resets that state when a session starts and ends, and bounds the drain.
+
+  "Corresponding" is exact here, not inferred: the binary is compiled from this archive plus
+  those patches, and nothing else. The archive is GitHub's snapshot of `libretro/gpsp` at that
+  commit, unmodified, its Makefile included, and the build adds only the patches and the
+  compiler flags the `.meta` names. Earlier, slot shipped the libretro buildbot's nightly
+  binary, which does not say which commit built it, and could only infer the source from the
+  binary's timestamp. Building from the archive closed that gap.
 
   **The binary and the source are made, and remade, as one set.** `core:gpsp`'s status check
   requires the archive, the recorded commit, the binary and both metadata files to agree with

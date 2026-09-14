@@ -1,0 +1,62 @@
+--- a/serial_proto.c
++++ b/serial_proto.c
+@@ -447,6 +447,13 @@
+     if (serstate.aw.peer[i].recvd >= numw) {
+       u16 ret = serstate.aw.peer[i].data[serstate.aw.peer[i].recvd];
+       serstate.aw.peer[i].recvd = 0;
++      /* Guard the count subtraction: an inconsistent buffer (numw+1 > count)
++       * would wrap this u16 and make the memmove copy far past data[]. Drop
++       * the peer's queue rather than corrupt memory. */
++      if ((u32)numw + 1 > serstate.aw.peer[i].count) {
++        serstate.aw.peer[i].count = 0;
++        return ret;
++      }
+       serstate.aw.peer[i].count -= (numw+1);
+       memmove(&serstate.aw.peer[i].data[0], &serstate.aw.peer[i].data[numw+1],
+               serstate.aw.peer[i].count * sizeof(u16));
+@@ -470,6 +477,10 @@
+     const u16 numw = serstate.aw.peer[i].data[0];
+     if (serstate.aw.peer[i].recvd > numw) {
+       serstate.aw.peer[i].recvd = 0;
++      if ((u32)numw + 1 > serstate.aw.peer[i].count) {
++        serstate.aw.peer[i].count = 0;
++        return CMD_NONE;
++      }
+       serstate.aw.peer[i].count -= (numw+1);
+       memmove(&serstate.aw.peer[i].data[0], &serstate.aw.peer[i].data[numw+1],
+               serstate.aw.peer[i].count * sizeof(u16));
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -496,12 +496,32 @@
+   netpacket_pollrcv_fn_ptr = poll_receive_fn;
+   netplay_num_clients = 0;
+   netplay_client_id = client_id;
++  /* A frontend may hand the core into a live session mid-game: the emulated
++   * game has already been driving the HLE serial protocol as a lone master
++   * (netplay_client_id 0), leaving serstate.aw/poke half-filled with buffers
++   * whose layout only makes sense for the role it had. Flipping to a slave
++   * (client_id 1) without clearing them makes serialaw's slave-side drain
++   * (process_awpeer) read a master-mode length header and underflow its
++   * count, overflowing the fixed data[] buffer. Reset to a clean slate so a
++   * session that begins while the game is already on its link screen behaves
++   * exactly like one that begins first. */
++  serialproto_reset();
+ }
+ 
+ // Netplay session ends.
+ static void netpacket_stop() {
+   netpacket_send_fn_ptr = NULL;
+   netpacket_pollrcv_fn_ptr = NULL;
++  /* Restore the lone-master identity a non-networked GBA has. Left at 1 (the
++   * joiner's id), the game keeps taking the slave IRQ path (serialaw_update
++   * fires on `netplay_client_id`) and draining serstate for a peer that is no
++   * longer there — both between sessions and, if these statics survive an
++   * in-process core reload, into the next session's netpacket_start. */
++  netplay_client_id = 0;
++  netplay_num_clients = 0;
++  /* Leave no stale peer buffers behind for the next session or for single
++   * player, matching the fresh state a mode transition would have produced. */
++  serialproto_reset();
+ }
+ 
+ static void netpacket_receive(const void* buf, size_t len, uint16_t client_id) {
