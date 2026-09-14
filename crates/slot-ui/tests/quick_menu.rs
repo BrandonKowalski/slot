@@ -75,7 +75,7 @@ fn the_fast_forward_row_offers_three_ceilings_and_then_adaptive() {
         "the card's adaptive sentinel is not the row's fourth value"
     );
     assert_eq!(QuickValue::speed(5), None, "5x is not a value the row has");
-    assert_eq!(QuickValue::Adaptive.text(), "ADAPTIVE");
+    assert_eq!(QuickValue::Adaptive.text(), "Adaptive");
 }
 
 /// The order the user chose on 2026-09-15, top to bottom.
@@ -100,7 +100,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
 fn the_values_read_as_the_menu_prints_them() {
     assert_eq!(
         QuickValue::ALL.map(QuickValue::text),
-        ["2×", "3×", "4×", "ADAPTIVE", "On", "Off"]
+        ["2×", "3×", "4×", "Adaptive", "On", "Off"]
     );
     assert_eq!(
         [2, 3, 4].map(QuickValue::speed),

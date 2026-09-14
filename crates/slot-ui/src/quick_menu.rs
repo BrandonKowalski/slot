@@ -87,7 +87,7 @@ impl QuickValue {
             QuickValue::Speed2 => "2×",
             QuickValue::Speed3 => "3×",
             QuickValue::Speed4 => "4×",
-            QuickValue::Adaptive => "ADAPTIVE",
+            QuickValue::Adaptive => "Adaptive",
             QuickValue::On => "On",
             QuickValue::Off => "Off",
         }
