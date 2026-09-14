@@ -4,15 +4,22 @@
 
 mod common;
 
+use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
+
 use slot::app::{GameMenu, LinkLegend, LinkRow};
 use slot::link_kind::LinkKind;
+use slot::link_net::Cancel;
+use slot::link_radio::{LinkRole, RadioJob, RadioJobs};
 use slot::link_screen::{draw_link_art, LinkSprites, Sprite};
-use slot::link_start::{LinkFail, LinkStep};
+use slot::link_start::{LinkFail, LinkStarter, LinkStep};
 use slot_input::Action;
 use slot_store::Core;
 use slot_ui::{
-    arrows_hint_face, hint_face, link_art, toast_face, CartFace, Draw, TexId, Toast, UndoFace,
-    OUT_H, OUT_W,
+    arrows_hint_face, hint_face, link_art, menu_face, toast_face, CartFace, Draw, TexId, Toast,
+    UndoFace, OUT_H, OUT_W,
 };
 
 /// One rastered face, whatever rasterised it. `CartFace` and `UndoFace` are the same three
@@ -558,4 +565,159 @@ fn the_legend_shows_select_mode_only_where_the_hardware_can_be_switched() {
             "the {what} legend runs off the bottom of the panel"
         );
     }
+}
+
+// --- the sentence the first step shows ------------------------------------------------------
+//
+// Opening the link screen asks for a warm, which takes about 1.1 s out of the step that runs
+// `ags-net link host|join`. Once the driver is loaded there is no radio left to bring up, and the
+// step is looking for the other player from its first frame — so that is what it says. Read off
+// the glass, because the two sentences are two faces uploaded in one list and an index into the
+// wrong one draws a perfectly good line that says the wrong thing.
+
+/// A radio whose warm finishes when the test says so, keeping what it was asked for separate from
+/// what it finished. The caption has to follow the second, and this is what lets a test tell them
+/// apart: it can be handed a `Warm` and still report a cold driver, which is the 1.1 s a quick
+/// player presses A inside.
+#[derive(Clone, Default)]
+struct FakeRadio {
+    warm: Arc<AtomicBool>,
+    asked: Arc<Mutex<Vec<RadioJob>>>,
+}
+
+impl RadioJobs for FakeRadio {
+    fn ask(&mut self, job: RadioJob) {
+        self.asked.lock().expect("radio log").push(job);
+    }
+
+    fn warmed(&self) -> bool {
+        self.warm.load(Ordering::SeqCst)
+    }
+}
+
+/// The real step sentences, in `LinkStep::ALL` order, through the rasteriser the device uses.
+fn step_faces() -> Vec<(TexId, Face)> {
+    LinkStep::ALL
+        .iter()
+        .map(|s| (TexId::from_raw(950 + s.index()), menu_face(s.line()).into()))
+        .collect()
+}
+
+/// The line on the glass while the worker sits on its first step, with the driver warm or cold,
+/// and what the radio was asked for on the way there.
+fn first_step_pixels(warm: bool, name: &str) -> (Vec<u8>, Vec<RadioJob>) {
+    let d = common::tmp_root_with_carts(&["Zzz"]);
+    // "Cart" sorts before "Zzz", so `Action::Insert` seats it. Ruby's identity, because the link
+    // screen only opens for a cart gpSP can carry.
+    common::write_retail_header(&d, "Cart", "POKEMON RUBY", "AXVE");
+    let mut app = common::boot(d.path());
+    app.apply(Action::Insert);
+    app.set_core(Core::Gpsp);
+    app.on_core_ready();
+    for _ in 0..120 {
+        app.update(1.0 / 60.0);
+    }
+    let radio = FakeRadio::default();
+    radio.warm.store(warm, Ordering::SeqCst);
+    app.set_radio_jobs(Box::new(radio.clone()));
+    let faces = step_faces();
+    app.set_link_step_faces(faces.iter().map(|(t, f)| (*t, f.w, f.h)).collect());
+    app.apply(Action::GameMenu);
+    assert!(app.game_menu_open(), "the link screen never opened");
+    // A worker held on its first step: this stands in for an `ags-net link` that has not answered
+    // yet, which is the whole window the caption is about.
+    let (release, held) = channel::<()>();
+    app.start_link(
+        LinkStarter::spawn_with(
+            Box::new(move |_, _| {
+                let _ = held.recv();
+                Ok(())
+            }),
+            Box::new(|| {}),
+            LinkRole::Host,
+            0,
+            Box::new(|_, _: &Cancel| Err(io::Error::new(io::ErrorKind::TimedOut, "from a test"))),
+        ),
+        0,
+    );
+    assert!(
+        matches!(
+            app.game_menu(),
+            Some(GameMenu::Working {
+                step: LinkStep::Radio,
+                ..
+            })
+        ),
+        "the screen is not on the step this is about: {:?}",
+        app.game_menu()
+    );
+    let mut out = Vec::new();
+    app.draw(&mut out);
+    let line: Vec<Draw> = out
+        .into_iter()
+        .filter(|d| matches!(*d, Draw::Tex { tex, .. } if faces.iter().any(|(t, _)| *t == tex)))
+        .collect();
+    let px = composite(&line, &faces);
+    dump(&px, name);
+    drop(release);
+    let asked = radio.asked.lock().expect("radio log").clone();
+    (px, asked)
+}
+
+/// One sentence's ink, composited alone, for holding a frame against the line it should carry.
+fn line_ink(step: LinkStep) -> usize {
+    let f: Face = menu_face(step.line()).into();
+    let (w, h) = (f.w as f32, f.h as f32);
+    let tex = TexId::from_raw(1);
+    let draw = Draw::Tex {
+        x: 100.0,
+        y: 20.0,
+        w,
+        h,
+        tex,
+        alpha: 1.0,
+    };
+    ink(&composite(&[draw], &[(tex, f)]))
+}
+
+/// Cold, the load is still ahead of the player, and the screen still says so. The warm was asked
+/// for on the way in — that is the point: the caption follows the driver finishing, and asking is
+/// not finishing.
+#[test]
+fn a_cold_radio_says_it_is_bringing_the_radio_up() {
+    let (px, asked) = first_step_pixels(false, "step-radio-cold");
+    assert!(ink(&px) > 0, "the step put no sentence on the frame at all");
+    assert!(
+        asked.contains(&RadioJob::Warm),
+        "the screen never asked for a warm, so this frame says nothing about finishing one"
+    );
+    assert_ne!(
+        line_ink(LinkStep::Radio),
+        line_ink(LinkStep::Waiting),
+        "the two sentences carry the same ink, so neither frame below proves anything"
+    );
+    assert_eq!(
+        ink(&px),
+        line_ink(LinkStep::Radio),
+        "a screen whose warm has not finished is not saying the radio is coming up"
+    );
+}
+
+/// Warm, and the sentence about the wait is gone: the step goes straight to what it is doing.
+#[test]
+fn a_warm_radio_goes_straight_to_looking_for_the_other_player() {
+    let (px, _) = first_step_pixels(true, "step-radio-warm");
+    assert!(ink(&px) > 0, "the step put no sentence on the frame at all");
+    assert_eq!(
+        ink(&px),
+        line_ink(LinkStep::Waiting),
+        "a warm radio is still being announced as coming up"
+    );
+    // Up where the link screen's one line sits, and whole: a line placed off the panel is in the
+    // draw list and on none of these rows.
+    let (first, last) = inked_rows(&px);
+    assert!(
+        last < OUT_H as usize / 2,
+        "the line is not up where the link screen's sentence goes: rows {first}..{last}"
+    );
 }

@@ -118,6 +118,28 @@ impl LinkStep {
             LinkStep::Waiting => "Looking for the other player",
         }
     }
+
+    /// Which step's sentence to show for this one, given whether the driver is already loaded.
+    ///
+    /// Only the first step moves, and only when the radio is warm. The link screen asks for a
+    /// `RadioJob::Warm` the moment it opens, and that takes about 1.1 s — the load
+    /// `ags-net link host|join` would otherwise pay for inside this step. A player who spent
+    /// longer than that choosing a role never waits for it, so the screen stops narrating a
+    /// wait that has already happened and says what the step is now doing. The work underneath
+    /// is unchanged: a host still spends about 1.6 s bringing its access point up, and looking
+    /// for the other player is true for every second of it.
+    ///
+    /// `warm` must be a warm that finished, not one that was asked for — see
+    /// `RadioJobs::warmed`, which is where that promise is kept.
+    ///
+    /// Mapped onto the other step rather than given a third of its own, so `ALL` stays every
+    /// sentence this screen can say and the faces are still uploaded once at boot.
+    pub fn shown(self, warm: bool) -> LinkStep {
+        match self {
+            LinkStep::Radio if warm => LinkStep::Waiting,
+            step => step,
+        }
+    }
 }
 
 impl LinkFail {
@@ -389,5 +411,51 @@ mod port_tests {
         std::env::set_var(PORT_ENV, "0");
         assert_eq!(link_port(), DEFAULT_LINK_PORT);
         std::env::remove_var(PORT_ENV);
+    }
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    /// The sentence is about a wait, so it goes when the wait does. With the driver already
+    /// loaded the step runs `ags-net link host|join` with nothing to load, and what it is doing
+    /// from its first frame is looking for the other player.
+    #[test]
+    fn a_warm_radio_captions_the_first_step_as_the_search() {
+        assert_eq!(LinkStep::Radio.shown(true), LinkStep::Waiting);
+        assert_eq!(
+            LinkStep::Radio.shown(true).line(),
+            "Looking for the other player"
+        );
+    }
+
+    /// Cold, the load is still ahead of the player and the screen still says so: about 1.1 s of
+    /// silence is what the step reports exist to prevent.
+    #[test]
+    fn a_cold_radio_still_says_it_is_bringing_the_radio_up() {
+        assert_eq!(LinkStep::Radio.shown(false), LinkStep::Radio);
+        assert_eq!(LinkStep::Radio.shown(false).line(), "Bringing the radio up");
+    }
+
+    /// The socket step never waited on the driver, so nothing about it changes either way.
+    #[test]
+    fn the_socket_step_says_the_same_thing_in_both_states() {
+        assert_eq!(LinkStep::Waiting.shown(true), LinkStep::Waiting);
+        assert_eq!(LinkStep::Waiting.shown(false), LinkStep::Waiting);
+    }
+
+    /// Both sentences stay in `ALL`, which is what the faces are built from: the warm screen
+    /// borrows the other step's face rather than needing one of its own.
+    #[test]
+    fn every_sentence_a_step_can_show_is_still_one_of_the_faces() {
+        for warm in [true, false] {
+            for step in LinkStep::ALL {
+                assert!(
+                    LinkStep::ALL.contains(&step.shown(warm)),
+                    "{step:?} at warm={warm} shows a sentence with no face uploaded for it"
+                );
+            }
+        }
     }
 }

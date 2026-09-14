@@ -2349,7 +2349,15 @@ impl App {
         }
         let line = match menu {
             GameMenu::Pick(role) => self.link_menu_faces.get(role.index()).copied(),
-            GameMenu::Working { step, .. } => self.link_step_faces.get(step.index()).copied(),
+            // Which sentence the first step gets depends on the driver: this screen warmed it on
+            // the way in, and a warm one takes the load out of the step, leaving a host bringing
+            // its access point up and a joiner searching for one — both of which are looking for
+            // the other player. Asked of the radio every frame it is drawn, so a warm that lands
+            // while the step is running is picked up rather than waited out.
+            GameMenu::Working { step, .. } => self
+                .link_step_faces
+                .get(step.shown(self.radio.warmed()).index())
+                .copied(),
             GameMenu::Linked { .. } => self.link_linked_face,
             GameMenu::Failed { fail, .. } => fail
                 .shown()

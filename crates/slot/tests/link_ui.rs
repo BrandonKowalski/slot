@@ -1671,6 +1671,12 @@ impl RadioJobs for RadioLog {
     fn ask(&mut self, job: RadioJob) {
         self.0.lock().expect("radio log").push(job);
     }
+
+    /// Asked for is not loaded. Nothing behind this log ever runs, so no warm it was handed ever
+    /// finishes — which is the state these tests drive the screen in.
+    fn warmed(&self) -> bool {
+        false
+    }
 }
 
 fn watched(app: &mut App) -> RadioLog {

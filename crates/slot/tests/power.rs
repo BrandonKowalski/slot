@@ -451,6 +451,11 @@ impl RadioJobs for RadioLog {
     fn ask(&mut self, job: RadioJob) {
         self.0.lock().expect("radio log").push(job);
     }
+
+    /// Nothing behind this log runs, so no warm it was handed ever finishes.
+    fn warmed(&self) -> bool {
+        false
+    }
 }
 
 /// A doze ends at a power off, and a driver loaded through it is tens of milliamps spent on

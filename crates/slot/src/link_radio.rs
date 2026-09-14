@@ -10,6 +10,8 @@
 //! nothing here reads their status.
 
 #[cfg(feature = "device")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "device")]
 use std::sync::mpsc::{channel, Sender};
 #[cfg(feature = "device")]
 use std::sync::OnceLock;
@@ -65,6 +67,16 @@ pub enum RadioJob {
 /// asked for, in what order, without a radio or a process anywhere near it.
 pub trait RadioJobs: Send {
     fn ask(&mut self, job: RadioJob);
+
+    /// Whether the driver is loaded right now. Nothing waits on the radio, so this is the only
+    /// way anything can know — and the link screen needs it, because a step whose slow part has
+    /// already been paid for should not be captioned as the wait it no longer is.
+    ///
+    /// The worker's own report of a `Warm` that finished, never the fact that one was asked
+    /// for. The two differ by about 1.1 s, which is less time than a player takes to choose a
+    /// role but more than a quick one takes, so a guess from the ask would be wrong exactly
+    /// when it matters.
+    fn warmed(&self) -> bool;
 }
 
 /// The real one. Every job goes onto one queue served by one thread, so a `Cool` asked for
@@ -85,7 +97,17 @@ impl RadioJobs for RadioQueue {
         // There is nothing useful to do about it from a frame loop, and nothing waits on it.
         let _ = queue().send(job);
     }
+
+    fn warmed(&self) -> bool {
+        WARM.load(Ordering::SeqCst)
+    }
 }
+
+/// Whether the driver is loaded, written only by the queue's worker. One flag for the process,
+/// like the queue it is written from: the driver is one piece of hardware and `warm` and `cool`
+/// are whole-machine operations, so there is nothing per-`RadioQueue` to keep.
+#[cfg(feature = "device")]
+static WARM: AtomicBool = AtomicBool::new(false);
 
 /// One worker for the process, spawned on the first job.
 #[cfg(feature = "device")]
@@ -96,9 +118,22 @@ fn queue() -> &'static Sender<RadioJob> {
         std::thread::spawn(move || {
             for job in rx {
                 match job {
-                    RadioJob::Warm => run("warm"),
-                    RadioJob::Cool => run("cool"),
-                    RadioJob::Down => down(),
+                    // Written after the work rather than before it, and from the status rather
+                    // than from the asking: a BaseOS with no `warm` exits 2 having loaded
+                    // nothing, and a flag set by asking would have the screen drop the sentence
+                    // about a wait that is still ahead of the player.
+                    RadioJob::Warm => WARM.store(run("warm"), Ordering::SeqCst),
+                    // Cleared before the work, for the mirror of that reason: from here the
+                    // driver is on its way out, and anything reading in between would be told
+                    // a radio is up while it is being unloaded underneath.
+                    RadioJob::Cool => {
+                        WARM.store(false, Ordering::SeqCst);
+                        run("cool");
+                    }
+                    RadioJob::Down => {
+                        WARM.store(false, Ordering::SeqCst);
+                        down();
+                    }
                 }
             }
         });
@@ -106,15 +141,18 @@ fn queue() -> &'static Sender<RadioJob> {
     })
 }
 
-/// A subcommand whose outcome nobody acts on. A BaseOS without `warm` and `cool` exits 2 with
-/// a usage message, which is exactly as harmless as it sounds: the radio then behaves the way
-/// it did before they existed.
+/// A subcommand nothing waits on, and whether it did what it was asked. A BaseOS without `warm`
+/// and `cool` exits 2 with a usage message, which is exactly as harmless as it sounds: the radio
+/// then behaves the way it did before they existed, and the answer here is `false`, which is the
+/// truth about the driver on such a card. The status is read for that one thing and never to
+/// fail a link: `ags-net link host` loads the driver itself if this did not.
 #[cfg(feature = "device")]
-fn run(sub: &str) {
-    let _ = std::process::Command::new("ags-net")
+fn run(sub: &str) -> bool {
+    std::process::Command::new("ags-net")
         .arg("link")
         .arg(sub)
-        .status();
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// Blocking, and slow enough to matter — about two seconds for a host and up to thirty for a
@@ -185,6 +223,13 @@ pub fn down() {}
 #[cfg(not(feature = "device"))]
 impl RadioJobs for RadioQueue {
     fn ask(&mut self, _job: RadioJob) {}
+
+    /// There is no driver here to be loaded or unloaded, and `up` above returns without doing
+    /// anything, so the step that would wait for one has nothing to wait for. Warm from the
+    /// first frame is the honest answer on a host build, not a stub.
+    fn warmed(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -207,5 +252,14 @@ mod tests {
         jobs.ask(RadioJob::Warm);
         jobs.ask(RadioJob::Cool);
         jobs.ask(RadioJob::Down);
+    }
+
+    /// Two copies of slot on one machine is a real way to drive the link screen, and the radio
+    /// step there is instant because there is no driver to load. The screen is told so rather
+    /// than being left to caption a wait that is not happening.
+    #[cfg(not(feature = "device"))]
+    #[test]
+    fn a_host_build_has_no_driver_left_to_load() {
+        assert!(radio_jobs().warmed());
     }
 }
