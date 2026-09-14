@@ -20,6 +20,12 @@ pub struct MockCore {
     video: Vec<u8>,
     audio: Vec<i16>,
     sram: Option<Vec<u8>>,
+    /// What `set_frame_skip` last said about the frame about to run. Honoured rather than
+    /// ignored so a host test can tell a fresh published picture from a stale one: a skipped
+    /// frame leaves `video` holding the previous frame's pattern, exactly as both real cores
+    /// leave their own buffer, so publishing after the wrong frame shows up as a mismatch
+    /// rather than as nothing at all.
+    skip_next: bool,
 }
 
 impl Default for MockCore {
@@ -35,6 +41,7 @@ impl MockCore {
             video: vec![0; (GBA_W * GBA_H * 4) as usize],
             audio: Vec::new(),
             sram: None,
+            skip_next: false,
         };
         c.render();
         c
@@ -84,7 +91,14 @@ impl RetroCore for MockCore {
             self.audio.push(s);
             self.audio.push(s);
         }
-        self.render();
+        // The machine advanced either way; only the drawing is skipped.
+        if !self.skip_next {
+            self.render();
+        }
+    }
+
+    fn set_frame_skip(&mut self, skip: bool) {
+        self.skip_next = skip;
     }
 
     fn video_xrgb8888(&self) -> &[u8] {

@@ -16,6 +16,13 @@ pub const GET_VARIABLE_UPDATE: c_uint = 17;
 pub const GET_RUMBLE_INTERFACE: c_uint = 23;
 pub const GET_LOG_INTERFACE: c_uint = 27;
 pub const GET_SAVE_DIRECTORY: c_uint = 31;
+/// `RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK`. A core whose frameskip option is set
+/// to one of its *auto* modes registers a callback through this and then asks, once per frame,
+/// whether the frontend's audio buffer is about to run dry. Both cores decide whether to draw
+/// the frame they are about to run from the answer, before running it — which is what makes
+/// this the one lever that can say "emulate this frame but do not draw it" per frame rather
+/// than on a fixed cadence. See `LibretroCore::set_frame_skip`.
+pub const SET_AUDIO_BUFFER_STATUS_CALLBACK: c_uint = 62;
 pub const SET_NETPACKET_INTERFACE: c_uint = 78;
 
 pub const RUMBLE_STRONG: c_uint = 0;
@@ -83,6 +90,21 @@ pub type SetRumbleStateFn = unsafe extern "C" fn(c_uint, c_uint, u16) -> bool;
 #[repr(C)]
 pub struct RumbleInterface {
     pub set_rumble_state: SetRumbleStateFn,
+}
+
+/// The core's own end of `SET_AUDIO_BUFFER_STATUS_CALLBACK`: the frontend calls this to report
+/// how its audio buffer is doing. `occupancy` is a percentage, and `underrun_likely` is the
+/// field both cores' plain *auto* frameskip reads.
+pub type AudioBufferStatusFn =
+    unsafe extern "C" fn(active: bool, occupancy: c_uint, underrun_likely: bool);
+
+/// What a core hands over through `SET_AUDIO_BUFFER_STATUS_CALLBACK`. libretro declares the
+/// field as a plain function pointer rather than an optional one; it is read as an `Option`
+/// here so a core that passes a struct with a null in it cannot be called through. A function
+/// pointer is null-pointer-optimised, so this is the same one word either way.
+#[repr(C)]
+pub struct AudioBufferStatusCallback {
+    pub callback: Option<AudioBufferStatusFn>,
 }
 
 // The core hands these two to `start` so the frontend can push and pull packets on its own

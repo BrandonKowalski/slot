@@ -66,6 +66,19 @@ pub trait RetroCore: Send {
     fn run_frame_linked(&mut self, p1: ButtonMask, _p2: ButtonMask) {
         self.run_frame(p1);
     }
+    /// Whether the *next* `run_frame` should emulate without drawing a picture. A skipped frame
+    /// advances the machine exactly as a drawn one does and leaves `video_xrgb8888` holding the
+    /// last picture that was drawn.
+    ///
+    /// Called before every frame of a fast forward present so only the frame that will actually
+    /// be shown costs a render — the one change the spike measured that moves the speed cap at
+    /// all. It has to be said *before* the frame runs, because that is the only moment either
+    /// real core can still be told: both decide whether to draw the frame they are about to run
+    /// at the top of `retro_run`.
+    ///
+    /// A core with no way to skip a render draws every frame, which is correct but slower, so
+    /// the default does nothing.
+    fn set_frame_skip(&mut self, _skip: bool) {}
     /// `GBA_W * GBA_H * 4` bytes, little endian XRGB8888, so the byte order is B, G, R, unused.
     fn video_xrgb8888(&self) -> &[u8];
     fn take_audio(&mut self) -> Vec<i16>;

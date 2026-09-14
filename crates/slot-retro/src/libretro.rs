@@ -56,6 +56,11 @@ struct Host {
     /// host told the core every packet — including the joiner's — came from itself. `None`
     /// before a session starts and once `halt_link` has read it back out for `disconnected`.
     net_peer: Option<u16>,
+    /// The core's own audio-buffer-status callback, handed over when its frameskip option is
+    /// set to one of the auto modes. `None` until the core registers one, and legally back to
+    /// `None` when it withdraws it — which both cores do whenever that option is off or set to
+    /// a fixed interval. See `RetroCore::set_frame_skip` on this type.
+    audio_status: Option<AudioBufferStatusFn>,
     /// Core options, keyed as libretro names them. Values are kept as CStrings because the
     /// pointer handed back to the core has to stay valid after the callback returns.
     options: std::collections::HashMap<String, std::ffi::CString>,
@@ -187,6 +192,18 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             }
             (*(data as *mut LogCallback)).log = log_noop as *const c_void;
             true
+        }
+        SET_AUDIO_BUFFER_STATUS_CALLBACK => {
+            // A NULL pointer is the core withdrawing the callback, which is legal and is
+            // exactly what both cores do when their frameskip option is off or set to a fixed
+            // interval. Answering `true` either way is what tells the core the frontend can
+            // monitor its buffer at all: answering `false` makes both of them log "Frameskip
+            // disabled" and turn the whole feature off.
+            if data.is_null() {
+                return with_host(|h| h.audio_status = None).is_some();
+            }
+            let cb = std::ptr::read(data as *const AudioBufferStatusCallback);
+            with_host(|h| h.audio_status = cb.callback).is_some()
         }
         SET_NETPACKET_INTERFACE => {
             // A NULL pointer is the core withdrawing the interface, which is legal.
@@ -372,6 +389,19 @@ unsafe fn drain_link() {
     }
 }
 
+/// The logic behind `RetroCore::set_frame_skip` on `LibretroCore`, a free function for the same
+/// reason `begin_link` and `drain_link` are: it reaches the host through the thread-local rather
+/// than `&mut self`, so it can be driven against a bare `Host` in a test with no dylib to open.
+///
+/// The `&mut Host` borrow is dropped before the callback is called, the same discipline every
+/// other call into a core in this file follows.
+unsafe fn report_audio_status(skip: bool) {
+    let Some(status) = with_host(|h| h.audio_status).flatten() else {
+        return;
+    };
+    status(true, if skip { 0 } else { 100 }, skip);
+}
+
 unsafe extern "C" fn video_refresh(
     data: *const c_void,
     width: c_uint,
@@ -539,6 +569,7 @@ impl LibretroCore {
             netpacket: None,
             net: Link::default(),
             net_peer: None,
+            audio_status: None,
             options: std::collections::HashMap::new(),
             options_dirty: false,
         });
@@ -632,6 +663,34 @@ impl RetroCore for LibretroCore {
         self.host.inputs = [p1.0, p2.0];
         let _a = Active::bind(&mut self.host);
         unsafe { (self.api.run)() };
+    }
+
+    /// Says whether the next frame draws a picture by answering the question the core's own
+    /// auto frameskip asks: is the frontend's audio buffer about to run dry?
+    ///
+    /// This is a deliberate lie about the audio, and it is the whole mechanism. Both cores read
+    /// the answer at the top of `retro_run`, *before* running the frame, and skip that frame's
+    /// render when it is yes — so the frame reported as skipped is the one actually skipped, and
+    /// the picture left behind is the one last drawn. Their *fixed interval* mode is not usable
+    /// for this: mGBA's libretro port reads its skip counter after `runFrame` rather than
+    /// before, so it reports the frame it just drew as skipped and the frontend shows a picture
+    /// one present old. Driving the auto path sidesteps that off-by-one without patching the
+    /// core, needs no phase alignment, and — unlike an interval, which has to be chosen before
+    /// the present starts — copes with a step count that is only decided as the present runs.
+    ///
+    /// `occupancy` is set as well as `underrun_likely` so either auto mode answers the same way:
+    /// plain *Auto* reads the underrun flag, *Auto (Threshold)* compares occupancy against a
+    /// percentage that defaults to 33 in both cores.
+    ///
+    /// A core that never registered the callback has no auto frameskip to drive — its option is
+    /// off, or it is mGBA in link mode, which returns from `retro_run` before it reads any of
+    /// this — so this is silently a no-op rather than something every caller checks for first.
+    fn set_frame_skip(&mut self, skip: bool) {
+        // Bound like every other call into the core: the callback both cores register only
+        // assigns to their own statics, but it is still their code running on this thread and
+        // is not promised never to reach back through an environment callback.
+        let _a = Active::bind(&mut self.host);
+        unsafe { report_audio_status(skip) };
     }
 
     fn video_xrgb8888(&self) -> &[u8] {
@@ -736,6 +795,7 @@ impl RetroCore for LibretroCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::ffi::CStr;
 
@@ -759,6 +819,7 @@ mod tests {
             netpacket: None,
             net: Link::default(),
             net_peer: None,
+            audio_status: None,
             options,
             options_dirty,
         })
@@ -840,6 +901,98 @@ mod tests {
         assert!(!ok);
     }
 
+    // --- auto frameskip ------------------------------------------------------------------
+    //
+    // Driven through `environment` and `report_audio_status` directly, against a bare `Host`,
+    // for the same reason the `GET_VARIABLE` tests above are: this is the ABI seam a core
+    // crosses to register the callback, and it can be exercised with no dylib at all.
+
+    thread_local! {
+        /// Every `(active, occupancy, underrun_likely)` the frontend reported, in order.
+        static TEST_AUDIO_STATUS: RefCell<Vec<(bool, c_uint, bool)>> =
+            const { RefCell::new(Vec::new()) };
+    }
+
+    unsafe extern "C" fn test_audio_status(active: bool, occupancy: c_uint, underrun: bool) {
+        TEST_AUDIO_STATUS.with(|r| r.borrow_mut().push((active, occupancy, underrun)));
+    }
+
+    #[test]
+    fn set_audio_buffer_status_callback_stores_what_the_core_hands_over() {
+        let mut host = host_with(HashMap::new(), false);
+        let mut cb = AudioBufferStatusCallback {
+            callback: Some(test_audio_status),
+        };
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe {
+                environment(
+                    SET_AUDIO_BUFFER_STATUS_CALLBACK,
+                    &mut cb as *mut AudioBufferStatusCallback as *mut c_void,
+                )
+            }
+        };
+
+        assert!(ok, "refusing this turns the cores' frameskip off entirely");
+        assert!(host.audio_status.is_some(), "the callback was never stored");
+    }
+
+    /// Both cores pass NULL here whenever their frameskip option is off or set to a fixed
+    /// interval, and both read the answer as whether the frontend can monitor its buffer at
+    /// all — so this has to be answered `true`, not treated as a malformed call.
+    #[test]
+    fn set_audio_buffer_status_callback_null_withdraws_it() {
+        let mut host = host_with(HashMap::new(), false);
+        host.audio_status = Some(test_audio_status);
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe { environment(SET_AUDIO_BUFFER_STATUS_CALLBACK, ptr::null_mut()) }
+        };
+
+        assert!(ok, "withdrawing is a legal call and must be answered true");
+        assert!(host.audio_status.is_none());
+    }
+
+    /// The lever itself: a skipped frame is reported as an imminent underrun and an empty
+    /// buffer, a drawn one as neither. Both fields, so the answer reads the same whether the
+    /// core is on plain `auto` (which reads the flag) or `auto_threshold` (which compares the
+    /// occupancy against a percentage defaulting to 33 in both cores).
+    #[test]
+    fn set_frame_skip_tells_the_core_to_skip_by_reporting_an_underrun() {
+        TEST_AUDIO_STATUS.with(|r| r.borrow_mut().clear());
+        let mut host = host_with(HashMap::new(), false);
+        host.audio_status = Some(test_audio_status);
+        {
+            let _active = Active::bind(&mut host);
+            unsafe {
+                report_audio_status(true);
+                report_audio_status(false);
+            }
+        }
+
+        TEST_AUDIO_STATUS.with(|r| {
+            assert_eq!(
+                r.borrow().as_slice(),
+                &[(true, 0, true), (true, 100, false)],
+                "the skip and the draw did not read as an underrun and a healthy buffer"
+            );
+        });
+    }
+
+    /// mGBA in link mode returns from `retro_run` before it reads any of this, and a core
+    /// whose frameskip option is off never registers at all. Neither is an error.
+    #[test]
+    fn set_frame_skip_is_a_noop_when_the_core_registered_no_callback() {
+        TEST_AUDIO_STATUS.with(|r| r.borrow_mut().clear());
+        let mut host = host_with(HashMap::new(), false);
+        {
+            let _active = Active::bind(&mut host);
+            unsafe { report_audio_status(true) };
+        }
+
+        TEST_AUDIO_STATUS.with(|r| assert!(r.borrow().is_empty()));
+    }
+
     // --- netpacket -----------------------------------------------------------------------
     //
     // Same rationale as the `GET_VARIABLE` tests above: this repo has no gpSP dylib to load
@@ -847,8 +1000,6 @@ mod tests {
     // driven directly — a hand-built `NetpacketCallback` standing in for the core, and the
     // private trampolines and `drain_link` invoked exactly as the core (or `pump_link`)
     // would invoke them.
-
-    use std::cell::RefCell;
 
     thread_local! {
         static TEST_RECEIVED: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
