@@ -55,7 +55,7 @@ fn gpsp_is_told_its_serial_mode_before_load() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto");
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
     assert_eq!(
         core.option("gpsp_serial"),
         Some("auto".to_string()),
@@ -75,7 +75,7 @@ fn gpsp_is_told_the_serial_mode_it_is_handed() {
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
     for serial in ["rfu", "mul_poke", "mul_aw1", "mul_aw2"] {
-        slot::core::apply_core_options(&mut core, Core::Gpsp, serial);
+        slot::core::apply_core_options(&mut core, Core::Gpsp, serial, false);
         assert_eq!(
             core.option("gpsp_serial"),
             Some(serial.to_string()),
@@ -84,9 +84,70 @@ fn gpsp_is_told_the_serial_mode_it_is_handed() {
     }
 }
 
+/// A real BIOS on the card is what buys the player the boot logo and chime, and gpSP's own
+/// default is `game`, which drops straight into the cart without ever running it.
+///
+/// `gpsp_bios` is checked to be still unset here, not merely left unmentioned: its default,
+/// `auto`, already loads `<system>/gba_bios.bin` and keeps it whenever it passes the same
+/// first-byte test `has_real_bios` applies, so naming `official` would select the very same
+/// image and change only the failure path — where it draws a warning over slot's own chrome
+/// through the core's OSD before falling back to the built-in BIOS `auto` falls back to
+/// quietly.
+#[test]
+fn gpsp_boots_through_the_bios_when_the_card_carries_one() {
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let _g = common::core_lock();
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", true);
+    assert_eq!(
+        core.option("gpsp_boot_mode"),
+        Some("bios".to_string()),
+        "a real BIOS on the card and gpSP still told to skip it"
+    );
+    assert_eq!(
+        core.option("gpsp_bios"),
+        None,
+        "gpsp_bios was named: auto already picks the official image up, and official only \
+         adds an on-screen warning when it cannot"
+    );
+    assert_eq!(
+        core.option("gpsp_serial"),
+        Some("auto".to_string()),
+        "the link mode stopped getting through once the boot mode joined it"
+    );
+}
+
+/// gpSP's built-in BIOS has no logo and no chime to play, so booting through it is a few
+/// seconds of blank screen that reads as a hang. Without the file, the option stays unset and
+/// gpSP keeps its own `game` default.
+#[test]
+fn gpsp_is_left_on_its_own_boot_default_when_the_card_has_no_bios() {
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let _g = common::core_lock();
+    let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
+    assert_eq!(
+        core.option("gpsp_boot_mode"),
+        None,
+        "gpSP was sent through a BIOS the card does not have, which is its built-in one: \
+         seconds of blank screen where the logo was promised"
+    );
+}
+
 /// mGBA has no `gpsp_serial` option at all; handing it one anyway would be silently ignored
 /// by mGBA today and a landmine the moment mGBA ever grows an option by that name. Handed a
 /// mode that is not `auto`, it still gets nothing.
+///
+/// Told a BIOS is present as well, since that is the state of the user's own card: mGBA's own
+/// boot switch is spelled `mgba_skip_bios`, so gpSP's spelling must not reach it either.
 #[test]
 fn mgba_is_given_no_options() {
     let path = dylib_for(Core::Mgba);
@@ -96,11 +157,199 @@ fn mgba_is_given_no_options() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open mgba");
-    slot::core::apply_core_options(&mut core, Core::Mgba, "rfu");
+    slot::core::apply_core_options(&mut core, Core::Mgba, "rfu", true);
     assert_eq!(
         core.option("gpsp_serial"),
         None,
         "mGBA has no such option and must not be handed one"
+    );
+    assert_eq!(
+        core.option("gpsp_boot_mode"),
+        None,
+        "gpSP's boot switch reached mGBA, which spells its own mgba_skip_bios"
+    );
+}
+
+/// A content root holding the user's own BIOS and a cart the BIOS will recognise, or `None`
+/// on a machine carrying neither. Both are the user's, both live under the ignored `/sdcard`,
+/// and neither may ever be checked in — so everything below skips itself on a fresh clone and
+/// in CI, and runs for real on the machine that has them.
+fn root_with_bios_and_logo_cart() -> Option<(tempfile::TempDir, std::path::PathBuf)> {
+    let (bios, rom_bytes) = (common::real_bios()?, common::logo_rom()?);
+    let d = common::tmp_root_with_carts(&[]);
+    std::fs::copy(bios, d.path().join("BIOS").join("gba_bios.bin")).expect("copy bios");
+    let rom = d.path().join("Games").join("Logo.gba");
+    std::fs::write(&rom, rom_bytes).expect("write logo rom");
+    Some((d, rom))
+}
+
+/// Whether the BIOS boot animation reaches the screen, run through the production path:
+/// `open_core_for` is the one place the boot mode is applied, and it reads the BIOS off the
+/// content root itself, so this is the real wiring rather than a core configured by hand.
+///
+/// The animation runs about two seconds and does not begin on frame 0, so what is asked is
+/// whether it happened anywhere in that window, not what any single frame holds.
+fn splash_plays(root: &std::path::Path, rom: &std::path::Path) -> bool {
+    use slot_retro::ButtonMask;
+    let mut core = slot::core::open_core_for(root, Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]);
+    core.load(rom).expect("gpSP refused the logo rom");
+    (0..150).any(|_| {
+        core.run_frame(ButtonMask::default());
+        common::mostly_lit(core.video_xrgb8888())
+    })
+}
+
+/// The feature the user asked for, checked on the screen rather than in a draw list: a real
+/// BIOS on the card means the cart boots through it, logo and all.
+///
+/// Pixels, because an option read back only proves gpSP was told something. Whether the
+/// animation actually plays depends on gpSP agreeing that the image is a BIOS at all — it
+/// applies its own first-byte test and silently falls back to a built-in BIOS with no splash
+/// in it — and on the BIOS recognising the cart's logo. Neither of those shows up in an
+/// assertion about an option string.
+#[test]
+fn a_cart_boots_through_a_real_bios_and_the_splash_reaches_the_screen() {
+    if !dylib_for(Core::Gpsp).exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let Some((d, rom)) = root_with_bios_and_logo_cart() else {
+        eprintln!("no real BIOS or no cart to lift a logo from on this host, skipping");
+        return;
+    };
+    let _g = common::core_lock();
+    assert!(
+        splash_plays(d.path(), &rom),
+        "the cart went straight to the game with a real BIOS sitting in the content root"
+    );
+}
+
+/// The other half, and the reason the option is conditional at all: gpSP's built-in BIOS has
+/// no logo and no chime, so booting through it would spend the same seconds on a blank screen.
+/// With no BIOS on the card the cart goes straight to the game, as it did before this existed.
+#[test]
+fn a_cart_goes_straight_to_the_game_when_the_card_has_no_bios() {
+    if !dylib_for(Core::Gpsp).exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let Some((d, rom)) = root_with_bios_and_logo_cart() else {
+        eprintln!("no real BIOS or no cart to lift a logo from on this host, skipping");
+        return;
+    };
+    let _g = common::core_lock();
+    std::fs::remove_file(d.path().join("BIOS").join("gba_bios.bin")).unwrap();
+    assert!(
+        !splash_plays(d.path(), &rom),
+        "a splash played with no BIOS on the card, so this test cannot tell the two apart"
+    );
+}
+
+/// Whether any frame the emulator thread actually publishes is the boot screen. Through
+/// `EmuHandle::spawn`, which is what `session.rs` calls and where the ordering that matters
+/// lives: the worker loads the rom, restores the resume state, and only then publishes
+/// anything at all.
+fn a_published_frame_is_the_splash(
+    root: &std::path::Path,
+    rom: &std::path::Path,
+    resume: Option<Vec<u8>>,
+) -> bool {
+    use slot::audio::{AudioSink, StubSink};
+    use slot::emu::{CoreState, EmuHandle, Speed};
+    use std::time::{Duration, Instant};
+
+    let mut sink = StubSink::new();
+    sink.open(32_768).expect("the stub refused to open");
+    // The worker waits for the device to make room, so a sink nothing drains holds it up
+    // before it ever gets to a second frame.
+    let drain = sink.clone();
+    std::thread::spawn(move || loop {
+        drain.device_drain();
+        std::thread::sleep(Duration::from_millis(2));
+    });
+
+    let emu = EmuHandle::spawn(
+        slot::core::open_core_for(root, Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]),
+        rom.to_path_buf(),
+        sink.ring(),
+        None,
+        resume,
+    );
+    // A worker starts paused, as one spawned during an insert must: the first frames of the
+    // boot would otherwise run behind the cart where nobody can see them.
+    emu.set_speed(Speed::Normal);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while emu.state() == CoreState::Loading {
+        assert!(Instant::now() < deadline, "the core never finished loading");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(emu.state(), CoreState::Ready, "the core refused the cart");
+
+    // Longer than the animation, so a splash that plays at all is a splash this sees.
+    let watch = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < watch {
+        if emu.latest_frame().is_some_and(|f| common::mostly_lit(&f)) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(4));
+    }
+    false
+}
+
+/// The requirement that makes the splash bearable: it belongs to starting a game, not to
+/// picking one back up. A cart resumed from a save state must land where the player left it.
+///
+/// Both halves run here, against the same core, cart and BIOS, so the only difference between
+/// them is whether a state was restored. The fresh half is what keeps the resumed half
+/// honest — without it, a harness that could never see a splash would pass just as happily.
+///
+/// What makes the resumed half true is ordering rather than configuration: `emu::Worker::run`
+/// restores the state after `load` and before it publishes a single frame, so the BIOS's
+/// machine is replaced before anything reaches the screen. That is also why the option can be
+/// set on every load, and why a reload for a link — which flushes and resumes through this
+/// same path — cannot replay it either.
+#[test]
+fn the_splash_plays_on_a_fresh_start_and_never_over_a_resume() {
+    if !dylib_for(Core::Gpsp).exists() {
+        eprintln!("no gpSP dylib on this host, skipping");
+        return;
+    }
+    let Some((d, rom)) = root_with_bios_and_logo_cart() else {
+        eprintln!("no real BIOS or no cart to lift a logo from on this host, skipping");
+        return;
+    };
+    let _g = common::core_lock();
+
+    // A genuine gpSP state, taken from a machine well past its own boot. The boot is longer
+    // than it looks: measured here, the screen is still the BIOS's at frame 269 and only
+    // becomes the game's at 270. A state taken before that is a white screen saved mid-splash,
+    // and restoring it looks exactly like the splash replaying — which is how this test first
+    // failed, on its own fixture rather than on the product. The assertion is what keeps that
+    // from ever being read as the bug again, whatever the number drifts to. Dropped before
+    // anything else opens a core: libretro allows only one live at a time.
+    let state = {
+        use slot_retro::ButtonMask;
+        let mut core =
+            slot::core::open_core_for(d.path(), Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]);
+        core.load(&rom).expect("gpSP refused the logo rom");
+        for _ in 0..480 {
+            core.run_frame(ButtonMask::default());
+        }
+        assert!(
+            !common::mostly_lit(core.video_xrgb8888()),
+            "the state standing in for a resume is itself a frame of the boot splash, so the \
+             half below would fail no matter what the resume did"
+        );
+        core.serialize().expect("gpSP gave up no state")
+    };
+
+    assert!(
+        a_published_frame_is_the_splash(d.path(), &rom, None),
+        "no splash on a fresh start, so this test cannot see one and proves nothing below"
+    );
+    assert!(
+        !a_published_frame_is_the_splash(d.path(), &rom, Some(state)),
+        "the BIOS splash played over a cart the player was resuming"
     );
 }
 

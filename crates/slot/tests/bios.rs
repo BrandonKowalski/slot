@@ -68,6 +68,61 @@ fn the_core_is_told_the_saves_folder_too() {
     assert_eq!(core.reported_save_dir(), saves.to_string_lossy());
 }
 
+/// What turns the boot splash on, and what must not. gpSP reads exactly 16 KB into its BIOS
+/// image without checking the length, then rejects the result only on its first byte — so a
+/// file that fails either test is one gpSP would quietly replace with its built-in BIOS,
+/// leaving a cart booting through a BIOS with no logo and no chime to play.
+///
+/// The "real" image here is 16 KB of nothing with the one byte set that every dump starts
+/// with. Nothing copyrighted is needed to prove the frontend asks the right question, and
+/// nothing copyrighted may be checked in.
+#[test]
+fn only_a_real_bios_image_turns_the_boot_splash_on() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let bios = d.path().join("BIOS").join("gba_bios.bin");
+
+    assert!(
+        !slot::root::has_real_bios(d.path()),
+        "an empty BIOS folder counted as a BIOS"
+    );
+
+    for (bytes, what) in [
+        (vec![], "a zero byte file"),
+        (vec![0x18u8; 1024], "a truncated image, right first byte"),
+        (vec![0x18u8; 16 * 1024 - 1], "one byte short of an image"),
+        (vec![0x18u8; 16 * 1024 + 1], "one byte past an image"),
+        (vec![0u8; 16 * 1024], "16 KB that starts like nothing"),
+        (vec![0xffu8; 16 * 1024], "16 KB of erased flash"),
+    ] {
+        std::fs::write(&bios, &bytes).unwrap();
+        assert!(
+            !slot::root::has_real_bios(d.path()),
+            "{what} counted as a BIOS: gpSP would fall back to its built-in one and boot \
+             through a splash that does not exist"
+        );
+    }
+
+    let mut real = vec![0u8; 16 * 1024];
+    real[0] = 0x18;
+    std::fs::write(&bios, &real).unwrap();
+    assert!(
+        slot::root::has_real_bios(d.path()),
+        "a 16 KB image starting 0x18 is what gpSP itself accepts, and it was refused"
+    );
+}
+
+/// The card a cart was inserted from may have no BIOS folder at all — `ensure` makes one, but
+/// a card pulled mid-session or mounted read only need not have it.
+#[test]
+fn a_missing_bios_folder_turns_the_boot_splash_off() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    std::fs::remove_dir_all(d.path().join("BIOS")).unwrap();
+    assert!(
+        !slot::root::has_real_bios(d.path()),
+        "a missing BIOS folder counted as a BIOS"
+    );
+}
+
 /// A card that has never held slot. has none of the six folders, and every write path
 /// below assumes its own is already there.
 #[test]

@@ -88,6 +88,49 @@ pub fn vendored_core() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
+/// The user's own BIOS image, if this machine has one. Never in the repo and never checked
+/// in: `/sdcard` is ignored precisely because the image is Nintendo's. A test that needs a
+/// real BIOS skips itself without one, which is what CI and a fresh clone both do.
+pub fn real_bios() -> Option<PathBuf> {
+    let p = repo_root().join("sdcard/BIOS/gba_bios.bin");
+    p.exists().then_some(p)
+}
+
+/// `gba_rom` wearing a real cart's Nintendo logo. The BIOS compares that logo against its own
+/// copy before it will play its animation and hand the machine over, so a ROM without one
+/// never sees a splash however the core is configured — which would make a test that looks
+/// for the splash pass or fail for the wrong reason entirely.
+///
+/// The logo is 156 bytes of Nintendo's, so it is lifted off a cart on the card rather than
+/// checked in, exactly as `slot-retro`'s own bios test does it. `None` when this machine has
+/// no cart to lift it from.
+pub fn logo_rom() -> Option<Vec<u8>> {
+    let logo = std::fs::read_dir(repo_root().join("sdcard/Games"))
+        .ok()?
+        .find_map(|e| {
+            let p = e.ok()?.path();
+            let rom = (p.extension()? == "gba").then(|| std::fs::read(&p).ok())??;
+            (rom.get(4..8)? == [0x24, 0xff, 0xae, 0x51]).then(|| rom[4..0xa0].to_vec())
+        })?;
+    let mut rom = gba_rom();
+    // Ahead of the header checksum's own range (0xa0..0xbd), so what `gba_rom` computed for
+    // it still holds and the BIOS accepts the header it goes on to read.
+    rom[4..0xa0].copy_from_slice(&logo);
+    Some(rom)
+}
+
+/// Whether a frame is the BIOS boot screen rather than a game painting. The boot animation is
+/// a white screen and `gba_rom` fills its own with black the moment it runs, so which of the
+/// two is up is a question the pixels answer on their own. Same reading
+/// `slot-retro`'s `the_bios_intro_plays_when_a_bios_is_present` takes.
+pub fn mostly_lit(frame: &[u8]) -> bool {
+    let lit = frame
+        .chunks(4)
+        .filter(|p| p[0] > 0x40 && p[1] > 0x40 && p[2] > 0x40)
+        .count();
+    lit * 2 > (slot_retro::GBA_W * slot_retro::GBA_H) as usize
+}
+
 /// Sets mode 3 and writes a frame counter into the first pixel once per vblank, so
 /// consecutive frames differ and a savestate has both registers and VRAM worth restoring.
 pub fn gba_rom() -> Vec<u8> {

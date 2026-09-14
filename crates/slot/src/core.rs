@@ -91,7 +91,7 @@ pub fn open_core_for(
         }
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
-                apply_core_options(&mut opened, core, serial);
+                apply_core_options(&mut opened, core, serial, root::has_real_bios(root));
                 eprintln!("slot: core {}", path.display());
                 return Box::new(opened);
             }
@@ -123,9 +123,32 @@ pub fn open_core_for(
 /// is what every cart loads with until its link screen is switched to the other hardware (see
 /// `link_kind::serial_option`). mGBA gets nothing: it has no `gpsp_serial` option, and handing
 /// it one anyway is a landmine the day it grows one.
-pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str) {
+///
+/// `bios` is whether the card carries a real BIOS (`root::has_real_bios`), and it buys the
+/// player the boot logo and chime. gpSP defaults to `game`, which drops straight into the
+/// cart; `bios` runs the BIOS first. It is only set when the file is really there, because
+/// booting through gpSP's built-in replacement instead spends those seconds on a blank screen
+/// — a pause that reads as a hang rather than as the hardware starting up.
+///
+/// `gpsp_bios` is deliberately left alone. Its default, `auto`, already loads
+/// `<system>/gba_bios.bin` and uses it whenever the image passes gpSP's own first-byte test,
+/// which is the same test `has_real_bios` applies — so naming `official` would select the
+/// identical image. All it would change is the failure path, where `official` puts a warning
+/// on screen through the core's OSD ("Could not load BIOS image file", "BIOS image seems
+/// incorrect") before falling back to exactly the built-in BIOS `auto` falls back to silently.
+/// That is a core-drawn message over slot's own chrome, bought for no change in behaviour.
+///
+/// Setting this on every load, rather than only on a fresh start, is safe because a resume
+/// does not survive to be seen: `emu::Worker::run` unserializes the resume state after `load`
+/// and before it publishes a single frame, so the restored machine replaces the BIOS's before
+/// anything reaches the screen. That covers a reload for a link too — `session::reload_for_link`
+/// flushes and resumes through the same path.
+pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str, bios: bool) {
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
+        if bios {
+            core.set_option("gpsp_boot_mode", "bios");
+        }
     }
 }
 

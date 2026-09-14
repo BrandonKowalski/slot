@@ -51,6 +51,42 @@ pub fn bios_dir(root: &Path) -> PathBuf {
     root.join("BIOS")
 }
 
+/// What the card calls the BIOS. Both cores look for this name and nothing else.
+const BIOS_FILE: &str = "gba_bios.bin";
+
+/// A GBA BIOS is 16 KB, and its first byte is the low byte of the entry branch every dump of
+/// it opens with (`EA000018`, little endian, so 0x18 first).
+const BIOS_BYTES: u64 = 16 * 1024;
+const BIOS_FIRST_BYTE: u8 = 0x18;
+
+/// Whether the card carries a real GBA BIOS, rather than nothing or merely a file by that
+/// name. What decides whether gpSP is asked to boot through it (see `core::apply_core_options`).
+///
+/// Cheap on purpose — one open, one stat, one byte — because this is asked on every core load,
+/// which is every insert and every reload for a link.
+///
+/// The two things checked are the two gpSP itself depends on. It reads exactly 16 KB into its
+/// BIOS image with no length check of its own, so a short file leaves the rest of that image
+/// as whatever was there; and it then rejects the image outright, falling back to its built-in
+/// BIOS, when the first byte is not 0x18. Asking the same question here is what keeps "slot
+/// turned the splash on" and "gpSP actually booted the official BIOS" from disagreeing: when
+/// they disagree the player gets the built-in BIOS booted through, which is a blank pause
+/// rather than the logo they were promised.
+///
+/// Deliberately not a checksum. It would read all 16 KB on every insert to buy no more
+/// certainty than gpSP itself demands, and it would turn the feature off for anyone holding a
+/// regional dump other than whichever hash got written down here.
+pub fn has_real_bios(root: &Path) -> bool {
+    let Ok(mut f) = std::fs::File::open(bios_dir(root).join(BIOS_FILE)) else {
+        return false;
+    };
+    if !f.metadata().is_ok_and(|m| m.len() == BIOS_BYTES) {
+        return false;
+    }
+    let mut first = [0u8; 1];
+    std::io::Read::read_exact(&mut f, &mut first).is_ok() && first[0] == BIOS_FIRST_BYTE
+}
+
 pub fn saves_dir(root: &Path) -> PathBuf {
     root.join("Saves")
 }
