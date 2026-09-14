@@ -390,7 +390,7 @@ fn a_fast_present_draws_only_its_last_frame() {
 
 /// 2x, 3x and 4x are ceilings rather than multipliers, and adaptive has only the safety cap:
 /// either way a present runs as many core frames as it can afford and stops. A core that costs
-/// 5 ms a frame cannot fit sixteen of them into one present, so asking for the cap has to come
+/// 5 ms a frame cannot fit twenty-eight of them into one present, so asking for the cap has to come
 /// back with a handful — a game too heavy for the speed asked gives the speed back a frame at a
 /// time instead of overrunning the present and dropping off 60 Hz.
 #[test]

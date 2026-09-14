@@ -28,21 +28,26 @@ pub const FAST_STEPS: u32 = 4;
 /// forward's safety cap rather than a speed anyone chooses: the budget below is what normally
 /// stops a present, and this only binds on content cheap enough that it otherwise would not.
 ///
-/// Sixteen, from measurement rather than from the old number. The fastest core frame anyone has
-/// timed on an H700 is gpSP's dynarec with its render skipped, 0.762 ms (Apotris,
-/// `.superpowers/flags/report.md`); `FAST_BUDGET` divided by that is about 17.7 frames, so on
-/// the lightest content measured the cap and the budget bind at nearly the same place and
-/// neither one dominates. Sixteen of those frames is 12.2 ms, which leaves the rest of the
-/// present for the one conversion, the snapshot and the audio and still reaches the deadline
-/// sleep. It is also well under the 30 consecutive skips both cores force a render after
-/// (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a picture
-/// mid-present that nothing goes on to show.
+/// Twenty-eight, from measurement on the device. The cheapest core frame anyone has timed on an
+/// H700 is 0.482 ms — Apotris on gpSP's dynarec, render skipped, driven frame by frame exactly
+/// as this loop drives it (`.superpowers/flags/results.md`) — and `FAST_BUDGET` divided by that
+/// is 28.0 frames, so on the lightest content measured the cap and the budget bind at the same
+/// place and neither one dominates. It stays under the 30 consecutive skips both cores force a
+/// render after (`RETRO_FRAMESKIP_MAX` in mGBA, `FRAMESKIP_MAX` in gpSP), which would draw a
+/// picture mid-present that nothing goes on to show: a present of 28 frames skips 27 in a row,
+/// because its last frame always draws and resets their counters.
 ///
-/// The old ceiling was four, on the reasoning that an H700 could not serve more. That was
-/// measured against gpSP's *interpreter*, at 2.07-2.96 ms a frame. The core slot builds now
+/// Sixteen was the previous number, measured when the cheapest frame anyone had timed was
+/// 0.762 ms. A sweep on the device found the floor lower and the cap binding first: at sixteen,
+/// adaptive ran 14.8 of a possible 16 frames a present on Recharged Yellow and 14.9 on Apotris,
+/// while those two held 60 Hz at 24 and 28 frames a present. A cap that decides the speed on
+/// ordinary content is doing the budget's job.
+///
+/// The ceiling before that was four, on the reasoning that an H700 could not serve more. That
+/// was measured against gpSP's *interpreter*, at 2.07-2.96 ms a frame. The core slot builds now
 /// runs its dynarec and is three to four times quicker, so four stopped being what the hardware
 /// could serve and became merely what it was told.
-pub const FAST_STEPS_MAX: u32 = 16;
+pub const FAST_STEPS_MAX: u32 = 28;
 
 /// How much of a present a fast forward may spend inside the core.
 ///
