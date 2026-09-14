@@ -26,8 +26,15 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 
 /// Every line is rastered into one box at one size, so a line too long for it would be shrunk on
 /// its own and read as a different banner from the others. Measured off the pixels rather than
-/// off the layout: the type is uppercased and has no descenders, so every banner that rastered
-/// at the same size covers exactly the same rows.
+/// off the layout: the type is uppercased and has no descenders, so a banner set at the same
+/// size covers the same rows.
+///
+/// To within a row, which is the typeface rather than the size. Round and pointed capitals
+/// overshoot the flat ones — the S and A of STATE SAVED sit a row below the K and D of LINK
+/// ENDED at 16 px — so a line built only from flat capitals is a row shorter while being set at
+/// exactly the same size. A shrunk line is not a row out; it is four, which is what the bound
+/// below actually catches. `toast.rs`'s own unit test holds the size itself, against both the
+/// full size and the fallback.
 #[test]
 fn no_toast_is_shrunk_to_fit_its_box() {
     let rows = |t: Toast| {
@@ -39,13 +46,12 @@ fn no_toast_is_shrunk_to_fit_its_box() {
         let last = *inked.last().expect("the banner is blank");
         (first, last)
     };
-    let want = rows(Toast::StateSaved);
+    let (top, bottom) = rows(Toast::StateSaved);
     for t in Toast::ALL {
-        assert_eq!(
-            rows(t),
-            want,
-            "{:?} does not sit on the same rows as the others, so it was shrunk to fit",
-            t
+        let (a, b) = rows(t);
+        assert!(
+            a.abs_diff(top) <= 1 && b.abs_diff(bottom) <= 1,
+            "{t:?} sits on rows {a}..{b} where the others sit on {top}..{bottom}, so it was shrunk to fit"
         );
     }
 }
