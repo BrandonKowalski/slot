@@ -225,6 +225,66 @@ fn a_failed_plug_is_drawn_turned() {
     ));
 }
 
+#[test]
+fn unplug_pulls_the_plug_back_out_of_the_port_and_leaves_it_there() {
+    let m = GameMenu::Unplug {
+        role: LinkRow::Host,
+        since: 1000,
+    };
+    assert!(
+        (plug_tip(m, 1000) - 419.0).abs() < 0.01,
+        "the unplug did not start from where a seated plug sits"
+    );
+    assert!(
+        (plug_tip(m, 1260) - 330.0).abs() < 0.01,
+        "the plug is not back where it was picked up"
+    );
+    let held: Vec<f32> = (0..2000)
+        .step_by(100)
+        .map(|t| plug_tip(m, 1260 + t))
+        .collect();
+    assert!(held.iter().all(|y| (y - 330.0).abs() < 0.01), "{held:?}");
+}
+
+#[test]
+fn unplug_lifts_the_adapter_off_the_port_and_dies_its_arcs() {
+    let m = GameMenu::Unplug {
+        role: LinkRow::Join,
+        since: 0,
+    };
+    assert!((adapter_base(m, 0) - PORT_Y).abs() < 0.01);
+    assert!((adapter_base(m, 260) - 336.0).abs() < 0.01);
+    assert_eq!(
+        arc_alphas(m, 0),
+        [1.0; 3],
+        "a seated adapter's arcs do not start full"
+    );
+    assert_eq!(arc_alphas(m, 260), [0.0; 3], "the arcs outlived the link");
+    let mid = arc_alphas(m, 130);
+    assert!(
+        mid[0] > 0.0 && mid[0] < 1.0,
+        "the arcs did not fade: {mid:?}"
+    );
+}
+
+/// The unplug is the seating motion reversed, which is the whole reason it needed no new art
+/// and no new curve: it begins exactly where seating ended and ends exactly where it began.
+#[test]
+fn the_unplug_is_the_seating_motion_run_backwards() {
+    let out = GameMenu::Unplug {
+        role: LinkRow::Host,
+        since: 0,
+    };
+    assert!(
+        (plug_tip(out, 0) - plug_tip(working(LinkRow::Host, 0), 1000)).abs() < 0.01,
+        "the unplug does not start where a seated plug is"
+    );
+    assert!(
+        (plug_tip(out, 260) - plug_tip(GameMenu::Pick(LinkRow::Host), 0)).abs() < 0.01,
+        "the unplug does not end where the plug is picked up"
+    );
+}
+
 /// The Wireless Adapter calls out with its signal arcs while it waits.
 #[test]
 fn the_adapter_calls_out_with_its_arcs_while_working() {

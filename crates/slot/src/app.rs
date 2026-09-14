@@ -229,6 +229,12 @@ pub enum GameMenu {
         worked: Millis,
         since: Millis,
     },
+    /// The link is over and the plug is coming back out. `since` is when it began.
+    ///
+    /// The session has already ended by the time this state exists — it is the screen catching
+    /// up with a teardown that is already under way, not a step in one. Nothing waits on it and
+    /// nothing can be pressed during it; it leaves on its own after `UNPLUG_HOLD_MS`.
+    Unplug { role: LinkRow, since: Millis },
 }
 
 /// Which end of a link this device is offering to be. The player picks; there is no
@@ -319,6 +325,13 @@ impl LinkLegend {
 
 /// How long LINKED stays on screen once a link is up.
 pub const LINKED_HOLD_MS: Millis = 1000;
+
+/// How long the unplug stays on screen when a link ends, motion included.
+///
+/// Comfortably past the 260 ms the plug takes to come out, so it is seen resting out of the
+/// port for a beat rather than vanishing on the frame it lands. Short enough that nobody is
+/// sitting through it: the game underneath is paused for exactly this long and no longer.
+pub const UNPLUG_HOLD_MS: Millis = 420;
 
 #[derive(Debug)]
 pub enum Phase {
@@ -964,15 +977,18 @@ impl App {
         if !self.link_active() {
             return;
         }
+        // Read before `end_link` clears it, the same way `end_link_from_menu` does.
+        let role = self
+            .link_client_id()
+            .map_or(self.last_role, LinkRow::from_client_id);
         self.end_link();
         self.hud.toast(Toast::PeerEnded, self.now());
-        // The screen a live session was being shown on is a screen about that session, and it
-        // has just ended. Closed the way `peer_lost` closes it rather than through
-        // `close_game_menu`, which would ask the radio to cool a second time behind the `down`
-        // `end_link` has already queued.
-        if matches!(self.game_menu, Some(GameMenu::Linked { .. })) {
-            self.game_menu = None;
-        }
+        // The same unplug the device that pressed the key plays, on the device that pressed
+        // nothing. A link is one cable between two handhelds: it cannot come out of one end
+        // and stay in the other, and this end has just as much of it to put away. It replaces
+        // whatever screen was up — including no screen at all, which is the ordinary case here,
+        // since this player was in their game rather than in a menu.
+        self.unplug(role);
     }
 
     pub fn link_badge(&self) -> LinkBadge {
@@ -1736,6 +1752,15 @@ impl App {
                 self.game_menu = None;
             }
         }
+        // The plug is out and the screen has been looked at. Straight to `None` rather than
+        // through `close_game_menu`: there is no starter to cancel and no reload to drop, and
+        // that path would ask the radio to cool a second time behind the `down` `end_link` has
+        // already queued — which `a_ends_the_session_and_says_so` reads off the radio log.
+        if let Some(GameMenu::Unplug { since, .. }) = self.game_menu {
+            if self.now().saturating_sub(since) >= UNPLUG_HOLD_MS {
+                self.game_menu = None;
+            }
+        }
         // A lost peer's session ends on its own, once the broken badge has been seen.
         if let Some(at) = self.link.as_ref().and_then(|s| s.lost_at) {
             if self.now().saturating_sub(at) >= LINK_LOST_MS {
@@ -2383,6 +2408,9 @@ impl App {
             GameMenu::Failed { fail, .. } => fail
                 .shown()
                 .and_then(|i| self.link_fail_faces.get(i).copied()),
+            // No line. The banner over the top is what says what happened, and LINKED left up
+            // over a plug being pulled out would be the screen contradicting the art under it.
+            GameMenu::Unplug { .. } => None,
         };
         if let Some((tex, w, h)) = line {
             out.push(Draw::Tex {
@@ -2412,6 +2440,9 @@ impl App {
             GameMenu::Linked { opened: true, .. } => &[LinkLegend::Back, LinkLegend::EndLink],
             GameMenu::Linked { .. } => &[],
             GameMenu::Failed { .. } => &[LinkLegend::Ok],
+            // Nothing to offer: it is leaving on its own and takes no presses, exactly like the
+            // flash a link comes up on.
+            GameMenu::Unplug { .. } => &[],
         };
         let faces: Vec<(TexId, u32)> = keys
             .iter()
@@ -2860,12 +2891,27 @@ impl App {
     /// battery over there looks like from here. The game carries on in the mode it was loaded
     /// with, which is `end_link`'s own contract, and the banner is what says it happened.
     fn end_link_from_menu(&mut self) {
+        // Read before `end_link` clears it: the plug being pulled out is this device's own, and
+        // which of the two it is decides which plug is drawn.
+        let role = self
+            .link_client_id()
+            .map_or(self.last_role, LinkRow::from_client_id);
         self.end_link();
         self.hud.toast(Toast::LinkEnded, self.now());
-        // Straight to `None` rather than through `close_game_menu`: there is no starter to
-        // cancel and no reload to drop, and that path would ask the radio to cool a second
-        // time behind the `down` `end_link` has already queued.
-        self.game_menu = None;
+        self.unplug(role);
+    }
+
+    /// The plug coming back out of the port, played from wherever the screen was.
+    ///
+    /// Deliberately after the teardown rather than before it: the session is already over by
+    /// the time this is called, so nothing about the ending waits on the animation finishing.
+    /// The screen is catching up with what has already happened, which is also why it takes no
+    /// presses and leaves on its own — see `timers`.
+    fn unplug(&mut self, role: LinkRow) {
+        self.game_menu = Some(GameMenu::Unplug {
+            role,
+            since: self.now(),
+        });
     }
 
     /// What a test installs to watch the radio without one: `App` asks for jobs and never
@@ -2921,6 +2967,11 @@ impl App {
                     self.close_game_menu();
                 }
             }
+            // Takes no presses at all. It is a fifth of a second of a plug coming out over a
+            // session that has already ended, with nothing left to confirm or cancel — and a
+            // key that closed it early would only hand the game back a few frames sooner while
+            // making the animation look like something that could be interrupted.
+            GameMenu::Unplug { .. } => {}
         }
     }
 

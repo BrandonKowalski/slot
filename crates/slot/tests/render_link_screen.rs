@@ -256,6 +256,61 @@ fn a_failed_plug_leaves_where_it_waited() {
     );
 }
 
+/// The ground the compositor lays down before anything is drawn over it. A sample still equal
+/// to this is a sample nothing reached.
+const GROUND: [u8; 3] = [0x05, 0x05, 0x08];
+
+/// The plug actually leaves the port, in pixels. `plug_tip` returning a moving number is not
+/// the same claim: a sprite drawn at zero alpha, at zero size, or left behind while only the
+/// number moved all satisfy the motion and none of them reach the glass.
+///
+/// The sample sits inside the plug's own housing, 60 px above the tip, and above `PORT_Y` so
+/// the port face is never what is being read. Seated it is plug; withdrawn it is bare ground.
+#[test]
+fn ending_a_link_pulls_the_plug_back_out_of_the_port() {
+    let menu = GameMenu::Unplug {
+        role: LinkRow::Host,
+        since: 0,
+    };
+    let seated = render(menu, LinkKind::Cable, 0, "cable-unplug-start");
+    let gone = render(menu, LinkKind::Cable, 400, "cable-unplug-end");
+    let (x, y) = (356, 359);
+    assert_ne!(
+        at(&seated, x, y),
+        GROUND,
+        "no plug in the port on the frame the unplug begins"
+    );
+    assert_eq!(
+        at(&gone, x, y),
+        GROUND,
+        "the plug never came back out of the port"
+    );
+}
+
+/// The same for the adapter, which lifts off the port rather than sliding out of it. The
+/// sample is the label plate `a_wireless_link_seats_the_adapter_with_its_label_plate` reads,
+/// taken where a seated adapter puts it and vacated once it has lifted.
+#[test]
+fn ending_a_wireless_link_lifts_the_adapter_off_the_port() {
+    let menu = GameMenu::Unplug {
+        role: LinkRow::Join,
+        since: 0,
+    };
+    let seated = render(menu, LinkKind::Wireless, 0, "wireless-unplug-start");
+    let gone = render(menu, LinkKind::Wireless, 400, "wireless-unplug-end");
+    let (x, y) = (360, 380);
+    assert_ne!(
+        at(&seated, x, y),
+        GROUND,
+        "no adapter on the port on the frame the unplug begins"
+    );
+    assert_eq!(
+        at(&gone, x, y),
+        GROUND,
+        "the adapter never lifted off the port"
+    );
+}
+
 // --- the key legend -----------------------------------------------------------------------
 //
 // Everything above composites `draw_link_art`, which is a pure function. The legend is not: it

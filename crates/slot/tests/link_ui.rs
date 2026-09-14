@@ -13,7 +13,9 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use slot::app::{App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS};
+use slot::app::{
+    App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS, UNPLUG_HOLD_MS,
+};
 use slot::emu::{CoreState, EmuHandle, Speed};
 use slot::link_kind::LinkKind;
 use slot::link_net::{Cancel, TcpLink};
@@ -487,10 +489,55 @@ fn a_ends_the_session_and_says_so() {
     app.apply(Action::GbaDown(Btn::A));
     assert!(!app.link_active(), "A left the session running");
     assert_eq!(app.toast(), Some(Toast::LinkEnded));
+    // The session is over on the frame the key landed. The plug coming out is the screen
+    // catching up with that, not a step in it — which is why `link_active` is already false
+    // here, with the animation still to play.
+    assert!(
+        matches!(app.game_menu(), Some(GameMenu::Unplug { .. })),
+        "A did not put the plug back out: {:?}",
+        app.game_menu()
+    );
+    for _ in 0..((UNPLUG_HOLD_MS / 16 + 4) as usize) {
+        app.update(1.0 / 60.0);
+    }
     assert!(!app.game_menu_open(), "the screen stayed up over the game");
     // Down ends the session's own network; the cool behind it is for a BaseOS whose down does
-    // not unload the driver itself.
+    // not unload the driver itself. Exactly those two: the unplug leaving must not cool a
+    // second time, which it would if it closed through `close_game_menu`.
     assert_eq!(log.jobs(), vec![RadioJob::Down, RadioJob::Cool]);
+}
+
+/// The unplug has to play on the device that pressed nothing, which is the half of this the
+/// control frame exists for: one cable cannot come out of one end and stay in the other.
+///
+/// This player is in their game with no screen up at all — the ordinary case for the far end,
+/// and the one `peer_lost` never had to draw anything for because it only ever broke a badge.
+#[test]
+fn a_peer_ending_the_link_unplugs_on_this_device_too() {
+    let (mut app, _d) = playing_on(Core::Gpsp);
+    app.begin_link(0);
+    assert!(!app.game_menu_open(), "nothing should be on screen yet");
+
+    app.peer_ended();
+
+    assert!(
+        !app.link_active(),
+        "the ending waited on the animation instead of the other way round"
+    );
+    assert!(
+        matches!(app.game_menu(), Some(GameMenu::Unplug { .. })),
+        "the far end's ending did not unplug on this device: {:?}",
+        app.game_menu()
+    );
+    assert_eq!(app.toast(), Some(Toast::PeerEnded));
+
+    for _ in 0..((UNPLUG_HOLD_MS / 16 + 4) as usize) {
+        app.update(1.0 / 60.0);
+    }
+    assert!(
+        !app.game_menu_open(),
+        "the unplug screen never left by itself"
+    );
 }
 
 /// A menu that changes `game_menu()` and nothing else does not exist: on a device it reads
