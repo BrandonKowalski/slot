@@ -2,14 +2,15 @@
 # Builds mGBA's libretro core from libretro/mgba at a pinned commit, with every patch beside
 # this script applied, for whatever machine runs it. taskfile.yml's core:mgba:host runs it on
 # the Mac; core:device runs it inside the arm64 bullseye box, so the .so links against the same
-# glibc as slot. Both use the flags libretro's own CI builds the buildbot core with, and the
-# source is a checkout of the commit rather than a tarball, so git vouches for what was built.
+# glibc as slot. Both use the flags libretro's own CI builds the buildbot core with, the SP's
+# with link-time optimisation on top (device_cflags below), and the source is a checkout of the
+# commit rather than a tarball, so git vouches for what was built.
 #
 #   build.sh stamp COMMIT               print what a build of COMMIT would record
 #   build.sh build COMMIT WORKDIR OUT   build into WORKDIR, then write OUT and OUT.meta
 #
 # The .meta file is how the taskfile tells a stale core from a current one: it is compared
-# against `stamp`, so a changed pin or patch rebuilds, and a core fetched from the buildbot
+# against `stamp`, so a changed pin, patch or flag rebuilds, and a core fetched from the buildbot
 # (which has no .meta) can never pass for this one.
 #
 # The core reports the version mGBA's build works out from the checkout, which is shallow and
@@ -18,6 +19,15 @@
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
+
+# Link-time optimisation, for the SP's core only: Linux on aarch64, the bullseye box core:device
+# runs in. The Mac's core keeps exactly the flags above. Measured on the SP it takes 3 to 5% off
+# every frame, on both games and at both step counts. -mcpu=cortex-a53 beside it gave most of
+# that back and is deliberately absent. Nothing that can change a computed value goes here (no
+# -ffast-math): link mode needs two SPs' machines to stay bit identical, and this changes how
+# the core is compiled rather than what it computes — the frame hashes are unmoved. `stamp`
+# prints it on every host, because the taskfile checks the SP's .meta from the Mac.
+device_cflags="-flto=auto"
 
 usage() {
 	echo "usage: $0 stamp COMMIT | build COMMIT WORKDIR OUT" >&2
@@ -32,6 +42,7 @@ sha256() {
 stamp() {
 	echo "commit=$1"
 	echo "source=https://github.com/libretro/mgba/tree/$1"
+	echo "device_cflags=$device_cflags"
 	for p in "$here"/*.patch; do
 		echo "patch=$(basename "$p") sha256:$(sha256 "$p")"
 	done
@@ -71,7 +82,14 @@ build() {
 		git -C "$src" apply "$p"
 	done
 
-	cmake -S "$src" -B "$obj" -DLIBMGBA_ONLY=ON -DBUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=Release >/dev/null
+	# Passed even when empty, so a build tree reused from another run can't keep its flags. They
+	# land ahead of the Release -O3 and the libretro target's own -O3, and name no -O level.
+	cflags=""
+	if [ "$(uname -s)-$(uname -m)" = "Linux-aarch64" ]; then
+		cflags="$device_cflags"
+	fi
+	cmake -S "$src" -B "$obj" -DLIBMGBA_ONLY=ON -DBUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_C_FLAGS="$cflags" >/dev/null
 	cmake --build "$obj" --target mgba_libretro --parallel "$(getconf _NPROCESSORS_ONLN)" >/dev/null
 
 	for ext in dylib so; do
