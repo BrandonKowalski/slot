@@ -151,6 +151,30 @@ fn multiplayer_rom() -> Vec<u8> {
     rom
 }
 
+/// `transfer_rom` as a game that fills SIOMLT_SEND once and then leaves it alone, which is what
+/// makes it a probe for everything a savestate does not carry. Three changes: it transfers at
+/// VCOUNT 140 rather than at the frame end, it writes SIOMLT_SEND only while A is held, and it
+/// paints SIOMULTI1, the last word it heard from player 1, instead of the buttons. A GBA that has
+/// run with A held holds 0x2080 in a register mGBA never saves, and its transfers have left RCNT's
+/// SC bit set; a freshly loaded one holds neither. Restoring the same link state into both has to
+/// give the same machine. Branches are to `0xc0 + index * 4 + 8 + offset * 4`.
+fn probe_rom() -> Vec<u8> {
+    let mut rom = transfer_rom();
+    let mut set = |index: usize, word: u32| {
+        let o = 0xc0 + index * 4;
+        rom[o..o + 4].copy_from_slice(&word.to_le_bytes());
+    };
+    set(7, 0xe354008c); // 0x0dc:        cmp  r4, #140          transfer at VCOUNT 140 (was 160)
+    set(12, 0xe354008c); // 0x0f0: dr:   cmp  r4, #140          (was 160)
+    set(22, 0xe1d543b0); // 0x118: poke: ldrh r4, [r5, #0x30]   KEYINPUT
+    set(23, 0xe3140001); // 0x11c:       tst  r4, #1            A held? (KEYINPUT is active low)
+    set(24, 0x01c562ba); // 0x120:       strheq r6, [r5, #0x2a] SIOMLT_SEND, only while A is held
+    set(25, 0xe1d532b2); // 0x124:       ldrh r3, [r5, #0x22]   SIOMULTI1
+    set(26, 0xe1c562b8); // 0x128:       strh r6, [r5, #0x28]   SIOCNT: start a transfer
+    set(27, 0xeaffffed); // 0x12c:       b    strh r3, [r2] (0x0e8)
+    rom
+}
+
 /// The 15-bit colour a rom wrote into pixel `x` of the first row, read back from the picture. A
 /// register painted this way loses its top bit.
 fn painted(picture: &[u8], x: usize) -> u16 {
@@ -753,6 +777,76 @@ fn every_start_joins_the_two_gbas_with_their_frames_ending_together() {
     assert!(
         apart.is_empty(),
         "the two GBAs' frames do not end together: {apart:#?}"
+    );
+}
+
+/// A restore has to be a function of the link state alone. Plan 2 resyncs a desynced pair, and a
+/// player can reconnect or join late, so one SP restores the shared link state into cores that have
+/// been running while the other restores it into freshly loaded ones. If the two come out
+/// different, the devices have stopped computing the same machines from the restore on.
+///
+/// A GBA savestate does not carry everything a GBA holds. RCNT's SC, SD, SI and SO bits are put
+/// back through `GBASIOWriteRCNT`, which keeps them from whatever the core held before. SIOMLT_SEND
+/// is not a register mGBA saves at all, so a restored GBA sends whatever its core last had there.
+/// `haltPending` and the idle-loop counters are not saved either. `probe_rom` shows the first two:
+/// run with A held it fills SIOMLT_SEND with 0x2080 and its transfers set SC, and it never writes
+/// SIOMLT_SEND again unless A is held, so a restore that carried the old value over sends it on the
+/// cable and paints it. Both devices are run, and the same link state has to give one machine at
+/// the restore and one machine ten frames on, whichever cores it landed in.
+#[test]
+fn a_restore_does_not_depend_on_what_the_cores_ran_before_it() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-probe.gba", probe_rom());
+
+    // Taken with nothing held, so the state itself carries no SIOMLT_SEND worth sending.
+    let alone = single_state(&dylib, &rom, 20);
+    let container = slk1([&alone, &alone]);
+
+    let mut seen = Vec::new();
+    for player in [0u8, 1] {
+        for ran_first in [false, true] {
+            let mut core = link_core(&dylib, player);
+            core.load(&rom).expect("link mode refused the rom");
+            if ran_first {
+                let a = ButtonMask(ButtonMask::A);
+                for _ in 0..30 {
+                    core.run_frame_linked(a, a);
+                }
+            }
+            core.unserialize(&container)
+                .expect("link mode refused the link state");
+            let at_restore = fnv1a(&core.serialize().expect("no link state"));
+            for _ in 0..10 {
+                core.run_frame_linked(ButtonMask::default(), ButtonMask::default());
+            }
+            let ten_frames_on = fnv1a(&core.serialize().expect("no link state"));
+            let cores = if ran_first {
+                "cores that ran 30 linked frames first"
+            } else {
+                "freshly loaded cores"
+            };
+            seen.push((
+                format!("player {player}'s device, {cores}"),
+                at_restore,
+                ten_frames_on,
+            ));
+        }
+    }
+
+    let (_, want_at_restore, want_ten_on) = &seen[0];
+    let differing: Vec<String> = seen
+        .iter()
+        .filter(|(_, at_restore, ten_on)| at_restore != want_at_restore || ten_on != want_ten_on)
+        .map(|(what, at_restore, ten_on)| {
+            format!("{what}: {at_restore:016x} at the restore, {ten_on:016x} ten frames on")
+        })
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "the same link state computed different machines depending on what the cores ran before \
+         it. Wanted {want_at_restore:016x} then {want_ten_on:016x}, as {} gave: {differing:#?}",
+        seen[0].0
     );
 }
 

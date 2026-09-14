@@ -45,7 +45,7 @@ index f714cf8..3759ede 100644
  	hw->rtc.time[1] = _rtcBCD(date.tm_mon + 1);
  	hw->rtc.time[2] = _rtcBCD(date.tm_mday);
 diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
-index d4de13f..49bac3b 100644
+index d4de13f..6745dcb 100644
 --- a/src/platform/libretro/libretro.c
 +++ b/src/platform/libretro/libretro.c
 @@ -21,9 +21,12 @@
@@ -636,7 +636,7 @@ index d4de13f..49bac3b 100644
  	mCoreConfigDeinit(&core->config);
  	core->deinit(core);
  	mappedMemoryFree(data, dataSize);
-@@ -2132,12 +2515,113 @@ void retro_unload_game(void) {
+@@ -2132,12 +2515,125 @@ void retro_unload_game(void) {
  	savedata = 0;
  }
  
@@ -669,10 +669,10 @@ index d4de13f..49bac3b 100644
 +	return out;
 +}
 +
-+/* Takes a link state apart, then pulls the cable, restores each GBA with its cartridge save and
-+ * plugs a fresh cable in. Into a freshly loaded pair, what follows depends only on these bytes; a
-+ * pair that has already run also keeps what no state carries, such as mGBA's idle-loop detection.
-+ * The states need not come from link mode: two ordinary one-GBA states are how a session starts.
++/* Takes a link state apart, then pulls the cable, resets and restores each GBA with its cartridge
++ * save, and plugs a fresh cable in. What follows depends only on these bytes, whatever the two
++ * cores were running beforehand. The states need not come from link mode: two ordinary one-GBA
++ * states are how a session starts.
 + *
 + * A container whose framing is wrong, or whose states are too short to be states, is refused
 + * before anything is touched. A state the core itself refuses once loading has begun (another
@@ -712,6 +712,18 @@ index d4de13f..49bac3b 100644
 +	}
 +
 +	_linkUnplug();
++	/* Both GBAs are reset before they are loaded, so that a restore is a function of the link state
++	 * and nothing else. A savestate does not carry everything a GBA holds: RCNT's SC, SD, SI and SO
++	 * bits come back through GBASIOWriteRCNT, which keeps them from whatever the core held before;
++	 * SIOMLT_SEND is not a register mGBA saves at all; and haltPending and the idle-loop counters
++	 * are not saved either. Left alone, the same link state restored into a pair that had been
++	 * running and into a freshly loaded pair gives two different machines, so the two SPs in a
++	 * session would part company from the restore on - which is exactly what a resync, a
++	 * reconnect or a late join asks for. Everything a state does carry is overwritten by the load
++	 * that follows, so the reset costs only the time it takes. */
++	for (i = 0; i < 2; ++i) {
++		linkGba[i].core->reset(linkGba[i].core);
++	}
 +	bool success = true;
 +	for (i = 0; i < 2 && success; ++i) {
 +		struct VFile* vf = VFileFromConstMemory(parts[i], lengths[i]);
@@ -752,7 +764,7 @@ index d4de13f..49bac3b 100644
  	size_t size = vfm->size(vfm);
  	vfm->close(vfm);
  	return size;
-@@ -2147,8 +2631,7 @@ bool retro_serialize(void* data, size_t size) {
+@@ -2147,8 +2643,7 @@ bool retro_serialize(void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
@@ -762,7 +774,7 @@ index d4de13f..49bac3b 100644
  	if ((ssize_t) size > vfm->size(vfm)) {
  		size = vfm->size(vfm);
  	} else if ((ssize_t) size < vfm->size(vfm)) {
-@@ -2165,6 +2648,11 @@ bool retro_unserialize(const void* data, size_t size) {
+@@ -2165,6 +2660,11 @@ bool retro_unserialize(const void* data, size_t size) {
  	if (deferredSetup) {
  		_doDeferredSetup();
  	}
