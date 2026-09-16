@@ -414,9 +414,23 @@ unsafe extern "C" fn video_refresh(
     with_host(|h| {
         let cols = width.min(GBA_W) as usize;
         let rows = height.min(GBA_H) as usize;
+        // A Game Boy is 160x144 in a buffer built for a GBA's 240x160. Centre it here, where
+        // the true size is already known, rather than at draw time: the buffer is photographed
+        // as well as drawn — `thumb::png` encodes all of it for every polaroid and save-state
+        // thumbnail — so a fix that only moved the quad would leave every picture of the game
+        // parked in a corner. Both offsets are whole source pixels, so the LCD mask's phase is
+        // untouched.
+        let ox = (GBA_W as usize - cols) / 2;
+        let oy = (GBA_H as usize - rows) / 2;
+        // The margin belongs to nobody. Cleared every frame rather than trusting the
+        // allocation, so a core that changes size mid-session cannot leave the old picture's
+        // edges around the new one.
+        if cols != GBA_W as usize || rows != GBA_H as usize {
+            h.video.fill(0);
+        }
         for y in 0..rows {
             let src = (data as *const u8).add(y * pitch);
-            let row = y * GBA_W as usize * 4;
+            let row = ((y + oy) * GBA_W as usize + ox) * 4;
             match h.format {
                 PixelFormat::Xrgb8888 => {
                     ptr::copy_nonoverlapping(src, h.video.as_mut_ptr().add(row), cols * 4);
@@ -808,7 +822,10 @@ mod tests {
 
     fn host_with(options: HashMap<String, CString>, options_dirty: bool) -> Box<Host> {
         Box::new(Host {
-            video: Vec::new(),
+            // Allocated exactly as `LibretroCore::open` allocates it, because `video_refresh`
+            // writes through a raw pointer into this buffer and an empty one would let a test
+            // scribble off the end of the allocation instead of failing an assertion.
+            video: vec![0; VIDEO_BYTES],
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
             inputs: [0; 2],
@@ -1741,5 +1758,77 @@ mod tests {
         let _active = Active::bind(&mut host);
 
         assert_eq!(unsafe { input_state(2, DEVICE_JOYPAD, 0, JOYPAD_MASK) }, 0);
+    }
+
+    // --- picture placement ---------------------------------------------------------------
+    //
+    // Driven through `video_refresh` itself, the callback a core hands its frame to, because
+    // that is where the picture's true size is known. Everything downstream — the drawn quad
+    // and `thumb::png`, which encodes the whole buffer for every polaroid and save-state
+    // thumbnail — reads the buffer these tests inspect.
+
+    /// A 160x144 picture goes in the middle of the 240x160 buffer: x 40..=199, y 8..=151. Both
+    /// offsets are whole source pixels, which is what keeps the LCD mask's phase — the mask repeats
+    /// every 3 panel pixels, exactly one source pixel, so any integer offset preserves it.
+    #[test]
+    fn a_small_picture_is_centred_in_the_buffer() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+        let frame = vec![0xffu8; 160 * 144 * 4];
+        unsafe { video_refresh(frame.as_ptr() as *const c_void, 160, 144, 160 * 4) };
+
+        let lit =
+            |x: usize, y: usize| unsafe { with_host(|h| h.video[(y * 240 + x) * 4]) }.unwrap() != 0;
+        assert!(lit(40, 8), "the top left of the picture is not at (40, 8)");
+        assert!(lit(199, 151), "the bottom right is not at (199, 151)");
+        assert!(!lit(39, 8), "the picture starts one column too early");
+        assert!(!lit(40, 7), "the picture starts one row too early");
+    }
+
+    /// The margin is nobody's pixels and must be cleared on every frame, not merely left as the
+    /// allocation. A core that changes picture size mid-session would otherwise leave the previous
+    /// picture's edges on screen around the new one.
+    #[test]
+    fn the_margin_is_cleared_when_the_picture_shrinks() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+        unsafe {
+            let full = vec![0xffu8; 240 * 160 * 4];
+            video_refresh(full.as_ptr() as *const c_void, 240, 160, 240 * 4);
+            let small = vec![0x11u8; 160 * 144 * 4];
+            video_refresh(small.as_ptr() as *const c_void, 160, 144, 160 * 4);
+        }
+        let corner = unsafe { with_host(|h| h.video[0]) }.unwrap();
+        assert_eq!(corner, 0, "the previous picture is still in the margin");
+    }
+
+    /// Every GBA pixel must land exactly where it does today: a full-size frame has no margin and
+    /// no offset, so this path is arithmetically unchanged for the platform that already works.
+    #[test]
+    fn a_full_size_picture_is_unmoved() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+        // A gradient rather than a flat fill: a frame that came back shifted by any amount, or
+        // with its rows walked in the wrong order, then reads back bytes that belong to some
+        // other texel instead of matching a fill that looks the same everywhere.
+        let mut frame = vec![0u8; VIDEO_BYTES];
+        for y in 0..GBA_H as usize {
+            for x in 0..GBA_W as usize {
+                let o = (y * GBA_W as usize + x) * 4;
+                frame[o] = x as u8;
+                frame[o + 1] = y as u8;
+                frame[o + 2] = (x ^ y) as u8;
+            }
+        }
+        unsafe {
+            video_refresh(
+                frame.as_ptr() as *const c_void,
+                GBA_W,
+                GBA_H,
+                GBA_W as usize * 4,
+            )
+        };
+
+        assert_eq!(unsafe { with_host(|h| h.video.clone()) }.unwrap(), frame);
     }
 }
