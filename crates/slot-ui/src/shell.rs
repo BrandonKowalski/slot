@@ -1,3 +1,7 @@
+use std::path::Path;
+
+use slot_store::{Cart, ShelfKind};
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Finish {
     Solid,
@@ -37,9 +41,42 @@ const EXACT: &[(&str, Shell)] = &[
 /// releases that would otherwise be thirty hand transcribed rows.
 const FAMILY: &[(u8, Shell)] = &[(b'M', shell([0xc6, 0xc6, 0xc9], Finish::Solid))];
 
+/// The plain Game Boy Game Pak. The reference photograph the outline was drawn from is a grey
+/// pak, and `slot-card-backups/cart-refs/PROVENANCE.md` names it grey; the brief for this work
+/// called it black, which is the plastic a Colour-compatible pak shipped in rather than an
+/// original one. Drawn as the object is, warm and light enough that the moulded ribs and the
+/// recess walls have somewhere to go.
+pub const DMG_SHELL: Shell = shell([0x9a, 0x97, 0x8f], Finish::Solid);
+
+/// A Colour pak's smoke coloured clear plastic. Cooler than the grey pak beside it, because
+/// they are otherwise close enough in value that only the lit rim would tell them apart.
+pub const GB_CLEAR_SHELL: Shell = shell([0x7c, 0x7a, 0x8a], Finish::Translucent);
+
+/// What plastic this cart shipped in. Which question to ask depends on the platform: a GBA cart
+/// is looked up by the game code in its header, and a Game Boy pak has no such field at all, so
+/// the CGB flag answers instead.
+pub fn shell_for(cart: &Cart) -> Shell {
+    match cart.platform.shelf() {
+        ShelfKind::Gba => gba_shell_for(&cart.code),
+        ShelfKind::GameBoy => gb_shell_for(&cart.rom),
+    }
+}
+
 /// `code` is the four character game code; only the first three are matched.
-pub fn shell_for(code: &str) -> Shell {
+pub fn gba_shell_for(code: &str) -> Shell {
     lookup(code, EXACT, FAMILY)
+}
+
+/// Both Colour values wear the clear shell: `0xC0` is Colour only and `0x80` is Colour enhanced
+/// but still runs on original hardware, and `slot_store::gb::is_colour` is where that collapse
+/// from three flag values onto two finishes already lives. A rom that cannot be read is a plain
+/// pak rather than a failure — the shelf still has a cart to draw.
+fn gb_shell_for(rom: &Path) -> Shell {
+    if slot_store::gb::is_colour(rom) {
+        GB_CLEAR_SHELL
+    } else {
+        DMG_SHELL
+    }
 }
 
 pub fn table_keys() -> Vec<&'static str> {

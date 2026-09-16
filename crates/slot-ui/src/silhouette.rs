@@ -1,13 +1,22 @@
 use std::sync::OnceLock;
 
-use crate::cart::{CART_H, CART_W};
+use crate::cart::{CART_H, CART_W, GB_CART_H, GB_CART_W};
 
 const CART_SVG: &str = include_str!("../assets/cart.svg");
 const DETAIL_SVG: &str = include_str!("../assets/cart_detail.svg");
+const GB_CART_SVG: &str = include_str!("../assets/gb_cart.svg");
+const GB_DETAIL_SVG: &str = include_str!("../assets/gb_cart_detail.svg");
 
 /// Coverage of the cart outline, one byte per pixel, row major.
 pub fn silhouette(w: u32, h: u32) -> Vec<u8> {
     rasterise(w, h).unwrap_or_else(|| vec![255; (w * h) as usize])
+}
+
+/// The same, for the Game Boy Game Pak. A separate outline rather than the GBA one at a taller
+/// size: the pak's sides are parallel where the GBA cart's taper into a grip ridge, and
+/// stretching one into the other would put a ridge on an object that never had one.
+pub fn gb_silhouette(w: u32, h: u32) -> Vec<u8> {
+    rasterise_svg(GB_CART_SVG, w, h).unwrap_or_else(|| vec![255; (w * h) as usize])
 }
 
 /// Every cart is the same shape, so the mask is rasterised once and multiplied into faces.
@@ -16,11 +25,21 @@ pub(crate) fn cart_mask() -> &'static [u8] {
     MASK.get_or_init(|| silhouette(CART_W, CART_H))
 }
 
+pub(crate) fn gb_cart_mask() -> &'static [u8] {
+    static MASK: OnceLock<Vec<u8>> = OnceLock::new();
+    MASK.get_or_init(|| gb_silhouette(GB_CART_W, GB_CART_H))
+}
+
 /// How far inside the outline each pixel sits, in city block steps, saturating at 255. A
 /// translucent shell fades from its edge inward and needs the distance, not the coverage.
 pub(crate) fn cart_depth() -> &'static [u8] {
     static DEPTH: OnceLock<Vec<u8>> = OnceLock::new();
     DEPTH.get_or_init(|| depth_map(cart_mask(), CART_W as usize, CART_H as usize))
+}
+
+pub(crate) fn gb_cart_depth() -> &'static [u8] {
+    static DEPTH: OnceLock<Vec<u8>> = OnceLock::new();
+    DEPTH.get_or_init(|| depth_map(gb_cart_mask(), GB_CART_W as usize, GB_CART_H as usize))
 }
 
 /// Two pass chamfer. Everything off the edge of the buffer counts as outside, so a pixel on
@@ -65,6 +84,17 @@ pub(crate) fn detail_mask() -> &'static [u8] {
     MASK.get_or_init(|| {
         rasterise_svg(DETAIL_SVG, CART_W, CART_H)
             .unwrap_or_else(|| vec![0; (CART_W * CART_H) as usize])
+    })
+}
+
+/// The Game Boy pak's own moulding, which is a different object's: ribbed grips across both top
+/// corners, the raised oval above the label, and the arrow that says which way up it goes. The
+/// GBA cart's ridge and thumb notch are nowhere on it.
+pub(crate) fn gb_detail_mask() -> &'static [u8] {
+    static MASK: OnceLock<Vec<u8>> = OnceLock::new();
+    MASK.get_or_init(|| {
+        rasterise_svg(GB_DETAIL_SVG, GB_CART_W, GB_CART_H)
+            .unwrap_or_else(|| vec![0; (GB_CART_W * GB_CART_H) as usize])
     })
 }
 

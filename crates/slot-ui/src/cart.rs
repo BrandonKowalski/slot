@@ -1,14 +1,26 @@
-use slot_store::Cart;
+use slot_store::{Cart, ShelfKind};
 
 use crate::art;
 use crate::shell::{shell_for, Finish, Shell};
-use crate::silhouette::{cart_depth, cart_mask, detail_mask};
+use crate::silhouette::{
+    cart_depth, cart_mask, detail_mask, gb_cart_depth, gb_cart_mask, gb_detail_mask,
+};
 use crate::text;
 
 /// The traced outline's own aspect, so `cart.svg` rasterises unstretched. Three across a
 /// 720 wide row exactly, so the shelf can show a neighbour either side of the selection.
 pub const CART_W: u32 = 240;
 pub const CART_H: u32 = 135;
+
+/// A Game Boy Game Pak shares the canvas: both cartridges are 57 mm wide, and the canvas spans
+/// 60 mm because the GBA cart's grip ridge sticks out past its body. The pak's body is drawn at
+/// the same 227 px the GBA body is inset to, and its sides are parallel all the way down.
+pub const GB_CART_W: u32 = CART_W;
+
+/// 65.5 mm against the GBA pak's 35 mm, at one scale. Written as the rule rather than as the
+/// 253 it comes to, so that editing the rule cannot leave a stale number behind: the ×10 keeps
+/// it in whole numbers and the +175 is half the divisor, which rounds instead of truncating.
+pub const GB_CART_H: u32 = (CART_H * 655 + 175) / 350;
 
 /// The paper label, inset in the shell rather than covering it: 9% to 91% across and 22.8%
 /// to 86.3% down. The vertical placement is the reference's, and the band it leaves above is
@@ -30,16 +42,43 @@ pub const LABEL_Y: u32 = label_panel(CART_W, CART_H).1;
 pub const LABEL_W: u32 = label_panel(CART_W, CART_H).2 - LABEL_X;
 pub const LABEL_H: u32 = label_panel(CART_W, CART_H).3 - LABEL_Y;
 
+/// The Game Boy label well, from the real 42 x 37 mm label against the 57 x 65.5 mm body. The
+/// width and the centring are measurements; the 13.0% above it is the one number no published
+/// dimension gives and is read off the photographs, where the label sits high with the wider
+/// blank area and the moulded arrow below. It is the first number to move if the pak looks
+/// wrong.
+pub const fn gb_label_panel(w: u32, h: u32) -> (u32, u32, u32, u32) {
+    (
+        (w * 151 + 500) / 1000,
+        (h * 130 + 500) / 1000,
+        (w * 849 + 500) / 1000,
+        (h * 695 + 500) / 1000,
+    )
+}
+
+pub const GB_LABEL_X: u32 = gb_label_panel(GB_CART_W, GB_CART_H).0;
+pub const GB_LABEL_Y: u32 = gb_label_panel(GB_CART_W, GB_CART_H).1;
+pub const GB_LABEL_W: u32 = gb_label_panel(GB_CART_W, GB_CART_H).2 - GB_LABEL_X;
+pub const GB_LABEL_H: u32 = gb_label_panel(GB_CART_W, GB_CART_H).3 - GB_LABEL_Y;
+
 const PAD: u32 = 10;
 const MAX_LINES: usize = 3;
 /// Three lines have to clear the label's height, and Open Sans Bold sets at about 1.36x
 /// the em. The label is landscape now, so it runs out of height long before width.
 const MAX_PX: f32 = LABEL_H as f32 / (MAX_LINES as f32 * 1.36);
+/// The Game Boy panel is 1.17:1 where the GBA's is 2.28:1, so that estimate stops being the
+/// bound that binds: on a near square panel a size three lines clear vertically can be far too
+/// wide, and which bound binds changes with the title. The fitter is handed both instead, and
+/// starts from the tallest line the panel could hold at all rather than from a guess at how
+/// tall three of them will be.
+const GB_MAX_PX: f32 = (GB_LABEL_H - 2 * PAD) as f32 / MAX_LINES as f32;
 const MIN_PX: f32 = 10.0;
 
 /// How far the translucent edge reaches in. Zero at this depth exactly, so a pixel any
 /// further in is the plastic's own colour.
 const RIM: u32 = 4;
+/// The same depth of plastic on an object 1.87x as tall.
+const GB_RIM: u32 = 7;
 
 pub struct CartFace {
     pub rgba: Vec<u8>,
@@ -47,43 +86,108 @@ pub struct CartFace {
     pub h: u32,
 }
 
+/// Everything about a face that is a property of the object rather than of the game: how big
+/// the cartridge is, where its label sits, the masks its outline and moulding come from, and
+/// the type size its generated label starts at. The drawing itself — the recess walls, the
+/// translucent rim, the clip to the outline — is one implementation handed one of these, so the
+/// two cartridges cannot drift into two ways of drawing a cart.
+struct Spec {
+    w: u32,
+    h: u32,
+    /// Left, top, width, height of the label well.
+    label: (u32, u32, u32, u32),
+    mask: &'static [u8],
+    depth: &'static [u8],
+    detail: &'static [u8],
+    max_px: f32,
+    /// The height the type block has to fit inside, or infinite where the panel is wide enough
+    /// for its height that only the width can ever bind.
+    max_h: f32,
+    /// How far in the translucent edge reaches. A band of fixed pixels reads as a thinner line
+    /// on a bigger object, so the pak — nearly twice the cart's height — carries a wider one to
+    /// read as the same depth of plastic.
+    rim: u32,
+}
+
+fn spec(kind: ShelfKind) -> Spec {
+    match kind {
+        ShelfKind::Gba => Spec {
+            w: CART_W,
+            h: CART_H,
+            label: (LABEL_X, LABEL_Y, LABEL_W, LABEL_H),
+            mask: cart_mask(),
+            depth: cart_depth(),
+            detail: detail_mask(),
+            max_px: MAX_PX,
+            max_h: f32::INFINITY,
+            rim: RIM,
+        },
+        ShelfKind::GameBoy => Spec {
+            w: GB_CART_W,
+            h: GB_CART_H,
+            label: (GB_LABEL_X, GB_LABEL_Y, GB_LABEL_W, GB_LABEL_H),
+            mask: gb_cart_mask(),
+            depth: gb_cart_depth(),
+            detail: gb_detail_mask(),
+            max_px: GB_MAX_PX,
+            max_h: (GB_LABEL_H - 2 * PAD) as f32,
+            rim: GB_RIM,
+        },
+    }
+}
+
+/// The box a cart of this platform is drawn in. A Game Boy Game Pak is the same width as a GBA
+/// cart and 1.87x as tall, so anything that lays carts out has to ask rather than assume.
+pub fn cart_box(kind: ShelfKind) -> (u32, u32) {
+    let s = spec(kind);
+    (s.w, s.h)
+}
+
 /// The cart's own shape in black. Drawn under a side cart so the dimming is a cart in shadow
 /// rather than a cart you can see through: over a wallpaper a translucent face is a ghost,
 /// and the shelf's carts are solid objects.
 pub fn cart_shadow() -> CartFace {
-    let mut rgba = Vec::with_capacity((CART_W * CART_H * 4) as usize);
-    for cover in cart_mask() {
+    shadow(&spec(ShelfKind::Gba))
+}
+
+/// The same backing in the Game Boy pak's outline. Stretching the GBA one to a taller box would
+/// put a tapered shadow under a straight sided cart.
+pub fn gb_cart_shadow() -> CartFace {
+    shadow(&spec(ShelfKind::GameBoy))
+}
+
+fn shadow(s: &Spec) -> CartFace {
+    let mut rgba = Vec::with_capacity((s.w * s.h * 4) as usize);
+    for cover in s.mask {
         rgba.extend_from_slice(&[0, 0, 0, *cover]);
     }
     CartFace {
         rgba,
-        w: CART_W,
-        h: CART_H,
+        w: s.w,
+        h: s.h,
     }
 }
 
 pub fn cart_face(cart: &Cart) -> CartFace {
-    let shell = shell_for(&cart.code);
-    let mut face = shell_face(&shell);
-    let label = match cart
-        .label
-        .as_deref()
-        .and_then(|p| art::cover(p, LABEL_W, LABEL_H))
-    {
+    let s = spec(cart.platform.shelf());
+    let shell = shell_for(cart);
+    let mut face = shell_face(&s, &shell);
+    let (_, _, lw, lh) = s.label;
+    let label = match cart.label.as_deref().and_then(|p| art::cover(p, lw, lh)) {
         Some(rgba) => rgba,
-        None => generated_label(&label_text(cart)),
+        None => generated_label(&s, &label_text(cart)),
     };
-    mould_detail(&mut face, &shell);
-    recess_label(&mut face, &shell);
-    paste_label(&mut face, &label);
-    clip_to_silhouette(&mut face);
+    mould_detail(&s, &mut face, &shell);
+    recess_label(&s, &mut face, &shell);
+    paste_label(&s, &mut face, &label);
+    clip_to_silhouette(&s, &mut face);
     face
 }
 
 /// Colour is left alone and only alpha is cut, because the sprite pass blends straight
 /// alpha rather than premultiplied.
-fn clip_to_silhouette(face: &mut CartFace) {
-    for (px, cover) in face.rgba.chunks_exact_mut(4).zip(cart_mask()) {
+fn clip_to_silhouette(s: &Spec, face: &mut CartFace) {
+    for (px, cover) in face.rgba.chunks_exact_mut(4).zip(s.mask) {
         px[3] = ((px[3] as u32 * *cover as u32 + 127) / 255) as u8;
     }
 }
@@ -172,20 +276,20 @@ pub fn label_tags(stem: &str) -> Vec<String> {
     out
 }
 
-fn shell_face(shell: &Shell) -> CartFace {
-    let mut rgba = Vec::with_capacity((CART_W * CART_H * 4) as usize);
+fn shell_face(s: &Spec, shell: &Shell) -> CartFace {
+    let mut rgba = Vec::with_capacity((s.w * s.h * 4) as usize);
     let edge = rim_colour(shell.colour);
-    for depth in cart_depth() {
+    for depth in s.depth {
         let c = match shell.finish {
             Finish::Solid => shell.colour,
-            Finish::Translucent => lerp(edge, shell.colour, (*depth as u32).min(RIM), RIM),
+            Finish::Translucent => lerp(edge, shell.colour, (*depth as u32).min(s.rim), s.rim),
         };
         rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
     }
     CartFace {
         rgba,
-        w: CART_W,
-        h: CART_H,
+        w: s.w,
+        h: s.h,
     }
 }
 
@@ -213,15 +317,16 @@ fn lerp(a: [u8; 3], b: [u8; 3], num: u32, den: u32) -> [u8; 3] {
 /// recess with the wall showing around it.
 const BEVEL: u32 = 3;
 
-/// The grip ridge and the thumb notch, cut into the shell. Darkened rather than coloured:
-/// moulded plastic is the same plastic, just turned away from the light.
-fn mould_detail(face: &mut CartFace, shell: &Shell) {
+/// The moulding cut into the shell — the GBA cart's grip ridge and thumb notch, the Game Boy
+/// pak's corner ribs, oval and arrow. Darkened rather than coloured: moulded plastic is the
+/// same plastic, just turned away from the light.
+fn mould_detail(s: &Spec, face: &mut CartFace, shell: &Shell) {
     let dark = [
         (shell.colour[0] as f32 * 0.62) as u8,
         (shell.colour[1] as f32 * 0.62) as u8,
         (shell.colour[2] as f32 * 0.62) as u8,
     ];
-    for (px, cover) in face.rgba.chunks_exact_mut(4).zip(detail_mask()) {
+    for (px, cover) in face.rgba.chunks_exact_mut(4).zip(s.detail) {
         let a = *cover as u32;
         if a == 0 {
             continue;
@@ -232,7 +337,7 @@ fn mould_detail(face: &mut CartFace, shell: &Shell) {
     }
 }
 
-fn recess_label(face: &mut CartFace, shell: &Shell) {
+fn recess_label(s: &Spec, face: &mut CartFace, shell: &Shell) {
     let shade = |c: [u8; 3], f: f32| -> [u8; 3] {
         [
             (c[0] as f32 * f).clamp(0.0, 255.0) as u8,
@@ -243,21 +348,22 @@ fn recess_label(face: &mut CartFace, shell: &Shell) {
     let dark = shade(shell.colour, 0.55);
     let lit = shade(shell.colour, 1.45);
 
-    let (x0, y0) = (LABEL_X - BEVEL, LABEL_Y - BEVEL);
-    let (x1, y1) = (LABEL_X + LABEL_W + BEVEL, LABEL_Y + LABEL_H + BEVEL);
+    let (lx, ly, lw, lh) = s.label;
+    let (w, h) = (s.w, s.h);
+    let (x0, y0) = (lx - BEVEL, ly - BEVEL);
+    let (x1, y1) = (lx + lw + BEVEL, ly + lh + BEVEL);
     let mut put = |x: u32, y: u32, c: [u8; 3]| {
-        if x >= CART_W || y >= CART_H {
+        if x >= w || y >= h {
             return;
         }
-        let d = ((y * CART_W + x) * 4) as usize;
+        let d = ((y * w + x) * 4) as usize;
         face.rgba[d] = c[0];
         face.rgba[d + 1] = c[1];
         face.rgba[d + 2] = c[2];
     };
     for y in y0..y1 {
         for x in x0..x1 {
-            let inside = (LABEL_X..LABEL_X + LABEL_W).contains(&x)
-                && (LABEL_Y..LABEL_Y + LABEL_H).contains(&y);
+            let inside = (lx..lx + lw).contains(&x) && (ly..ly + lh).contains(&y);
             if inside {
                 continue;
             }
@@ -275,41 +381,44 @@ fn recess_label(face: &mut CartFace, shell: &Shell) {
 
 /// Source over, so a label with an alpha channel shows the shell through it rather than
 /// punching a hole in the cart.
-fn paste_label(face: &mut CartFace, label: &[u8]) {
-    for y in 0..LABEL_H {
-        for x in 0..LABEL_W {
-            let s = ((y * LABEL_W + x) * 4) as usize;
-            let a = label[s + 3] as u32;
+fn paste_label(s: &Spec, face: &mut CartFace, label: &[u8]) {
+    let (lx, ly, lw, lh) = s.label;
+    for y in 0..lh {
+        for x in 0..lw {
+            let src = ((y * lw + x) * 4) as usize;
+            let a = label[src + 3] as u32;
             if a == 0 {
                 continue;
             }
-            let d = (((y + LABEL_Y) * CART_W + x + LABEL_X) * 4) as usize;
+            let d = (((y + ly) * s.w + x + lx) * 4) as usize;
             for c in 0..3 {
                 face.rgba[d + c] =
-                    ((label[s + c] as u32 * a + face.rgba[d + c] as u32 * (255 - a) + 127) / 255)
+                    ((label[src + c] as u32 * a + face.rgba[d + c] as u32 * (255 - a) + 127) / 255)
                         as u8;
             }
         }
     }
 }
 
-fn generated_label(title: &str) -> Vec<u8> {
+fn generated_label(s: &Spec, title: &str) -> Vec<u8> {
+    let (_, _, lw, lh) = s.label;
     let bg = label_colour(title);
-    let mut rgba = Vec::with_capacity((LABEL_W * LABEL_H * 4) as usize);
-    for _ in 0..LABEL_W * LABEL_H {
+    let mut rgba = Vec::with_capacity((lw * lh * 4) as usize);
+    for _ in 0..lw * lh {
         rgba.extend_from_slice(&[bg[0], bg[1], bg[2], 255]);
     }
 
     if let Some(font) = text::label_font() {
-        let layout = text::fit(
+        let layout = text::fit_box(
             font,
             title,
-            (LABEL_W - 2 * PAD) as f32,
+            (lw - 2 * PAD) as f32,
+            s.max_h,
             MAX_LINES,
-            MAX_PX,
+            s.max_px,
             MIN_PX,
         );
-        text::draw_centred(&mut rgba, LABEL_W, LABEL_H, &layout, ink(bg));
+        text::draw_centred(&mut rgba, lw, lh, &layout, ink(bg));
     }
     rgba
 }

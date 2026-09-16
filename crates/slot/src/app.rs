@@ -818,6 +818,14 @@ impl App {
         self.shelf.set_shadow(face);
     }
 
+    /// The Game Boy pak's outline in black, uploaded beside the GBA one rather than instead of
+    /// it: one card can hold both, and the two are different objects. A row of paks with only
+    /// the GBA shadow to hand draws no black at all, so a dimmed pak would read as a ghost over
+    /// the wallpaper.
+    pub fn set_gb_cart_shadow(&mut self, face: TexId) {
+        self.shelf.set_gb_shadow(face);
+    }
+
     pub fn set_wallpaper(&mut self, face: TexId) {
         self.wallpaper = Some(face);
     }

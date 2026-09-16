@@ -28,6 +28,28 @@ pub fn fit(
     max_px: f32,
     min_px: f32,
 ) -> Layout {
+    // No height bound: every caller of this one sets a single line, so how tall the block comes
+    // out is decided by the `max_px` it already chose for its own box rather than by how the
+    // title happens to wrap.
+    fit_box(font, text, max_w, f32::INFINITY, max_lines, max_px, min_px)
+}
+
+/// `fit`, bounded by the height of the box as well as its width. The two bounds cross on a
+/// panel that is near square: a size three lines clear vertically can still be too wide, and a
+/// size the width allows can still stack past the bottom edge, so which one binds depends on
+/// the title. The height is measured from the font's own line metrics — the same ones
+/// `coverage` lays the block out with — rather than from a multiple of the em, because an
+/// estimate that is a few percent out is a title clipped at the bottom of a label.
+#[allow(clippy::too_many_arguments)]
+pub fn fit_box(
+    font: &Font,
+    text: &str,
+    max_w: f32,
+    max_h: f32,
+    max_lines: usize,
+    max_px: f32,
+    min_px: f32,
+) -> Layout {
     let upper = text.to_uppercase();
     let mut px = max_px;
     while px > min_px {
@@ -37,6 +59,7 @@ pub fn fit(
             && lines
                 .iter()
                 .all(|l| line_width(font, l, px, tracking) <= max_w)
+            && block_height(font, px, lines.len()) <= max_h
         {
             return Layout {
                 lines,
@@ -96,6 +119,16 @@ pub fn coverage(dst_w: u32, dst_h: u32, layout: &Layout) -> Vec<u8> {
         baseline += line_h;
     }
     out
+}
+
+/// How tall `lines` lines set at `px` come out, in the metric `coverage` stacks them by. A font
+/// with no line metrics at this size reports nothing rather than a guess, and no height bound
+/// can then be honoured — the width bound still is.
+fn block_height(font: &Font, px: f32, lines: usize) -> f32 {
+    match font.horizontal_line_metrics(px) {
+        Some(vm) => vm.new_line_size * lines as f32,
+        None => 0.0,
+    }
 }
 
 pub fn line_width(font: &Font, line: &str, px: f32, tracking: f32) -> f32 {

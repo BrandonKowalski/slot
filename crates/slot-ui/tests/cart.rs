@@ -1,7 +1,8 @@
 use slot_store::scan;
 use slot_ui::{
-    cart_face, clean_label, label_colour, label_panel, label_text, silhouette, CART_H, CART_W,
-    LABEL_H, LABEL_W, LABEL_X, LABEL_Y, OUT_W,
+    cart_face, clean_label, gb_label_panel, gb_silhouette, label_colour, label_panel, label_text,
+    shell_for, silhouette, Finish, CART_H, CART_W, FOOT_Y, GB_CART_H, GB_CART_W, GB_LABEL_H,
+    GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_X, LABEL_Y, OUT_W, PLATE_H,
 };
 use tempfile::TempDir;
 
@@ -11,6 +12,17 @@ fn tmp_root() -> TempDir {
         std::fs::create_dir(d.path().join(sub)).expect("create content dir");
     }
     d
+}
+
+/// A Game Boy rom long enough to carry the header fields the scan reads: the title at 0x134 and
+/// the CGB flag at 0x143, which is the only thing in the file that says what colour plastic the
+/// cart shipped in.
+fn write_gb_rom(d: &TempDir, dir: &str, name: &str, cgb: u8) {
+    let mut rom = vec![0u8; 0x150];
+    rom[0x143] = cgb;
+    let games = d.path().join("Games").join(dir);
+    std::fs::create_dir_all(&games).expect("create games dir");
+    std::fs::write(games.join(name), rom).expect("write rom");
 }
 
 fn write_rom(d: &TempDir, name: &str, title: &str) {
@@ -306,6 +318,196 @@ fn a_rom_with_no_header_title_is_labelled_from_its_stem() {
     );
 }
 
+/// The published dimensions are 65.5 x 57 mm for a Game Boy Game Pak against 35 x 57 mm for a
+/// GBA one, so the two are the same width and the Game Boy is taller by the ratio of the
+/// heights. The rule is what is asserted rather than the 253 it comes to: a typed literal
+/// would let the rule be edited away with the test still green.
+#[test]
+fn the_game_boy_pak_is_the_published_ratio_taller_at_the_same_width() {
+    assert_eq!(
+        GB_CART_W, CART_W,
+        "both paks are 57 mm wide, so they share a canvas width"
+    );
+    let want = (CART_H as f64 * 65.5 / 35.0).round() as u32;
+    assert_eq!(
+        GB_CART_H, want,
+        "the height is no longer CART_H scaled by 65.5/35"
+    );
+}
+
+/// The GBA cart's canvas spans its grip ridge and its body is inset below that. A Game Boy Game
+/// Pak has no ridge — that ridge is what physically stops a GBA cart entering a Game Boy — so
+/// its sides are parallel, and at the same 57 mm they are the GBA body's own width.
+#[test]
+fn the_game_boy_outline_has_parallel_sides_and_no_grip_ears() {
+    let gb = gb_silhouette(GB_CART_W, GB_CART_H);
+    let width_at = |y: u32| {
+        (0..GB_CART_W)
+            .filter(|&x| gb[(y * GB_CART_W + x) as usize] > 128)
+            .count()
+    };
+    // Clear of the corner radii at both ends, so what is compared is the straight run.
+    let (top, middle, bottom) = (
+        width_at(GB_CART_H / 8),
+        width_at(GB_CART_H / 2),
+        width_at(GB_CART_H * 7 / 8),
+    );
+    assert_eq!(top, middle, "the pak is wider at the top than the middle");
+    assert_eq!(middle, bottom, "the pak tapers toward the bottom");
+
+    let gba = silhouette(CART_W, CART_H);
+    let gba_body = (0..CART_W)
+        .filter(|&x| gba[((CART_H / 2) * CART_W + x) as usize] > 128)
+        .count();
+    assert!(
+        middle.abs_diff(gba_body) <= 2,
+        "the pak's body is {middle}px against the GBA body's {gba_body}px, and both are 57 mm"
+    );
+}
+
+/// The real label is 42 x 37 mm on a 57 x 65.5 mm face: near square, against the GBA label's
+/// 2.28:1 landscape. It is centred across the pak and sits high, with the larger blank area and
+/// the moulded arrow below it.
+#[test]
+fn the_game_boy_label_well_is_near_square_and_sits_high() {
+    let (x0, y0, x1, y1) = gb_label_panel(GB_CART_W, GB_CART_H);
+    assert_eq!((x1 - x0, y1 - y0), (168, 143));
+    let aspect = (x1 - x0) as f32 / (y1 - y0) as f32;
+    assert!(
+        (aspect - 1.17).abs() < 0.02,
+        "the well is {aspect:.2}:1, which is not the 42x37 label's shape"
+    );
+    assert_eq!(x0, GB_CART_W - x1, "the well is not centred across the pak");
+    let (above, below) = (y0, GB_CART_H - y1);
+    assert!(
+        below > above * 2,
+        "{above}px above the label and {below}px below: it is not sitting high"
+    );
+}
+
+#[test]
+fn a_game_boy_cart_face_is_drawn_at_the_game_boy_size() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GB", "Tetris.gb", 0x00);
+    let face = cart_face(&scan(d.path()).unwrap()[0]);
+    assert_eq!((face.w, face.h), (GB_CART_W, GB_CART_H));
+    assert!(face.rgba.iter().any(|b| *b != 0), "face is blank");
+}
+
+/// Both carts stand on one row floor, and each platform's rest position is that floor less its
+/// own height. `FOOT_Y` and the old `REST_Y` agreed only because both were arithmetic on the
+/// one cart height there used to be; a 253px pak worked out from the screen's centre would
+/// float 118px off the row.
+#[test]
+fn a_game_boy_pak_stands_on_the_same_row_floor_and_clears_the_hud_plate() {
+    assert_eq!(FOOT_Y, 307.5);
+    assert_eq!(FOOT_Y - CART_H as f32, 172.5, "the GBA cart left the row");
+    let top = FOOT_Y - GB_CART_H as f32;
+    assert_eq!(top, 54.5);
+    assert!(
+        top > PLATE_H,
+        "the pak's top edge at {top} is under the {PLATE_H}px HUD plate"
+    );
+}
+
+/// A Game Boy cart carries no four character game code, so the shell table has nothing to key
+/// on. The CGB flag is what the header does say about the plastic: both Colour values get the
+/// clear shell and everything else is a plain Game Boy pak.
+#[test]
+fn a_colour_flagged_pak_wears_clear_plastic_and_a_plain_one_does_not() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GB", "Tetris.gb", 0x00);
+    write_gb_rom(&d, "GBC", "Colour Enhanced.gbc", 0x80);
+    write_gb_rom(&d, "GBC", "Colour Only.gbc", 0xc0);
+    let carts = scan(d.path()).unwrap();
+    let by_stem = |stem: &str| {
+        carts
+            .iter()
+            .find(|c| c.stem == stem)
+            .unwrap_or_else(|| panic!("{stem} was not scanned"))
+    };
+
+    assert_eq!(shell_for(by_stem("Tetris")).finish, Finish::Solid);
+    for stem in ["Colour Enhanced", "Colour Only"] {
+        assert_eq!(
+            shell_for(by_stem(stem)).finish,
+            Finish::Translucent,
+            "{stem} was drawn in solid plastic"
+        );
+    }
+    assert_ne!(
+        shell_for(by_stem("Tetris")).colour,
+        shell_for(by_stem("Colour Only")).colour,
+        "the two shells are the same colour, so the finish is all that tells them apart"
+    );
+}
+
+/// The finish has to reach the drawn pixels, not merely the table: a clear shell lightens
+/// toward its rim where a solid one is one colour all the way out. Sampled beside the label,
+/// where nothing but the shell is drawn.
+#[test]
+fn the_clear_shell_lightens_at_its_rim_and_the_plain_one_does_not() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GB", "Tetris.gb", 0x00);
+    write_gb_rom(&d, "GBC", "Colour Only.gbc", 0xc0);
+    let carts = scan(d.path()).unwrap();
+    let luma = |face: &slot_ui::CartFace, x: u32, y: u32| {
+        let p = pixel(face, x, y);
+        p[0] as u32 + p[1] as u32 + p[2] as u32
+    };
+    let y = GB_CART_H / 2;
+    for cart in &carts {
+        let face = cart_face(cart);
+        let (rim, body) = (luma(&face, 8, y), luma(&face, 20, y));
+        match cart.stem.as_str() {
+            "Tetris" => assert_eq!(rim, body, "the plain pak has a lit rim"),
+            _ => assert!(
+                rim > body + 30,
+                "the clear pak's rim is {rim} against {body} inside: it reads as solid"
+            ),
+        }
+    }
+}
+
+/// The GBA label is landscape, so three lines ran out of height long before any line ran out of
+/// width and one bound was enough. On a 1.17:1 panel the bounds cross, and which one binds
+/// depends on the title — so a short title that fits vertically at any size must still be held
+/// inside the width.
+#[test]
+fn a_game_boy_title_stays_inside_its_near_square_label() {
+    for stem in [
+        "Supercalifragilisticexpialidocious Anniversary Edition",
+        "Wario Land 3",
+        "Tetris",
+    ] {
+        let d = tmp_root();
+        write_gb_rom(&d, "GB", &format!("{stem}.gb"), 0x00);
+        let face = cart_face(&scan(d.path()).unwrap()[0]);
+        let bg = label_colour(stem);
+        let at = |x: u32, y: u32| pixel(&face, GB_LABEL_X + x, GB_LABEL_Y + y);
+        let margin = 5;
+        for y in 0..GB_LABEL_H {
+            for x in 0..GB_LABEL_W {
+                let edge = x < margin
+                    || y < margin
+                    || x >= GB_LABEL_W - margin
+                    || y >= GB_LABEL_H - margin;
+                if edge {
+                    assert_eq!(
+                        at(x, y),
+                        bg,
+                        "{stem}: text spills into the border at {x},{y}"
+                    );
+                }
+            }
+        }
+        assert!(
+            (0..GB_LABEL_H * GB_LABEL_W).any(|i| at(i % GB_LABEL_W, i / GB_LABEL_W) != bg),
+            "{stem}: no text was drawn"
+        );
+    }
+}
+
 /// A side cart is dimmed by sitting a translucent face on this, not by letting the ground
 /// show through it. Only the compositor can mint a `TexId`, so what reaches the screen is not
 /// reachable here; the shape and the colour are.
@@ -322,4 +524,20 @@ fn the_cart_shadow_is_the_cart_in_black() {
         s.rgba.chunks_exact(4).any(|p| p[3] > 250),
         "the shadow is transparent everywhere, so it backs nothing"
     );
+}
+
+/// The same black backing in the Game Boy pak's own shape. Stretching the GBA one to a taller
+/// box would put a tapered shadow under a straight sided cart.
+#[test]
+fn the_game_boy_shadow_is_the_pak_in_black() {
+    let s = slot_ui::gb_cart_shadow();
+    assert_eq!((s.w, s.h), (GB_CART_W, GB_CART_H));
+    for (px, cover) in s
+        .rgba
+        .chunks_exact(4)
+        .zip(gb_silhouette(GB_CART_W, GB_CART_H))
+    {
+        assert_eq!(&px[..3], &[0, 0, 0], "the shadow is not black");
+        assert_eq!(px[3], cover, "the shadow is not the pak's shape");
+    }
 }

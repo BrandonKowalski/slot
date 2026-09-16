@@ -6,6 +6,7 @@ use slot_store::Theme;
 
 use crate::cart::{label_colour, label_text, CART_H, CART_W};
 use crate::icon::icon_box;
+use crate::shelf::FOOT_Y;
 
 /// Big enough to read as a symbol on a 240 px cart rather than as a mark on its label.
 pub const ALERT_PX: f32 = 44.0;
@@ -96,8 +97,11 @@ pub fn recess() -> [f32; 4] {
 const LIP_Y: f32 = BAND_Y;
 
 /// Where a cart stands before it is pushed in. Same place the shelf draws the selected cart,
-/// so the handoff out of the shelf is not a jump.
-const REST_Y: f32 = (OUT_H - CART_H) as f32 / 2.0;
+/// so the handoff out of the shelf is not a jump — which means it is the row floor less this
+/// cart's own height, and not the screen's centre less half of it. The two agreed while there
+/// was one cart height in the program; they are different numbers for a Game Boy pak, and the
+/// shelf is the one that decides where a cart stands.
+const REST_Y: f32 = FOOT_Y - CART_H as f32;
 
 /// Where the cart stops. In means *in*, not gone: it comes to rest filling the opening, so
 /// the base of the slot is covered by the cart rather than going dark again. Four pixels
@@ -107,8 +111,10 @@ const SEATED_Y: f32 = BAY_Y + 4.0;
 const CART_X: f32 = (OUT_W - CART_W) as f32 / 2.0;
 
 /// How far into the travel the cart's bottom edge reaches the lip. Derived rather than
-/// tuned, because it is where the catch has to be to read as one.
-const CATCH_AT: f32 = (LIP_Y - CART_H as f32 - REST_Y) / (SEATED_Y - REST_Y);
+/// tuned, because it is where the catch has to be to read as one. The numerator is the drop
+/// from the row floor to the lip and carries no cart height at all: every cart starts with its
+/// foot on the floor, whatever is above it, so they all have the same distance to fall.
+const CATCH_AT: f32 = (LIP_Y - FOOT_Y) / (SEATED_Y - REST_Y);
 /// The seat either side of the catch. It opens a little before halfway because the cart is
 /// resting on the lip for the whole of it, and the push comes after.
 const CATCH_IN: f32 = 0.42;
