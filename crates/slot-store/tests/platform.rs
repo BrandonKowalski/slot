@@ -1,4 +1,4 @@
-use slot_store::{Platform, ShelfKind};
+use slot_store::Platform;
 
 /// Every platform has a directory, GBA included. Nothing stays loose, so there is no variant
 /// that means "the root" — an earlier design had one and it was the source of a whole class of
@@ -9,14 +9,19 @@ fn every_platform_has_a_directory() {
     assert_eq!(names, vec!["GBA", "GB", "GBC"]);
 }
 
-/// Three platforms on the card, two shelves on the carousel. A Game Boy and a Game Boy Color
-/// cartridge are the same object at the same size, so they share a silhouette and a shelf;
-/// only the plastic differs.
+/// One shelf per platform, and the carousel keys its shelves on `Platform` itself. There is no
+/// second grouping type to map through any more — a Game Boy and a Game Boy Color cart stand on
+/// shelves of their own — so `ALL` *is* the ring, in the order the shoulders walk it, and every
+/// platform in it is its own stop.
 #[test]
-fn game_boy_and_colour_share_one_shelf() {
-    assert_eq!(Platform::Gb.shelf(), ShelfKind::GameBoy);
-    assert_eq!(Platform::Gbc.shelf(), ShelfKind::GameBoy);
-    assert_eq!(Platform::Gba.shelf(), ShelfKind::Gba);
+fn every_platform_is_a_shelf_of_its_own() {
+    assert_eq!(Platform::ALL, [Platform::Gba, Platform::Gb, Platform::Gbc]);
+    for (i, p) in Platform::ALL.iter().enumerate() {
+        assert!(
+            !Platform::ALL[..i].contains(p),
+            "{p:?} is named twice in the ring, so two shelves would hold one platform"
+        );
+    }
 }
 
 /// The extension a folder will take. A `.gba` in `GB/` is not a Game Boy cart and must not be

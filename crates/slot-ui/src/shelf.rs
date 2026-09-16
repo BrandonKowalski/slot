@@ -164,6 +164,29 @@ impl Shelf {
         (nearest == off).then(|| (self.index as i32 + off).rem_euclid(n) as usize)
     }
 
+    /// How far the row stands from the selection being dead centre, in pitches.
+    ///
+    /// Zero for a row of one, which is centred already, and for a row of three or more, where
+    /// the selection has a neighbour peeking in at either side. Half a pitch left for a row of
+    /// two: that row has only one neighbour to give, since `cart_at_offset` refuses to stand
+    /// the same cart on both sides of the selection, and centring the selection would put the
+    /// pair off to the left with a hole beside it. A hole in a row of carts reads as a cart
+    /// that failed to load rather than as the end of the row, so the two are centred together.
+    fn shift(&self) -> f32 {
+        match self.carts.len() {
+            2 => -0.5,
+            _ => 0.0,
+        }
+    }
+
+    /// Where the selected cart stands once the row has settled, in offscreen pixels. The cart
+    /// going into the slot and the cart the picker opens are both drawn by somebody else,
+    /// starting from where this row left it, so a row that is not centred on its selection has
+    /// to be able to say where that is.
+    pub fn rest_x(&self) -> f32 {
+        (OUT_W - CART_W) as f32 / 2.0 + self.shift() * PITCH
+    }
+
     pub fn update(&mut self, dt: f32) {
         let accel = -2.0 * OMEGA * self.vel - OMEGA * OMEGA * (self.scroll - self.scroll_target());
         self.vel += accel * dt;
@@ -203,6 +226,7 @@ impl Shelf {
         let recede = recede.clamp(0.0, 1.0);
         let dim = dim.clamp(0.0, 1.0);
         let target = self.scroll_target();
+        let shift = self.shift();
         for slot in -SLOTS..=SLOTS {
             let Some(i) = self.cart_at_offset(slot) else {
                 continue;
@@ -211,6 +235,9 @@ impl Shelf {
             if hidden == Some(cart.stem.as_str()) {
                 continue;
             }
+            // How far this cart is from the selection, which is what decides its size and how
+            // solid it is. The row's own place on screen is `shift` further along — the two
+            // were one number while every row was centred on its selection.
             let offset = target + slot as f32 - self.scroll;
             let t = offset.abs().min(1.0);
             let scale = 1.0 + (SIDE_SCALE - 1.0) * t;
@@ -219,7 +246,7 @@ impl Shelf {
             // Away from the middle, and further the further out it already was, so the row
             // opens rather than sliding sideways.
             let away = offset.signum() * (1.0 + offset.abs());
-            let x = OUT_W as f32 / 2.0 + offset * PITCH - w / 2.0 + away * PART * recede;
+            let x = OUT_W as f32 / 2.0 + (offset + shift) * PITCH - w / 2.0 + away * PART * recede;
             if x + w <= 0.0 || x >= OUT_W as f32 || alpha <= 0.0 {
                 continue;
             }

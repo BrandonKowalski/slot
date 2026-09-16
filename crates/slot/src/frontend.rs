@@ -145,7 +145,6 @@ impl Frontend {
             .session
             .app()
             .carts()
-            .iter()
             .map(|c| {
                 let f = cart_face(c);
                 compositor.create_texture(f.w, f.h, &f.rgba)
@@ -619,7 +618,6 @@ fn sync_core_picker(
     if highlighted.is_some() && *asked != highlighted {
         if let Some(cart) = app
             .carts()
-            .iter()
             .find(|c| highlighted.as_deref() == Some(c.stem.as_str()))
         {
             builder.request(cart.clone());

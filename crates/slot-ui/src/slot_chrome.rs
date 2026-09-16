@@ -120,6 +120,12 @@ const CREEP: f32 = 0.03;
 pub struct SlotChrome<'a> {
     pub cart: &'a Cart,
     pub face: Option<TexId>,
+    /// Where the shelf left this cart standing, as `Shelf::rest_x` gives it. Usually the middle
+    /// of the screen, and half a pitch left of it on a shelf holding two carts, which is
+    /// centred as a pair rather than on its selection. The travel below carries the cart from
+    /// here to the slot, so a cart that was not standing centred slides across as it goes down
+    /// rather than jumping to the mouth on the first frame.
+    pub rest: f32,
     /// 0.0 standing where the shelf left it, 1.0 swallowed by the mouth.
     pub seat: f32,
     /// The refusal symbol and how far into its fade it is. A cart that will not seat says so
@@ -159,8 +165,12 @@ impl SlotChrome<'_> {
         // on the way through rather than sliding behind a painted bar.
         draw_slot_back(chrome, out);
 
-        let x = CART_X;
-        let y = REST_Y + (SEATED_Y - REST_Y) * travel(seat);
+        // Across and down on the one progress, so the cart arrives over the mouth exactly as it
+        // reaches it. The slot is the middle of the device and cannot move, so a cart standing
+        // anywhere else has to come to it.
+        let travel = travel(seat);
+        let x = self.rest + (CART_X - self.rest) * travel;
+        let y = REST_Y + (SEATED_Y - REST_Y) * travel;
         // The cart fades with the case rather than through it. A seated cart is really in the
         // slot and has to be drawn, so the whole device face has to leave as one object as the
         // picture takes over. Held at full while the screen is off, which is all of the travel.

@@ -235,10 +235,19 @@ pub struct Placed {
     pub h: f32,
 }
 
-/// The highlighted cart as the shelf stands it, once the row has settled.
+/// The highlighted cart as a shelf centred on its selection stands it, once the row has
+/// settled. That is every shelf except one holding exactly two carts, which centres the pair
+/// instead; `shelf_cart_at` is what serves that one.
 pub fn shelf_cart() -> Placed {
+    shelf_cart_at((OUT_W - CART_W) as f32 / 2.0)
+}
+
+/// The same, for a row that stands its selection somewhere other than the middle. `x` is what
+/// `Shelf::rest_x` gives, so the cart the picker opens grows out of where it was standing
+/// rather than out of the middle of a screen it was never on.
+pub fn shelf_cart_at(x: f32) -> Placed {
     Placed {
-        x: (OUT_W - CART_W) as f32 / 2.0,
+        x,
         y: FOOT_Y - CART_H as f32,
         w: CART_W as f32,
         h: CART_H as f32,
@@ -247,18 +256,28 @@ pub fn shelf_cart() -> Placed {
 
 /// The back half: standing where the shelf stood it through the slide, then growing to its rest.
 pub fn board_at(progress: f32) -> Placed {
+    board_from(shelf_cart(), progress)
+}
+
+/// The same, growing out of wherever the row was standing the cart rather than out of the
+/// middle of the screen.
+pub fn board_from(shelf: Placed, progress: f32) -> Placed {
     let rest = Placed {
         x: BOARD_X,
         y: BOARD_Y,
         w: BOARD_W as f32,
         h: BOARD_H as f32,
     };
-    lerp(shelf_cart(), rest, lift_of(progress))
+    lerp(shelf, rest, lift_of(progress))
 }
 
 /// The front half and its turn: slid up off the back, then lifted from there to its rest.
 pub fn lid_at(progress: f32) -> (Placed, f32) {
-    let shelf = shelf_cart();
+    lid_from(shelf_cart(), progress)
+}
+
+/// The same, off a cart the row was standing somewhere other than the middle.
+pub fn lid_from(shelf: Placed, progress: f32) -> (Placed, f32) {
     let slid = Placed {
         y: shelf.y - SLIDE_UP * slide_of(progress),
         ..shelf

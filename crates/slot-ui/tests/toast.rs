@@ -24,6 +24,26 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
     assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
 }
 
+/// The carousel says which system it has just moved to, in the banner everything else the HUD
+/// says already uses. One line per platform, because there is one shelf per platform.
+#[test]
+fn each_shelf_says_which_system_it_holds() {
+    assert_eq!(Toast::GbaShelf.text(), "Game Boy Advance");
+    assert_eq!(Toast::GameBoyShelf.text(), "Game Boy");
+    assert_eq!(Toast::GameBoyColorShelf.text(), "Game Boy Color");
+    for t in [
+        Toast::GbaShelf,
+        Toast::GameBoyShelf,
+        Toast::GameBoyColorShelf,
+    ] {
+        let f = toast_face(t);
+        assert!(
+            f.rgba.chunks(4).any(|p| p[3] > 0),
+            "{t:?} rastered to a blank banner"
+        );
+    }
+}
+
 /// Every line is rastered into one box at one size, so a line too long for it would be shrunk on
 /// its own and read as a different banner from the others. Measured off the pixels rather than
 /// off the layout: the type is uppercased and has no descenders, so a banner set at the same

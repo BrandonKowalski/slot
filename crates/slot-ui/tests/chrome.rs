@@ -4,6 +4,10 @@ use slot_ui::{
     CART_H, CART_W, LABEL_H, LABEL_Y, MOUTH_H, OUT_H, OUT_W,
 };
 
+/// Where a shelf of three or more stands its selected cart, which is what the chrome is handed
+/// everywhere but on a shelf holding exactly two.
+const CENTRED: f32 = (OUT_W - CART_W) as f32 / 2.0;
+
 fn cart() -> Cart {
     Cart {
         platform: Platform::Gba,
@@ -114,6 +118,7 @@ fn chrome_into(seat: f32, out: &mut Vec<Draw>) {
     SlotChrome {
         cart: &c,
         face: None,
+        rest: CENTRED,
         seat,
         alert: None,
         dim: 0.5,
@@ -123,6 +128,47 @@ fn chrome_into(seat: f32, out: &mut Vec<Draw>) {
     .draw(out);
 }
 
+/// A shelf of two carts is centred as a pair, so the cart that goes in was not standing in the
+/// middle of the screen. It must leave from where it stood and arrive over the mouth: starting
+/// it at the slot instead is a cart that teleports on the frame the button is pressed, and
+/// leaving it off to the side is a cart that goes into the case beside the opening.
+#[test]
+fn a_cart_standing_off_centre_slides_across_as_it_goes_in() {
+    let c = cart();
+    let off = CENTRED - 120.0;
+    let cart_x = |seat: f32| {
+        let mut out = Vec::new();
+        SlotChrome {
+            cart: &c,
+            face: None,
+            rest: off,
+            seat,
+            alert: None,
+            dim: 0.0,
+            screen: 0.0,
+            game: false,
+        }
+        .draw(&mut out);
+        quad(&out[cart_at(&out)]).x
+    };
+    assert!(
+        (cart_x(0.0) - off).abs() < 0.01,
+        "the cart starts at {} rather than where the shelf left it",
+        cart_x(0.0)
+    );
+    assert!(
+        (cart_x(1.0) - CENTRED).abs() < 0.01,
+        "the cart seats at {} rather than in the mouth",
+        cart_x(1.0)
+    );
+    let mut last = off;
+    for step in 1..=20 {
+        let x = cart_x(step as f32 / 20.0);
+        assert!(x >= last - 0.01, "the cart went back to {x} from {last}");
+        last = x;
+    }
+}
+
 /// The slot as it is drawn `t` of the way through the power on: cart seated, picture coming
 /// up behind the housing.
 fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
@@ -130,6 +176,7 @@ fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
     SlotChrome {
         cart: &c,
         face: None,
+        rest: CENTRED,
         seat: 1.0,
         alert: None,
         dim: 0.0,
@@ -423,6 +470,7 @@ fn the_empty_slot_is_the_same_slot_the_chrome_draws() {
     SlotChrome {
         cart: &c,
         face: None,
+        rest: CENTRED,
         seat: 1.0,
         alert: None,
         dim: 0.0,

@@ -1,10 +1,17 @@
 use std::path::Path;
 
-/// Which console a cart is for, and therefore which folder every one of its files lives in.
+/// Which console a cart is for, and therefore which folder every one of its files lives in —
+/// and, since there is one shelf per platform, which shelf of the carousel it stands on.
 ///
 /// Three variants, one per card directory. There is deliberately no variant meaning "loose at
 /// the root": nothing stays loose, and a file's platform is a property of *where it is*, which
 /// is what lets the scan answer it without opening the file at all.
+///
+/// There is no separate grouping type. A Game Boy and a Game Boy Color cartridge are the same
+/// object dimensionally, and they were grouped onto one shelf for exactly that reason; the
+/// shelves are one per platform now, which leaves nothing for a second type to say. The name
+/// collision with `slot_ui::Shelf` — the carousel widget — is unchanged: `slot::app` holds one
+/// of those per `Platform`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Platform {
     #[default]
@@ -13,22 +20,8 @@ pub enum Platform {
     Gbc,
 }
 
-/// Which shelf a cart appears on. Two, not three: a Game Boy and a Game Boy Color cartridge
-/// are dimensionally identical — 65.5 × 57 × 7.5 mm both — so one silhouette serves both and a
-/// third shelf would redraw the same art under a different name. Storage and display are
-/// allowed to differ, and here they do.
-///
-/// Named `ShelfKind` rather than `Shelf` because `slot_ui::Shelf` is the carousel widget, and
-/// `slot::app` holds one of those per grouping while importing from both crates. This is the
-/// grouping; that is the thing being grouped.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ShelfKind {
-    Gba,
-    GameBoy,
-}
-
 impl Platform {
-    /// Every variant, once, in the order shelves are switched through.
+    /// Every variant, once, in the order the shelves are switched through.
     pub const ALL: [Platform; 3] = [Platform::Gba, Platform::Gb, Platform::Gbc];
 
     /// The card directory this platform's files live under, in `Games/`, `Saves/`, `States/`
@@ -38,13 +31,6 @@ impl Platform {
             Platform::Gba => "GBA",
             Platform::Gb => "GB",
             Platform::Gbc => "GBC",
-        }
-    }
-
-    pub fn shelf(self) -> ShelfKind {
-        match self {
-            Platform::Gba => ShelfKind::Gba,
-            Platform::Gb | Platform::Gbc => ShelfKind::GameBoy,
         }
     }
 

@@ -8,8 +8,8 @@ use crate::CartFace;
 /// Everything the HUD ever says in words. Each answers something the user just did: two confirm
 /// it, two answer the link shortcut where it cannot be carried out — on a core that cannot link
 /// at all, and on a cart whose link gpSP cannot carry — either of which would otherwise do
-/// nothing and say nothing, and the last answers that same shortcut where it can: pressed during
-/// a session, it ends one.
+/// nothing and say nothing, one answers that same shortcut where it can (pressed during a
+/// session, it ends one), and the last three name the shelf the carousel has just switched to.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
     StateSaved,
@@ -21,16 +21,29 @@ pub enum Toast {
     /// `LinkEnded`, and a separate sentence because which device ended it is the one thing the
     /// player on this one cannot see.
     PeerEnded,
+    /// The name of the shelf L1 or R1 has just moved to. The carousel is one row of carts
+    /// wherever it stands, so the system it is showing is the one thing the switch changes that
+    /// the row itself cannot say — and it is a name rather than an instruction, which is why it
+    /// fades like everything else here rather than standing as a heading.
+    ///
+    /// One per platform, because there is one shelf per platform: a Game Boy Color cart stands
+    /// on a shelf of its own and is named as what it is.
+    GbaShelf,
+    GameBoyShelf,
+    GameBoyColorShelf,
 }
 
 impl Toast {
-    pub const ALL: [Toast; 6] = [
+    pub const ALL: [Toast; 9] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
         Toast::NoLink,
         Toast::LinkEnded,
         Toast::PeerEnded,
+        Toast::GbaShelf,
+        Toast::GameBoyShelf,
+        Toast::GameBoyColorShelf,
     ];
 
     /// Position in `ALL`, which is the order faces are uploaded in.
@@ -51,6 +64,12 @@ impl Toast {
             // Impersonal too, like every other line here ("No link support", "Nobody arrived");
             // the product says "friend" nowhere, so this is not the screen to start.
             Toast::PeerEnded => "Link was ended",
+            // The full names, as they are printed on the hardware — "Color" with Nintendo's own
+            // spelling of it, which is the one on the cartridge. `fit` uppercases every line at
+            // draw time, so the case here is for whoever reads the source.
+            Toast::GbaShelf => "Game Boy Advance",
+            Toast::GameBoyShelf => "Game Boy",
+            Toast::GameBoyColorShelf => "Game Boy Color",
         }
     }
 }

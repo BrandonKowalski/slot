@@ -486,7 +486,6 @@ impl Session {
         let Some((rom, platform)) = self
             .app
             .carts()
-            .iter()
             .find(|c| c.stem == stem)
             .map(|c| (c.rom.clone(), c.platform))
         else {

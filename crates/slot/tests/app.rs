@@ -8,9 +8,9 @@ use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
 use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U,
-    SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Placed, TexId,
+    Toast, BOARD_W, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
+    SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 /// A tap of A, which is what plays a cart. The press alone is not enough: held, it means
@@ -319,6 +319,274 @@ fn a_held_direction_walks_the_shelf_and_a_release_stops_it() {
         panic!("A on the shelf did not insert: {:?}", a.phase())
     };
     assert_eq!(cart, "C", "one press and one repeat, then nothing");
+}
+
+/// One cart per pair, filed under the platform named. Which folder a cart came out of is the
+/// only thing that decides which shelf it stands on — there is one shelf per platform — so a
+/// test wanting more than one shelf says so here.
+fn app_with_platforms(carts: &[(Platform, &str)]) -> App {
+    App::new(
+        carts
+            .iter()
+            .map(|(platform, stem)| Cart {
+                platform: *platform,
+                stem: (*stem).to_string(),
+                rom: format!(
+                    "Games/{}/{stem}.{}",
+                    platform.dir_name(),
+                    platform.extensions()[0]
+                )
+                .into(),
+                label: None,
+                code: String::new(),
+                title: stem.to_uppercase(),
+            })
+            .collect(),
+    )
+}
+
+/// One press of a button and the release that follows. The shelf moves on the press, so this is
+/// a press that has ended rather than one being held: nothing here is testing the repeat.
+fn tap(a: &mut App, btn: Btn) {
+    a.apply(Action::GbaDown(btn));
+    a.apply(Action::GbaUp(btn));
+}
+
+/// The shelves are a ring, so with two of them either shoulder reaches the other one and a
+/// second press comes back.
+#[test]
+fn the_shoulders_ring_over_the_shelves() {
+    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
+    assert_eq!(a.selected_stem(), Some("Emerald"));
+    tap(&mut a, Btn::R1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Tetris"),
+        "R1 did not reach the Game Boy shelf"
+    );
+    tap(&mut a, Btn::R1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Emerald"),
+        "the ring did not come back round"
+    );
+    tap(&mut a, Btn::L1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Tetris"),
+        "L1 did not reach the Game Boy shelf"
+    );
+}
+
+/// One shelf per platform, so a card with all three has three stops and the shoulders walk them
+/// in the order the platforms are named in. A Colour cart stands on its own shelf: identical
+/// plastic to a Game Boy cart or not, it is a different system and says so.
+#[test]
+fn a_colour_cart_stands_on_a_shelf_of_its_own() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Emerald"),
+        (Platform::Gb, "Tetris"),
+        (Platform::Gbc, "Chromatic"),
+    ]);
+    tap(&mut a, Btn::R1);
+    assert_eq!(a.selected_stem(), Some("Tetris"));
+    assert_eq!(a.toast(), Some(Toast::GameBoyShelf));
+    tap(&mut a, Btn::R1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Chromatic"),
+        "the Colour cart shares the Game Boy shelf"
+    );
+    assert_eq!(a.toast(), Some(Toast::GameBoyColorShelf));
+    tap(&mut a, Btn::R1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Emerald"),
+        "three shelves did not ring back round to the first"
+    );
+    // And the other way, which with three shelves is a different route rather than the same
+    // one run backwards.
+    tap(&mut a, Btn::L1);
+    assert_eq!(a.selected_stem(), Some("Chromatic"));
+}
+
+/// Each shelf keeps its own place. Coming back to a platform on a different cart than the one
+/// it was left on would be the carousel forgetting.
+#[test]
+fn every_shelf_keeps_the_cart_it_was_left_on() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Emerald"),
+        (Platform::Gba, "Fusion"),
+        (Platform::Gb, "Tetris"),
+        (Platform::Gb, "Zelda"),
+    ]);
+    tap(&mut a, Btn::Right);
+    assert_eq!(a.selected_stem(), Some("Fusion"));
+    tap(&mut a, Btn::R1);
+    assert_eq!(a.selected_stem(), Some("Tetris"));
+    tap(&mut a, Btn::Right);
+    assert_eq!(a.selected_stem(), Some("Zelda"));
+
+    tap(&mut a, Btn::L1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Fusion"),
+        "the Game Boy Advance shelf forgot where it was"
+    );
+    tap(&mut a, Btn::R1);
+    assert_eq!(
+        a.selected_stem(),
+        Some("Zelda"),
+        "the Game Boy shelf forgot where it was"
+    );
+}
+
+/// A shelf keeps its spring as well as its place, so coming back to one does not restart the
+/// row sliding in from the beginning. Read off where the selected cart's own face lands, since
+/// the scroll is a continuous position that the index alone cannot show.
+///
+/// It is also the only place the faces are proved to have been split between the shelves: a
+/// build that handed every face to the first shelf would leave the Game Boy cart drawn as a
+/// bare rectangle, and `Ccc`'s face would belong to somebody else.
+#[test]
+fn a_shelf_comes_back_settled_where_it_was_left() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Aaa"),
+        (Platform::Gba, "Bbb"),
+        (Platform::Gba, "Ccc"),
+        (Platform::Gb, "Tetris"),
+    ]);
+    let faces: Vec<TexId> = (0..4).map(|i| TexId::from_raw(700 + i)).collect();
+    a.set_faces(faces.clone());
+    tap(&mut a, Btn::Right);
+    tap(&mut a, Btn::Right);
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    let settled = tex_at(&frame(&a), faces[2])
+        .expect("no face for the selected cart")
+        .1;
+
+    tap(&mut a, Btn::R1);
+    assert!(
+        tex_at(&frame(&a), faces[3]).is_some(),
+        "the Game Boy cart has no face of its own"
+    );
+    tap(&mut a, Btn::L1);
+    a.update(1.0 / 60.0);
+    let back = tex_at(&frame(&a), faces[2])
+        .expect("no face on the way back")
+        .1;
+    assert!(
+        (back[0] - settled[0]).abs() < 1.0,
+        "the row came back at {} rather than settled at {}",
+        back[0],
+        settled[0]
+    );
+}
+
+/// One shelf with carts on it means the buttons do nothing at all: no movement, no banner, and
+/// no refusal either. A dead button is the right answer to "there is nowhere to go" — a shake
+/// would be slot claiming something was wrong.
+#[test]
+fn the_shoulders_do_nothing_when_there_is_one_shelf_to_be_on() {
+    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gba, "Fusion")]);
+    for btn in [Btn::L1, Btn::R1] {
+        tap(&mut a, btn);
+        assert_eq!(
+            a.selected_stem(),
+            Some("Emerald"),
+            "{btn:?} moved a shelf with no neighbour"
+        );
+        assert_eq!(
+            a.toast(),
+            None,
+            "{btn:?} named a shelf it never switched to"
+        );
+        assert_eq!(
+            a.shelf_shake(),
+            0.0,
+            "{btn:?} refused where it should have done nothing"
+        );
+    }
+}
+
+/// The switch names the system it landed on, and a second press re-shows that banner rather
+/// than stacking a second one behind it: the clock is re-stamped, so the name stays legible for
+/// as long as the button is being worked.
+#[test]
+fn the_switch_names_the_system_and_the_name_fades() {
+    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
+    a.apply_at(Action::GbaDown(Btn::R1), 1_000);
+    assert_eq!(a.toast(), Some(Toast::GameBoyShelf));
+    a.apply_at(Action::GbaDown(Btn::R1), 2_400);
+    assert_eq!(
+        a.toast(),
+        Some(Toast::GbaShelf),
+        "the banner still names the shelf that was left"
+    );
+    // Past the first press's own fade and short of the second's: the banner is on screen here
+    // only because the second press re-stamped it.
+    a.update(1.4);
+    assert_eq!(a.toast(), Some(Toast::GbaShelf), "the name did not re-show");
+    a.update(0.2);
+    assert_eq!(a.toast(), None, "the name never faded");
+}
+
+/// A card with no Game Boy Advance carts opens on the shelf that has some. Booting onto an
+/// empty shelf beside a full one would be a device that starts by showing nothing.
+#[test]
+fn the_carousel_opens_on_a_shelf_that_has_carts() {
+    let a = app_with_platforms(&[(Platform::Gbc, "Chromatic")]);
+    assert_eq!(a.selected_stem(), Some("Chromatic"));
+}
+
+/// The shoulders are the GBA's own buttons while a game is playing, so a shelf must not move
+/// under one — the row would be showing a different platform when the cart comes out.
+#[test]
+fn the_shoulders_belong_to_the_game_while_one_is_playing() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Emerald"),
+        (Platform::Gba, "Fusion"),
+        (Platform::Gb, "Tetris"),
+    ]);
+    a.apply(Action::Insert);
+    a.on_core_ready();
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    tap(&mut a, Btn::R1);
+    assert_eq!(a.toast(), None, "the game's shoulder button named a shelf");
+    assert_eq!(
+        a.selected_stem(),
+        Some("Emerald"),
+        "the game's shoulder button switched the shelf behind it"
+    );
+}
+
+/// A direction still held as a shelf leaves the screen is not held when it comes back. The
+/// repeat belongs to the row being looked at, and a stale one starts the moment that row
+/// returns — with nothing under the player's thumb to explain it.
+#[test]
+fn a_held_direction_does_not_follow_the_shelf_it_was_pressed_on() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Aaa"),
+        (Platform::Gba, "Bbb"),
+        (Platform::Gba, "Ccc"),
+        (Platform::Gb, "Tetris"),
+    ]);
+    a.apply_at(Action::GbaDown(Btn::Right), 0);
+    assert_eq!(a.selected_stem(), Some("Bbb"));
+    a.apply_at(Action::GbaDown(Btn::R1), 10);
+    a.apply_at(Action::GbaDown(Btn::L1), 20);
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    assert_eq!(
+        a.selected_stem(),
+        Some("Bbb"),
+        "the row walked on by itself once the shelf came back"
+    );
 }
 
 #[test]
@@ -877,6 +1145,20 @@ fn fake_picker_faces(app: &mut App) -> PickerFaces {
     f
 }
 
+/// Where the row is standing the selected cart, read off the frame rather than assumed. A shelf
+/// holding two carts centres the pair rather than the selection, so the middle of the screen is
+/// not always the answer — and the picker and the slot both take the cart from here.
+fn resting_cart(out: &[Draw]) -> f32 {
+    out.iter()
+        .filter_map(|d| match *d {
+            Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => Some((x, w)),
+            _ => None,
+        })
+        .find(|(_, w)| (w - CART_W as f32).abs() < 0.01)
+        .expect("no cart standing on the row")
+        .0
+}
+
 fn frame(app: &App) -> Vec<Draw> {
     let mut out = Vec::new();
     app.draw(&mut out);
@@ -1226,6 +1508,7 @@ fn the_seated_chip_moves_to_the_socket_it_hopped_to() {
 fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_picker_faces(&mut app);
+    let rest = resting_cart(&frame(&app));
     app.apply(Action::GbaDown(Btn::Start));
     let out = frame(&app);
 
@@ -1243,7 +1526,7 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     );
 
     let (_, lid, turn) = turned_at(&out, f.lid).expect("no lid");
-    let want = grown(lid_at(0.0).0, TURN_PAD as f32);
+    let want = grown(lid_from(shelf_cart_at(rest), 0.0).0, TURN_PAD as f32);
     assert!(
         near(lid, [want.x, want.y, want.w, want.h]),
         "the lid starts at {lid:?}"
@@ -1258,7 +1541,7 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
     let slid = frame(&app);
     let (_, lid, turn) = turned_at(&slid, f.lid).expect("the lid vanished mid-slide");
     assert_eq!(turn, 0.0, "the lid turned while it slid");
-    let shelf = shelf_cart();
+    let shelf = shelf_cart_at(rest);
     let want = grown(
         Placed {
             y: shelf.y - SLIDE_UP * 0.5,
@@ -1456,6 +1739,7 @@ fn closing_puts_the_cart_back_on_the_shelf() {
 fn the_open_waits_on_the_shelf_for_its_faces() {
     let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
     let f = fake_boot_faces(&mut app);
+    let rest = resting_cart(&frame(&app));
     app.apply(Action::GbaDown(Btn::Start));
     app.update(0.3);
     assert_plain_shelf(&frame(&app), &f, "while its faces are built");
@@ -1463,7 +1747,7 @@ fn the_open_waits_on_the_shelf_for_its_faces() {
     app.set_core_board_faces(f.board, f.lid);
     app.update(0.016);
     let out = frame(&app);
-    let shelf = grown(shelf_cart(), TURN_PAD as f32);
+    let shelf = grown(shelf_cart_at(rest), TURN_PAD as f32);
     let (_, lid, _) = turned_at(&out, f.lid).expect("no lid once the faces arrived");
     assert!(
         near(lid, [shelf.x, shelf.y, shelf.w, shelf.h]),

@@ -144,6 +144,85 @@ fn no_cart_is_drawn_twice_in_one_row() {
     }
 }
 
+/// A shelf with one cart on it stands that cart dead centre and draws nothing else. Nothing
+/// beside it is right: there is no other cart, and a slot left empty beside the only one would
+/// read as a cart that failed to load.
+#[test]
+fn one_cart_stands_alone_in_the_middle() {
+    let s = shelf_with(1);
+    let row = placed(&s);
+    assert_eq!(row.len(), 1, "a lone cart is not alone on the row");
+    let (x, w) = row[0];
+    assert!((w - CART_W as f32).abs() < 0.5, "the lone cart is {w} wide");
+    let centre = x + w / 2.0;
+    assert!(
+        (centre - 360.0).abs() < 0.5,
+        "the lone cart sits at {centre}"
+    );
+}
+
+/// Two carts are centred as a pair rather than on the selection. A row of two has only one
+/// neighbour to give — the same cart may not stand on both sides of the selection — so
+/// centring the selection leaves a hole beside the pair where a cart would be, and a hole in a
+/// row of carts reads as one that failed to load rather than as an end.
+#[test]
+fn two_carts_are_centred_as_a_pair() {
+    let mut s = shelf_with(2);
+    settle(&mut s);
+    let row = placed(&s);
+    assert_eq!(row.len(), 2, "a row of two drew {} carts", row.len());
+    let centres: Vec<f32> = row.iter().map(|(x, w)| x + w / 2.0).collect();
+    let middle = (centres[0] + centres[1]) / 2.0;
+    assert!(
+        (middle - 360.0).abs() < 0.5,
+        "the pair sits at {middle}, not the middle of the screen"
+    );
+    assert!(
+        (centres[1] - centres[0] - 240.0).abs() < 0.5,
+        "the two carts are {} apart rather than one pitch",
+        centres[1] - centres[0]
+    );
+}
+
+/// Where the selected cart stands, which is what a cart going into the slot and a cart the
+/// picker opens both start from. A row that is not centred on its selection has to be able to
+/// say so, or the handover to the slot is a jump.
+#[test]
+fn the_shelf_says_where_its_selected_cart_stands() {
+    for n in [1usize, 2, 3, 5] {
+        let mut s = shelf_with(n);
+        settle(&mut s);
+        let widest = placed(&s)
+            .into_iter()
+            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
+        assert!(
+            (widest.0 - s.rest_x()).abs() < 0.5,
+            "{n} carts: the selection stands at {} and the shelf says {}",
+            widest.0,
+            s.rest_x()
+        );
+    }
+}
+
+/// Three or more is the row as it has always been: the selection dead centre with a neighbour
+/// peeking in either side.
+#[test]
+fn a_row_of_three_or_more_is_centred_on_its_selection() {
+    for n in [3usize, 4, 7] {
+        let mut s = shelf_with(n);
+        s.right();
+        settle(&mut s);
+        let (x, w) = placed(&s)
+            .into_iter()
+            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
+        let centre = x + w / 2.0;
+        assert!(
+            (centre - 360.0).abs() < 0.5,
+            "{n} carts: the selected cart sits at {centre}"
+        );
+    }
+}
+
 #[test]
 fn shelf_scroll_settles_on_the_selected_index() {
     let mut s = shelf_with(5);

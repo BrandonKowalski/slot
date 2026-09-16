@@ -10,12 +10,12 @@ use slot_store::{
     StateEntry, StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
-    lid_at, lift_of, on_board, ClockPicker, Draw, FfState, Hud, HudKind, Icon, LinkBadge, Millis,
-    Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal,
-    Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W,
-    HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
-    TURN_PAD,
+    board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
+    lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, Hud, HudKind,
+    Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
+    QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U,
+    CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V,
+    SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -388,7 +388,18 @@ pub enum Phase {
 
 pub struct App {
     phase: Phase,
-    shelf: Shelf,
+    /// One carousel per platform, in `Platform::ALL` order, which is the order the shoulders
+    /// ring through them. Every platform is held whether or not it has a cart on it — an empty
+    /// shelf is a place the ring passes over, not a place that stops existing — and the list is
+    /// never empty itself, so `shelf()` always has one to hand back.
+    ///
+    /// A widget each rather than one widget re-pointed, because `Shelf` is where the index, the
+    /// scroll, the spring and the key repeat all live: holding one per shelf is what makes every
+    /// one of those per-shelf, and a shelf come back to is a shelf exactly as it was left.
+    shelves: Vec<(Platform, Shelf)>,
+    /// Which of `shelves` is on screen. Not written to the card: it is where the carousel
+    /// happens to be, the same as `Shelf::index`, which is not written either.
+    shelf_at: usize,
     /// When A went down on the shelf, and `None` the rest of the time. The hold lives here
     /// rather than in the gesture layer because A is the GBA's A button everywhere else, and
     /// `Gestures` is deliberately blind to which screen is up.
@@ -585,12 +596,46 @@ pub struct App {
     radio: Box<dyn RadioJobs>,
 }
 
+/// The card's library split into shelves, one per platform, in the order the shoulders ring
+/// through them. Every platform `Platform::ALL` names gets a shelf even with nothing on it, so
+/// the ring is a fixed list that the library's contents only decide the stops on.
+fn shelves_of(carts: Vec<Cart>) -> Vec<(Platform, Shelf)> {
+    let mut rows: Vec<(Platform, Vec<Cart>)> =
+        Platform::ALL.iter().map(|p| (*p, Vec::new())).collect();
+    for cart in carts {
+        if let Some((_, row)) = rows.iter_mut().find(|(p, _)| *p == cart.platform) {
+            row.push(cart);
+        }
+    }
+    rows.into_iter()
+        .map(|(platform, carts)| (platform, Shelf::new(carts)))
+        .collect()
+}
+
+/// What the banner says when the carousel lands on a shelf. `slot_ui` knows nothing of
+/// platforms and `slot_store` nothing of toasts, so the two names are married here.
+fn shelf_toast(platform: Platform) -> Toast {
+    match platform {
+        Platform::Gba => Toast::GbaShelf,
+        Platform::Gb => Toast::GameBoyShelf,
+        Platform::Gbc => Toast::GameBoyColorShelf,
+    }
+}
+
 impl App {
     pub fn new(carts: Vec<Cart>) -> Self {
+        let shelves = shelves_of(carts);
+        // Never an empty shelf while another has carts on it: a device that opened on nothing
+        // with a full shelf one button away would read as a card that failed to scan.
+        let shelf_at = shelves
+            .iter()
+            .position(|(_, s)| !s.carts.is_empty())
+            .unwrap_or(0);
         App {
             radio: radio_jobs(),
             phase: Phase::Shelf,
-            shelf: Shelf::new(carts),
+            shelves,
+            shelf_at,
             play_held: None,
             refusal: None,
             refused_from: None,
@@ -688,17 +733,22 @@ impl App {
         // `slot.state` remembers, including a cart that is no longer on the card, names the
         // only thing it could have meant.
         let seated = if self.single_cart() {
-            Some(0)
+            // The one cart is on the one shelf that has anything, which is the shelf the
+            // carousel already opened on.
+            Some((self.shelf_at, 0))
         } else {
             let stem = self.state.cart.clone();
-            stem.and_then(|stem| self.shelf.carts.iter().position(|c| c.stem == stem))
+            stem.and_then(|stem| self.seat_of(&stem))
         };
         self.phase = Phase::Shelf;
         match seated {
-            Some(i) => {
-                // The shelf sits on the resumed cart so ejecting it lands where it left.
-                self.shelf.index = i;
-                self.shelf.scroll = i as f32;
+            Some((at, i)) => {
+                // The carousel opens on the resumed cart's own shelf, sitting on the cart
+                // itself, so ejecting it lands where it left.
+                self.shelf_at = at;
+                let shelf = self.shelf_mut();
+                shelf.index = i;
+                shelf.scroll = i as f32;
                 // Never clean: a resume is the whole point of the cart still being in there.
                 self.insert(false);
                 if let Phase::Inserting { resumed, t, .. } = &mut self.phase {
@@ -712,6 +762,70 @@ impl App {
             // the next seat rewrites it, and a boot is the worst moment to need a write.
             None => self.state.cart = None,
         }
+    }
+
+    /// The carousel on screen. Every shelf keeps its own place, so this is only ever "the one
+    /// being looked at": nothing may take it for "the library", which is `carts`.
+    fn shelf(&self) -> &Shelf {
+        &self.shelves[self.shelf_at].1
+    }
+
+    fn shelf_mut(&mut self) -> &mut Shelf {
+        &mut self.shelves[self.shelf_at].1
+    }
+
+    /// The shoulders, on the carousel: `by` is 1 for R1 and -1 for L1. The ring runs over the
+    /// shelves that hold a cart and passes over the rest, so a card with no Colour games has two
+    /// stops on it rather than three.
+    ///
+    /// Nothing at all happens when there is nowhere to go — no movement, no banner, and no
+    /// refusal either. A dead button is the honest answer to a library on one shelf; a shake
+    /// would be slot saying something was wrong when nothing is.
+    fn switch_shelf(&mut self, by: i32) {
+        let Some(to) = self.next_shelf(by) else {
+            return;
+        };
+        // Whatever the shelf being left had armed belonged to the row that was showing. A
+        // direction still held would sit there with its repeat due in the past and start
+        // walking the moment the carousel came back to it, with nothing under the player's
+        // thumb to explain it; a held A would seat a cart they are no longer looking at.
+        self.shelf_mut().release_hold();
+        self.play_held = None;
+        self.shelf_at = to;
+        // The carousel is one row of carts wherever it stands, so which system it is showing is
+        // the one thing this changes that the row cannot say for itself. A second press
+        // overwrites the pair the HUD holds rather than stacking a banner behind it, which is
+        // what keeps the name legible while a held shoulder walks the ring.
+        let now = self.now();
+        self.hud.toast(shelf_toast(self.shelves[to].0), now);
+    }
+
+    /// The shelf `by` steps round the ring from the one showing, passing over every shelf with
+    /// nothing on it. `None` when there is nowhere else to go — one shelf holds the library, or
+    /// no shelf does — which is what leaves the buttons inert.
+    fn next_shelf(&self, by: i32) -> Option<usize> {
+        let n = self.shelves.len() as i32;
+        (1..n)
+            .map(|step| (self.shelf_at as i32 + by * step).rem_euclid(n) as usize)
+            .find(|at| !self.shelves[*at].1.carts.is_empty())
+    }
+
+    /// Where the cart named `stem` stands: which shelf, and where along it. A stem can collide
+    /// across platforms — `Tetris.gb` and `Tetris.gba` are two carts under one name — so the
+    /// shelves are asked in ring order and the first answer wins, which puts Game Boy Advance
+    /// ahead of both Game Boy shelves. That is the right way round for a card written before
+    /// there was more than one shelf, where every stem meant a GBA cart.
+    fn seat_of(&self, stem: &str) -> Option<(usize, usize)> {
+        self.shelves
+            .iter()
+            .enumerate()
+            .find_map(|(at, (_, shelf))| {
+                shelf
+                    .carts
+                    .iter()
+                    .position(|c| c.stem == stem)
+                    .map(|i| (at, i))
+            })
     }
 
     /// Confirms whatever is on the clock screen, setting the clock and the offset the same way
@@ -814,8 +928,12 @@ impl App {
         self.clock_faces = Some((line, hint));
     }
 
+    /// Every shelf's, because every shelf dims its side carts and one silhouette serves them
+    /// all: the shadow is the cart's shape, and a cart is a cart on whichever shelf it stands.
     pub fn set_cart_shadow(&mut self, face: TexId) {
-        self.shelf.set_shadow(face);
+        for (_, shelf) in &mut self.shelves {
+            shelf.set_shadow(face);
+        }
     }
 
     pub fn set_wallpaper(&mut self, face: TexId) {
@@ -838,18 +956,30 @@ impl App {
         &self.phase
     }
 
-    pub fn carts(&self) -> &[Cart] {
-        &self.shelf.carts
+    /// The whole library, shelf by shelf in ring order. Not one shelf's: whoever is looking a
+    /// cart up by name — to spawn its core, or to build its face — wants the card, not the row
+    /// that happens to be on screen.
+    pub fn carts(&self) -> impl Iterator<Item = &Cart> {
+        self.shelves
+            .iter()
+            .flat_map(|(_, shelf)| shelf.carts.iter())
     }
 
-    /// Exactly one cart on the card. The shelf is unreachable and eject is refused.
+    /// Exactly one cart on the card, counting every shelf. The shelf is unreachable and eject is
+    /// refused.
     pub fn single_cart(&self) -> bool {
-        self.shelf.carts.len() == 1
+        self.carts().count() == 1
     }
 
-    /// Face textures in `carts` order. Only the compositor can mint a `TexId`.
+    /// Face textures in `carts` order, which is every shelf's carts end to end. Handed out again
+    /// the same way, so each shelf gets its own and only its own. Only the compositor can mint a
+    /// `TexId`.
     pub fn set_faces(&mut self, faces: Vec<TexId>) {
-        self.shelf.set_faces(faces);
+        let mut faces = faces.into_iter();
+        for (_, shelf) in &mut self.shelves {
+            let n = shelf.carts.len();
+            shelf.set_faces(faces.by_ref().take(n).collect());
+        }
     }
 
     /// Handed over when the core is spawned, which is on the way into the slot.
@@ -1212,9 +1342,9 @@ impl App {
 
     /// The cart under the highlight, and `None` on an empty shelf.
     pub fn selected_stem(&self) -> Option<&str> {
-        self.shelf
+        self.shelf()
             .carts
-            .get(self.shelf.index)
+            .get(self.shelf().index)
             .map(|c| c.stem.as_str())
     }
 
@@ -1295,8 +1425,8 @@ impl App {
         // The release reaches the shelf whatever is on screen. A direction let go of during
         // an insert would otherwise still be held when the cart comes back out.
         match action {
-            Action::GbaUp(Btn::Left) => self.shelf.release_left(),
-            Action::GbaUp(Btn::Right) => self.shelf.release_right(),
+            Action::GbaUp(Btn::Left) => self.shelf_mut().release_left(),
+            Action::GbaUp(Btn::Right) => self.shelf_mut().release_right(),
             _ => {}
         }
         // Beside the power menu's own block rather than inside the phase match, so the two
@@ -1323,8 +1453,10 @@ impl App {
                 // Ahead of the shelf's own movement, so an open picker takes the arrows
                 // before the row of carts underneath it does.
                 _ if self.core_picker.is_some() => self.core_picker_input(action),
-                Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf.hold_left(now),
-                Action::ShelfRight | Action::GbaDown(Btn::Right) => self.shelf.hold_right(now),
+                Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf_mut().hold_left(now),
+                Action::ShelfRight | Action::GbaDown(Btn::Right) => {
+                    self.shelf_mut().hold_right(now)
+                }
                 Action::QuickMenu => self.open_quick_menu(),
                 // A is two actions and the press cannot tell them apart yet, so the cart
                 // goes in on the release. The hold has already taken it if it got there
@@ -1336,6 +1468,10 @@ impl App {
                     }
                 }
                 Action::Insert => self.insert(false),
+                // The shoulders move the carousel between shelves. Only here: in a game they
+                // are the GBA's own L and R, and the row must never turn over under one.
+                Action::GbaDown(Btn::L1) => self.switch_shelf(-1),
+                Action::GbaDown(Btn::R1) => self.switch_shelf(1),
                 _ => {}
             },
             // Eject reaches an insert as well, so a cart whose core never arrived can still
@@ -1612,13 +1748,19 @@ impl App {
         // A direction still held as the shelf leaves the screen is not held when it comes
         // back: the row repeats only while it is the thing being looked at.
         if !self.on_shelf() {
-            self.shelf.release_hold();
+            self.shelf_mut().release_hold();
         }
         let mut touched = false;
+        // Read out before the phase is borrowed, so the shelf on screen can still be reached
+        // from inside the match below.
+        let at = self.shelf_at;
         let next = match &mut self.phase {
             Phase::Shelf => {
-                self.shelf.tick(now);
-                self.shelf.update(dt);
+                // Only the shelf being looked at. The others are exactly as they were left,
+                // repeat and spring included, until the carousel comes back to them.
+                let shelf = &mut self.shelves[at].1;
+                shelf.tick(now);
+                shelf.update(dt);
                 None
             }
             Phase::Inserting {
@@ -1966,11 +2108,11 @@ impl App {
                         // Dimmed by as much of the open as has happened, so the dark arrives
                         // with the lid coming off and leaves with it going back on.
                         let dim = 1.0 + (CORE_PICKER_DIM - 1.0) * open;
-                        self.shelf
+                        self.shelf()
                             .draw_row(Some(stem), 0.0, CORE_PICKER_RECEDE * open, dim, out);
                         draw_empty_slot(out);
                     }
-                    _ => self.shelf.draw(self.shelf_shake(), out),
+                    _ => self.shelf().draw(self.shelf_shake(), out),
                 }
                 draw_footer(
                     self.battery,
@@ -1994,7 +2136,8 @@ impl App {
                 // Spec section 3: a resumed cart shows no shelf, not even one frame of it.
                 if !resumed {
                     draw_backdrop(self.wallpaper, out);
-                    self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
+                    self.shelf()
+                        .draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 }
                 self.chrome(cart, self.seat(), out);
             }
@@ -2004,7 +2147,8 @@ impl App {
             // playing the same movement twice rather than reversing it.
             Phase::Ejecting { cart, .. } => {
                 draw_backdrop(self.wallpaper, out);
-                self.shelf.draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
+                self.shelf()
+                    .draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 self.chrome(cart, self.seat(), out);
             }
             // The slot stays on screen until the picture behind it has finished arriving,
@@ -2092,13 +2236,14 @@ impl App {
     }
 
     fn chrome(&self, stem: &str, dim: f32, out: &mut Vec<Draw>) {
-        let Some((cart, face)) = self.shelf.find(stem) else {
+        let Some((cart, face)) = self.shelf().find(stem) else {
             return;
         };
         let alpha = self.alert_alpha();
         SlotChrome {
             cart,
             face,
+            rest: self.shelf().rest_x(),
             seat: self.seat(),
             alert: self.alert_face.filter(|_| alpha > 0.0).map(|t| (t, alpha)),
             dim,
@@ -2242,7 +2387,10 @@ impl App {
         let progress = picker.openness(now);
         // The shadows and the legend come in with the lift, not with the slide.
         let lift = lift_of(progress);
-        let board = board_at(progress);
+        // The cart grows out of where the row was standing it, which is the middle of the
+        // screen on every shelf but one holding two carts.
+        let shelf = shelf_cart_at(self.shelf().rest_x());
+        let board = board_from(shelf, progress);
         let zoom = board_zoom(board);
         let ready = self.core_faces_ready();
 
@@ -2322,7 +2470,7 @@ impl App {
         // with the lid and comes in as the lid rises. Drawn whether or not this cart's faces are
         // ready: the lid is always something, the fallback included, and it always casts one.
         if let Some(tex) = self.core_chip_shadow_face {
-            let (lid, _) = lid_at(progress);
+            let (lid, _) = lid_from(shelf, progress);
             let k = lid.w / lid_at(1.0).0.w;
             let (w, h) = (LID_SHADOW_W * k, LID_SHADOW_H * k);
             out.push(Draw::Tex {
@@ -2339,7 +2487,7 @@ impl App {
             // Always opaque: at the very start and end of the movement the lid is the cart on
             // the shelf, and a cart there does not fade.
             if let Some(tex) = self.core_lid_face {
-                let (lid, turn) = lid_at(progress);
+                let (lid, turn) = lid_from(shelf, progress);
                 let at = grown(lid, TURN_PAD as f32 * lid.w / CART_W as f32);
                 out.push(Draw::Turned {
                     x: at.x,
@@ -2351,14 +2499,15 @@ impl App {
                     turn,
                 });
             }
-        } else if let Some((_, Some(tex))) =
-            self.selected_stem().and_then(|stem| self.shelf.find(stem))
+        } else if let Some((_, Some(tex))) = self
+            .selected_stem()
+            .and_then(|stem| self.shelf().find(stem))
         {
             // The cap ran out before this cart's own lid arrived. The shelf's own face for the
             // cart is the only thing left to lift — not `core_lid_face`, which would still be
             // whatever cart the worker built last — and it is drawn unpadded: unlike a face
             // built for the picker, the shelf's face carries no transparent border to grow into.
-            let (lid, turn) = lid_at(progress);
+            let (lid, turn) = lid_from(shelf, progress);
             out.push(Draw::Turned {
                 x: lid.x,
                 y: lid.y,
@@ -2484,7 +2633,7 @@ impl App {
     /// screen opening, a core loading, a link being picked — and never once a frame. `None`
     /// for a cart the shelf cannot name.
     fn auto_link(&self, stem: &str) -> Option<(&Cart, LinkKind)> {
-        let cart = self.shelf.carts.iter().find(|c| c.stem == stem)?;
+        let cart = self.shelf().carts.iter().find(|c| c.stem == stem)?;
         let auto = link_kind(&cart.code, &cart.title, slot_store::header_clean(&cart.rom));
         Some((cart, auto))
     }
@@ -2498,9 +2647,9 @@ impl App {
             return;
         }
         let Some(cart) = self
-            .shelf
+            .shelf()
             .carts
-            .get(self.shelf.index)
+            .get(self.shelf().index)
             .map(|c| c.stem.clone())
         else {
             return;
@@ -2779,7 +2928,7 @@ impl App {
         };
         // Nothing to configure with no cart under the highlight, and a picker that wrote to
         // an empty stem would leave a line for a cart that is not there.
-        let Some(cart) = self.shelf.carts.get(self.shelf.index) else {
+        let Some(cart) = self.shelf().carts.get(self.shelf().index) else {
             return;
         };
         let seat = slot_store::core_for(&root, &cart.stem);
@@ -2792,7 +2941,7 @@ impl App {
         // Whatever the shelf had armed before START belonged to the shelf that was showing,
         // not to the cart now open over it: a held direction would keep repeating underneath
         // the lid, and a held A would still insert the cart once its 500 ms ran out.
-        self.shelf.release_hold();
+        self.shelf_mut().release_hold();
         self.play_held = None;
     }
 
@@ -3203,8 +3352,10 @@ impl App {
     /// app is told — `self.core` is the seated cart's, set when a core is actually spawned,
     /// and the shelf has none seated.
     fn write_core(&self, core: Core) {
-        let (Some(root), Some(cart)) = (self.root.clone(), self.shelf.carts.get(self.shelf.index))
-        else {
+        let (Some(root), Some(cart)) = (
+            self.root.clone(),
+            self.shelf().carts.get(self.shelf().index),
+        ) else {
             return;
         };
         if let Err(e) = slot_store::write_selected_core(&root, &cart.stem, core) {

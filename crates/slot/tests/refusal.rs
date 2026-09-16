@@ -74,9 +74,12 @@ fn an_empty_ring_shakes_the_screen_and_not_a_cart() {
 /// The alert is what says it now, and the cart has to stand still for that to be legible.
 #[test]
 fn a_refused_cart_shows_an_alert_and_does_not_jitter() {
-    // Two carts: one is a dedicated device and boots straight into the slot seated, where
-    // there is no travelling cart to measure.
-    let d = tmp_root_with_carts(&["Broken", "Fusion"]);
+    // Three carts. One is a dedicated device and boots straight into the slot seated, where
+    // there is no travelling cart to measure; two are centred as a pair, so the cart that goes
+    // in slides sideways as it goes down and a moving x would no longer mean a shake. On a row
+    // of three the selection stands in the middle and the only thing that can move it is the
+    // jitter this is looking for.
+    let d = tmp_root_with_carts(&["Broken", "Fusion", "Zzz"]);
     let mut a = boot(d.path());
     a.apply(Action::Insert);
     // Partway in. A core that fails before the cart has moved has nothing to hand back, and
