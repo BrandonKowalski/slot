@@ -16,10 +16,11 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use slot::app::App;
 use slot_gfx::{Compositor, HeadlessSurface, TexId, OUT_H, OUT_W};
 use slot_input::{Action, Btn};
-use slot_store::{write_slot_state, Core, SlotState};
+use slot_store::{write_slot_state, Core, Platform, SlotState};
 use slot_ui::{
-    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
-    gb_cart_shadow, hint_face, padded, socket_face, GbShell, TURN_PAD,
+    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, clean_label,
+    edge, gb_cart_shadow, hint_face, housing, label_colour, opening, padded, recess, socket_face,
+    GbShell, TURN_PAD,
 };
 use tempfile::TempDir;
 
@@ -206,4 +207,128 @@ fn start_draws_the_plain_shelf_on_a_game_boy_cart() {
         after != plain,
         "the picker opened and the panel showed the same shelf"
     );
+}
+
+/// Which Tetris came back, read off the panel.
+///
+/// `cart=Tetris` names two cartridges on a card holding `Games/GBA/Tetris.gba` and
+/// `Games/GB/Tetris.gb`, and `cart_platform` is the only thing that says which of them the
+/// player left in the slot. That claim is about an object on screen, so it is settled here
+/// rather than by asking the app what it thinks it seated: a resume that picked the wrong
+/// cartridge and a resume that picked the right one are two different pictures of the machine.
+///
+/// The two are told apart by what they are made of rather than by where they are. A seated GBA
+/// cart and a seated Game Boy pak stand in the slot at the same depth showing the same run of
+/// themselves — `render_shelves.rs` pins exactly that — so a reading of *where* the cartridge is
+/// cannot tell them apart at all. What differs is the plastic, charcoal against the pak's pale
+/// grey, and the paper: a GBA cart's label well clears the lip and a pak's, 27.7% down a body
+/// nearly twice as tall, is swallowed whole.
+#[test]
+fn the_card_says_which_tetris_is_in_the_slot() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("no GL on this host, skipping");
+        return;
+    };
+    // Emerald is there so the GBA shelf is not a one cart library, which boots past the shelf
+    // for reasons of its own and would resume the same cartridge whatever the card said.
+    let d = common::tmp_root_with_carts(&["Tetris", "Emerald"]);
+    common::write_gb_cart(&d, "Tetris", "TETRIS");
+
+    let gba = resumed_shot(&d, &mut c, Some(Platform::Gba), "resume-gba");
+    let gb = resumed_shot(&d, &mut c, Some(Platform::Gb), "resume-gb");
+    let unstated = resumed_shot(&d, &mut c, None, "resume-unstated");
+
+    // The plastic. A pak is pale grey and a GBA cart charcoal, and the reading is taken half way
+    // down whatever run of cartridge the slot is showing rather than at a row typed out here, so
+    // it stays on the cartridge if the recess ever swallows more or less of one.
+    let (top, bottom) = cartridge_rows(&gba).expect("no cartridge in the slot at all");
+    assert_eq!(
+        cartridge_rows(&gb),
+        Some((top, bottom)),
+        "the two cartridges are not seated at the same depth, so what follows would be \
+         comparing different parts of them"
+    );
+    let row = (top + bottom) / 2;
+    let (dark, pale) = (centre(&gba, row), centre(&gb, row));
+    assert!(
+        (0..3).all(|k| pale[k] as i32 - dark[k] as i32 > 40),
+        "the card named the Game Boy shelf and the slot is holding {pale:?} where the Game Boy \
+         Advance cartridge reads {dark:?}: the wrong cartridge came back"
+    );
+
+    // And the paper, which says the same thing the other way round: a GBA cart's label clears
+    // the lip, and the pak's is inside the machine.
+    let ink = label_colour(&clean_label("Tetris"));
+    assert!(
+        paper(&gba, ink) > 200,
+        "the Game Boy Advance cartridge is in the slot without its label showing"
+    );
+    assert_eq!(
+        paper(&gb, ink),
+        0,
+        "a pak is seated and its label well is above the lip, which no pak's is"
+    );
+
+    // A card that never said is a card from before there was anything to say, and every one of
+    // those held GBA carts alone. Frame for frame the same picture, not merely a cartridge that
+    // reads alike.
+    assert!(
+        unstated == gba,
+        "a card with no cart_platform line did not resume the Game Boy Advance cartridge"
+    );
+}
+
+/// The card resumed with `platform` on it, booted and composited.
+fn resumed_shot(
+    d: &TempDir,
+    c: &mut Compositor,
+    platform: Option<Platform>,
+    name: &str,
+) -> Vec<u8> {
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Tetris".into()),
+            cart_platform: platform,
+            clock_set: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut app = App::boot(d.path());
+    upload_faces(&mut app, c);
+    shot(&app, c, name)
+}
+
+/// The first and last screen rows the cartridge covers. Everything else in this frame is flat:
+/// the black the compositor clears to, and the four theme colours the machine's own bands are
+/// painted in. Whatever is none of those is the cartridge — the same reading
+/// `render_shelves.rs::shell_rows` takes, and for the same reason: nothing here names a
+/// coordinate, so the answer is wherever the cartridge turns out to be.
+fn cartridge_rows(px: &[u8]) -> Option<(usize, usize)> {
+    let flat = [[0.0, 0.0, 0.0, 1.0], housing(), opening(), edge(), recess()];
+    let cart = |o: usize| {
+        !flat
+            .iter()
+            .any(|f| (0..3).all(|k| px[o + k].abs_diff((f[k] * 255.0).round() as u8) <= 8))
+    };
+    let mut rows = (0..OUT_H as usize)
+        .filter(|y| (0..OUT_W as usize).any(|x| cart((y * OUT_W as usize + x) * 4)));
+    let first = rows.next()?;
+    Some((first, rows.next_back().unwrap_or(first)))
+}
+
+/// The pixel half way across the screen on `row`, which is the middle of the cartridge: the slot
+/// is centred and so is what is standing in it.
+fn centre(px: &[u8], row: usize) -> [u8; 3] {
+    let o = (row * OUT_W as usize + (OUT_W / 2) as usize) * 4;
+    [px[o], px[o + 1], px[o + 2]]
+}
+
+/// How much of this cartridge's own label paper is on screen. The colour is a hash of the title,
+/// so on this card it is Tetris's and nothing else in the frame wears it.
+fn paper(px: &[u8], ink: [u8; 3]) -> usize {
+    px.chunks(4)
+        .filter(|p| (0..3).all(|k| p[k].abs_diff(ink[k]) <= 24))
+        .count()
 }

@@ -504,10 +504,15 @@ impl Session {
 
     /// `serial` is the `gpsp_serial` the core loads with.
     fn spawn_core(&mut self, stem: &str, serial: &'static str) {
+        // The cartridge in the slot, not the first one on the card wearing this name. Looking a
+        // stem up across the whole library answers with the GBA cartridge whenever a `.gb` and a
+        // `.gba` share a stem, whichever of them the player actually chose — so the core would
+        // open the wrong rom and every save, state and polaroid for the session would be filed
+        // under the wrong platform. See `App::seated_cart`.
         let Some((rom, platform)) = self
             .app
-            .carts()
-            .find(|c| c.stem == stem)
+            .seated_cart()
+            .filter(|c| c.stem == stem)
             .map(|c| (c.rom.clone(), c.platform))
         else {
             return;
