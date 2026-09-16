@@ -10,13 +10,27 @@ fn ensure_creates_the_six_folders_and_nothing_else() {
     let d = tempdir().unwrap();
     let out = d.path().join("dist");
     slot::root::ensure(&out);
+
+    // Every entry `DIRS` names is created, `Games/GBA` and its siblings included: `join`
+    // and `is_dir` both follow a `/` the same as any other path.
+    for name in slot::root::DIRS {
+        assert!(out.join(name).is_dir(), "{name} was not created");
+    }
+
+    // And nothing extra sits beside them. `DIRS` now names some entries one level under a
+    // top level folder rather than only at the top level, so what a plain, non-recursive
+    // `read_dir` of `out` sees is each entry's first path segment, not `DIRS` itself.
     let mut got: Vec<String> = std::fs::read_dir(&out)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     got.sort();
-    let mut want: Vec<String> = slot::root::DIRS.iter().map(|s| s.to_string()).collect();
+    let mut want: Vec<String> = slot::root::DIRS
+        .iter()
+        .map(|s| s.split('/').next().unwrap().to_string())
+        .collect();
     want.sort();
+    want.dedup();
     assert_eq!(got, want);
 }
 

@@ -294,3 +294,131 @@ fn the_platform_skip_does_not_stop_a_real_cart_migrating() {
     assert!(d.path().join("States/mgba/Emerald/resume.state").exists());
     assert!(d.path().join("States/GB/mgba/Tetris").is_dir());
 }
+
+use slot_store::migrate_platforms;
+
+fn loose_card() -> tempfile::TempDir {
+    let d = tempdir().unwrap();
+    for sub in ["Games", "Saves", "Labels", "States"] {
+        std::fs::create_dir_all(d.path().join(sub)).unwrap();
+    }
+    std::fs::write(d.path().join("Games/Metroid Fusion.gba"), b"rom").unwrap();
+    std::fs::write(d.path().join("Saves/Metroid Fusion.sav"), b"save").unwrap();
+    std::fs::write(d.path().join("Saves/LeafGreen.srm"), b"srm").unwrap();
+    std::fs::write(d.path().join("Labels/Metroid Fusion.png"), b"png").unwrap();
+    let ring = d.path().join("States/gpsp/Advance Wars");
+    std::fs::create_dir_all(&ring).unwrap();
+    std::fs::write(ring.join("resume.state"), b"state").unwrap();
+    d
+}
+
+/// Every card in existence is entirely loose and entirely GBA, so the sweep needs no per-file
+/// classification. Contents must survive untouched: this moves a player's saves.
+#[test]
+fn a_loose_card_is_swept_into_gba() {
+    let d = loose_card();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(
+        std::fs::read(d.path().join("Games/GBA/Metroid Fusion.gba")).unwrap(),
+        b"rom"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/Metroid Fusion.sav")).unwrap(),
+        b"save"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/LeafGreen.srm")).unwrap(),
+        b"srm"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Labels/GBA/Metroid Fusion.png")).unwrap(),
+        b"png"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("States/GBA/gpsp/Advance Wars/resume.state")).unwrap(),
+        b"state"
+    );
+    assert!(!d.path().join("Games/Metroid Fusion.gba").exists());
+    assert!(!d.path().join("States/gpsp").exists());
+}
+
+#[test]
+fn sweeping_twice_moves_nothing_the_second_time() {
+    let d = loose_card();
+    assert!(migrate_platforms(d.path()).unwrap().moved > 0);
+    assert_eq!(
+        migrate_platforms(d.path()).unwrap().moved,
+        0,
+        "not idempotent"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/Metroid Fusion.sav")).unwrap(),
+        b"save"
+    );
+}
+
+/// An interrupted sweep leaves some entries moved and some loose. The next run must finish the
+/// job rather than compound it, and must never overwrite what is already in place.
+#[test]
+fn a_half_finished_sweep_resumes_without_clobbering() {
+    let d = loose_card();
+    std::fs::create_dir_all(d.path().join("Saves/GBA")).unwrap();
+    std::fs::write(d.path().join("Saves/GBA/Metroid Fusion.sav"), b"newer").unwrap();
+
+    let report = migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(report.failed, 0, "a collision is expected, not a failure");
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/Metroid Fusion.sav")).unwrap(),
+        b"newer",
+        "an already migrated save was clobbered"
+    );
+    assert!(
+        d.path().join("Saves/Metroid Fusion.sav").exists(),
+        "the loose copy was destroyed rather than left visible"
+    );
+    // The rest of the card still went.
+    assert!(d.path().join("Games/GBA/Metroid Fusion.gba").exists());
+}
+
+/// Finder drops `.DS_Store` and `._` sidecars onto every FAT volume it touches. Those are card
+/// metadata, not content, and sweeping them would be noise.
+#[test]
+fn dotfiles_are_left_where_they_are() {
+    let d = loose_card();
+    std::fs::write(d.path().join("Games/.DS_Store"), b"junk").unwrap();
+    std::fs::write(d.path().join("Games/._Metroid Fusion.gba"), b"sidecar").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(
+        std::fs::read(d.path().join("Games/.DS_Store")).unwrap(),
+        b"junk"
+    );
+    assert!(d.path().join("Games/._Metroid Fusion.gba").exists());
+}
+
+/// Game Boy folders the user staged by hand are already where they belong, and the sweep must
+/// not take them for loose files.
+#[test]
+fn platform_folders_are_not_swept_into_gba() {
+    let d = loose_card();
+    std::fs::create_dir_all(d.path().join("Games/GB")).unwrap();
+    std::fs::write(d.path().join("Games/GB/Tetris.gb"), b"gb").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(
+        std::fs::read(d.path().join("Games/GB/Tetris.gb")).unwrap(),
+        b"gb"
+    );
+    assert!(!d.path().join("Games/GBA/GB").exists());
+}
+
+#[test]
+fn a_card_with_no_directories_is_fine() {
+    let d = tempdir().unwrap();
+    assert_eq!(migrate_platforms(d.path()).unwrap().moved, 0);
+}

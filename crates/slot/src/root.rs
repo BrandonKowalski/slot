@@ -1,10 +1,18 @@
 use std::path::{Path, PathBuf};
 
-/// The six top level folders of a content root. A card that has never held slot. has none
-/// of them, and every write path below assumes its own is already there.
-pub const DIRS: [&str; 7] = [
+/// The folders of a content root, including the platform subdirectories under `Games/` so
+/// `ensure` creates them and the card teaches its own layout to someone dropping files in over
+/// USB. `Saves/`, `States/` and `Labels/` grow their platform subdirectories on first write
+/// instead, the same as their contents already do.
+///
+/// A card that has never held slot. has none of them, and every write path below assumes its
+/// own is already there.
+pub const DIRS: [&str; 10] = [
     "BIOS",
     "Games",
+    "Games/GBA",
+    "Games/GB",
+    "Games/GBC",
     "Labels",
     "Saves",
     "States",
