@@ -422,3 +422,60 @@ fn a_card_with_no_directories_is_fine() {
     let d = tempdir().unwrap();
     assert_eq!(migrate_platforms(d.path()).unwrap().moved, 0);
 }
+
+/// I1: `Games/`, `Saves/`, `Labels/` and `States/` are four independent directories, so one of
+/// them being stuck must not cost the other three their turn, and must not drop the count of
+/// what they did move on the floor. `Saves/GBA` existing as a plain file is not something a
+/// healthy card produces, but a corrupted one is not impossible, and `create_dir_all` failing on
+/// it must not abort the whole sweep.
+#[test]
+fn a_blocked_directory_fails_soft_and_does_not_stop_the_others() {
+    let d = tempdir().unwrap();
+    for sub in ["Games", "Saves"] {
+        std::fs::create_dir_all(d.path().join(sub)).unwrap();
+    }
+    std::fs::write(d.path().join("Games/Metroid Fusion.gba"), b"rom").unwrap();
+    std::fs::write(d.path().join("Saves/Metroid Fusion.sav"), b"save").unwrap();
+    std::fs::write(d.path().join("Saves/GBA"), b"not a directory").unwrap();
+
+    let report = migrate_platforms(d.path()).unwrap();
+
+    // Two, not one: the blocking file is itself a loose file named `GBA` sitting directly in
+    // `Saves/`, so `sweep_files` finds it too and fails to move it into `Saves/GBA/GBA` for the
+    // same reason. Both the real save and this namesake count against the boot log.
+    assert_eq!(
+        report.failed, 2,
+        "the blocked save and the blocking file itself must both count"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Metroid Fusion.sav")).unwrap(),
+        b"save",
+        "the source was disturbed"
+    );
+    // Games/ still went: one stuck directory does not abort the sweep of the other three.
+    assert_eq!(
+        std::fs::read(d.path().join("Games/GBA/Metroid Fusion.gba")).unwrap(),
+        b"rom"
+    );
+}
+
+/// The ordering guard. Deferring the `root::migrate` call site to Task 3 left the two sweeps'
+/// required order expressed nowhere but a doc comment; this is where it is proven end to end.
+/// Reversed, a pre-namespacing `States/<stem>/` would be taken for a loose top level directory
+/// and land at `States/GBA/<stem>/` — a cart folder sitting where a core folder belongs, which
+/// `sweep_state_cores` (looking only for `Core::ALL` names) will never look inside again.
+#[test]
+fn migrate_states_then_migrate_platforms_lands_a_pre_namespacing_state_under_its_platform() {
+    let d = tempdir().unwrap();
+    let dir = d.path().join("States/Emerald");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("resume.state"), b"resume").unwrap();
+
+    migrate_states(d.path()).unwrap();
+    migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(
+        std::fs::read(d.path().join("States/GBA/mgba/Emerald/resume.state")).unwrap(),
+        b"resume"
+    );
+}

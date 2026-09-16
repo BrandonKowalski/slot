@@ -120,23 +120,47 @@ impl MigrationReport {
 /// longer matches, so a second call walks the same directories and moves nothing. Safe after an
 /// interrupted run too — `rename` within a filesystem either moves an entry or does not, so
 /// there is no state in which a save is half-moved.
+///
+/// The four directories are independent, so one sweep's failure does not stop the other three:
+/// unlike `migrate_states`, which walks a single directory where a hard error really does mean
+/// there is nothing left to do, `Saves/` being unreadable says nothing about whether `Games/`,
+/// `Labels/` or `States/` are. Letting it abort the others is also the one failure mode that
+/// reads exactly like lost saves — a ROM reaching `Games/GBA/` while its save stays behind in
+/// `Saves/`, where Task 3's platform-aware reader never looks. `sweep_files` and
+/// `sweep_state_cores` are infallible for this reason: every failure they can hit is folded
+/// into their own returned `failed` count rather than aborting the sweep that called them.
 pub fn migrate_platforms(root: &Path) -> std::io::Result<MigrationReport> {
     let mut report = MigrationReport::default();
     for dir in ["Games", "Saves", "Labels"] {
-        report.add(sweep_files(&root.join(dir))?);
+        report.add(sweep_files(&root.join(dir)));
     }
-    report.add(sweep_state_cores(&root.join("States"))?);
+    report.add(sweep_state_cores(&root.join("States")));
     Ok(report)
 }
 
 /// Loose files in one directory into its `GBA/` subdirectory. Directories at this level are the
 /// platform folders themselves and are left alone.
-fn sweep_files(dir: &Path) -> std::io::Result<MigrationReport> {
+fn sweep_files(dir: &Path) -> MigrationReport {
     let mut report = MigrationReport::default();
     let entries = match std::fs::read_dir(dir) {
-        Ok(d) => d.collect::<Result<Vec<_>, _>>()?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(report),
-        Err(e) => return Err(e),
+        Ok(d) => match d.collect::<Result<Vec<_>, _>>() {
+            Ok(entries) => entries,
+            // A stray file is isolated to that one entry below; this is the directory itself
+            // failing partway through — `Saves/` going unreadable mid-scan, say — and there is
+            // nothing left in it this call can safely visit. Counted rather than silently
+            // skipped, so a directory stuck this way is not invisible on the boot log.
+            Err(_) => {
+                report.failed += 1;
+                return report;
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return report,
+        // Never propagated: see `migrate_platforms`' doc comment on why one of the four
+        // directories being unreadable must not stop the other three from sweeping.
+        Err(_) => {
+            report.failed += 1;
+            return report;
+        }
     };
     let dest_dir = dir.join(Platform::Gba.dir_name());
     for entry in entries {
@@ -169,17 +193,28 @@ fn sweep_files(dir: &Path) -> std::io::Result<MigrationReport> {
             Err(_) => report.failed += 1,
         }
     }
-    Ok(report)
+    report
 }
 
 /// The core directories under `States/` into `States/GBA/`, which is what produces the
 /// `States/<platform>/<core>/<stem>/` shape.
-fn sweep_state_cores(states: &Path) -> std::io::Result<MigrationReport> {
+fn sweep_state_cores(states: &Path) -> MigrationReport {
     let mut report = MigrationReport::default();
     let entries = match std::fs::read_dir(states) {
-        Ok(d) => d.collect::<Result<Vec<_>, _>>()?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(report),
-        Err(e) => return Err(e),
+        Ok(d) => match d.collect::<Result<Vec<_>, _>>() {
+            Ok(entries) => entries,
+            Err(_) => {
+                report.failed += 1;
+                return report;
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return report,
+        // Never propagated, for the same reason as `sweep_files`: `States/` failing here must
+        // not undo what `Games/`, `Saves/` and `Labels/` already swept.
+        Err(_) => {
+            report.failed += 1;
+            return report;
+        }
     };
     let dest_dir = states.join(Platform::Gba.dir_name());
     for entry in entries {
@@ -214,5 +249,5 @@ fn sweep_state_cores(states: &Path) -> std::io::Result<MigrationReport> {
             Err(_) => report.failed += 1,
         }
     }
-    Ok(report)
+    report
 }
