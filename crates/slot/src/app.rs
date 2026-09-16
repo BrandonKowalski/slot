@@ -2782,6 +2782,19 @@ impl App {
         let Some(cart) = self.shelf.carts.get(self.shelf.index) else {
             return;
         };
+        // The board this opens onto is a traced GBA cartridge PCB — 32 contacts, a GBA ROM
+        // package — so a Game Boy shell coming apart to reveal it would be showing the player
+        // hardware that is not in their hand, which is not a liberty the art takes anywhere else.
+        // Nor is there a choice underneath it to justify one: `session::spawn_core` runs a Game
+        // Boy cart on mGBA whatever the ini says, because mGBA is the only core that runs one.
+        //
+        // So the press does nothing at all, and deliberately not a refusal shake either: a shake
+        // answers a choice declined, and there is no choice here to decline. Same reasoning as
+        // L1/R1 sitting inert when the card holds only one shelf. A Game Boy board is on the
+        // backlog, and when it is drawn this is the line that lets it in.
+        if cart.platform != Platform::Gba {
+            return;
+        }
         let seat = slot_store::core_for(&root, &cart.stem);
         let now = self.now();
         let mut picker = CorePicker::open(seat, now);
@@ -2838,6 +2851,26 @@ impl App {
         // nothing to pick in here anyway.
         if self.link_active() {
             return self.refuse();
+        }
+        // The platform, ahead of both questions below, because neither of their answers is even
+        // about a Game Boy cart. `link_carried` is gpSP's question and it is keyed on a GBA
+        // header; `Toast::NeedsGpsp` says "Please switch to gpSP", which is advice that cannot
+        // work, since gpSP does not run a Game Boy game at all — a core swap and a reload to
+        // arrive at a cart that will not load.
+        //
+        // Structural rather than incidental, and a Game Boy Pokémon cart is why that distinction
+        // is not pedantry: `link_carried` matches the family by title alone, and `POKEMON RED` is
+        // exactly what a `.gb` header carries in its own eleven byte field at 0x134. Left to the
+        // old order that cart passes gpSP's own test and earns the advice above. Asking the
+        // platform first is what makes the answer right for the reason it is right, rather than
+        // for whatever a header field happened to read.
+        //
+        // When slot's mGBA lockstep route lands this becomes the place a Game Boy cart's own link
+        // is offered from — mGBA runs the cart and would be running both ends of it — and until
+        // then "no link support" is the whole truth.
+        if self.platform != Platform::Gba {
+            self.hud.toast(Toast::NoLink, self.now());
+            return;
         }
         // gpSP fakes named protocols rather than emulating the cable, so for a cart it has none
         // for there is nothing on the far side of the link to reach. Offering it anyway is the

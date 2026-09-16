@@ -897,9 +897,18 @@ fn seated_on_gpsp(d: &TempDir) -> App {
 /// The same, on whichever core the test is about. The core decides whether the link screen can
 /// open at all, so a test about which refusal a press earns has to be able to name it.
 fn seated_on(d: &TempDir, core: Core) -> App {
+    seated_on_platform(d, core, Platform::Gba)
+}
+
+/// The same again, for a cart that is not a GBA cart. The core and the platform are set here in
+/// one breath, exactly as `session::spawn_core` sets them for the cart it just spawned, because
+/// the refusal below asks the platform before it asks anything else and a cart whose platform
+/// never arrived would be answered as a GBA cart.
+fn seated_on_platform(d: &TempDir, core: Core, platform: Platform) -> App {
     let mut app = common::boot(d.path());
     app.apply(Action::Insert);
     app.set_core(core);
+    app.set_platform(platform);
     app.on_core_ready();
     for _ in 0..120 {
         app.update(1.0 / 60.0);
@@ -1739,6 +1748,48 @@ fn a_cart_gpsp_can_link_still_says_to_switch_to_it() {
         Some(Toast::NeedsGpsp),
         "a cart gpSP can carry was told there is no link support for it"
     );
+}
+
+/// The platform outranks both questions above, and a Game Boy cart is where getting that order
+/// wrong shows. `link_carried` is gpSP's question and it matches the Pokémon family by title
+/// alone, so `POKEMON RED` — which is exactly what a `.gb` header carries in its own eleven byte
+/// field — passes gpSP's test for a game gpSP has never been able to load at all. Asked in the
+/// old order that earns "Please switch to gpSP": a core swap the player cannot benefit from,
+/// for a cart that core cannot run. `Toast::NoLink` is the one banner that is true here, and it
+/// has to be reached structurally rather than by a header field happening to read empty.
+///
+/// Both cores, because neither is an excuse. The platform check sits ahead of the core check, so
+/// a device somehow sitting on gpSP with a Game Boy cart is refused the screen just the same.
+#[test]
+fn the_link_shortcut_on_a_game_boy_cart_says_no_link_support() {
+    for core in [Core::Mgba, Core::Gpsp] {
+        let d = common::tmp_root_with_gb_carts(&["Pokemon Red", "Zzz"]);
+        let mut app = seated_on_platform(&d, core, Platform::Gb);
+        app.apply(Action::GameMenu);
+        assert!(
+            !app.game_menu_open(),
+            "{core:?} offered a Game Boy cart a link screen"
+        );
+        assert_ne!(
+            app.toast(),
+            Some(Toast::NeedsGpsp),
+            "{core:?} told a Game Boy cart to switch to gpSP, which cannot run it at all"
+        );
+        assert_eq!(
+            app.toast(),
+            Some(Toast::NoLink),
+            "{core:?} answered a Game Boy cart with the wrong banner"
+        );
+        assert!(
+            matches!(app.phase(), Phase::Playing { .. }),
+            "{core:?}: the refusal took the game away: {:?}",
+            app.phase()
+        );
+        assert!(
+            !app.link_active(),
+            "{core:?} started a link session for a Game Boy cart"
+        );
+    }
 }
 
 /// The legend names SELECT only where SELECT does something. A game gpSP links the same way on

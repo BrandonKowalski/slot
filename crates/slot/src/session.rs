@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use slot_input::{Action, Gestures, Millis, RawEvent};
 use slot_retro::Rumble;
+use slot_store::{Core, Platform};
 use slot_ui::FfState;
 
 use crate::app::{App, Phase};
@@ -499,7 +500,19 @@ impl Session {
         // in practice, right up until `open_core` did not yet know `Core` existed. `App` stores
         // this rather than re-deriving it later, which is what makes that class of drift
         // structurally unreachable now instead of merely unobserved.
-        let core = slot_store::core_for(&self.root, stem);
+        //
+        // The platform outranks the file, and only a GBA cart's line is read at all.
+        // `selected_core.ini` is hand-edited on the card, so nothing there stops a line reading
+        // `Tetris = gpsp` — and gpSP does not run Game Boy games: it would refuse the ROM or
+        // paint garbage, with the cart's states filed under a core that never ran it. mGBA is
+        // the only core that runs one, so there is no choice for the file to be expressing and
+        // nothing is lost by not reading it. A GBA cart's line still means everything it did.
+        // `SLOT_CORE` is untouched by this: it names a dylib rather than a `Core`, and its own
+        // doc comment already calls it the trap it is.
+        let core = match platform {
+            Platform::Gba => slot_store::core_for(&self.root, stem),
+            Platform::Gb | Platform::Gbc => Core::Mgba,
+        };
         self.app.set_core(core);
         // `platform` comes straight off the `Cart` the shelf scanned, not re-derived from the
         // stem: it is what closes the same class of drift for a `.gb` and a `.gba` cart that

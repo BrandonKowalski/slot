@@ -123,7 +123,9 @@ pub fn open_core_for(
 /// is what every cart loads with until its link screen is switched to the other hardware (see
 /// `link_kind::serial_option`). mGBA gets none of gpSP's options: it has no `gpsp_serial`, and
 /// handing it one anyway is a landmine the day it grows one. It does get a frameskip option,
-/// below, but under its own prefix — neither core reads the other's.
+/// below, but under its own prefix — neither core reads the other's — and one of its own that
+/// gpSP has no equivalent for, `mgba_sgb_borders`, because mGBA is the core that runs a Game Boy
+/// cart and a Super Game Boy border is the one thing it can draw that will not fit the panel.
 ///
 /// `bios` is whether the card carries a real BIOS (`root::has_real_bios`), and it buys the
 /// player the boot logo and chime. gpSP defaults to `game`, which drops straight into the
@@ -158,6 +160,18 @@ pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str, bi
     //
     // The key is the core's own name with `_frameskip` after it, which is how both spell it.
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
+    if which == Core::Mgba {
+        // An SGB border makes the picture 256x224, and 256 is wider than the 240 this whole path
+        // is built on — `video_refresh` would crop it. The core declares this one as `ON|OFF`
+        // and its default is `ON`, so this is not merely belt and braces; and it is set
+        // explicitly rather than counted on staying that way, so a default that changes under us
+        // cannot turn a working screen into a cropped one either.
+        //
+        // `mgba_gb_model` is deliberately left alone. Its default is `Autodetect`, which is each
+        // cart's own header read honestly, and naming a model here would override what the cart
+        // says about itself. Nothing sets `mgba_use_bios` or `mgba_skip_bios`.
+        core.set_option("mgba_sgb_borders", "OFF");
+    }
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
         if bios {

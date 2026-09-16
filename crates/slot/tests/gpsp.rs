@@ -724,3 +724,81 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         "open_core fell back to the mock instead of the dylib planted at root/System"
     );
 }
+
+/// `System/selected_core.ini` is a text file a person edits on a card, and nothing in it stops a
+/// line naming gpSP for a Game Boy cart. gpSP does not run Game Boy games at all — it would
+/// refuse the ROM outright or paint garbage — so for a cart that is not a GBA cart the file gets
+/// no say: the platform the shelf scanned it under is what settles which core runs. The ini keeps
+/// its meaning for a GBA cart, where there really are two engines to choose between.
+///
+/// Driven through the real `Session`, because `spawn_core` is the one place a cart's core is
+/// resolved, and read back through the directory that one resolution also names. The seeded
+/// counter is 700_000, which is further than the mock could ever count to on its own, and it has
+/// to come back **moved**: only a run that read `States/GB/mgba/` and then wrote back to it can
+/// produce that, so one number pins both halves. A run that had honoured the ini would have left
+/// that file exactly as seeded and filed its own state under `States/GB/gpsp/` instead, which is
+/// what the second assertion refuses.
+#[test]
+fn a_game_boy_cart_runs_on_mgba_whatever_the_ini_says() {
+    use slot::app::Phase;
+    use slot::persist;
+    use slot::session::Session;
+    use slot_input::{Btn, RawEvent};
+    use slot_store::{StateRing, SELECTED_CORE_FILE};
+    use std::time::{Duration, Instant};
+
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Tetris = gpsp\n").unwrap();
+    StateRing::new(d.path(), Platform::Gb, Core::Mgba, "Tetris")
+        .write_resume(&700_000u64.to_le_bytes())
+        .unwrap();
+
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+
+    let mut now = 32;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    // The counter each core directory holds, as the mock's eight byte state, or `None` where
+    // nothing has ever been filed under that core at all.
+    let counter = |core| {
+        persist::read_resume(d.path(), Platform::Gb, core, "Tetris")
+            .map(|b| u64::from_le_bytes(b.try_into().expect("the mock's state is 8 bytes")))
+    };
+
+    // Frames the seated core actually runs, flushed out through the path the binary uses, until
+    // the resumed counter moves. A counter that merely still reads what it was seeded with says
+    // nothing: that is equally what a run resuming from somewhere else leaves behind.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if counter(Core::Mgba).is_some_and(|n| n > 700_000) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the ini's `Tetris = gpsp` was honoured for a Game Boy cart: States/GB/mgba still \
+             reads {:?} and States/GB/gpsp reads {:?}",
+            counter(Core::Mgba),
+            counter(Core::Gpsp)
+        );
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+        s.app_mut().flush_resume();
+    }
+    assert_eq!(
+        counter(Core::Gpsp),
+        None,
+        "a Game Boy cart's state was filed under States/GB/gpsp"
+    );
+}

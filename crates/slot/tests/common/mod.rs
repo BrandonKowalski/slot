@@ -40,6 +40,31 @@ pub fn tmp_root_with_carts(stems: &[&str]) -> TempDir {
     d
 }
 
+/// A card whose whole library is Game Boy carts, each wearing its own stem as a header title.
+/// Kept apart from `tmp_root_with_carts` rather than folded into it: the folder is what decides
+/// a cart's platform, so a Game Boy cart is not a GBA cart with a different extension.
+pub fn tmp_root_with_gb_carts(stems: &[&str]) -> TempDir {
+    let d = tmp_root();
+    for stem in stems {
+        write_gb_cart(&d, stem, &stem.to_uppercase());
+    }
+    d
+}
+
+/// A Game Boy cart on the card. `scan` reads the platform off the folder and never off the ROM,
+/// so this writes into `Games/GB/`; the title goes at 0x134 in the eleven byte field
+/// `slot_store::gb::title` reads, which is a different place entirely from the 0xA0 a GBA header
+/// keeps its own in.
+pub fn write_gb_cart(d: &TempDir, stem: &str, title: &str) {
+    assert!(
+        title.len() <= 11,
+        "a Game Boy header title is eleven bytes, and {title:?} is longer"
+    );
+    let mut rom = vec![0u8; 0x150];
+    rom[0x134..0x134 + title.len()].copy_from_slice(title.as_bytes());
+    std::fs::write(d.path().join("Games/GB").join(format!("{stem}.gb")), rom).expect("write rom");
+}
+
 /// The headers `tmp_root_with_carts` writes are not roms, and a real core refuses them.
 /// Anything that puts a cart in the slot for real needs these instead.
 pub fn tmp_root_with_real_carts(stems: &[&str]) -> TempDir {
