@@ -12,11 +12,7 @@ The Rust frontend was put together by Claude Opus. I reviewed everything that wa
 produced. All documentation is 100% free-range, meatbag prose.
 
 The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought
-that something this focused on GBA would be kind of neat.
-
-This is just a glorified wrapper around mGBA, which is the real star of the show.
-
-Provided without support. I will selectively address filed issues and PRs.
+that something the invoked the feeling of using my GBA SP as a kid.
 
 Use it, don't use it, I don't care. 
 
