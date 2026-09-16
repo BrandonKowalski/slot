@@ -12,7 +12,7 @@ The Rust frontend was put together by Claude Opus. I reviewed everything that wa
 produced. All documentation is 100% free-range, meatbag prose.
 
 The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought
-that something the invoked the feeling of using my GBA SP as a kid.
+that something that evokes the feeling of using my GBA SP as a kid.
 
 Use it, don't use it, I don't care. 
 
