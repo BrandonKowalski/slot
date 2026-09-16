@@ -123,13 +123,19 @@ fn a_missing_bios_folder_turns_the_boot_splash_off() {
     );
 }
 
-/// A card that has never held slot. has none of the six folders, and every write path
-/// below assumes its own is already there.
+/// A card that has never held slot. has none of these folders, and every write path assumes
+/// its own is already there. The one test that boots into a bare directory, so it is the one
+/// that can say `App::boot` creates them rather than that something else already had.
+///
+/// Read off `DIRS` rather than listed here. The list this used to carry was a second copy of
+/// that array which had already fallen three entries behind it — `Wallpapers` and the platform
+/// folders under `Games/` were all missing — and a copy that omits an entry cannot fail when
+/// the entry stops being created.
 #[test]
-fn boot_creates_the_six_content_folders() {
+fn boot_creates_every_content_folder() {
     let d = tempdir().unwrap();
     let _ = slot::app::App::boot(d.path());
-    for sub in ["BIOS", "Games", "Labels", "Saves", "States", "System"] {
+    for sub in slot::root::DIRS {
         assert!(d.path().join(sub).is_dir(), "{sub} was not created");
     }
 }

@@ -6,7 +6,7 @@ use tempfile::tempdir;
 /// `--init-root`, so `root::ensure` is the only implementation of it. This is what keeps a
 /// card the app cannot read from being assembled in the first place.
 #[test]
-fn ensure_creates_the_six_folders_and_nothing_else() {
+fn ensure_creates_every_folder_dirs_names_and_nothing_else() {
     let d = tempdir().unwrap();
     let out = d.path().join("dist");
     slot::root::ensure(&out);
@@ -48,8 +48,13 @@ fn ensure_leaves_existing_content_alone() {
     );
 }
 
+/// Named after `DIRS` rather than after a count, as the test above now is. The array grew from
+/// seven entries to ten and then to thirteen inside one plan, and the `six` both these names
+/// used to carry was never right at any of the three — a count in a test name is a second copy
+/// of a fact the assertion below already reads straight off `DIRS`, and nothing fails when the
+/// copy goes stale.
 #[test]
-fn a_booted_app_root_has_the_same_six_folders() {
+fn a_booted_app_root_has_the_same_folders() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
     for name in slot::root::DIRS {
         assert!(d.path().join(name).is_dir(), "app root is missing {name}");

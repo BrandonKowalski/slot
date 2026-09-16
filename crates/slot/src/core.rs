@@ -9,11 +9,11 @@ use crate::root;
 ///
 /// This wins over `System/selected_core.ini` for which dylib loads — it stays a developer
 /// escape hatch, not a second way to pick a core. It is not silent about that: it does not
-/// touch which `Core` a cart resolves to (still the ini, still what the state directory
-/// under `States/<core>/` is named after), only which file `open_core` opens. Pointing this
-/// at gpSP for a cart the ini never mentions runs gpSP with its states filed under
-/// `States/mgba/` — correct for a developer who set the override on purpose, a trap for
-/// anyone who forgot it was set.
+/// touch which `Core` a cart resolves to (still the ini, still what the core half of
+/// `States/<platform>/<core>/` is named after), only which file `open_core` opens. Pointing
+/// this at gpSP for a cart the ini never mentions runs gpSP with its states filed under that
+/// platform's `mgba` directory — correct for a developer who set the override on purpose, a
+/// trap for anyone who forgot it was set.
 const CORE_ENV: &str = "SLOT_CORE";
 
 /// Which dylib backs a core. The device keeps both in `System/`, so this is a filename
@@ -184,7 +184,7 @@ mod tests {
     /// in this module: `candidates`, and therefore `open_core`, never spells a filename that
     /// does not match the `Core` it was handed. `crates/slot/tests/gpsp.rs` pins the other
     /// half — that a cart resolved to the same `Core` reads its resume state from the
-    /// matching `States/<core>/` directory — through the real `Session`.
+    /// matching `States/<platform>/<core>/` directory — through the real `Session`.
     #[test]
     fn candidates_search_the_named_cores_own_filename_only() {
         let _g = lock();

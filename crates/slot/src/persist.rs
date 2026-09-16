@@ -94,11 +94,12 @@ pub fn eject(
 /// smaller battery save is ever a real one.
 ///
 /// The comparison goes through `read_sav`, not a stat of `sav_path` alone: `read_sav` also
-/// accepts `Saves/<stem>.srm` (RetroArch's name for the same battery bytes, see its own doc
-/// comment below), and a card carrying only an `.srm` still has a real save on it. Stat-ing
-/// `.sav` directly would find nothing there, wave a smaller write through unguarded, and that
-/// new `.sav` would then shadow the larger `.srm` on every read after — this is the exact
-/// loss shape the guard above exists to stop, just reached from the one path it could not see.
+/// accepts `Saves/<platform>/<stem>.srm` (RetroArch's name for the same battery bytes, see its
+/// own doc comment below), and a card carrying only an `.srm` still has a real save on it.
+/// Stat-ing `.sav` directly would find nothing there, wave a smaller write through unguarded,
+/// and that new `.sav` would then shadow the larger `.srm` on every read after — this is the
+/// exact loss shape the guard above exists to stop, just reached from the one path it could
+/// not see.
 pub fn write_sav(root: &Path, platform: Platform, stem: &str, sav: &[u8]) -> std::io::Result<bool> {
     let path = sav_path(root, platform, stem);
     if let Some(old) = read_sav(root, platform, stem) {

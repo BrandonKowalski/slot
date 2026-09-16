@@ -1,19 +1,31 @@
 use std::path::{Path, PathBuf};
 
-/// The folders of a content root, including the platform subdirectories under `Games/` so
-/// `ensure` creates them and the card teaches its own layout to someone dropping files in over
-/// USB. `Saves/`, `States/` and `Labels/` grow their platform subdirectories on first write
-/// instead, the same as their contents already do.
+/// The folders of a content root, including the platform subdirectories under `Games/` and
+/// `Labels/` so `ensure` creates them and the card teaches its own layout to someone dropping
+/// files in over USB.
+///
+/// Those two folders and no others, and what separates them from the rest is who puts a file
+/// there. A person places a rom and a piece of label art by hand, over USB, and needs somewhere
+/// to put each that says which platform it is for — a `.gb` and a `.gba` cart may share a stem,
+/// so `Tetris.png` alone does not say which cart it is the face of. Nobody hand-places a battery
+/// save or a save state; slot writes both. So `Saves/` and `States/` grow their platform
+/// subdirectories on first write instead, the same as their contents already do.
 ///
 /// A card that has never held slot. has none of them, and every write path below assumes its
 /// own is already there.
-pub const DIRS: [&str; 10] = [
+///
+/// Parents come before their children: `ensure` creates each in turn, and so does the test
+/// harness's own root.
+pub const DIRS: [&str; 13] = [
     "BIOS",
     "Games",
     "Games/GBA",
     "Games/GB",
     "Games/GBC",
     "Labels",
+    "Labels/GBA",
+    "Labels/GB",
+    "Labels/GBC",
     "Saves",
     "States",
     "System",
