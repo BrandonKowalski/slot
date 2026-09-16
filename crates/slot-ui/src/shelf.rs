@@ -1,7 +1,7 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
-use slot_store::Cart;
+use slot_store::{Cart, ShelfKind};
 
-use crate::cart::{label_colour, label_text, CART_H, CART_W};
+use crate::cart::{cart_box, label_colour, label_text, CART_H};
 use crate::hud::Millis;
 use crate::slot_chrome::draw_empty_slot;
 
@@ -12,8 +12,13 @@ use crate::slot_chrome::draw_empty_slot;
 const PITCH: f32 = 240.0;
 const SIDE_SCALE: f32 = 0.78;
 const SIDE_ALPHA: f32 = 0.55;
-/// Carts stand on the row rather than float: the foot stays put as a cart shrinks away.
-pub(crate) const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
+/// The one line every cart stands on, whatever platform it is for: carts stand on the row
+/// rather than float, so the foot stays put as a cart shrinks away and each platform's rest
+/// position is this less its own height. The value is where the floor has to be for a GBA cart
+/// to sit centred on the screen, which is where the row has always been; it is not a second
+/// name for that cart's top edge, and a 253 px Game Boy pak measured from the screen's centre
+/// instead would float 118 px above the row.
+pub const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
 /// Critically damped, so a flick lands on a cart instead of bouncing past and returning.
 const OMEGA: f32 = 16.0;
 /// How far the cart next to the selection is pushed aside as the chosen one goes in. Enough
@@ -35,9 +40,11 @@ pub struct Shelf {
     pub index: usize,
     pub scroll: f32,
     faces: Vec<TexId>,
-    /// The cart silhouette in black, drawn under a dimmed cart. One texture for the whole
-    /// row: every cart is the same shape.
+    /// The cart silhouette in black, drawn under a dimmed cart. One texture per shape rather
+    /// than one for the row: a row can hold GBA carts or Game Boy paks, and the two outlines
+    /// are different objects.
     shadow: Option<TexId>,
+    gb_shadow: Option<TexId>,
     vel: f32,
     /// The direction being held and when it next repeats. Repeat lives here rather than in
     /// the gesture layer so nothing in game starts auto firing.
@@ -52,6 +59,7 @@ impl Shelf {
             scroll: 0.0,
             faces: Vec::new(),
             shadow: None,
+            gb_shadow: None,
             vel: 0.0,
             held: None,
         }
@@ -61,6 +69,13 @@ impl Shelf {
     /// can mint a `TexId`.
     pub fn set_shadow(&mut self, face: TexId) {
         self.shadow = Some(face);
+    }
+
+    /// The Game Boy pak's outline in black. A row whose carts are paks and whose only uploaded
+    /// shadow is the GBA one draws no black at all rather than a tapered shape stretched under
+    /// a straight sided cart.
+    pub fn set_gb_shadow(&mut self, face: TexId) {
+        self.gb_shadow = Some(face);
     }
 
     pub fn set_faces(&mut self, faces: Vec<TexId>) {
@@ -242,7 +257,9 @@ impl Shelf {
             let t = offset.abs().min(1.0);
             let scale = 1.0 + (SIDE_SCALE - 1.0) * t;
             let alpha = (1.0 + (SIDE_ALPHA - 1.0) * t) * (1.0 - recede);
-            let (w, h) = (CART_W as f32 * scale, CART_H as f32 * scale);
+            let kind = cart.platform.shelf();
+            let (cw, ch) = cart_box(kind);
+            let (w, h) = (cw as f32 * scale, ch as f32 * scale);
             // Away from the middle, and further the further out it already was, so the row
             // opens rather than sliding sideways.
             let away = offset.signum() * (1.0 + offset.abs());
@@ -255,7 +272,11 @@ impl Shelf {
             // Black in the cart's own shape, under the dimmed face. Without it the dimming is
             // transparency, and over a wallpaper the row reads as ghosts of carts.
             if alpha < 1.0 {
-                if let Some(tex) = self.shadow {
+                let backing = match kind {
+                    ShelfKind::Gba => self.shadow,
+                    ShelfKind::GameBoy => self.gb_shadow,
+                };
+                if let Some(tex) = backing {
                     out.push(Draw::Tex {
                         x,
                         y,

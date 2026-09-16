@@ -9,11 +9,11 @@ use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
     arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
-    date_time_text, hhmm, hint_face, icon_face, menu_face, photo_face, quick_caret_face,
-    quick_label_face, quick_legend_faces, quick_value_face, set_clock_hint_face, socket_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge, PowerChoice,
-    QuickMenuFaces, QuickRow, QuickValue, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
-    HUD_ICON_PX, HUD_INK, LEGEND,
+    date_time_text, gb_cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face,
+    quick_caret_face, quick_label_face, quick_legend_faces, quick_value_face, set_clock_hint_face,
+    socket_face, sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge,
+    PowerChoice, QuickMenuFaces, QuickRow, QuickValue, StickerFields, Toast, UndoFace, ALERT_PX,
+    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -303,6 +303,9 @@ impl Frontend {
         let shadow = cart_shadow();
         let id = compositor.create_texture(shadow.w, shadow.h, &shadow.rgba);
         self.session.app_mut().set_cart_shadow(id);
+        let gb_shadow = gb_cart_shadow();
+        let id = compositor.create_texture(gb_shadow.w, gb_shadow.h, &gb_shadow.rgba);
+        self.session.app_mut().set_gb_cart_shadow(id);
         // `draw_gauge` now draws the bolt beside the capsule, on the housing, in its own
         // reserved slot rather than over the fill. The housing tint was only ever needed to
         // hide the bolt inside the fill it sat on; out here it sits where every other HUD

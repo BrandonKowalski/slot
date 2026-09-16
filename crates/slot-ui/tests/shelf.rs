@@ -1,6 +1,8 @@
 use slot_power::{Battery, Charge};
 use slot_store::{Cart, Platform};
-use slot_ui::{draw_footer, label_colour, Draw, Printed, Shelf, TexId, CART_W, OUT_W};
+use slot_ui::{
+    draw_footer, label_colour, Draw, Printed, Shelf, TexId, CART_W, FOOT_Y, GB_CART_H, OUT_W,
+};
 
 fn shelf_with(n: usize) -> Shelf {
     Shelf::new(
@@ -568,5 +570,72 @@ fn dim_darkens_a_side_carts_face_and_not_the_black_under_it() {
     assert_eq!(
         dimmed_under, under,
         "the black under the side cart changed with the dim"
+    );
+}
+
+fn gb_shelf_with(n: usize) -> Shelf {
+    Shelf::new(
+        (0..n)
+            .map(|i| Cart {
+                platform: Platform::Gb,
+                stem: format!("Pak {i}"),
+                rom: format!("Games/GB/Pak {i}.gb").into(),
+                label: None,
+                code: String::new(),
+                title: format!("PAK {i}"),
+            })
+            .collect(),
+    )
+}
+
+/// A Game Boy Game Pak is the same width as a GBA cart and 1.87x as tall, so a row that drew
+/// every cart at one size would squash it. It stands on the same floor as a GBA cart — the row
+/// is a shelf, and both objects have their feet on it — which puts its top edge higher.
+#[test]
+fn the_row_draws_a_game_boy_pak_at_its_own_height() {
+    let mut s = gb_shelf_with(3);
+    settle(&mut s);
+    s.set_faces((0..3).map(|i| TexId::from_raw(20 + i)).collect());
+    let mut out = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+    let (h, y) = out
+        .iter()
+        .find_map(|d| match *d {
+            Draw::Tex { y, w, h, .. } if (w - CART_W as f32).abs() < 0.01 => Some((h, y)),
+            _ => None,
+        })
+        .expect("no cart is drawn at full size");
+    assert_eq!(h, GB_CART_H as f32, "the pak was drawn at the GBA height");
+    assert_eq!(y, FOOT_Y - GB_CART_H as f32, "the pak is off the row floor");
+}
+
+/// The black backing under a dimmed cart is the cart's own outline. A Game Boy shelf that has
+/// only the GBA silhouette uploaded draws no backing rather than a tapered one stretched to a
+/// straight sided pak.
+#[test]
+fn a_game_boy_row_backs_its_carts_with_the_game_boy_shadow() {
+    let mut s = gb_shelf_with(3);
+    settle(&mut s);
+    s.set_faces((0..3).map(|i| TexId::from_raw(20 + i)).collect());
+    let gba = TexId::from_raw(98);
+    s.set_shadow(gba);
+    let drawn = |s: &Shelf| {
+        let mut out = Vec::new();
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        out
+    };
+    assert!(
+        !drawn(&s)
+            .iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gba)),
+        "the GBA silhouette was stretched under a Game Boy pak"
+    );
+    let gb = TexId::from_raw(97);
+    s.set_gb_shadow(gb);
+    assert!(
+        drawn(&s)
+            .iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gb)),
+        "nothing backs the dimmed paks once their own shadow is uploaded"
     );
 }

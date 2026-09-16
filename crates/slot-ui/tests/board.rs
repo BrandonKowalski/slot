@@ -1,7 +1,7 @@
 use slot_store::{Cart, Core, Platform};
 use slot_ui::{
-    board_at, board_face, chip_face, chip_shadow_face, lid_at, lift_of, on_board, padded,
-    rom_marking, rom_marking_face, shelf_cart, shell_for, slide_of, socket_face, CartFace, Placed,
+    board_at, board_face, chip_face, chip_shadow_face, gba_shell_for, lid_at, lift_of, on_board,
+    padded, rom_marking, rom_marking_face, shelf_cart, slide_of, socket_face, CartFace, Placed,
     BOARD_H, BOARD_W, CART_H, CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H,
     SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_W, TURN_PAD,
 };
@@ -108,7 +108,7 @@ fn the_board_is_the_size_it_is_shown_at() {
 fn the_back_shell_is_the_carts_own_plastic() {
     let emerald = board_face(&cart(EMERALD, "BPEE"));
     assert!(
-        near(rgb(&emerald, 14, 70), shell_for("BPEE").colour),
+        near(rgb(&emerald, 14, 70), gba_shell_for("BPEE").colour),
         "Emerald's wall is {:?}",
         rgb(&emerald, 14, 70)
     );

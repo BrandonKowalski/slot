@@ -86,7 +86,7 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
 }
 
 pub fn board_face(cart: &Cart) -> CartFace {
-    let shell = shell_for(&cart.code);
+    let shell = shell_for(cart);
     // Deepest placeholder first and the wall last, so a shell whose own hex or shade matches
     // a placeholder still further down the list finds nothing left to replace: once a
     // placeholder's `.replace` call has run, its literal text is gone from the SVG.
