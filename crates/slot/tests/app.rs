@@ -1,11 +1,15 @@
 mod common;
 
-use std::time::Duration;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
 use slot::session::Session;
+use slot::video_mode::{video_mode_for, VideoMode, VIDEO_MODE_FILE};
+use slot_gfx::WHOLE_TEXTURE;
 use slot_input::{Action, Btn, RawEvent};
+use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Placed, TexId,
@@ -1937,5 +1941,130 @@ fn arrows_pressed_while_the_cart_waits_move_nothing() {
     assert!(
         turned_at(&out, f.chips[1]).is_none(),
         "the chip opened in gpSP"
+    );
+}
+
+/// The whole card, from the shelf to a cart playing, over whatever `open_core` finds — the mock
+/// on a machine with no dylib anywhere it looks, which is what a test wants: these are about
+/// which buttons reach the core, not about what the core does with them.
+fn session_playing(root: &Path) -> Session {
+    common::clocked(root);
+    let mut s = Session::boot(root.to_path_buf());
+    // A tap of A on the shelf. A card that resumed a cart is already on its way in and the
+    // press lands on nothing, which is the same place it was going.
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    s
+}
+
+/// What `video_refresh` leaves a Game Boy picture occupying inside the 240x160 buffer, as the
+/// game pass takes it: x 40..200 and y 8..152, in texture coordinates.
+const GB_WINDOW: [f32; 4] = [40.0 / 240.0, 8.0 / 160.0, 160.0 / 240.0, 144.0 / 160.0];
+
+/// What the pad is holding right now, as the core would be polled for it. `Session` hands the
+/// mask to the emulator thread at the end of every `feed`, so this is the far side of the one
+/// gate that decides whether a button is the game's.
+fn pad(s: &Session) -> u16 {
+    s.emu().expect("no core in the slot").input().0
+}
+
+/// The Game Boy and the Game Boy Color had no shoulder buttons, so on one of their carts slot
+/// takes L and R for the picture. On a GBA cart they are the GBA's own and must reach the pad
+/// untouched — letting them through to a Game Boy core as well would in fact be harmless,
+/// since mGBA maps libretro's L and R to nothing there, but correct-by-accident is what this
+/// plan has already been bitten by once.
+#[test]
+fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    let mut s = session_playing(d.path());
+    assert_eq!(
+        s.app().source_rect(),
+        WHOLE_TEXTURE,
+        "it did not open actual size"
+    );
+
+    s.feed([RawEvent::Down(Btn::L1)], 100);
+    assert_eq!(
+        s.app().source_rect(),
+        GB_WINDOW,
+        "L did not stretch the picture"
+    );
+    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
+    s.feed([RawEvent::Up(Btn::L1)], 120);
+
+    s.feed([RawEvent::Down(Btn::R1)], 200);
+    assert_eq!(
+        s.app().source_rect(),
+        WHOLE_TEXTURE,
+        "R did not give it back"
+    );
+    assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
+    s.feed([RawEvent::Up(Btn::R1)], 220);
+
+    // The control. Without it every assertion above would pass on a build that simply stopped
+    // sending the shoulders to any core at all.
+    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    let mut s = session_playing(d.path());
+    s.feed([RawEvent::Down(Btn::L1)], 100);
+    assert_ne!(pad(&s) & ButtonMask::L, 0, "the GBA lost its own L");
+    s.feed([RawEvent::Down(Btn::R1)], 120);
+    assert_ne!(pad(&s) & ButtonMask::R, 0, "the GBA lost its own R");
+    assert_eq!(
+        s.app().source_rect(),
+        WHOLE_TEXTURE,
+        "a GBA picture moved when its shoulders were pressed"
+    );
+}
+
+/// A display preference, remembered per cart, in the shape `selected_core.ini` already has —
+/// and it is the card that remembers it, which is why the second half boots the whole session
+/// again rather than reading the app's own field back.
+#[test]
+fn the_picture_mode_is_remembered_per_cart() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    let mut s = session_playing(d.path());
+    s.feed([RawEvent::Down(Btn::L1)], 100);
+    s.feed([RawEvent::Up(Btn::L1)], 120);
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Stretch);
+    assert_eq!(
+        video_mode_for(d.path(), "Zzz"),
+        VideoMode::Actual,
+        "the press was recorded against another cart as well"
+    );
+    drop(s);
+
+    let mut s = session_playing(d.path());
+    assert_eq!(
+        s.app().source_rect(),
+        GB_WINDOW,
+        "the cart did not come back stretched"
+    );
+    s.feed([RawEvent::Down(Btn::R1)], 100);
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
+    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
+}
+
+/// A cart nobody has chosen for gets the integer-scaled, mask-aligned look — exactly as
+/// `core_for` answers for a cart with no line.
+#[test]
+fn a_cart_with_no_line_reads_as_actual_size() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    assert!(
+        !d.path().join(VIDEO_MODE_FILE).exists(),
+        "the fixture already wrote the file"
+    );
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
+
+    let s = session_playing(d.path());
+    assert_eq!(
+        s.app().source_rect(),
+        WHOLE_TEXTURE,
+        "a cart with no line did not open at actual size"
     );
 }

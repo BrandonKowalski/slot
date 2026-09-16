@@ -25,6 +25,7 @@ use crate::link_radio::{radio_jobs, LinkRole, RadioJob, RadioJobs};
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
 use crate::persist::{self, Snapshot};
+use crate::video_mode::{self, VideoMode};
 
 /// A floor, not a delay. The animation is where the core load hides, so a slow load
 /// extends it and a load that is already done still waits it out.
@@ -520,6 +521,10 @@ pub struct App {
     /// `core` — see `set_platform`. Saves and states are filed under it, so a `.gb` and a `.gba`
     /// cart sharing a stem never share a save or a ring either.
     platform: Platform,
+    /// How the seated cart's picture is drawn, off the card and stored the same way `core` and
+    /// `platform` are. Only a Game Boy cart can move it — see `video_mode` — so on a GBA cart
+    /// this is read but never acted on, and `source_rect` is the one place that decides.
+    video_mode: VideoMode,
     /// `Some` for as long as a netpacket session is live. `App` never touches the transport
     /// or the core itself — those live on the emulator thread, wherever `EmuHandle::begin_link`
     /// was called from the same gesture this answers — this is only what the interlocks below
@@ -675,6 +680,7 @@ impl App {
             snapshot: None,
             core: Core::default(),
             platform: Platform::default(),
+            video_mode: VideoMode::default(),
             link: None,
             sfx: None,
             polaroids: None,
@@ -1017,6 +1023,69 @@ impl App {
     /// cart sharing a stem could end up sharing a save.
     pub fn set_platform(&mut self, platform: Platform) {
         self.platform = platform;
+    }
+
+    /// The seated cart's picture mode, off the card, handed over in the same breath as `core`
+    /// and `platform` and for the same reason: this file never goes back to `video_mode.ini`
+    /// for a second opinion.
+    pub fn set_video_mode(&mut self, mode: VideoMode) {
+        self.video_mode = mode;
+    }
+
+    /// The part of the frame buffer the panel shows. `slot_gfx::WHOLE_TEXTURE` for every GBA
+    /// cart and for every Game Boy cart at actual size, which is every cart until somebody
+    /// presses L.
+    pub fn source_rect(&self) -> [f32; 4] {
+        video_mode::source_rect(self.platform, self.video_mode)
+    }
+
+    /// Whether L and R belong to slot rather than to the game. The Game Boy and the Game Boy
+    /// Color had no shoulder buttons, so on one of their carts there is nothing for these two
+    /// to be and slot takes them for the picture; on a GBA cart they are the GBA's own and
+    /// slot must never see them.
+    ///
+    /// Only while a game is playing. On the shelf the shoulders already ring the carousel
+    /// between platforms, and under a menu the menu has them.
+    fn slot_owns_the_shoulders(&self) -> bool {
+        matches!(self.phase, Phase::Playing { .. }) && self.platform != Platform::Gba
+    }
+
+    /// Whether this action is one slot has taken for itself, and therefore one the core must
+    /// not also be handed. `Session` asks on its way to the pad; the same predicate decides
+    /// here and in `apply`, so a button cannot be acted on in one place and passed on in the
+    /// other.
+    ///
+    /// Letting the shoulders through to a Game Boy core as well would in fact be harmless —
+    /// mGBA maps libretro's L and R to nothing there — but that is correct by accident, and
+    /// this plan has already been bitten once by a title match that was reachable only by
+    /// accident.
+    pub fn takes_from_the_game(&self, action: Action) -> bool {
+        matches!(
+            action,
+            Action::GbaDown(Btn::L1 | Btn::R1) | Action::GbaUp(Btn::L1 | Btn::R1)
+        ) && self.slot_owns_the_shoulders()
+    }
+
+    /// L or R, acted on and written down. No toast: a picture that has just become fullscreen
+    /// is self-evidently fullscreen, and a banner over it would be the screen describing what
+    /// the user can already see.
+    ///
+    /// A press that changes nothing writes nothing. Unlike the core, where writing the default
+    /// still has to record it, the absence of a line and `actual` mean the same thing here and
+    /// are reached by the same road, so there is nothing for a redundant write to preserve.
+    fn set_picture(&mut self, mode: VideoMode) {
+        if self.video_mode == mode {
+            return;
+        }
+        self.video_mode = mode;
+        let (Some(root), Phase::Playing { cart }) = (self.root.clone(), &self.phase) else {
+            return;
+        };
+        // Best effort, like every other card write here: a read only or absent card is a
+        // picture that still stretches, just not one that is still stretched next boot.
+        if let Err(e) = video_mode::write_video_mode(&root, cart, mode) {
+            eprintln!("slot: video: could not write video_mode.ini: {e}");
+        }
     }
 
     /// The `gpsp_serial` the core `Session` just spawned was loaded with. Called in the same
@@ -1493,6 +1562,15 @@ impl App {
             // be got out. Nothing else here applies until there is a game.
             Phase::Inserting { .. } if action == Action::Eject => self.eject(),
             Phase::Playing { .. } => match action {
+                // The two buttons the console this cart is for never had. The same predicate
+                // `takes_from_the_game` answers with, so there is exactly one statement of when
+                // slot owns these and the core does not.
+                Action::GbaDown(Btn::L1) if self.slot_owns_the_shoulders() => {
+                    self.set_picture(VideoMode::Stretch)
+                }
+                Action::GbaDown(Btn::R1) if self.slot_owns_the_shoulders() => {
+                    self.set_picture(VideoMode::Actual)
+                }
                 Action::Eject => self.eject(),
                 Action::GameMenu => self.game_menu_shortcut(),
                 Action::Polaroids => self.open_polaroids(),

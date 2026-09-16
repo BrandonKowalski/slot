@@ -2,6 +2,7 @@ mod atomic;
 mod core;
 pub mod gb;
 mod gba;
+pub mod ini;
 mod migrate;
 mod platform;
 mod ring;
