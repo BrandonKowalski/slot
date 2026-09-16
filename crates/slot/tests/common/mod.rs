@@ -59,7 +59,7 @@ fn tmp_root() -> TempDir {
 }
 
 fn rom_path(d: &TempDir, stem: &str) -> PathBuf {
-    d.path().join("Games").join(format!("{stem}.gba"))
+    d.path().join("Games/GBA").join(format!("{stem}.gba"))
 }
 
 /// A header gpSP takes at its word: title, code, the entry branch's 0xEA and the fixed 0x96.
@@ -105,7 +105,7 @@ pub fn real_bios() -> Option<PathBuf> {
 /// checked in, exactly as `slot-retro`'s own bios test does it. `None` when this machine has
 /// no cart to lift it from.
 pub fn logo_rom() -> Option<Vec<u8>> {
-    let logo = std::fs::read_dir(repo_root().join("sdcard/Games"))
+    let logo = std::fs::read_dir(repo_root().join("sdcard/Games/GBA"))
         .ok()?
         .find_map(|e| {
             let p = e.ok()?.path();

@@ -3,7 +3,7 @@
 //!
 //! `SCRATCH_PNG=/tmp/board.png cargo test -p slot-ui --test render_board -- --nocapture`
 
-use slot_store::Cart;
+use slot_store::{Cart, Platform};
 use slot_ui::board_face;
 
 #[test]
@@ -12,8 +12,9 @@ fn render_board() {
         return;
     };
     let face = board_face(&Cart {
+        platform: Platform::Gba,
         stem: "Pokemon - Emerald Version (USA, Europe)".into(),
-        rom: "Games/Emerald.gba".into(),
+        rom: "Games/GBA/Emerald.gba".into(),
         label: None,
         code: "BPEE".into(),
         title: "POKEMON EMER".into(),

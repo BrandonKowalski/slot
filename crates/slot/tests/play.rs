@@ -13,12 +13,12 @@ use slot::app::Phase;
 use slot::persist;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
-use slot_store::{Core, StateRing};
+use slot_store::{Core, Platform, StateRing};
 
 #[test]
 fn a_tap_resumes_and_a_hold_starts_clean() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
-    StateRing::new(d.path(), Core::Mgba, "Emerald")
+    StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
         .write_resume(&[7u8; 64])
         .unwrap();
 
@@ -42,7 +42,7 @@ fn a_tap_resumes_and_a_hold_starts_clean() {
 #[test]
 fn a_clean_start_leaves_the_state_on_disk() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
-    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
+    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
     r.write_resume(&[7u8; 64]).unwrap();
     let mut a = boot(d.path());
     a.apply_at(Action::GbaDown(Btn::A), 0);
@@ -102,7 +102,8 @@ fn counter_after(root: &Path, hold: bool) -> u64 {
     // Past the autosave deadline, which is the cheapest way to get the core's own state
     // written back out through the path the binary uses.
     s.app_mut().tick_ms(60_000);
-    let state = persist::read_resume(root, Core::Mgba, "Emerald").expect("nothing was flushed");
+    let state = persist::read_resume(root, Platform::Gba, Core::Mgba, "Emerald")
+        .expect("nothing was flushed");
     u64::from_le_bytes(state.try_into().expect("the mock's state is 8 bytes"))
 }
 
@@ -115,6 +116,7 @@ fn a_hold_hands_the_core_no_state_and_a_tap_hands_it_the_resume() {
     for d in [&tapped, &held] {
         persist::flush(
             d.path(),
+            Platform::Gba,
             Core::Mgba,
             "Emerald",
             Some(&500_000u64.to_le_bytes()),

@@ -25,7 +25,7 @@ use slot::persist::{self, Snapshot};
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::{ButtonMask, LinkChannel};
-use slot_store::{write_slot_state, Core, SlotState};
+use slot_store::{write_slot_state, Core, Platform, SlotState};
 use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, Toast, HINT_EDGE, OUT_H, OUT_W};
 use tempfile::TempDir;
 
@@ -946,7 +946,7 @@ fn a_pokemon_hack_shows_the_cable() {
     common::write_retail_header(&d, "Pokemon Emerald", "POKEMON EMER", "BPEE");
     // Overwrite the entry branch's opcode byte gpSP checks, leaving the rest of the header
     // (title, code) looking exactly like the retail game.
-    let rom = d.path().join("Games").join("Pokemon Emerald.gba");
+    let rom = d.path().join("Games/GBA").join("Pokemon Emerald.gba");
     let mut bytes = std::fs::read(&rom).expect("read rom");
     bytes[3] = 0;
     std::fs::write(&rom, bytes).expect("rewrite rom");
@@ -1601,7 +1601,8 @@ fn a_game_that_will_not_load_again_comes_back_out_of_the_slot() {
     step(&mut s, &mut now, &[RawEvent::Up(Btn::Right)]);
     step(&mut s, &mut now, &[RawEvent::Down(Btn::Select)]);
     step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
-    std::fs::remove_file(d.path().join("Games").join("Emerald.gba")).expect("take the rom away");
+    std::fs::remove_file(d.path().join("Games/GBA").join("Emerald.gba"))
+        .expect("take the rom away");
 
     step(&mut s, &mut now, &[RawEvent::Down(Btn::A)]);
     let deadline = Instant::now() + BAIL;
@@ -1623,7 +1624,7 @@ fn a_game_that_will_not_load_again_comes_back_out_of_the_slot() {
         "the cart came out without the alert"
     );
     assert!(
-        persist::read_resume(d.path(), Core::Gpsp, "Emerald").is_some(),
+        persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald").is_some(),
         "the state flushed before the reload is gone"
     );
     let deadline = Instant::now() + BAIL;

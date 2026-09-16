@@ -1,13 +1,14 @@
 use slot_power::{Battery, Charge};
-use slot_store::Cart;
+use slot_store::{Cart, Platform};
 use slot_ui::{draw_footer, label_colour, Draw, Printed, Shelf, TexId, CART_W, OUT_W};
 
 fn shelf_with(n: usize) -> Shelf {
     Shelf::new(
         (0..n)
             .map(|i| Cart {
+                platform: Platform::Gba,
                 stem: format!("Game {i}"),
-                rom: format!("Games/Game {i}.gba").into(),
+                rom: format!("Games/GBA/Game {i}.gba").into(),
                 label: None,
                 code: String::new(),
                 title: format!("GAME {i}"),

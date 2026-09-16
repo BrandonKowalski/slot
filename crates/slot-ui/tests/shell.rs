@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 fn tmp_root() -> TempDir {
     let d = tempfile::tempdir().expect("tempdir");
-    for sub in ["Games", "Labels", "Saves", "States", "System"] {
+    for sub in ["Games", "Games/GBA", "Labels", "Saves", "States", "System"] {
         std::fs::create_dir(d.path().join(sub)).expect("create content dir");
     }
     d
@@ -17,7 +17,7 @@ fn write_rom_with_code(d: &TempDir, name: &str, title: &str, code: &str) {
     let mut rom = vec![0u8; 0x100];
     rom[0xa0..0xa0 + title.len()].copy_from_slice(title.as_bytes());
     rom[0xac..0xac + code.len()].copy_from_slice(code.as_bytes());
-    std::fs::write(d.path().join("Games").join(name), rom).expect("write rom");
+    std::fs::write(d.path().join("Games/GBA").join(name), rom).expect("write rom");
 }
 
 #[test]

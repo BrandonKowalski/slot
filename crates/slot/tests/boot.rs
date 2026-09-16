@@ -203,8 +203,10 @@ fn boot_migrates_a_pre_namespacing_state_shelf() {
     App::boot(d.path());
 
     assert!(
-        d.path().join("States/mgba/Emerald/resume.state").exists(),
-        "boot did not carry the pre-namespacing state shelf under States/mgba/"
+        d.path()
+            .join("States/GBA/mgba/Emerald/resume.state")
+            .exists(),
+        "boot did not carry the pre-namespacing state shelf under States/GBA/mgba/"
     );
 }
 

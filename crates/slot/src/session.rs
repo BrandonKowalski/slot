@@ -483,12 +483,12 @@ impl Session {
 
     /// `serial` is the `gpsp_serial` the core loads with.
     fn spawn_core(&mut self, stem: &str, serial: &'static str) {
-        let Some(rom) = self
+        let Some((rom, platform)) = self
             .app
             .carts()
             .iter()
             .find(|c| c.stem == stem)
-            .map(|c| c.rom.clone())
+            .map(|c| (c.rom.clone(), c.platform))
         else {
             return;
         };
@@ -501,19 +501,23 @@ impl Session {
         // structurally unreachable now instead of merely unobserved.
         let core = slot_store::core_for(&self.root, stem);
         self.app.set_core(core);
+        // `platform` comes straight off the `Cart` the shelf scanned, not re-derived from the
+        // stem: it is what closes the same class of drift for a `.gb` and a `.gba` cart that
+        // happen to share a stem.
+        self.app.set_platform(platform);
         // gpSP reads its link mode only while a game loads, so what this hands the core is what
         // the game links over from here on, and what `App` compares a picked link against.
         self.app.set_link_loaded(serial);
         // A clean start skips the state, it does not delete it: the file stays on the card
         // for the next tap to resume from.
         let resume = (!self.app.starting_clean())
-            .then(|| persist::read_resume(&self.root, core, stem))
+            .then(|| persist::read_resume(&self.root, platform, core, stem))
             .flatten();
         let emu = EmuHandle::spawn(
             open_core(&self.root, core, serial),
             rom,
             self.sink.ring(),
-            persist::read_sav(&self.root, stem),
+            persist::read_sav(&self.root, platform, stem),
             resume,
         );
         // A cart seated after the level was lowered has to start there, not at full.

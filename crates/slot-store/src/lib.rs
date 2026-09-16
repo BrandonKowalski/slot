@@ -1,5 +1,6 @@
 mod atomic;
 mod core;
+pub mod gb;
 mod gba;
 mod migrate;
 mod platform;

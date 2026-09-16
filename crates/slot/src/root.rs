@@ -27,19 +27,33 @@ pub fn ensure(root: &Path) {
     }
 }
 
-/// Bring a card written before states were namespaced up to the current layout. Best
-/// effort on purpose: a read only or half mounted card is an empty shelf, not a boot
-/// failure, exactly as `ensure` treats it.
+/// Bring a card up to the current layout: pre-namespacing states first, then everything loose
+/// into its platform folder. Best effort on purpose: a read only or half mounted card is an
+/// empty shelf, not a boot failure, exactly as `ensure` treats it.
 ///
-/// A per-entry failure does not stop the sweep — the rest of the shelf still gets a chance —
+/// **Order is load-bearing.** `migrate_states` has to run first. Reversed, a pre-namespacing
+/// `States/<stem>/` would still be sitting at the top of `States/` when `migrate_platforms`
+/// swept it into `States/GBA/<stem>/` — a cart folder landing exactly where a core folder
+/// belongs — and `migrate_states`, which only ever looks at `States/`'s own top level, would
+/// never see it there to finish the job.
+///
+/// A per-entry failure does not stop either sweep — the rest of the shelf still gets a chance —
 /// but silently eating every one of them would leave a cart stuck pre-migration forever with
-/// nothing on the card to say so. Logged here, once per boot, rather than inside
-/// `migrate_states` itself, which only counts and has no read on where "once per boot" ends.
+/// nothing on the card to say so. Logged here, once per boot per sweep, rather than inside
+/// `migrate_states` or `migrate_platforms` themselves, which only count and have no read on
+/// where "once per boot" ends.
 pub fn migrate(root: &Path) {
-    match slot_store::migrate_states(root) {
-        Ok(report) if report.failed > 0 => {
+    report_migration("state", slot_store::migrate_states(root));
+    report_migration("platform", slot_store::migrate_platforms(root));
+}
+
+/// Puts a nonzero `failed` on the boot log. `what` names the sweep so two failing at once
+/// read as two lines rather than one count with no way to tell which sweep it came from.
+fn report_migration(what: &str, result: std::io::Result<slot_store::MigrationReport>) {
+    if let Ok(report) = result {
+        if report.failed > 0 {
             eprintln!(
-                "slot: migrate: {} of {} state director{} did not move",
+                "slot: migrate: {} of {} {what} director{} did not move",
                 report.failed,
                 report.moved + report.failed,
                 if report.moved + report.failed == 1 {
@@ -49,7 +63,6 @@ pub fn migrate(root: &Path) {
                 }
             );
         }
-        _ => {}
     }
 }
 

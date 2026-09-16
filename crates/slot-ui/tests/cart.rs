@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 fn tmp_root() -> TempDir {
     let d = tempfile::tempdir().expect("tempdir");
-    for sub in ["Games", "Labels", "Saves", "States", "System"] {
+    for sub in ["Games", "Games/GBA", "Labels", "Saves", "States", "System"] {
         std::fs::create_dir(d.path().join(sub)).expect("create content dir");
     }
     d
@@ -16,7 +16,7 @@ fn tmp_root() -> TempDir {
 fn write_rom(d: &TempDir, name: &str, title: &str) {
     let mut rom = vec![0u8; 0x100];
     rom[0xa0..0xa0 + title.len()].copy_from_slice(title.as_bytes());
-    std::fs::write(d.path().join("Games").join(name), rom).expect("write rom");
+    std::fs::write(d.path().join("Games/GBA").join(name), rom).expect("write rom");
 }
 
 fn write_label(d: &TempDir, name: &str, w: u32, h: u32, px: impl Fn(u32, u32) -> [u8; 3]) {
@@ -26,7 +26,8 @@ fn write_label(d: &TempDir, name: &str, w: u32, h: u32, px: impl Fn(u32, u32) ->
             rgb.extend_from_slice(&px(x, y));
         }
     }
-    let f = std::fs::File::create(d.path().join("Labels").join(name)).expect("create label");
+    std::fs::create_dir_all(d.path().join("Labels/GBA")).expect("create labels dir");
+    let f = std::fs::File::create(d.path().join("Labels/GBA").join(name)).expect("create label");
     let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
@@ -51,7 +52,8 @@ fn label_pixel(face: &slot_ui::CartFace, x: u32, y: u32) -> [u8; 3] {
 fn a_malformed_label_falls_back_to_a_generated_one() {
     let d = tmp_root();
     write_rom(&d, "Broken.gba", "BROKEN");
-    std::fs::write(d.path().join("Labels/Broken.png"), b"not a png").unwrap();
+    std::fs::create_dir_all(d.path().join("Labels/GBA")).unwrap();
+    std::fs::write(d.path().join("Labels/GBA/Broken.png"), b"not a png").unwrap();
     let cart = &scan(d.path()).unwrap()[0];
     let face = cart_face(cart);
     assert_eq!((face.w, face.h), (CART_W, CART_H));
@@ -105,7 +107,7 @@ fn a_long_title_stays_inside_the_label() {
         "Super Mario Kart",
     ] {
         let d = tmp_root();
-        std::fs::write(d.path().join(format!("Games/{stem}.gba")), [0u8; 8]).unwrap();
+        std::fs::write(d.path().join(format!("Games/GBA/{stem}.gba")), [0u8; 8]).unwrap();
         let face = cart_face(&scan(d.path()).unwrap()[0]);
         let bg = label_colour(stem);
         let margin = 5;
@@ -295,7 +297,7 @@ fn two_regions_of_one_game_get_the_same_generated_colour() {
 #[test]
 fn a_rom_with_no_header_title_is_labelled_from_its_stem() {
     let d = tmp_root();
-    std::fs::write(d.path().join("Games/Homebrew Demo.gba"), [0u8; 8]).unwrap();
+    std::fs::write(d.path().join("Games/GBA/Homebrew Demo.gba"), [0u8; 8]).unwrap();
     let face = cart_face(&scan(d.path()).unwrap()[0]);
     let bg = label_colour("Homebrew Demo");
     assert!(

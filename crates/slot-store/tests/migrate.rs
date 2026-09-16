@@ -1,4 +1,4 @@
-use slot_store::{migrate_states, Core, StateRing};
+use slot_store::{migrate_states, Core, Platform, StateRing};
 use tempfile::tempdir;
 
 fn card() -> tempfile::TempDir {
@@ -49,9 +49,12 @@ fn a_pre_migration_card_moves_under_mgba() {
         std::fs::read(d.path().join("States/mgba/Emerald/resume.state")).unwrap(),
         b"resume"
     );
-    // And the ring can see them, which is the only reason to move them at all.
+    // And the ring can see them once `migrate_platforms` has also run — the same order
+    // `root::migrate` always calls the two sweeps in — which is the only reason to move them
+    // at all.
+    migrate_platforms(d.path()).unwrap();
     assert_eq!(
-        StateRing::new(d.path(), Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
             .list()
             .unwrap()
             .len(),

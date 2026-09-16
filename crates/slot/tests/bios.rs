@@ -18,7 +18,7 @@ fn a_missing_bios_folder_still_boots_a_core() {
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
     std::fs::remove_dir_all(d.path().join("BIOS")).ok();
     let mut core = open_core_for(d.path(), Core::Mgba, "auto", &vendored_core_paths());
-    core.load(&d.path().join("Games/Emerald.gba")).unwrap();
+    core.load(&d.path().join("Games/GBA/Emerald.gba")).unwrap();
     core.run_frame(ButtonMask::default());
 }
 
@@ -28,7 +28,7 @@ fn an_empty_bios_folder_still_boots_a_core() {
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
     std::fs::create_dir_all(d.path().join("BIOS")).unwrap();
     let mut core = open_core_for(d.path(), Core::Mgba, "auto", &vendored_core_paths());
-    core.load(&d.path().join("Games/Emerald.gba")).unwrap();
+    core.load(&d.path().join("Games/GBA/Emerald.gba")).unwrap();
     core.run_frame(ButtonMask::default());
 }
 

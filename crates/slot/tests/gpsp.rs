@@ -1,6 +1,6 @@
 mod common;
 
-use slot_store::Core;
+use slot_store::{Core, Platform};
 
 /// The device carries both cores in `System/`; a host build carries whichever were fetched.
 /// Absent means this host cannot run the test, not that the test failed.
@@ -420,10 +420,10 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     // Distinguishable resume states in both directories. If `spawn_core` ever resolved the
     // core twice and the two calls disagreed, or fell back to the default, this is what
     // would catch it: the counter would come back from the wrong file.
-    StateRing::new(d.path(), Core::Gpsp, "Emerald")
+    StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
         .write_resume(&700_000u64.to_le_bytes())
         .unwrap();
-    StateRing::new(d.path(), Core::Mgba, "Emerald")
+    StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
         .write_resume(&1u64.to_le_bytes())
         .unwrap();
 
@@ -446,7 +446,8 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     // back out through the path the binary uses, same as `play.rs`'s `counter_after`.
     s.app_mut().tick_ms(60_000);
 
-    let state = persist::read_resume(d.path(), Core::Gpsp, "Emerald").expect("nothing resumed");
+    let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        .expect("nothing resumed");
     let n = u64::from_le_bytes(state.try_into().expect("mock state is 8 bytes"));
     assert!(
         n >= 700_000,
@@ -510,7 +511,8 @@ fn a_gpsp_cart_runs_the_dylib_planted_under_its_own_name_through_the_session() {
     // gets written back through the path the binary uses.
     s.app_mut().tick_ms(60_000);
 
-    let state = persist::read_resume(d.path(), Core::Gpsp, "Emerald").expect("nothing resumed");
+    let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        .expect("nothing resumed");
     assert!(
         state.len() > 100_000,
         "the session ran the mock, not the dylib the ini named: {} bytes",
@@ -560,14 +562,14 @@ fn changing_the_ini_mid_session_does_not_move_a_seated_carts_autosave() {
     s.app_mut().tick_ms(60_000);
 
     assert!(
-        StateRing::new(d.path(), Core::Gpsp, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
         "the autosave did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_none(),
@@ -614,14 +616,14 @@ fn changing_the_ini_mid_session_does_not_move_a_manual_save_state() {
     s.app_mut().apply(Action::SaveState);
 
     assert!(
-        !StateRing::new(d.path(), Core::Gpsp, "Emerald")
+        !StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
             .list()
             .unwrap()
             .is_empty(),
         "the manual save did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
             .list()
             .unwrap()
             .is_empty(),
@@ -666,14 +668,14 @@ fn changing_the_ini_mid_session_does_not_move_an_ejected_carts_resume() {
     s.app_mut().apply(Action::Eject);
 
     assert!(
-        StateRing::new(d.path(), Core::Gpsp, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
         "the ejected cart's resume did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_none(),
@@ -714,7 +716,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
     std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
 
     let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto");
-    core.load(&d.path().join("Games/Probe.gba"))
+    core.load(&d.path().join("Games/GBA/Probe.gba"))
         .expect("the planted core refused the test rom");
     core.run_frame(ButtonMask::default());
     assert!(

@@ -64,7 +64,7 @@ fn a_rom_the_real_core_refuses_reports_failed() {
     let d = common::tmp_root_with_carts(&["Broken"]);
     let emu = EmuHandle::spawn(
         open_core_for(d.path(), Core::Mgba, "auto", &[dylib]),
-        d.path().join("Games/Broken.gba"),
+        d.path().join("Games/GBA/Broken.gba"),
         StubSink::new().ring(),
         None,
         None,

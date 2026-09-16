@@ -6,7 +6,7 @@ use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
 use slot::session::Session;
 use slot_input::{Action, Btn, RawEvent};
-use slot_store::{write_slot_state, Cart, Core, SlotState};
+use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, on_board, opening, shelf_cart, Draw, Placed, TexId, BOARD_W, CART_W,
     CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U,
@@ -25,8 +25,9 @@ fn app_with_carts(stems: &[&str]) -> App {
         stems
             .iter()
             .map(|stem| Cart {
+                platform: Platform::Gba,
                 stem: (*stem).to_string(),
-                rom: format!("Games/{stem}.gba").into(),
+                rom: format!("Games/GBA/{stem}.gba").into(),
                 label: None,
                 code: String::new(),
                 title: stem.to_uppercase(),

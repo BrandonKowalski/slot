@@ -6,8 +6,8 @@ use slot_input::{Action, Btn, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_retro::LinkChannel;
 use slot_store::{
-    format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, SlotState, StateEntry,
-    StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
+    format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, Platform, SlotState,
+    StateEntry, StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     board_at, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
@@ -505,6 +505,10 @@ pub struct App {
     /// exactly the way `snapshot` is — both are set together and neither is cleared on eject —
     /// which is safe because every reader of either is gated on a cart actually being seated.
     core: Core,
+    /// The seated cart's `Platform`, resolved and stored the same way and in the same breath as
+    /// `core` — see `set_platform`. Saves and states are filed under it, so a `.gb` and a `.gba`
+    /// cart sharing a stem never share a save or a ring either.
+    platform: Platform,
     /// `Some` for as long as a netpacket session is live. `App` never touches the transport
     /// or the core itself — those live on the emulator thread, wherever `EmuHandle::begin_link`
     /// was called from the same gesture this answers — this is only what the interlocks below
@@ -625,6 +629,7 @@ impl App {
             vol_before: Vec::new(),
             snapshot: None,
             core: Core::default(),
+            platform: Platform::default(),
             link: None,
             sfx: None,
             polaroids: None,
@@ -858,6 +863,15 @@ impl App {
     /// ask `core_for` again.
     pub fn set_core(&mut self, core: Core) {
         self.core = core;
+    }
+
+    /// The seated cart's `Platform`, read off the same `Cart` `session.rs` looked its rom up
+    /// from to spawn this core. Called in the same breath as `set_core`, so every later flush,
+    /// eject and polaroid read files under the platform the cart actually is rather than
+    /// deriving it a second time from the stem alone — which is exactly how a `.gb` and a `.gba`
+    /// cart sharing a stem could end up sharing a save.
+    pub fn set_platform(&mut self, platform: Platform) {
+        self.platform = platform;
     }
 
     /// The `gpsp_serial` the core `Session` just spawned was loaded with. Called in the same
@@ -2577,7 +2591,14 @@ impl App {
             return;
         };
         let (state, sav) = trusted_write(snapshot.as_ref(), state, "eject");
-        match persist::eject(root, self.core, stem, state.as_deref(), sav.as_deref()) {
+        match persist::eject(
+            root,
+            self.platform,
+            self.core,
+            stem,
+            state.as_deref(),
+            sav.as_deref(),
+        ) {
             Ok(()) => self.state.cart = None,
             Err(e) => eprintln!("slot: eject: {e}"),
         }
@@ -3273,7 +3294,14 @@ impl App {
             return;
         };
         let (state, sav) = trusted_write(snapshot.as_ref(), state, "flush");
-        if let Err(e) = persist::flush(root, self.core, cart, state.as_deref(), sav.as_deref()) {
+        if let Err(e) = persist::flush(
+            root,
+            self.platform,
+            self.core,
+            cart,
+            state.as_deref(),
+            sav.as_deref(),
+        ) {
             eprintln!("slot: flush: {e}");
         }
     }
@@ -3284,7 +3312,7 @@ impl App {
         let (Some(root), Some(cart)) = (&self.root, self.seated()) else {
             return None;
         };
-        Some(StateRing::new(root, self.core, cart))
+        Some(StateRing::new(root, self.platform, self.core, cart))
     }
 
     fn seated(&self) -> Option<&str> {

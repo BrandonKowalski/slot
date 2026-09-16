@@ -1,4 +1,4 @@
-use slot_store::Cart;
+use slot_store::{Cart, Platform};
 use slot_ui::{
     draw_empty_slot, edge, housing, icon_box, opening, recess, Draw, Shelf, SlotChrome, ALERT_PX,
     CART_H, CART_W, LABEL_H, LABEL_Y, MOUTH_H, OUT_H, OUT_W,
@@ -6,8 +6,9 @@ use slot_ui::{
 
 fn cart() -> Cart {
     Cart {
+        platform: Platform::Gba,
         stem: "Emerald".into(),
-        rom: "Games/Emerald.gba".into(),
+        rom: "Games/GBA/Emerald.gba".into(),
         label: None,
         code: String::new(),
         title: "POKEMON EMER".into(),

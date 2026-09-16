@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::atomic::atomic_write;
 use crate::core::Core;
+use crate::platform::Platform;
 
 pub const RING_MAX: usize = 10;
 
@@ -28,9 +29,18 @@ impl StateRing {
     /// States are core private: a serialized machine from one emulator cannot be loaded by
     /// another, so offering them together would only produce a confusing failure. Battery
     /// saves under `Saves/` are raw cartridge bytes and stay shared.
-    pub fn new(root: &Path, core: Core, stem: &str) -> Self {
+    ///
+    /// Platform first, then core: `States/<platform>/<core>/<stem>/`, the shape
+    /// `migrate_platforms`' sweep already produces. A `.gb` and a `.gba` cart can share a stem —
+    /// two different games, two different carts — so the platform has to separate them before
+    /// the core does, or one cart's states would be offered to the other's.
+    pub fn new(root: &Path, platform: Platform, core: Core, stem: &str) -> Self {
         StateRing {
-            dir: root.join("States").join(core.as_str()).join(stem),
+            dir: root
+                .join("States")
+                .join(platform.dir_name())
+                .join(core.as_str())
+                .join(stem),
         }
     }
 
