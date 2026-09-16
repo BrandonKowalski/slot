@@ -1,142 +1,15 @@
 # slot.
 
-A bespoke, GBA-only frontend for the Anbernic RG SP.
+A bespoke, Game Boy centric frontend for the Anbernic RG SP.
 
-## Controls
+Has support for GBA, GBC, and GB titles only.
 
-### Anywhere
-
-| Input                       | Action                      |
-|-----------------------------|-----------------------------|
-| `SELECT` + `Up` / `Down`    | Adjust brightness           |
-| `SELECT` + `Left` / `Right` | Adjust blue light           |
-| `VOL+` / `VOL-`             | Change the volume           |
-| `VOL+` + `VOL-`             | Mute, remembering the level |
-
-### On the carousel
-
-| Input     | Action                              |
-|-----------|-------------------------------------|
-| `L` / `R` | Browse the carousel                 |
-| Tap `A`   | Resume the last save state          |
-| Hold `A`  | Start the game fresh                |
-| `MENU`    | Open the quick menu                 |
-| `START`   | Choose which emulator runs the cart |
-
-### In game
-
-| Input                       | Action                                                                                           |
-|-----------------------------|--------------------------------------------------------------------------------------------------|
-| Hold `MENU`                 | Save state, eject the cart, back to the carousel                                                 |
-| Double tap `MENU`           | Save state switcher: pick one to load or delete, or undo the last save or load within 30 seconds |
-| `SELECT` + `MENU`           | Link with another RG SP. gpSP carts only                                                         |
-| `SELECT` on the link screen | Switch between the link cable and the Wireless Adapter                                           |
-| `SELECT` + `R1`             | Save state                                                                                       |
-| `SELECT` + `L1`             | Load the most recent save state                                                                  |
-| Hold `L2`                   | Rewind                                                                                           |
-| Hold `R2`                   | Fast-forward                                                                                     |
-| Double tap `R2`             | Lock fast-forward on. Press again to unlock                                                      |
-
-A `/` means either one. A `+` means both together.
-
-Closing the lid writes a save state and turns off the display. Open it again and you're
-back in the game. Leave it shut for three minutes and slot powers off, resuming from that
-save state on the next boot.
-
-The lid is not a sleep. The panel goes dark but the board keeps running, which is why the
-three minutes exist rather than an indefinite standby.
-
-## SD Card Layout
-
-```
-BIOS/         gba_bios.bin, optional. Absent means mGBA's own high level BIOS.
-Games/        .gba roms.
-Labels/       <rom stem>.png, drawn on the cartridge face. Absent means a text only label.
-Saves/        .sav and .srm battery saves.
-States/       <core>/<rom stem>/, save state rings ten deep per cart.
-System/       the binary, both cores, theme.txt, and selected_core.ini.
-Wallpapers/   .png, one picked at random each boot and drawn behind the shelf.
-```
-
-Label art is drawn at 196x86, or about 2.28:1. Anything else is scaled to cover that box
-and centre cropped, so a square or portrait image loses its top and bottom. Bigger art is
-fine and comes down to size; smaller gets stretched up and shows it.
-
-`System/theme.txt` is entirely optional and controls the appearance of the slot:
-
-```
-housing #24242a
-recess  #1a1a1e
-opening #050508
-edge    #4d4d57
-```
-
-`System/selected_core.ini` is entirely optional and names which core a cart's save states
-belong to, one `<rom stem> = <core>` per line. Every cart defaults to mGBA, and states are
-kept apart per core under `States/<core>/<rom stem>/` so switching cores later never mixes
-one core's save with another's. Both cores ship in `System/`, so naming `gpsp` actually
-switches emulators for that cart — gpSP exists for the serial link hardware mGBA's libretro
-build does not carry:
-
-```
-Emerald = gpsp
-```
-
-`System/slot.state` is written by slot itself. The quick menu's settings are kept there as
-three lines, and a card without them gets what slot always did:
-
-```
-rumble=1
-ff_speed=4
-ff_sound=0
-```
-
-- `rumble`: `0` keeps the motor still.
-- `ff_speed`: how fast fast-forward runs, `2`, `3` or `4` times.
-- `ff_sound`: `1` plays fast-forward sped up instead of silently.
-
-## Installing on your RG SP
-
-1. Download the latest [AGS-102](https://github.com/BrandonKowalski/AGS-102) `.img` release.
-2. Use Raspberry PI Imager, RUFUS, et. al. to write the `.img` to an SD Card.
-3. Insert this SD Card into Slot 1 of your RG SP. This is the one on the side of the device next to the volume buttons.
-4. Download the latest slot release from this repo.
-5. Unzip the download
-6. Copy all the contents of the zip to a second SD Card
-7. Add Games, Saves, BIOS (if you like the boot animation), etc.
-8. Insert this SD Card into Slot 2. This is on the side where the power and reset buttons live.
-
-## Updating
-I doubt I am gonna work on this more and add to it but in case I do here is how you update.
-
-1. Power off your RG SP.
-2. Eject SD Card 2.
-3. Connect to your computer.
-4. Replace the `System` folder with the `System` folder contained in the update zip.
-5. Done.
-
-
-## Credits
-
-Emulation is [mGBA](https://mgba.io) and [gpSP](https://github.com/libretro/gpsp)
-both through [libretro](https://www.libretro.com).
-
-The device boots [AGS-102](https://github.com/BrandonKowalski/AGS-102), a purpose-made fork
-of [BaseOS](https://github.com/pvaibhav/BaseOS) by @pvaibhav.
-
-Type is [Open Sans](https://github.com/googlefonts/opensans), under the SIL Open Font
-License, and [Nerd Fonts](https://www.nerdfonts.com) symbols by Ryan L. McIntyre, under MIT.
-
-The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro
-shader collection. At exactly 3x it reduces to a 3 by 3 table, which is what ships here
-rather than the shader.
-
-The cart sounds are a recording of me shoving a cartridge into my childhood GBA.
+A full user guide can be found at [slot.kowalski.io](https://slot.kowalski.io).
 
 ## AI Disclosure
 
 The Rust frontend was put together by Claude Opus. I reviewed everything that was
-produced. This documentation is 100% free-range, meatbag prose.
+produced. All documentation is 100% free-range, meatbag prose.
 
 The project is extremely low stakes. I wanted a bespoke frontend for my RG SP and thought
 that something this focused on GBA would be kind of neat.
@@ -145,5 +18,6 @@ This is just a glorified wrapper around mGBA, which is the real star of the show
 
 Provided without support. I will selectively address filed issues and PRs.
 
-Use it, don't use it, I don't care. Figured I should share the end result of all the
-wasted water.
+Use it, don't use it, I don't care. 
+
+Figured I should share the end result of all the wasted water. ✌🏻
