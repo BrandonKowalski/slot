@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use slot_store::{Cart, ShelfKind};
+use slot_store::{Cart, Platform};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Finish {
@@ -55,10 +55,16 @@ pub const GB_CLEAR_SHELL: Shell = shell([0x7c, 0x7a, 0x8a], Finish::Translucent)
 /// What plastic this cart shipped in. Which question to ask depends on the platform: a GBA cart
 /// is looked up by the game code in its header, and a Game Boy pak has no such field at all, so
 /// the CGB flag answers instead.
+///
+/// `Gb` and `Gbc` are one arm on purpose, and it is not the shelf being ignored. They are the
+/// same cartridge — see `cart::spec` — so the question is the same one; the answer still comes
+/// out different, because `gb_shell_for` reads the CGB flag out of the rom. A Colour pak is
+/// drawn in clear plastic because its header says it is a Colour game, not because of which
+/// folder it was filed in, which is what keeps a misfiled cart drawn as the object it is.
 pub fn shell_for(cart: &Cart) -> Shell {
-    match cart.platform.shelf() {
-        ShelfKind::Gba => gba_shell_for(&cart.code),
-        ShelfKind::GameBoy => gb_shell_for(&cart.rom),
+    match cart.platform {
+        Platform::Gba => gba_shell_for(&cart.code),
+        Platform::Gb | Platform::Gbc => gb_shell_for(&cart.rom),
     }
 }
 

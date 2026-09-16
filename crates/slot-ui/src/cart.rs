@@ -1,4 +1,4 @@
-use slot_store::{Cart, ShelfKind};
+use slot_store::{Cart, Platform};
 
 use crate::art;
 use crate::shell::{shell_for, Finish, Shell};
@@ -109,9 +109,24 @@ struct Spec {
     rim: u32,
 }
 
-fn spec(kind: ShelfKind) -> Spec {
-    match kind {
-        ShelfKind::Gba => Spec {
+/// The parameter is a `Platform` and is named for what it is; the *shape* is what comes back out
+/// of it. Those are two different groupings, and this match is where the mapping between them
+/// lives now that there is no type to carry it:
+///
+/// - The shelves are one per platform. The user split Game Boy and Game Boy Color onto shelves
+///   of their own, so `Platform` has three variants.
+/// - The art is one per cartridge shape, and there are only two. A Game Boy Game Pak and a
+///   Colour one are the same object — 65.5 x 57 x 7.5 mm, one silhouette, one outline, one
+///   label well — so `Gb | Gbc` is one arm deliberately, not an arm nobody has got round to
+///   splitting. Splitting it into three would be undoing the decision that the two cartridges
+///   are the same object, which is why the finish that *does* differ between them is read off
+///   the rom's CGB flag in `shell.rs` rather than off which shelf the cart stands on.
+///
+/// Anything that is a property of the plastic goes here. Anything that is a property of the
+/// game printed on it does not.
+fn spec(platform: Platform) -> Spec {
+    match platform {
+        Platform::Gba => Spec {
             w: CART_W,
             h: CART_H,
             label: (LABEL_X, LABEL_Y, LABEL_W, LABEL_H),
@@ -122,7 +137,7 @@ fn spec(kind: ShelfKind) -> Spec {
             max_h: f32::INFINITY,
             rim: RIM,
         },
-        ShelfKind::GameBoy => Spec {
+        Platform::Gb | Platform::Gbc => Spec {
             w: GB_CART_W,
             h: GB_CART_H,
             label: (GB_LABEL_X, GB_LABEL_Y, GB_LABEL_W, GB_LABEL_H),
@@ -137,9 +152,10 @@ fn spec(kind: ShelfKind) -> Spec {
 }
 
 /// The box a cart of this platform is drawn in. A Game Boy Game Pak is the same width as a GBA
-/// cart and 1.87x as tall, so anything that lays carts out has to ask rather than assume.
-pub fn cart_box(kind: ShelfKind) -> (u32, u32) {
-    let s = spec(kind);
+/// cart and 1.87x as tall, so anything that lays carts out has to ask rather than assume. The
+/// two Game Boy platforms answer the same, because they are the same cartridge — see `spec`.
+pub fn cart_box(platform: Platform) -> (u32, u32) {
+    let s = spec(platform);
     (s.w, s.h)
 }
 
@@ -147,13 +163,16 @@ pub fn cart_box(kind: ShelfKind) -> (u32, u32) {
 /// rather than a cart you can see through: over a wallpaper a translucent face is a ghost,
 /// and the shelf's carts are solid objects.
 pub fn cart_shadow() -> CartFace {
-    shadow(&spec(ShelfKind::Gba))
+    shadow(&spec(Platform::Gba))
 }
 
 /// The same backing in the Game Boy pak's outline. Stretching the GBA one to a taller box would
 /// put a tapered shadow under a straight sided cart.
+///
+/// One shadow covers both Game Boy shelves: `Gbc` asks `spec` the same question and gets the
+/// same answer, so there is no second texture to upload.
 pub fn gb_cart_shadow() -> CartFace {
-    shadow(&spec(ShelfKind::GameBoy))
+    shadow(&spec(Platform::Gb))
 }
 
 fn shadow(s: &Spec) -> CartFace {
@@ -169,7 +188,7 @@ fn shadow(s: &Spec) -> CartFace {
 }
 
 pub fn cart_face(cart: &Cart) -> CartFace {
-    let s = spec(cart.platform.shelf());
+    let s = spec(cart.platform);
     let shell = shell_for(cart);
     let mut face = shell_face(&s, &shell);
     let (_, _, lw, lh) = s.label;

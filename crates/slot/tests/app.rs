@@ -797,7 +797,16 @@ fn both_b_and_menu_take_the_about_screen_back_to_the_quick_menu() {
 /// shelf to press anything on. `clock_set` because a card that has never been asked the
 /// time opens on the clock screen, which owns every button.
 fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
-    let d = common::tmp_root_with_carts(stems);
+    booted_on_shelf(common::tmp_root_with_carts(stems))
+}
+
+/// The same shelf, holding Game Boy carts instead. The folder is what gives a cart its
+/// platform, so this is a different card rather than the same one with different filenames.
+fn on_shelf_gb(stems: &[&str]) -> (tempfile::TempDir, App) {
+    booted_on_shelf(common::tmp_root_with_gb_carts(stems))
+}
+
+fn booted_on_shelf(d: tempfile::TempDir) -> (tempfile::TempDir, App) {
     write_slot_state(
         d.path(),
         &SlotState {
@@ -818,6 +827,48 @@ fn let_it_close(app: &mut App) {
 /// Long enough for a hop to land.
 fn let_it_hop(app: &mut App) {
     app.update(0.25);
+}
+
+/// What START left behind: the picker it opened, the shelf's shake, and whether the drawn shelf
+/// moved at all. The twin is the same card booted a second time and advanced beside it, so
+/// "nothing moved" is measured against the shelf as it stands at that instant rather than
+/// against a frame taken before the press — the row is a spring, and the two are not the same
+/// picture on principle.
+fn start_on(mut pressed: App, mut untouched: App) -> (Option<Core>, f32, bool) {
+    fake_picker_faces(&mut pressed);
+    fake_picker_faces(&mut untouched);
+    pressed.apply(Action::GbaDown(Btn::Start));
+    let_it_hop(&mut pressed);
+    let_it_hop(&mut untouched);
+    let moved = frame(&pressed) != frame(&untouched);
+    (pressed.core_picker(), pressed.shelf_shake(), moved)
+}
+
+/// The picker's board art is a traced GBA cartridge PCB — 32 contacts and a GBA ROM package — so
+/// opening a Game Boy shell onto it would show the player hardware that is not in their hand.
+/// There is no core to choose for one either: mGBA is the only core that runs a Game Boy game,
+/// and the ini gets no say in it. Nothing to offer and nothing to refuse, so START does nothing
+/// at all — not even the shake, on the same reasoning as inert L1/R1 where there is only one
+/// shelf. A Game Boy board is on the backlog.
+#[test]
+fn start_opens_no_picker_on_a_game_boy_cart() {
+    let (_d, gb) = on_shelf_gb(&["Tetris", "Zzz"]);
+    let (_twin, gb_twin) = on_shelf_gb(&["Tetris", "Zzz"]);
+    let (picker, shake, moved) = start_on(gb, gb_twin);
+    assert_eq!(picker, None, "a Game Boy cart opened the GBA picker");
+    assert_eq!(
+        shake, 0.0,
+        "START on a Game Boy cart was answered with a refusal shake"
+    );
+    assert!(!moved, "START changed what the shelf draws");
+
+    // The control, without which "nothing moved" would pass just as well with START unbound
+    // outright: the same press on a GBA cart does open the picker, and the shelf does move.
+    let (_d, gba) = on_shelf(&["Emerald", "Zzz"]);
+    let (_twin, gba_twin) = on_shelf(&["Emerald", "Zzz"]);
+    let (picker, _, moved) = start_on(gba, gba_twin);
+    assert_eq!(picker, Some(Core::Mgba), "START stopped opening the picker");
+    assert!(moved, "the picker opened and the shelf drew the same frame");
 }
 
 /// Opening on mGBA whatever the cart runs would be a board that says every cart runs mGBA,

@@ -52,19 +52,36 @@ pub fn tmp_root_with_carts(stems: &[&str]) -> TempDir {
 /// Kept apart from `tmp_root_with_carts` rather than folded into it with a platform argument,
 /// because every existing caller is about a GBA card and naming the platform at fifty call
 /// sites would say nothing any of them care about.
+///
+/// The stem is truncated to the header's eleven bytes rather than asserted against them: a
+/// fixture built from a long filename is a normal thing for a caller to want, and the title is
+/// not what any of these tests read back.
 pub fn tmp_root_with_gb_carts(stems: &[&str]) -> TempDir {
     let d = tmp_root();
     for stem in stems {
-        // Past 0x14F, so the whole cartridge header — title, CGB flag and all — is inside the
-        // file rather than running off the end of it.
-        let mut rom = vec![0u8; 0x150];
-        // 11 bytes from 0x134, which is the later carts' shortened field. See `slot_store::gb`.
         let title = stem.to_uppercase();
-        let title = &title.as_bytes()[..title.len().min(11)];
-        rom[0x134..0x134 + title.len()].copy_from_slice(title);
-        std::fs::write(cart_path(&d, CartPlatform::Gb, stem), rom).expect("write rom");
+        write_gb_cart(&d, stem, &title[..title.len().min(11)]);
     }
     d
+}
+
+/// A Game Boy cart on the card, with a title of your choosing — which is what makes it worth
+/// having beside `tmp_root_with_gb_carts`: the link refusal keys on the title, so a test needs
+/// to be able to write `POKEMON RED` onto a cart whose filename says something else.
+///
+/// `scan` reads the platform off the folder and never off the ROM, so this writes into
+/// `Games/GB/`. The title goes at 0x134 in the eleven byte field `slot_store::gb::title` reads,
+/// a different place entirely from the 0xA0 a GBA header keeps its own in — and the rom runs
+/// past 0x14F so the whole cartridge header, CGB flag and all, is inside the file rather than
+/// running off the end of it.
+pub fn write_gb_cart(d: &TempDir, stem: &str, title: &str) {
+    assert!(
+        title.len() <= 11,
+        "a Game Boy header title is eleven bytes, and {title:?} is longer"
+    );
+    let mut rom = vec![0u8; 0x150];
+    rom[0x134..0x134 + title.len()].copy_from_slice(title.as_bytes());
+    std::fs::write(cart_path(d, CartPlatform::Gb, stem), rom).expect("write rom");
 }
 
 /// The headers `tmp_root_with_carts` writes are not roms, and a real core refuses them.

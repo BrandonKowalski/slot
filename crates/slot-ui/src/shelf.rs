@@ -1,7 +1,7 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
-use slot_store::{Cart, ShelfKind};
+use slot_store::{Cart, Platform};
 
-use crate::cart::{cart_box, label_colour, label_text, CART_H};
+use crate::cart::{cart_box, label_colour, label_text, CART_H, CART_W};
 use crate::hud::Millis;
 use crate::slot_chrome::draw_empty_slot;
 
@@ -198,8 +198,18 @@ impl Shelf {
     /// going into the slot and the cart the picker opens are both drawn by somebody else,
     /// starting from where this row left it, so a row that is not centred on its selection has
     /// to be able to say where that is.
+    ///
+    /// The width is asked of the selected cart rather than assumed to be `CART_W`, so this is
+    /// `draw_row`'s own placement of that cart with `offset` at zero rather than a second copy
+    /// of the sum. Both cartridges are 240 wide today, so the number is the same either way;
+    /// the point is that it stays the same as what is drawn if a later one is not. `CART_W`
+    /// stands in for an empty row, which draws no cart to measure.
     pub fn rest_x(&self) -> f32 {
-        (OUT_W - CART_W) as f32 / 2.0 + self.shift() * PITCH
+        let w = self
+            .carts
+            .get(self.index)
+            .map_or(CART_W, |c| cart_box(c.platform).0);
+        (OUT_W as f32 - w as f32) / 2.0 + self.shift() * PITCH
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -257,8 +267,7 @@ impl Shelf {
             let t = offset.abs().min(1.0);
             let scale = 1.0 + (SIDE_SCALE - 1.0) * t;
             let alpha = (1.0 + (SIDE_ALPHA - 1.0) * t) * (1.0 - recede);
-            let kind = cart.platform.shelf();
-            let (cw, ch) = cart_box(kind);
+            let (cw, ch) = cart_box(cart.platform);
             let (w, h) = (cw as f32 * scale, ch as f32 * scale);
             // Away from the middle, and further the further out it already was, so the row
             // opens rather than sliding sideways.
@@ -272,9 +281,11 @@ impl Shelf {
             // Black in the cart's own shape, under the dimmed face. Without it the dimming is
             // transparency, and over a wallpaper the row reads as ghosts of carts.
             if alpha < 1.0 {
-                let backing = match kind {
-                    ShelfKind::Gba => self.shadow,
-                    ShelfKind::GameBoy => self.gb_shadow,
+                // Two shadows for three shelves: the backing is the cart's own outline, and a
+                // Game Boy pak and a Colour one are the same outline. See `cart::spec`.
+                let backing = match cart.platform {
+                    Platform::Gba => self.shadow,
+                    Platform::Gb | Platform::Gbc => self.gb_shadow,
                 };
                 if let Some(tex) = backing {
                     out.push(Draw::Tex {

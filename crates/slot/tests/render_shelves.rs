@@ -116,12 +116,29 @@ fn gb_rom(cgb: u8) -> Vec<u8> {
     rom
 }
 
-/// Where a cart's label lands, in screen pixels. A lone cart stands dead centre, so its label
-/// runs from x 261 to 458; a shelf of two is centred as a pair, which puts the selection's label
-/// at 141 to 338 and its neighbour's out at 402 to 557, lower and shorter for standing shrunk.
-/// Each of these three reads one layout and lands on bare ground in the other, which is what
-/// makes them able to tell the two apart.
+/// Where a cart lands, in screen pixels. A lone cart stands dead centre; a shelf of two is
+/// centred as a pair, which puts the selection at x 141 to 338 and its neighbour out at 402 to
+/// 557, lower and shorter for standing shrunk. Each of these three reads one layout and lands on
+/// bare ground in the other, which is what makes them able to tell the two apart.
+///
+/// `ALONE` is only ever read on a Game Boy shelf, and it is the pak's bare plastic rather than
+/// its label: the pak is 253 px tall against a GBA cart's 135, so it stands from y 55 to 308
+/// with its label well up at y 87 to 230, and this sits below that on the moulded face.
 const ALONE: (usize, usize) = (360, 250);
+/// The middle of that same pak's label well. Read beside `ALONE` because neither reading can
+/// tell a Game Boy shelf from a Colour one on its own any more:
+///
+/// - The plastic is 55 apart. A pak and a Colour pak are the same silhouette, and the two
+///   shells are deliberately close in value — see `GB_CLEAR_SHELL`, which is cooler than the
+///   grey pak beside it precisely because only the lit rim separates them otherwise.
+/// - The paper is 59 apart. `label_colour` turns a title into a hue at one fixed saturation and
+///   value, and this card's two Tetris titles happen to hash into the same sector of the wheel,
+///   which leaves them differing in one channel alone.
+///
+/// Both sit inside the tolerance; together they are twice outside it. That is also the stronger
+/// claim: what is worth refusing is a shelf showing the same plastic *and* the same label, not
+/// one that merely came up in a similar colour.
+const ALONE_LABEL: (usize, usize) = (360, 158);
 const PAIR_LEFT: (usize, usize) = (180, 250);
 const PAIR_RIGHT: (usize, usize) = (540, 260);
 /// Out at the edges of the row, where neither layout puts anything. A cart here is a row that
@@ -183,6 +200,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         tap(&mut f, &mut input, Btn::R1);
         let px = composed(&mut f, &mut c, name);
         let cart = patch(&px, ALONE.0, ALONE.1);
+        let label = patch(&px, ALONE_LABEL.0, ALONE_LABEL.1);
         assert!(
             apart(cart, GROUND) > 60,
             "no cart in the middle of the {banner} shelf: {cart:?}"
@@ -200,10 +218,11 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
             "the {banner} shelf came up without its name: {ink} lit pixels"
         );
         assert!(
-            seen.iter().all(|c| apart(cart, *c) > 60),
-            "{banner} is showing a cart another shelf already showed: {cart:?}"
+            seen.iter()
+                .all(|(c, l)| apart(cart, *c) + apart(label, *l) > 60),
+            "{banner} is showing a cart another shelf already showed: {cart:?} in {label:?}"
         );
-        seen.push(cart);
+        seen.push((cart, label));
     }
 
     // Round the ring and back to where it started, on the cart the shelf was left on.
