@@ -2,6 +2,7 @@ mod atomic;
 mod core;
 mod gba;
 mod migrate;
+mod platform;
 mod ring;
 mod scan;
 mod slot_state;
@@ -12,6 +13,7 @@ pub use atomic::atomic_write;
 pub use core::{core_for, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE};
 pub use gba::{header_clean, header_code, header_title};
 pub use migrate::{migrate_states, MigrationReport};
+pub use platform::{Platform, ShelfKind};
 pub use ring::{StateEntry, StateRing, RING_MAX};
 pub use scan::{is_hidden, scan, Cart, StoreError};
 pub use slot_state::{

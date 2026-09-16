@@ -237,3 +237,60 @@ fn a_read_only_mgba_directory_fails_the_rename_leg_softly() {
         "the source was disturbed"
     );
 }
+
+/// The guard. `States/GB/` is a directory directly under `States/` whose name is not a core,
+/// which is exactly what `migrate_states` takes for a pre-namespacing cart folder — so without
+/// a skip it renames it into `States/mgba/GB/` and every Game Boy save state, resume state and
+/// polaroid thumb disappears into a core directory where nothing will look for it again. No
+/// error, no log, no failed boot: the sweep is best-effort and reports only a count.
+///
+/// This test fails loudly if the skip is ever removed while tidying. That is the point of it.
+#[test]
+fn platform_directories_are_not_mistaken_for_carts() {
+    let d = card();
+    for p in slot_store::Platform::ALL {
+        let dir = d
+            .path()
+            .join("States")
+            .join(p.dir_name())
+            .join("mgba")
+            .join("Tetris");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("resume.state"), b"keep").unwrap();
+    }
+
+    let report = migrate_states(d.path()).unwrap();
+
+    assert_eq!(report.moved, 0, "a platform directory was migrated");
+    for p in slot_store::Platform::ALL {
+        let kept = d
+            .path()
+            .join("States")
+            .join(p.dir_name())
+            .join("mgba/Tetris/resume.state");
+        assert_eq!(
+            std::fs::read(&kept).unwrap(),
+            b"keep",
+            "{}'s states were swept into a core directory",
+            p.dir_name()
+        );
+        assert!(
+            !d.path().join("States/mgba").join(p.dir_name()).exists(),
+            "{} was renamed under mgba",
+            p.dir_name()
+        );
+    }
+}
+
+/// The skip must not cost the sweep its original job: a genuine pre-namespacing cart still
+/// moves. Without this, "fix the guard" could be satisfied by disabling the sweep entirely.
+#[test]
+fn the_platform_skip_does_not_stop_a_real_cart_migrating() {
+    let d = card();
+    bare_state(d.path(), "Emerald");
+    std::fs::create_dir_all(d.path().join("States/GB/mgba/Tetris")).unwrap();
+
+    assert_eq!(migrate_states(d.path()).unwrap().moved, 1);
+    assert!(d.path().join("States/mgba/Emerald/resume.state").exists());
+    assert!(d.path().join("States/GB/mgba/Tetris").is_dir());
+}

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::core::Core;
+use crate::platform::Platform;
 
 /// What one `migrate_states` call did to a card. `failed` is what lets a caller decide
 /// whether there is anything worth logging: an ordinary boot sees `moved == 0, failed == 0`
@@ -16,8 +17,13 @@ pub struct MigrationReport {
 /// Move pre-namespacing state directories under `States/mgba/`.
 ///
 /// States used to live at `States/<stem>/`, from before a card could hold more than one
-/// core. Anything directly under `States/` that is not itself a core directory is one of
-/// those, and belongs to mGBA because mGBA is what wrote it.
+/// core. Anything directly under `States/` that is neither a core directory nor a **platform**
+/// directory is one of those, and belongs to mGBA because mGBA is what wrote it.
+///
+/// The platform half of that test is not decoration. `States/GB/` is a directory at exactly
+/// this level whose name is not a core, so without it the sweep renames every Game Boy save
+/// state into `States/mgba/GB/` on the first boot after Game Boy support ships — silently,
+/// because this function is best-effort and reports only a count.
 ///
 /// Safe to call on every boot: once a card is migrated there is nothing left that matches,
 /// so the second call walks the same directory and moves nothing. Safe to call after an
@@ -30,7 +36,11 @@ pub fn migrate_states(root: &Path) -> std::io::Result<MigrationReport> {
         Err(e) => return Err(e),
     };
 
-    let known: Vec<&str> = Core::ALL.iter().map(|c| c.as_str()).collect();
+    let known: Vec<&str> = Core::ALL
+        .iter()
+        .map(|c| c.as_str())
+        .chain(Platform::ALL.iter().map(|p| p.dir_name()))
+        .collect();
     let mut report = MigrationReport::default();
 
     // Collected before anything moves. Renaming entries out of a directory while iterating
