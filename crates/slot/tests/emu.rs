@@ -1049,3 +1049,78 @@ fn a_transport_whose_peer_ended_is_reported_as_ended_not_merely_lost() {
         "the flag outlived the session it belonged to"
     );
 }
+
+/// An ending asked for in the same present the cart leaves the slot in still reaches the wire.
+///
+/// `stop` is only read at the top of the worker's loop, so a command sent while a present is
+/// running sits in the channel until the next pass — and if the handle is dropped in between,
+/// that pass never comes and the receiver goes with it. `Cmd::EndLink` is the single seam every
+/// ending passes through and its whole job is to say goodbye before the wire goes: lost here,
+/// the peer learns of a deliberate ending from a FIN and the other player is told they were
+/// abandoned instead.
+///
+/// Forced rather than raced. The core holds the worker inside one `run_frame` for long enough
+/// that the ending and the drop provably land in the same present, which is the interleaving
+/// this is about — timing it against a mock frame that costs nothing would be a coin toss.
+#[test]
+fn an_ending_asked_for_in_the_last_present_still_reaches_the_peer() {
+    struct Bye {
+        order: Arc<Mutex<Vec<&'static str>>>,
+    }
+    impl LinkChannel for Bye {
+        fn send(&mut self, _flags: i32, _buf: &[u8]) {}
+        fn try_recv(&mut self) -> Option<Vec<u8>> {
+            None
+        }
+        fn send_end(&mut self) {
+            self.order.lock().expect("order").push("bye");
+        }
+    }
+    impl Drop for Bye {
+        fn drop(&mut self) {
+            self.order.lock().expect("order").push("drop");
+        }
+    }
+
+    let (emu, _log) = spawn_probe(Duration::from_millis(400));
+    emu.set_speed(Speed::Normal);
+    let order = Arc::new(Mutex::new(Vec::new()));
+    emu.begin_link(
+        0,
+        Box::new(Bye {
+            order: order.clone(),
+        }),
+    );
+    // Observed at most a couple of milliseconds after the command was applied, which is the
+    // top of a present whose frame then holds the worker for the next 400 ms — so everything
+    // below lands inside that one present.
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    drop(emu);
+
+    assert_eq!(
+        *order.lock().expect("order"),
+        vec!["bye", "drop"],
+        "the cart leaving took the goodbye with it: the peer was never told the link ended"
+    );
+}
+
+/// The same seam, for the other command a caller cannot go without. A flush that asks for the
+/// player's state in the present the cart leaves in gets a closed channel and writes nothing,
+/// which is their position lost — so the worker answers what is still queued before it goes.
+#[test]
+fn a_state_asked_for_in_the_last_present_is_still_answered() {
+    let (emu, _log) = spawn_probe(Duration::from_millis(400));
+    emu.set_speed(Speed::Normal);
+    // Far enough in that the worker is inside a frame rather than at the top of its loop.
+    std::thread::sleep(Duration::from_millis(100));
+
+    let state = emu.request_state();
+    drop(emu);
+
+    assert!(
+        state.recv_timeout(Duration::from_secs(2)).is_ok(),
+        "a flush racing the cart out of the slot was never answered"
+    );
+}

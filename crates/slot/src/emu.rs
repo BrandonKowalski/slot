@@ -586,76 +586,7 @@ impl Worker {
         let mut transport: Option<Box<dyn LinkChannel>> = None;
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
-                match cmd {
-                    Cmd::Save(reply) => match core.serialize() {
-                        Ok(state) => {
-                            let _ = reply.send(state);
-                        }
-                        Err(e) => eprintln!("slot: {e}"),
-                    },
-                    Cmd::Load(state) => {
-                        if let Err(e) = core.unserialize(&state) {
-                            eprintln!("slot: {e}");
-                        }
-                    }
-                    Cmd::Sav(reply) => {
-                        let _ = reply.send(core.save_ram());
-                    }
-                    Cmd::Thumb(reply) => {
-                        let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
-                    }
-                    Cmd::BeginLink(client_id, t) => {
-                        self.shared.link_lost.store(false, Ordering::Relaxed);
-                        self.shared.peer_ended.store(false, Ordering::Relaxed);
-                        core.start_link(client_id);
-                        // Set here as well as by `LibretroCore::start_link` itself: this is
-                        // the thing that actually knows a transport is wired and about to be
-                        // pumped, whatever the concrete core does or does not do with
-                        // `client_id` — the mock, in particular, has no session of its own to
-                        // start and would otherwise leave `is_active` false with real traffic
-                        // already flowing through it.
-                        link.set_active(true);
-                        transport = Some(t);
-                    }
-                    Cmd::EndLink => {
-                        self.shared.link_lost.store(false, Ordering::Relaxed);
-                        self.shared.peer_ended.store(false, Ordering::Relaxed);
-                        // `Cmd::BeginLink`'s counterpart: tells the core the session is over,
-                        // if it registered a `stop` to hear it through (`RetroCore::stop_link`
-                        // — libretro documents `stop` as OPTIONAL, unlike `start`, so this is
-                        // a no-op for a core that never offered one). Without this the core
-                        // keeps believing a session is live and keeps producing packets
-                        // nobody is left to carry.
-                        core.stop_link();
-                        // Word to the far end before the wire goes, so a deliberate ending
-                        // arrives as one rather than as a peer that fell silent. This is the
-                        // single seam every ending already passes through — the menu's own A,
-                        // a power press, a shut lid, an eject, a critical battery — so none of
-                        // them has to remember to say goodbye for itself.
-                        //
-                        // Ahead of the drop, and bounded inside `send_end`: the drop is what
-                        // unblocks the transport's own threads, and a goodbye still queued when
-                        // that happens would never reach the wire. Harmless on a wire the peer
-                        // has already dropped, which is the lost-peer timeout arriving here —
-                        // the write simply fails or goes nowhere.
-                        if let Some(t) = transport.as_mut() {
-                            t.send_end();
-                        }
-                        // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
-                        // this is just letting go of it.
-                        transport = None;
-                        // Cleared *before* the flag flips, not after: `Link::clear` empties
-                        // both queues (a packet that arrived a moment before this command
-                        // would otherwise sit here until the *next* session begins and gets
-                        // fed to a core that never sent or asked for it), and `set_active`'s
-                        // `Release` store only carries a happens-before guarantee for what
-                        // ran on this thread *before* it. Clearing first is what lets a
-                        // reader who observes `is_active() == false` (`Acquire`) also see the
-                        // queues already empty, with no sleep needed to bridge the gap.
-                        link.clear();
-                        link.set_active(false);
-                    }
-                }
+                self.apply(cmd, core.as_mut(), &mut transport, &link);
             }
 
             // Pumped every present regardless of speed or phase, not only while the core is
@@ -862,6 +793,23 @@ impl Worker {
                 None => deadline = now,
             }
         }
+        // Once more, after the flag rather than before it: `stop` is only read at the top of
+        // the loop, so everything asked for during the present it was set in — or during the
+        // one before it, if the ask landed a moment after that pass drained the queue — is
+        // still sitting in the channel with nobody left to read it. Dropping the receiver
+        // there is silent, and two of these commands are not things a caller can go without.
+        //
+        // `Cmd::EndLink` is the one that shows. It is the single seam every ending passes
+        // through, and its whole job is to say goodbye before the wire goes; lost here, a
+        // deliberate ending reaches the peer as a FIN and the other player is told they were
+        // abandoned rather than that the session ended. `Cmd::Save` is the other: a flush that
+        // asked for the player's state gets a closed channel and writes nothing, which is
+        // their position lost. Draining once more costs nothing on the ordinary path, where
+        // the queue is already empty, and the core is still alive here to answer with — it is
+        // dropped when this function returns, not when the flag went up.
+        for cmd in self.cmds.try_iter() {
+            self.apply(cmd, core.as_mut(), &mut transport, &link);
+        }
         // The ring belongs to the session, so a cart that left while fast forwarding would
         // otherwise take every sound after it with it.
         ring.set_muted(false);
@@ -869,6 +817,91 @@ impl Worker {
         let (dropped, starved) = (ring.overruns(), ring.underruns());
         if dropped > 0 || starved > 0 || crate::session::trace() {
             eprintln!("slot: audio: {dropped} samples dropped, {starved} starved");
+        }
+    }
+
+    /// One command, against the core this worker is running.
+    ///
+    /// A method rather than the body of the loop it is called from, because the loop is not
+    /// the only place it has to run: the shutdown drain at the end of `run` applies whatever
+    /// was still queued when `stop` went up, and an ending that says goodbye cannot be written
+    /// twice and stay written.
+    fn apply(
+        &self,
+        cmd: Cmd,
+        core: &mut dyn RetroCore,
+        transport: &mut Option<Box<dyn LinkChannel>>,
+        link: &Link,
+    ) {
+        match cmd {
+            Cmd::Save(reply) => match core.serialize() {
+                Ok(state) => {
+                    let _ = reply.send(state);
+                }
+                Err(e) => eprintln!("slot: {e}"),
+            },
+            Cmd::Load(state) => {
+                if let Err(e) = core.unserialize(&state) {
+                    eprintln!("slot: {e}");
+                }
+            }
+            Cmd::Sav(reply) => {
+                let _ = reply.send(core.save_ram());
+            }
+            Cmd::Thumb(reply) => {
+                let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
+            }
+            Cmd::BeginLink(client_id, t) => {
+                self.shared.link_lost.store(false, Ordering::Relaxed);
+                self.shared.peer_ended.store(false, Ordering::Relaxed);
+                // Set here as well as by `LibretroCore::start_link` itself: this is
+                // the thing that actually knows a transport is wired and about to be
+                // pumped, whatever the concrete core does or does not do with
+                // `client_id` — the mock, in particular, has no session of its own to
+                // start and would otherwise leave `is_active` false with real traffic
+                // already flowing through it.
+                core.start_link(client_id);
+                link.set_active(true);
+                *transport = Some(t);
+            }
+            Cmd::EndLink => {
+                self.shared.link_lost.store(false, Ordering::Relaxed);
+                self.shared.peer_ended.store(false, Ordering::Relaxed);
+                // `Cmd::BeginLink`'s counterpart: tells the core the session is over,
+                // if it registered a `stop` to hear it through (`RetroCore::stop_link`
+                // — libretro documents `stop` as OPTIONAL, unlike `start`, so this is
+                // a no-op for a core that never offered one). Without this the core
+                // keeps believing a session is live and keeps producing packets
+                // nobody is left to carry.
+                core.stop_link();
+                // Word to the far end before the wire goes, so a deliberate ending
+                // arrives as one rather than as a peer that fell silent. This is the
+                // single seam every ending already passes through — the menu's own A,
+                // a power press, a shut lid, an eject, a critical battery — so none of
+                // them has to remember to say goodbye for itself.
+                //
+                // Ahead of the drop, and bounded inside `send_end`: the drop is what
+                // unblocks the transport's own threads, and a goodbye still queued when
+                // that happens would never reach the wire. Harmless on a wire the peer
+                // has already dropped, which is the lost-peer timeout arriving here —
+                // the write simply fails or goes nowhere.
+                if let Some(t) = transport.as_mut() {
+                    t.send_end();
+                }
+                // The drop is what actually closes the wire (see `TcpLink`'s `Drop`);
+                // this is just letting go of it.
+                *transport = None;
+                // Cleared *before* the flag flips, not after: `Link::clear` empties
+                // both queues (a packet that arrived a moment before this command
+                // would otherwise sit here until the *next* session begins and gets
+                // fed to a core that never sent or asked for it), and `set_active`'s
+                // `Release` store only carries a happens-before guarantee for what
+                // ran on this thread *before* it. Clearing first is what lets a
+                // reader who observes `is_active() == false` (`Acquire`) also see the
+                // queues already empty, with no sleep needed to bridge the gap.
+                link.clear();
+                link.set_active(false);
+            }
         }
     }
 
