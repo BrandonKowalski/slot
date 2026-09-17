@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use common::{
-    app_playing_in, boot, panel, session_with_platform, tmp_root_with_carts,
+    app_playing_in, boot, clocked, panel, session_with_platform, tmp_root_with_carts,
     tmp_root_with_real_carts, StubSnapshot,
 };
 use slot::app::Phase;
@@ -385,6 +385,113 @@ fn a_committed_shutdown_holds_the_core_still() {
     assert!(s.app().powering_off(), "Power Off is the second row");
     s.update(DT);
     await_paused(&mut s);
+}
+
+/// A dozing device with a hand on POWER, from a real doze reached through the gesture layer.
+///
+/// Holding POWER while dozing used to raise the power menu into a framebuffer nobody could see.
+/// `doze` writes `set_backlight(0)` and nothing on that path ever lit the panel again, so the
+/// user got no feedback at all: they keep holding, and at six seconds the PMIC cuts the rails
+/// with no sync, no unmount and no driver teardown — the exact ungraceful stop `POWER_HOLD_MS`
+/// exists to get in front of.
+///
+/// Read off the far side of `Platform`, which is the only place the panel is real. Nothing about
+/// the draw list was ever wrong here: the menu was being drawn correctly onto a dark screen.
+#[test]
+fn power_pressed_while_dozing_lights_the_panel_before_the_menu_is_raised() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    let (power, backlight) = panel(d.path(), Duration::from_secs(180));
+    s.app_mut().set_power(power);
+    let lit = backlight.load(Ordering::Relaxed);
+    assert!(
+        lit > 0,
+        "the panel never came on, so going dark proves nothing"
+    );
+
+    // A tap of POWER is one of the two things that puts it out.
+    let mut now = 0;
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    event(&mut s, RawEvent::Up(Btn::Power), &mut now);
+    assert!(
+        matches!(s.app().phase(), Phase::Doze { .. }),
+        "the device never dozed"
+    );
+    assert_eq!(
+        backlight.load(Ordering::Relaxed),
+        0,
+        "the doze left the panel lit"
+    );
+
+    // And POWER pressed again. On the press, not the release: a thumb going down on a dark
+    // device is asking for it back, and a second of nothing is what sends a user on to the
+    // hardware's own cutoff.
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    assert_eq!(
+        backlight.load(Ordering::Relaxed),
+        lit,
+        "the panel is still dark under the thumb trying to wake it"
+    );
+    assert!(
+        !matches!(s.app().phase(), Phase::Doze { .. }),
+        "the panel came on over a device still dozing behind it"
+    );
+
+    // The same press, held on. The hold keeps its meaning — this is still the one gesture that
+    // offers to turn the device off — and now it is offered on a panel the user can read.
+    let pressed = now;
+    while now < pressed + POWER_HOLD_MS + FRAME_MS {
+        step(&mut s, &mut now);
+    }
+    assert_eq!(
+        s.app().power_menu(),
+        Some(0),
+        "the hold no longer raises the menu"
+    );
+    assert_eq!(
+        backlight.load(Ordering::Relaxed),
+        lit,
+        "the menu is up on a panel nobody can see"
+    );
+}
+
+/// The press that lit the panel is not also the press that puts it back out. A wake on the
+/// press whose own release still dozed would leave a tap of POWER on a sleeping device doing
+/// nothing at all — worse than the bug it was fixing, since that at least woke on the release.
+///
+/// The control is the tap after it: the button has to keep meaning what it meant.
+#[test]
+fn the_press_that_woke_the_panel_does_not_doze_again_when_it_is_let_go() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    let (power, backlight) = panel(d.path(), Duration::from_secs(180));
+    s.app_mut().set_power(power);
+    let lit = backlight.load(Ordering::Relaxed);
+
+    let mut now = 0;
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    event(&mut s, RawEvent::Up(Btn::Power), &mut now);
+    assert!(matches!(s.app().phase(), Phase::Doze { .. }));
+
+    // One tap of POWER: it wakes, and letting go is not a second gesture on top of that.
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    event(&mut s, RawEvent::Up(Btn::Power), &mut now);
+    assert!(
+        !matches!(s.app().phase(), Phase::Doze { .. }),
+        "the tap that woke the device put it straight back to sleep"
+    );
+    assert_eq!(backlight.load(Ordering::Relaxed), lit);
+
+    // And the next tap is an ordinary one, which means the device goes dark again.
+    event(&mut s, RawEvent::Down(Btn::Power), &mut now);
+    event(&mut s, RawEvent::Up(Btn::Power), &mut now);
+    assert!(
+        matches!(s.app().phase(), Phase::Doze { .. }),
+        "POWER stopped being able to put the device out"
+    );
+    assert_eq!(backlight.load(Ordering::Relaxed), 0);
 }
 
 /// Waits for the worker to report that it read `Paused`, rather than for the frame count to
