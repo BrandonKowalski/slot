@@ -854,6 +854,20 @@ impl Worker {
             Cmd::BeginLink(client_id, t) => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);
                 self.shared.peer_ended.store(false, Ordering::Relaxed);
+                // Both queues emptied before the session is live, the mirror of the clear
+                // `Cmd::EndLink` does on its way out and for the same reason on the other
+                // side of the same seam. `netpacket_send` (slot-retro's `libretro.rs`) pushes
+                // whatever the core hands it without asking whether a session is running, and
+                // `RetroCore::stop_link` is a no-op for a core that registered no `stop` —
+                // libretro documents that callback as OPTIONAL — so a core can go on producing
+                // packets for a session that has already ended. Those would otherwise wait
+                // here and go out as the *next* session's opening traffic, to a peer that
+                // never asked for them, which is the exact failure the ending's own clear
+                // exists to prevent in the other direction.
+                //
+                // Ahead of `start_link`, so a core that sends a handshake from inside its own
+                // `start` callback still has it carried.
+                link.clear();
                 // Set here as well as by `LibretroCore::start_link` itself: this is
                 // the thing that actually knows a transport is wired and about to be
                 // pumped, whatever the concrete core does or does not do with

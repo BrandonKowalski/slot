@@ -678,6 +678,12 @@ fn the_cores_outbound_queue_reaches_the_transport() {
     let emu = spawn();
     let (mut here, there) = paired_links();
     emu.begin_link(1, Box::new(there));
+    // Waited on rather than assumed, the same way the inbound half above does it. A packet
+    // pushed before the session is actually live is a packet from before the session:
+    // `Cmd::BeginLink` empties both queues on its way in (see
+    // `beginning_a_link_clears_what_the_last_session_left_behind`), so pushing into the race
+    // would be testing the clear rather than the pump.
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
 
     emu.net().push_outbound(b"from the core".to_vec());
     let got = wait_for_packet(|| here.try_recv());
@@ -1047,6 +1053,58 @@ fn a_transport_whose_peer_ended_is_reported_as_ended_not_merely_lost() {
     assert!(
         wait_for(|| !emu.peer_ended()),
         "the flag outlived the session it belonged to"
+    );
+}
+
+/// A packet the core produced between two sessions must not open the next one.
+///
+/// `netpacket_send` (slot-retro's `libretro.rs`) pushes whatever the core hands it onto the
+/// outbound queue without asking whether a session is running, and `RetroCore::stop_link` is a
+/// no-op for a core that registered no `stop` — libretro documents that callback as OPTIONAL —
+/// so a core that goes on believing a session is live goes on producing traffic for it. The
+/// ending's own `Link::clear` empties the queues on the way out; without the matching clear on
+/// the way in, anything produced *after* that lands here and is handed to the next peer as its
+/// first traffic, which is the same failure the ending's clear exists to prevent, on the other
+/// side of the same seam.
+///
+/// Pushed directly rather than through a core, for the same reason
+/// `ending_a_link_clears_stale_packets_for_the_next_session` does: `MockCore` has no session of
+/// its own to keep believing in.
+#[test]
+fn beginning_a_link_clears_what_the_last_session_left_behind() {
+    let emu = spawn();
+    let (_here, there) = paired_links();
+    emu.begin_link(0, Box::new(there));
+    assert!(wait_for(|| emu.net().is_active()), "begin_link never took");
+
+    emu.end_link();
+    assert!(wait_for(|| !emu.net().is_active()), "end_link never took");
+
+    // The core still talking to a session that has already ended. Ordered before the command
+    // below and applied on the same thread in the order it was sent, so this is genuinely
+    // waiting in the queue when the next session begins rather than racing it there.
+    emu.net()
+        .push_outbound(b"the core did not hear the session end".to_vec());
+    emu.net().push_inbound(b"and neither did this".to_vec());
+
+    let (mut here, there) = paired_links();
+    emu.begin_link(1, Box::new(there));
+    assert!(
+        wait_for(|| emu.net().is_active()),
+        "the second begin_link never took"
+    );
+    // Several presents, so anything the worker was going to flush has had every chance to.
+    std::thread::sleep(Duration::from_millis(100));
+
+    assert_eq!(
+        here.try_recv(),
+        None,
+        "the last session's traffic opened this one, to a peer that never asked for it"
+    );
+    assert_eq!(
+        emu.net().take_inbound(),
+        None,
+        "a packet from before this session was waiting for its core"
     );
 }
 
