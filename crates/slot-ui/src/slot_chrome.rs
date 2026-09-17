@@ -158,12 +158,18 @@ const CREEP: f32 = 0.03;
 pub struct SlotChrome<'a> {
     pub cart: &'a Cart,
     pub face: Option<TexId>,
-    /// Where the shelf left this cart standing, as `Shelf::rest_x` gives it. Usually the middle
-    /// of the screen, and half a pitch left of it on a shelf holding two carts, which is
-    /// centred as a pair rather than on its selection. The travel below carries the cart from
-    /// here to the slot, so a cart that was not standing centred slides across as it goes down
-    /// rather than jumping to the mouth on the first frame.
+    /// Where the shelf had this cart on the frame the button went down, as `Shelf::selected_at`
+    /// gives it: the left edge of the quad the row was drawing. The travel below carries the
+    /// cart from here to the slot, so a cart the row had not finished bringing to the middle
+    /// slides across as it goes down rather than jumping to the mouth on the first frame.
     pub rest: f32,
+    /// And how big the row had it, against the cartridge's own size — `Shelf::selected_at`'s
+    /// second answer. A settled row hands over 1.0 and the travel below is exactly what it has
+    /// always been; a row still springing hands over as little as its `SIDE_SCALE`, and the cart
+    /// grows to full size over the same travel that carries it down. Without it the cart jumps a
+    /// third of its own width larger on the frame the button goes down, which is the other half
+    /// of the same teleport `rest` exists to stop.
+    pub scale: f32,
     /// 0.0 standing where the shelf left it, 1.0 swallowed by the mouth.
     pub seat: f32,
     /// The refusal symbol and how far into its fade it is. A cart that will not seat says so
@@ -209,18 +215,29 @@ impl SlotChrome<'_> {
         let (cw, ch) = cart_box(self.cart.platform);
         let (cw, ch) = (cw as f32, ch as f32);
 
-        // Across and down on the one progress, so the cart arrives over the mouth exactly as it
-        // reaches it. The slot is the middle of the device and cannot move, so a cart standing
-        // anywhere else has to come to it.
+        // Across, down and up to size on the one progress, so the cart arrives over the mouth
+        // exactly as it reaches it. The slot is the middle of the device and cannot move, so a
+        // cart standing anywhere else has to come to it.
+        //
         // Where the cart stands before it is pushed in: the shelf's own answer, not a second
         // copy of it. The chrome takes over drawing the cart on the frame the button is
         // pressed, so anything but the row's own placement is a cart that jumps on that frame —
         // and the row centres a cartridge on the screen, which puts a 253 px pak's foot 59 px
         // below a GBA cart's.
-        let stands = rest_y(ch);
+        //
+        // The foot begins on the row's floor whatever size the row had the cart at, because the
+        // row shrinks a cart upward off that floor rather than about its middle — so `stands` is
+        // measured back from the foot rather than from `rest_y`, which is only the top of a cart
+        // the row had finished growing. That keeps `catch_at`'s fraction exact: at `travel` of
+        // `catch` the bottom edge is on the lip to the pixel from any starting size, since both
+        // the drop and the growth are on the one progress.
+        let scale = self.scale.clamp(0.0, 1.0);
+        let (w0, h0) = (cw * scale, ch * scale);
+        let stands = foot_y(ch) - h0;
         let travel = travel(seat, ch);
         let x = self.rest + (seated_x(cw) - self.rest) * travel;
         let y = stands + (SEATED_Y - stands) * travel;
+        let (cw, ch) = (w0 + (cw - w0) * travel, h0 + (ch - h0) * travel);
         // The cart fades with the case rather than through it. A seated cart is really in the
         // slot and has to be drawn, so the whole device face has to leave as one object as the
         // picture takes over. Held at full while the screen is off, which is all of the travel.

@@ -2544,10 +2544,16 @@ impl App {
             return;
         };
         let alpha = self.alert_alpha();
+        // Where the row had this cart on the frame the button went down, size included. The
+        // spring is not required to have settled first — nothing makes the player wait for it —
+        // and the shelf stops running the moment the phase changes, so this is the same answer
+        // on every frame of the travel.
+        let (rest, scale) = self.shelf().selected_at();
         SlotChrome {
             cart,
             face,
-            rest: self.shelf().rest_x(),
+            rest,
+            scale,
             seat: self.seat(),
             alert: self.alert_face.filter(|_| alpha > 0.0).map(|t| (t, alpha)),
             dim,
@@ -2691,9 +2697,12 @@ impl App {
         let progress = picker.openness(now);
         // The shadows and the legend come in with the lift, not with the slide.
         let lift = lift_of(progress);
-        // The cart grows out of where the row was standing it, which is the middle of the
-        // screen on every shelf but one holding two carts.
-        let shelf = shelf_cart_at(self.shelf().rest_x());
+        // The cart grows out of the quad the row has it in this frame, which is the middle of
+        // the screen at full size once the spring has settled and somewhere short of that while
+        // it has not. The shelf is still running underneath — the picker is drawn from
+        // `Phase::Shelf` — so this tracks the row rather than being read once at the press.
+        let (rest, scale) = self.shelf().selected_at();
+        let shelf = shelf_cart_at(rest, scale);
         let board = board_from(shelf, progress);
         let zoom = board_zoom(board);
         let ready = self.core_faces_ready();

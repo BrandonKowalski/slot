@@ -1,0 +1,266 @@
+//! The carousel's edges and its handover to the slot, composited on the GPU and read back.
+//!
+//! A draw list can agree that a row was drawn while the screen shows a black hole where a
+//! cartridge should be leaving the frame: `cart_at_offset` returning `None` for a slot is a
+//! quad that never reaches the list at all, and no assertion about the quads that *are* in it
+//! can see the one that is missing. So what is measured here is the panel — how much bare
+//! backdrop the row leaves at each edge, frame by frame, through a scroll — and the yardstick is
+//! another row of the same carousel rather than a number chosen by hand.
+//!
+//! `SCRATCH_PNG_DIR=/tmp cargo test -p slot-ui --test render_row_edges -- --nocapture`
+
+#![cfg(target_os = "macos")]
+
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+use slot_gfx::{Compositor, HeadlessSurface};
+use slot_store::{Cart, Platform};
+use slot_ui::{cart_face, cart_shadow, Draw, Shelf, SlotChrome, TexId, CART_W, OUT_H, OUT_W};
+
+/// `gl::load_with` writes global function pointers, so two GL tests must not overlap.
+static GL: Mutex<()> = Mutex::new(());
+
+fn compositor() -> Option<(MutexGuard<'static, ()>, HeadlessSurface, Compositor)> {
+    let guard = GL.lock().unwrap_or_else(PoisonError::into_inner);
+    let surface = HeadlessSurface::new().ok()?;
+    let compositor = Compositor::new(&surface).ok()?;
+    Some((guard, surface, compositor))
+}
+
+fn shelf_with(n: usize) -> Shelf {
+    Shelf::new(
+        (0..n)
+            .map(|i| Cart {
+                platform: Platform::Gba,
+                stem: format!("Game {i}"),
+                rom: format!("Games/GBA/Game {i}.gba").into(),
+                label: None,
+                code: String::new(),
+                title: format!("GAME {i}"),
+            })
+            .collect(),
+    )
+}
+
+/// The row with its faces on the GPU, as the frontend uploads them.
+fn uploaded(n: usize, c: &mut Compositor) -> (Shelf, Vec<TexId>) {
+    let mut s = shelf_with(n);
+    let faces: Vec<TexId> = s
+        .carts
+        .iter()
+        .map(|cart| {
+            let f = cart_face(cart);
+            c.create_texture(f.w, f.h, &f.rgba)
+        })
+        .collect();
+    s.set_faces(faces.clone());
+    let shadow = cart_shadow();
+    let tex = c.create_texture(shadow.w, shadow.h, &shadow.rgba);
+    s.set_shadow(tex);
+    (s, faces)
+}
+
+fn composed(c: &mut Compositor, list: &[Draw]) -> Vec<u8> {
+    c.begin_frame();
+    c.draw_list(list);
+    c.read_frame()
+}
+
+fn write_png(px: &[u8], path: &str) {
+    let file = std::fs::File::create(path).expect("create png");
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+    e.set_color(png::ColorType::Rgba);
+    e.set_depth(png::BitDepth::Eight);
+    e.write_header()
+        .expect("png header")
+        .write_image_data(px)
+        .expect("png data");
+    println!("wrote {path}");
+}
+
+fn shot(px: &[u8], name: &str) {
+    if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
+        write_png(px, &format!("{dir}/{name}.png"));
+    }
+}
+
+/// The band the carts stand in, which is the only part of the frame this reads: the slot's own
+/// housing runs across the bottom and would make every column look occupied. Taken as a fraction
+/// of the panel rather than as two screen rows, because the carousel has already moved 59 px
+/// under constants typed when it stood a cartridge somewhere else.
+const BAND: std::ops::Range<usize> = (OUT_H as usize / 4)..(OUT_H as usize / 2);
+
+/// Whether any pixel of a column, in the band the carts stand in, is something other than the
+/// backdrop. A cart is a solid object over black, so a lit column is a column a cartridge is in.
+fn occupied(px: &[u8], x: usize) -> bool {
+    BAND.map(|y| (y * OUT_W as usize + x) * 4)
+        .any(|o| px[o] > 0x18 || px[o + 1] > 0x18 || px[o + 2] > 0x18)
+}
+
+/// How many columns of bare backdrop the row leaves at each edge of the panel.
+fn bare_edges(px: &[u8]) -> (usize, usize) {
+    let w = OUT_W as usize;
+    let left = (0..w).take_while(|x| !occupied(px, *x)).count();
+    let right = (0..w).take_while(|x| !occupied(px, w - 1 - *x)).count();
+    (left, right)
+}
+
+/// A direction held down from the first frame, as `App::update` runs the row: `tick` then
+/// `update`, once a frame. Every frame comes back composited.
+fn held_scroll(c: &mut Compositor, n: usize, frames: usize) -> Vec<Vec<u8>> {
+    let (mut s, _) = uploaded(n, c);
+    // Start on the cart a right press wraps off the end of, so the wrap is the first thing on
+    // screen rather than something the sequence has to be long enough to reach.
+    s.select(n - 1);
+    s.hold_right(0);
+    (0..frames)
+        .map(|f| {
+            s.tick(f as u64 * 1000 / 60);
+            s.update(1.0 / 60.0);
+            let mut list = Vec::new();
+            s.draw(0.0, &mut list);
+            composed(c, &list)
+        })
+        .collect()
+}
+
+/// A short row must leave no more of the panel bare than a long one does.
+///
+/// The row is a ring and the screen is wider than three carts, so at every moment there is a
+/// cartridge on its way off one edge and another arriving at the other. That was true of a long
+/// row and not of a short one: `cart_at_offset` handed each cart a single image, the slot nearest
+/// the *selection*, and a press moves the selection a whole slot before the spring has moved the
+/// row at all — so for the length of the travel the image the rule withheld was the one leaving
+/// the frame. At three carts and at four, the cart standing in the left slot was struck out of
+/// the row while it was still fully on screen: it vanished where it stood, and the left third of
+/// the panel stayed black until the row settled.
+///
+/// Ten carts is the yardstick because ten is the user's own GBA shelf and was never wrong. The
+/// claim is a comparison and not a constant, so it cannot go stale the way a hand-typed column
+/// number does when the pitch or the cart's width changes.
+#[test]
+fn a_short_row_leaves_no_more_of_the_panel_bare_than_a_long_one() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    // Two seconds: the 400 ms repeat delay and then fifteen repeats, which laps a short row
+    // several times over.
+    const FRAMES: usize = 120;
+    let worst = |frames: &[Vec<u8>]| -> (usize, usize) {
+        frames
+            .iter()
+            .map(|px| bare_edges(px))
+            .fold((0, 0), |a, b| (a.0.max(b.0), a.1.max(b.1)))
+    };
+    let long = held_scroll(&mut c, 10, FRAMES);
+    let (lref, rref) = worst(&long);
+    shot(&long[1], "row-10-early");
+    for n in [2usize, 3, 4, 5, 8] {
+        let frames = held_scroll(&mut c, n, FRAMES);
+        shot(&frames[1], &format!("row-{n}-early"));
+        let (left, right) = worst(&frames);
+        assert!(
+            left <= lref + 2 && right <= rref + 2,
+            "{n} carts left {left} px bare at the left and {right} at the right against a ten \
+             cart row's {lref} and {rref}: the row has a hole in it where a cartridge should be \
+             leaving the frame"
+        );
+    }
+}
+
+/// A carousel of one does not turn. The row has no second cart to move to, so a shoulder press
+/// has nothing to answer and the lone cartridge must not so much as twitch.
+///
+/// It did. `ride` counts presses rather than wrapping — which is what lets a wrap go the way the
+/// button asked — and on a ring of one `scroll_target`'s wrap is degenerate, so the target *was*
+/// the press count and the row set off after a cart that is not there. Composited, the only
+/// cartridge on the shelf was thrown a pitch to the right and shrunk, and under a held direction
+/// the 110 ms repeat kicked it out again before it could land: a lone cart shimmying sideways
+/// for as long as the button was down.
+#[test]
+fn a_shelf_of_one_does_not_move_when_a_shoulder_is_held() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let frames = held_scroll(&mut c, 1, 120);
+    shot(&frames[0], "row-1-first");
+    shot(&frames[119], "row-1-last");
+    // The lone cart is 240 wide and centred, so it leaves the same 240 px bare at each edge on
+    // every frame. Read off the first frame rather than typed, and then required of all of them.
+    let want = bare_edges(&frames[0]);
+    assert_eq!(
+        want,
+        ((OUT_W - CART_W) as usize / 2, (OUT_W - CART_W) as usize / 2),
+        "the lone cart is not standing centred at its own width even before the press"
+    );
+    for (f, px) in frames.iter().enumerate() {
+        assert_eq!(
+            bare_edges(px),
+            want,
+            "frame {f}: the lone cart moved to {:?}",
+            bare_edges(px)
+        );
+    }
+}
+
+/// The cart the slot takes over is the cart the row was drawing, in the same place and at the
+/// same size. Nothing makes the player wait for the spring before pressing A, and the app reads
+/// the row's answer on the frame the button goes down: the two have to agree on the frames the
+/// row is still moving, not only on the ones it has stopped on.
+///
+/// Measured as the panel either side of the handover. The frame before is the row with its
+/// selection in it; the frame after is the row with that cart held back and the chrome drawing it
+/// instead. Bar the slot coming up along the bottom, they have to be the same picture — and when
+/// the chrome was handed a settled row's answer they were not: the chosen cart jumped 266 px
+/// sideways and grew a third of its own width between them.
+#[test]
+fn the_slot_takes_over_the_cart_where_the_row_had_it() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let (mut s, faces) = uploaded(5, &mut c);
+    s.select(0);
+    s.right();
+    // Two frames in, which is where a quick press lands: far enough that the spring has begun
+    // and nowhere near far enough that it has finished.
+    s.update(1.0 / 60.0);
+    s.update(1.0 / 60.0);
+    let mut before = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut before);
+    let before = composed(&mut c, &before);
+    shot(&before, "handover-before");
+
+    let cart = s.carts[s.index].clone();
+    let (rest, scale) = s.selected_at();
+    let mut after = Vec::new();
+    s.draw_row(Some(&cart.stem), 0.0, 0.0, 1.0, &mut after);
+    SlotChrome {
+        cart: &cart,
+        face: Some(faces[s.index]),
+        rest,
+        scale,
+        // The first frame of the travel, which is the frame the button went down on.
+        seat: 0.0,
+        alert: None,
+        dim: 0.0,
+        screen: 0.0,
+        game: false,
+    }
+    .draw(&mut after);
+    let after = composed(&mut c, &after);
+    shot(&after, "handover-after");
+
+    // Which columns of the cart band hold an object, before and after. The silhouette and not
+    // the colour: the chrome draws the chosen cart at full strength where the row had it at the
+    // alpha its distance from the selection earns, so the cart is brighter after the handover
+    // even when it has not moved a pixel. Where it *is* is what the handover has to preserve.
+    let columns =
+        |px: &[u8]| -> Vec<bool> { (0..OUT_W as usize).map(|x| occupied(px, x)).collect() };
+    let (a, b) = (columns(&before), columns(&after));
+    let moved = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+    assert!(
+        moved <= 2,
+        "{moved} columns of the row changed on the frame the slot took the cart over: the \
+         cartridge jumped rather than being handed across"
+    );
+}

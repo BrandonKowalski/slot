@@ -1,11 +1,12 @@
 use slot_store::{Cart, Platform};
 use slot_ui::{
-    cart_box, draw_empty_slot, edge, housing, icon_box, opening, recess, Draw, Shelf, SlotChrome,
-    ALERT_PX, CART_H, CART_W, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, MOUTH_H, OUT_H, OUT_W,
+    cart_box, draw_empty_slot, edge, foot_y, housing, icon_box, opening, recess, Draw, Shelf,
+    SlotChrome, TexId, ALERT_PX, CART_H, CART_W, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, MOUTH_H,
+    OUT_H, OUT_W,
 };
 
-/// Where a shelf of three or more stands its selected cart, which is what the chrome is handed
-/// everywhere but on a shelf holding exactly two.
+/// Where a settled shelf stands its selected cart, which is what the chrome is handed on every
+/// frame after the spring has landed.
 const CENTRED: f32 = (OUT_W - CART_W) as f32 / 2.0;
 
 fn cart() -> Cart {
@@ -152,6 +153,7 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
         cart: c,
         face: None,
         rest: CENTRED,
+        scale: 1.0,
         seat,
         alert: None,
         dim: 0.5,
@@ -161,20 +163,41 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
     .draw(out);
 }
 
-/// A shelf of two carts is centred as a pair, so the cart that goes in was not standing in the
-/// middle of the screen. It must leave from where it stood and arrive over the mouth: starting
-/// it at the slot instead is a cart that teleports on the frame the button is pressed, and
-/// leaving it off to the side is a cart that goes into the case beside the opening.
+/// Nothing makes the player wait for the carousel's spring before pressing A, so the cart that
+/// goes in was not necessarily standing where a settled row would have left it. It must leave
+/// from the quad the row had it in and arrive over the mouth at full size: starting it at the
+/// slot instead is a cart that teleports on the frame the button is pressed, and leaving it off
+/// to the side is a cart that goes into the case beside the opening.
+///
+/// The start is taken from a real row two frames into a press rather than made up, because a
+/// made-up one is what this test used to take: it handed the chrome a hand-picked 120 px offset
+/// on the reasoning that a shelf of two centres its pair, which stopped being true when the
+/// carousel began centring every row on its selection. It passed on a case the app could no
+/// longer produce while the case the app *does* produce — this one — was unchecked, and there
+/// the cart jumped 266 px sideways and grew a third of its width on one frame.
 #[test]
-fn a_cart_standing_off_centre_slides_across_as_it_goes_in() {
+fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
     let c = cart();
-    let off = CENTRED - 120.0;
-    let cart_x = |seat: f32| {
+    let mut shelf = Shelf::new(vec![cart(), pak(), cart()]);
+    shelf.right();
+    shelf.update(1.0 / 60.0);
+    shelf.update(1.0 / 60.0);
+    let (rest, scale) = shelf.selected_at();
+    assert!(
+        (rest - CENTRED).abs() > 100.0 && scale < 0.95,
+        "the row settled before the press: this proves nothing at {rest} and {scale}"
+    );
+    // The face makes the cartridge the one textured quad in the list, which is how it is found
+    // at a size the row shrank: `is_cart` knows a cartridge by its full width and a cart part
+    // way through its travel does not have one.
+    let face = TexId::from_raw(3);
+    let at = |seat: f32| {
         let mut out = Vec::new();
         SlotChrome {
             cart: &c,
-            face: None,
-            rest: off,
+            face: Some(face),
+            rest,
+            scale,
             seat,
             alert: None,
             dim: 0.0,
@@ -182,23 +205,47 @@ fn a_cart_standing_off_centre_slides_across_as_it_goes_in() {
             game: false,
         }
         .draw(&mut out);
-        quad(&out[cart_at(&out)]).x
+        out.iter()
+            .find(|d| matches!(d, Draw::Tex { .. }))
+            .map(quad)
+            .expect("no cartridge in the list")
     };
+    let start = at(0.0);
     assert!(
-        (cart_x(0.0) - off).abs() < 0.01,
-        "the cart starts at {} rather than where the shelf left it",
-        cart_x(0.0)
+        (start.x - rest).abs() < 0.01 && (start.w - CART_W as f32 * scale).abs() < 0.01,
+        "the cart starts at {start:?} rather than in the quad the row had it in"
     );
+    // And on the row's floor, which is where the row shrinks a cart from: a start measured off
+    // `rest_y` instead would hang it in the air by the height the scale took off it.
     assert!(
-        (cart_x(1.0) - CENTRED).abs() < 0.01,
-        "the cart seats at {} rather than in the mouth",
-        cart_x(1.0)
+        (start.y + start.h - foot_y(CART_H as f32)).abs() < 0.01,
+        "the cart starts with its foot at {} rather than on the row's floor",
+        start.y + start.h
     );
-    let mut last = off;
+    let seated = at(1.0);
+    assert!(
+        (seated.x - CENTRED).abs() < 0.01 && (seated.w - CART_W as f32).abs() < 0.01,
+        "the cart seats at {seated:?} rather than full size in the mouth"
+    );
+    // One way across and one way up to size, all the way. Measured as distance left to go
+    // rather than as an increasing `x`, because which way the cart has to travel depends on
+    // which side of the mouth the row had left it.
+    let mut last = start;
     for step in 1..=20 {
-        let x = cart_x(step as f32 / 20.0);
-        assert!(x >= last - 0.01, "the cart went back to {x} from {last}");
-        last = x;
+        let q = at(step as f32 / 20.0);
+        assert!(
+            (q.x - CENTRED).abs() <= (last.x - CENTRED).abs() + 0.01,
+            "the cart went back to {} from {}",
+            q.x,
+            last.x
+        );
+        assert!(
+            q.w >= last.w - 0.01,
+            "the cart shrank to {} from {}",
+            q.w,
+            last.w
+        );
+        last = q;
     }
 }
 
@@ -210,6 +257,7 @@ fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
         cart: &c,
         face: None,
         rest: CENTRED,
+        scale: 1.0,
         seat: 1.0,
         alert: None,
         dim: 0.0,
@@ -644,6 +692,7 @@ fn the_empty_slot_is_the_same_slot_the_chrome_draws() {
         cart: &c,
         face: None,
         rest: CENTRED,
+        scale: 1.0,
         seat: 1.0,
         alert: None,
         dim: 0.0,

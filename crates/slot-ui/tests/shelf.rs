@@ -132,11 +132,20 @@ fn the_neighbour_of_the_last_cart_is_the_first() {
     assert_eq!(s.cart_at_offset(1), Some(1));
 }
 
-/// Three or more carts have one image each on the row. Only a ring of two repeats, and it does
-/// so because there is no third cart to put in the third slot: a longer row has one and must
-/// use it, or the shelf is showing a cart twice while another is not on screen at all.
+/// A row of three or more, *standing still*, has one image of each cart on screen. Only a ring
+/// of two repeats when it is settled, and it does so because there is no third cart to put in the
+/// third slot: a longer row has one and must use it, or the shelf is showing a cart twice while
+/// another is not on screen at all.
+///
+/// Standing still is the whole of the claim and the reason the row below is never pressed. The
+/// ring fills every slot at every length, and while a row is moving the screen is wider than
+/// three pitches — so a ring of three or of four does put one cart at both edges at once, each
+/// half out of frame, which is what a ring shorter than the window looks like drawn honestly. The
+/// alternative was withholding that image, and withholding it left the cart leaving the frame
+/// undrawn: see `render_row_edges.rs`. From five carts up the ring is wider than the screen and
+/// nothing is ever repeated, moving or not.
 #[test]
-fn no_cart_is_drawn_twice_in_a_row_of_three_or_more() {
+fn no_cart_is_drawn_twice_in_a_settled_row_of_three_or_more() {
     for n in [3usize, 4, 7] {
         let s = shelf_with(n);
         let mut out = Vec::new();
@@ -210,8 +219,15 @@ fn two_carts_repeat_around_the_ring() {
 /// read is a row sliding one pitch, so no cart may change which offset it stands at between the
 /// frame before a press and the frame after it — a cart that blinks out at one edge and back in
 /// at the other is the row teleporting rather than turning.
+///
+/// Every length, not only two. A press moves the selection before the spring has moved the row,
+/// so the frame after it has to draw the same carts in the same places the frame before it did —
+/// which is a claim about the *row*, and the row of two was merely where it was noticed. It was
+/// false at three carts and at four: the cart in the left slot, fully on screen, was not in the
+/// list at all on the frame after the press. Held at ten too, which was always right, so this
+/// cannot start passing because every length got equally wrong.
 #[test]
-fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
+fn a_press_slides_the_row_rather_than_redrawing_it() {
     // Each drawn cart as (which cart, where it is in pitches from the middle), rounded, so the
     // two sides of a press can be compared as sets of positions.
     let occupied = |s: &Shelf| {
@@ -229,19 +245,21 @@ fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
         row.sort();
         row
     };
-    for (name, press) in [
-        ("right", Shelf::right as fn(&mut Shelf)),
-        ("left", Shelf::left as fn(&mut Shelf)),
-    ] {
-        let mut s = shelf_with(2);
-        settle(&mut s);
-        let before = occupied(&s);
-        press(&mut s);
-        assert_eq!(
-            occupied(&s),
-            before,
-            "the {name} press redrew the row instead of moving it"
-        );
+    for n in [2usize, 3, 4, 5, 10] {
+        for (name, press) in [
+            ("right", Shelf::right as fn(&mut Shelf)),
+            ("left", Shelf::left as fn(&mut Shelf)),
+        ] {
+            let mut s = shelf_with(n);
+            settle(&mut s);
+            let before = occupied(&s);
+            press(&mut s);
+            assert_eq!(
+                occupied(&s),
+                before,
+                "{n} carts: the {name} press redrew the row instead of moving it"
+            );
+        }
     }
 }
 
@@ -337,23 +355,66 @@ fn a_held_scroll_never_travels_against_the_button() {
 }
 
 /// Where the selected cart stands, which is what a cart going into the slot and a cart the
-/// picker opens both start from. Every length of row centres its selection, so the answer is
-/// the middle of the screen at each of them — asked here rather than assumed, because the
-/// handover is a jump the moment the two disagree.
+/// picker opens both start from. Every length of row centres its selection, so a settled row
+/// answers with the middle of the screen at full size — asked here rather than assumed, because
+/// the handover is a jump the moment the two disagree.
+///
+/// And asked on the frames that are not settled, which is where it was wrong. `rest_x`, which
+/// this replaces, answered "dead centre, 240 wide" whatever the spring was doing, and the app
+/// reads it on the frame A or START goes down — which nothing makes the player delay until the
+/// row has stopped. Two frames after a shoulder press the selection is most of a pitch off
+/// centre and shrunk to near `SIDE_SCALE`, so the cart handed to the slot jumped 266 px sideways
+/// and grew a third of its own width on that one frame, with the cart it was passing still
+/// sliding behind it.
+///
+/// The reading is taken as the difference between the row drawn whole and the row drawn with
+/// the selection held back — which is exactly the swap the handover performs — so what is
+/// compared is the quad the chrome has to replace and not a quad picked out by being the widest.
+/// Mid-travel the selection is not the widest: at half a pitch out it is the same size as the
+/// neighbour it is passing.
 #[test]
 fn the_shelf_says_where_its_selected_cart_stands() {
     for n in [1usize, 2, 3, 5] {
-        let mut s = shelf_with(n);
-        settle(&mut s);
-        let widest = placed(&s)
-            .into_iter()
-            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
-        assert!(
-            (widest.0 - s.rest_x()).abs() < 0.5,
-            "{n} carts: the selection stands at {} and the shelf says {}",
-            widest.0,
-            s.rest_x()
-        );
+        // Settled, then every frame of a press's travel, so the claim covers the frames the row
+        // is moving rather than only the one it has stopped on.
+        for frames in [0usize, 1, 2, 3, 5, 8, 13, 400] {
+            let mut s = shelf_with(n);
+            settle(&mut s);
+            s.right();
+            for _ in 0..frames {
+                s.update(1.0 / 60.0);
+            }
+            let stem = s.carts[s.index].stem.clone();
+            let mut whole = Vec::new();
+            s.draw_row(None, 0.0, 0.0, 1.0, &mut whole);
+            let mut without = Vec::new();
+            s.draw_row(Some(&stem), 0.0, 0.0, 1.0, &mut without);
+            let dropped: Vec<(f32, f32)> = whole
+                .iter()
+                .map(xw)
+                .filter(|q| !without.iter().map(xw).any(|k| k == *q))
+                .collect();
+            // One image, except on a ring of two while it is travelling: there the selection
+            // really is at both edges at once, and the chrome replacing both with one is the
+            // row of two's own business rather than this claim's.
+            if n != 2 || frames == 400 {
+                assert_eq!(
+                    dropped.len(),
+                    1,
+                    "{n} carts, {frames} frames in: the row drew {} images of its selection",
+                    dropped.len()
+                );
+            }
+            let (said_x, scale) = s.selected_at();
+            let said = (said_x, CART_W as f32 * scale);
+            assert!(
+                dropped
+                    .iter()
+                    .any(|(x, w)| (x - said.0).abs() < 0.01 && (w - said.1).abs() < 0.01),
+                "{n} carts, {frames} frames in: the shelf says its selection is at {said:?} and \
+                 the row drew it at {dropped:?}"
+            );
+        }
     }
 }
 

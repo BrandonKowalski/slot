@@ -187,9 +187,24 @@ impl Shelf {
         self.held = Some((by, now + REPEAT_MS));
     }
 
+    /// A press, and nothing at all on a row with fewer than two carts. An empty row has nothing
+    /// to select and a row of one has nothing else to select, so neither can answer a shoulder —
+    /// and `cart_at_offset` says as much: a lone cart is drawn in the middle and the row holds no
+    /// other slot to move into.
+    ///
+    /// The one-cart case has to stop here rather than fall through to arithmetic that happens to
+    /// leave `index` alone, because `ride` is not `index`. `ride` counts presses rather than
+    /// wrapping — that is what lets `scroll_target` answer a wrap the way the button asked — and
+    /// on a ring of one the wrap is degenerate: `(index - ride + 0.5).rem_euclid(1.0)` is 0.5 for
+    /// every whole `ride`, so the target *is* `ride`, and a press that added to it would send the
+    /// row a whole pitch after a cart that is not there. Composited, that is the only cartridge
+    /// on the shelf thrown a pitch to the right and shrunk to `SIDE_SCALE` on the press, sliding
+    /// back to the middle over the next third of a second; held, the 110 ms repeat kicks it out
+    /// again before it lands and the lone cart shimmies sideways for as long as the button is
+    /// down. Which is a carousel of one turning, and a carousel of one does not turn.
     fn step(&mut self, by: i32) {
         let n = self.carts.len();
-        if n == 0 {
+        if n < 2 {
             return;
         }
         self.index = (self.index as i32 + by).rem_euclid(n as i32) as usize;
@@ -256,36 +271,67 @@ impl Shelf {
     /// three copies of one cart standing still read as a drawing fault, not as a ring. Two carts
     /// differ on both counts: the neighbours are a different cart from the selection, and the
     /// row does turn.
+    ///
+    /// Every other length fills every slot too, for exactly the reason the row of two does.
+    /// This used to hand each cart *one* image — the slot nearest the selection — and hold the
+    /// rest of the ring empty. That reads correctly while the row is still, because at rest only
+    /// the three middle slots are on screen and three or more carts fill all three. It does not
+    /// survive a press. A press moves the selection before the spring has moved the row, so for
+    /// the length of the travel every image is one slot further from the selection than it is
+    /// from the screen's middle, and the image the rule refuses to hand out is the one leaving
+    /// the frame. At three carts and at four, the cart standing in the left slot was still fully
+    /// on screen when the press struck it out of the row: it vanished where it stood instead of
+    /// sliding off the edge, and the left third of the screen then stayed bare — 343 px of it
+    /// under a held scroll — until the row settled. Composited and looked at, a ten cart row
+    /// carries a cart off the left edge on the same frames that a three cart row shows black.
+    ///
+    /// So the ring is a ring at every length, and which images are on screen is `draw_row`'s
+    /// bounds check to decide rather than this. At rest that check still leaves exactly the three
+    /// middle slots standing, so a settled row of three or more shows each of its carts once and
+    /// nothing is repeated; from five carts up the ring is wider than the screen and nothing is
+    /// ever repeated at all. Three and four carts do show one cart at both edges at once while
+    /// the row is moving, each half out of frame — which is a ring shorter than the window, drawn
+    /// honestly, and is the same thing the row of two does on every frame.
     pub fn cart_at_offset(&self, off: i32) -> Option<usize> {
         let n = self.carts.len() as i32;
         if n == 0 {
             return None;
         }
-        let at = |off: i32| (self.index as i32 + off).rem_euclid(n) as usize;
-        if n == 2 {
-            return Some(at(off));
+        if n == 1 {
+            return (off == 0).then_some(self.index);
         }
-        let r = off.rem_euclid(n);
-        let nearest = if r * 2 > n { r - n } else { r };
-        (nearest == off).then(|| at(off))
+        Some((self.index as i32 + off).rem_euclid(n) as usize)
     }
 
-    /// Where the selected cart stands once the row has settled, in offscreen pixels: dead
-    /// centre, whatever the row holds. The cart going into the slot and the cart the picker
-    /// opens are both drawn by somebody else, starting from where this row left it, so the row
-    /// has to be able to say where that is rather than have each of them assume it.
+    /// Where the row is drawing its selected cart *this frame*: the left edge of its quad, and
+    /// how big that quad is against the cartridge's own size. The cart going into the slot and
+    /// the cart the core picker opens are both drawn by somebody else, taking over from this
+    /// row mid-movement, so the row has to be able to say where it had the cart rather than
+    /// have each of them assume.
     ///
-    /// The width is asked of the selected cart rather than assumed to be `CART_W`, so this is
-    /// `draw_row`'s own placement of that cart with `offset` at zero rather than a second copy
-    /// of the sum. Both cartridges are 240 wide today, so the number is the same either way;
-    /// the point is that it stays the same as what is drawn if a later one is not. `CART_W`
-    /// stands in for an empty row, which draws no cart to measure.
-    pub fn rest_x(&self) -> f32 {
+    /// This frame and not once the spring has settled, which is the whole of what it is for. A
+    /// settled row has its selection dead centre at full size and that is what this answers for
+    /// it — but nothing makes the player wait for the spring before pressing A or START. Press
+    /// either while the row is still travelling and the selection is somewhere between two
+    /// slots, shrunken as much as `SIDE_SCALE`, with its foot on the row's floor; answering
+    /// "dead centre, full size" then is a cartridge that jumps up to 266 px sideways and grows a
+    /// third on the frame the button goes down. Composited and looked at, the chosen cart
+    /// teleports into the middle of the screen while the cart it was passing is still sliding.
+    ///
+    /// The sum is `draw_row`'s own for the slot the selection is in, with `recede` at zero
+    /// because nothing has begun to part yet — not a second copy of it. The width is asked of
+    /// the selected cart rather than assumed to be `CART_W`: both cartridges are 240 wide today
+    /// and the number is the same either way, and the point is that it stays the same as what is
+    /// drawn if a later one is not. `CART_W` stands in for an empty row, which draws no cart to
+    /// measure.
+    pub fn selected_at(&self) -> (f32, f32) {
         let w = self
             .carts
             .get(self.index)
-            .map_or(CART_W, |c| cart_box(c.platform).0);
-        (OUT_W as f32 - w as f32) / 2.0
+            .map_or(CART_W, |c| cart_box(c.platform).0) as f32;
+        let offset = self.scroll_target() - self.scroll;
+        let scale = shrink(offset);
+        (OUT_W as f32 / 2.0 + offset * PITCH - w * scale / 2.0, scale)
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -339,7 +385,7 @@ impl Shelf {
             // where on the row it stands: every row is centred on the cart it has selected.
             let offset = target + slot as f32 - self.scroll;
             let t = offset.abs().min(1.0);
-            let scale = 1.0 + (SIDE_SCALE - 1.0) * t;
+            let scale = shrink(offset);
             let alpha = (1.0 + (SIDE_ALPHA - 1.0) * t) * (1.0 - recede);
             let (cw, ch) = cart_box(cart.platform);
             let (w, h) = (cw as f32 * scale, ch as f32 * scale);
@@ -413,6 +459,14 @@ impl Shelf {
             });
         }
     }
+}
+
+/// How big a cart `offset` pitches from the selection is drawn, against its own size. Full at
+/// the selection and `SIDE_SCALE` from a pitch out, and one function rather than one sum in
+/// `draw_row` and another in `selected_at`: those two have to agree about the selected cart on
+/// every frame of the spring, or the cart handed to the slot is not the size the row had it.
+fn shrink(offset: f32) -> f32 {
+    1.0 + (SIDE_SCALE - 1.0) * offset.abs().min(1.0)
 }
 
 /// How solid the shadow under a dimmed cart is. It carries the whole of the cart's opacity

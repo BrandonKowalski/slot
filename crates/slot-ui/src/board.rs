@@ -9,7 +9,7 @@ use slot_store::{Cart, Core};
 
 use crate::art;
 use crate::cart::{clean_label, CartFace, CART_H, CART_W};
-use crate::shelf::rest_y;
+use crate::shelf::foot_y;
 use crate::shell::shell_for;
 use crate::slot_chrome::ease;
 use crate::text;
@@ -236,15 +236,21 @@ pub struct Placed {
 }
 
 /// The highlighted cart as a shelf centred on its selection stands it, once the row has
-/// settled. That is every shelf except one holding exactly two carts, which centres the pair
-/// instead; `shelf_cart_at` is what serves that one.
+/// settled. `shelf_cart_at` is what serves a row that has not.
 pub fn shelf_cart() -> Placed {
-    shelf_cart_at((OUT_W - CART_W) as f32 / 2.0)
+    shelf_cart_at((OUT_W - CART_W) as f32 / 2.0, 1.0)
 }
 
-/// The same, for a row that stands its selection somewhere other than the middle. `x` is what
-/// `Shelf::rest_x` gives, so the cart the picker opens grows out of where it was standing
-/// rather than out of the middle of a screen it was never on.
+/// The same, off a row that is still moving. `x` and `scale` are what `Shelf::selected_at`
+/// gives, so the cart the picker opens grows out of the quad the row had it in rather than out
+/// of a rest the spring has not reached: START pressed a frame after a shoulder otherwise opens
+/// the board in the middle of the screen at full size while the cartridge it came out of is
+/// still a shrunken thing sliding past.
+///
+/// The foot is on the row's floor at any scale, because that is where the row puts it: a
+/// neighbour shrinks upward off the line the selection stands on rather than about its own
+/// middle. So the height comes off the foot and not off `rest_y`, which is only the top of a
+/// cart the row has finished growing.
 ///
 /// `CART_W` and `CART_H` are the right constants here, where `SlotChrome` asks `cart_box` for
 /// the same two numbers. The difference is what the two are drawing. The chrome carries
@@ -254,12 +260,13 @@ pub fn shelf_cart() -> Placed {
 /// not a GBA cart standing in for a cartridge in general: they are the GBA cart, which is the
 /// only cartridge this rect is ever the rest of. Asking `cart_box` would read as a promise that
 /// a pak can open here, which is a decision the app has deliberately taken the other way.
-pub fn shelf_cart_at(x: f32) -> Placed {
+pub fn shelf_cart_at(x: f32, scale: f32) -> Placed {
+    let (w, h) = (CART_W as f32 * scale, CART_H as f32 * scale);
     Placed {
         x,
-        y: rest_y(CART_H as f32),
-        w: CART_W as f32,
-        h: CART_H as f32,
+        y: foot_y(CART_H as f32) - h,
+        w,
+        h,
     }
 }
 
