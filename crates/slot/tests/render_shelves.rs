@@ -22,8 +22,9 @@ use slot_power::SimPlatform;
 // this runs on and is already spoken for, and this one is the console a cart is for.
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    cart_box, cart_face, clean_label, edge, housing, label_colour, opening, recess, rest_y, Draw,
-    SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
+    cart_box, cart_face, clean_label, edge, housing, label_colour, mark_box, opening, recess,
+    rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, HINT_H, LABEL_H, LABEL_Y,
+    MOUTH_H, PLATE_H,
 };
 
 /// One batch of events per poll, and nothing once they run out.
@@ -70,12 +71,45 @@ fn apart(a: [u32; 3], b: [u32; 3]) -> u32 {
     (0..3).map(|k| a[k].abs_diff(b[k])).sum()
 }
 
-/// Lit pixels across the middle of the top plate: the banner's own type, which is near white
-/// where the plate behind it is dark and the backdrop darker still.
+/// Lit pixels across the middle of the top plate, where the shelf's name used to be banner'd
+/// over the carts. Nothing is drawn there now — the case band's mark says which shelf this is —
+/// so this exists to catch the banner coming back, not to find it.
 fn banner_ink(px: &[u8]) -> usize {
     (0..PLATE_H as usize)
         .flat_map(|y| (200..520).map(move |x| (x, y)))
         .filter(|(x, y)| at(px, *x, *y).iter().all(|c| *c > 0x80))
+        .count()
+}
+
+/// The mark's own box on the case band: `FOOTER_MARGIN` in from the left, `mark_box` across,
+/// centred in the `HINT_H` row that starts `FOOTER_Y` down. Named from the layout rather than
+/// typed as four numbers, so moving the band moves the reading with it.
+fn mark_window() -> (usize, usize, usize, usize) {
+    let (w, h) = mark_box();
+    let row_y = OUT_H as f32 - MOUTH_H + (MOUTH_H - HINT_H as f32) / 2.0;
+    let y = row_y + (HINT_H as f32 - h as f32) / 2.0;
+    (24, y as usize, w as usize, h as usize)
+}
+
+/// Every pixel of the mark, as it reached the panel. Two shelves' marks compare equal only if
+/// they are the same drawing — which is what "the mark changed when the shoulder was pressed"
+/// actually means, and what a count of lit pixels could agree on while showing one picture
+/// three times.
+fn mark_pixels(px: &[u8]) -> Vec<[u8; 3]> {
+    let (x0, y0, w, h) = mark_window();
+    (y0..y0 + h)
+        .flat_map(|y| (x0..x0 + w).map(move |x| (x, y)))
+        .map(|(x, y)| at(px, x, y))
+        .collect()
+}
+
+/// How much of the mark's box is lit above the band it is printed on. The band is a flat
+/// housing colour, so anything appreciably lighter is the mark's own ink.
+fn mark_ink(px: &[u8]) -> usize {
+    let ground = (housing()[0] * 255.0) as u8;
+    mark_pixels(px)
+        .iter()
+        .filter(|c| c[0] > ground + 0x20)
         .count()
 }
 
@@ -172,9 +206,12 @@ const EDGE_RIGHT: (usize, usize) = (680, 250);
 /// The ground the carts stand on, which is what an empty place on the row leaves behind.
 const GROUND: [u32; 3] = [0x05, 0x05, 0x08];
 
-/// The shoulders ring over one shelf per platform, and each one says which system it is. Read
-/// off the panel rather than the draw list: what is being checked is that the row looks like a
-/// row of carts with a name over it, which a list of rectangles cannot answer.
+/// The shoulders ring over one shelf per platform, and each one says which system it is — on the
+/// case band, as the machine that shelf's cartridges were made for, rather than as a name
+/// banner'd over the carts for a second and a half. Read off the panel rather than the draw
+/// list: what is being checked is that the band is showing a different drawing on each shelf,
+/// which a list of rectangles cannot answer — a draw list would agree three times over that a
+/// texture landed at x 24 while the same picture came up every time.
 ///
 /// The Game Boy Advance shelf holds two carts here, so it also stands for every two-cart shelf:
 /// the pair is centred together, with neither of them out at an edge and no hole beside them.
@@ -200,6 +237,11 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         0,
         "the carousel named a system nobody had switched to"
     );
+    assert!(
+        mark_ink(&gba) > 20,
+        "the case band came up with no mark on it at all: {} lit pixels",
+        mark_ink(&gba)
+    );
     let left = patch(&gba, PAIR_LEFT.0, PAIR_LEFT.1);
     let right = patch(&gba, PAIR_RIGHT.0, PAIR_RIGHT.1);
     assert!(
@@ -217,6 +259,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     // One shelf per platform, so the Colour cart is not on the Game Boy shelf: each stands
     // alone in the middle of its own.
     let mut seen = Vec::new();
+    let mut marks = vec![mark_pixels(&gba)];
     for (name, banner) in [
         ("game-boy", "Game Boy"),
         ("game-boy-color", "Game Boy Color"),
@@ -238,11 +281,22 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
                 "the {banner} shelf holds one cart but drew something on its {side}: {beside:?}"
             );
         }
-        let ink = banner_ink(&px);
-        assert!(
-            ink > 100,
-            "the {banner} shelf came up without its name: {ink} lit pixels"
+        assert_eq!(
+            banner_ink(&px),
+            0,
+            "the {banner} shelf banner'd its name over the carts"
         );
+        let ink = mark_ink(&px);
+        assert!(
+            ink > 20,
+            "the {banner} shelf came up with no mark on the case: {ink} lit pixels"
+        );
+        let mark = mark_pixels(&px);
+        assert!(
+            !marks.contains(&mark),
+            "the {banner} shelf is showing a mark another shelf already showed"
+        );
+        marks.push(mark);
         assert!(
             seen.iter()
                 .all(|(c, l)| apart(cart, *c) + apart(label, *l) > 60),
@@ -258,7 +312,12 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         apart(patch(&back, PAIR_LEFT.0, PAIR_LEFT.1), left) < 30,
         "the ring did not come back to the cart the first shelf was left on"
     );
-    assert!(banner_ink(&back) > 100, "the way back said nothing");
+    assert_eq!(banner_ink(&back), 0, "the way back put a banner up");
+    assert_eq!(
+        mark_pixels(&back),
+        marks[0],
+        "the ring came back to the Game Boy Advance shelf under another system's mark"
+    );
 }
 
 /// The cart going into the slot from a shelf of two, which is a shelf that was not standing it

@@ -562,6 +562,10 @@ pub struct App {
     /// The charging glyph, uploaded once at boot with the other icons rather than whenever
     /// the percent changes: unlike the percent, its face never varies.
     bolt: Option<TexId>,
+    /// One mark per shelf, in `Platform::ALL` order, uploaded at boot beside the bolt. Which
+    /// one is drawn is the only thing on the case band that answers to the shoulders, and it is
+    /// what replaced the banner that used to name the shelf over the carts.
+    mark_faces: Vec<TexId>,
     shelf_clock: slot_ui::Printed,
     hud: Hud,
     /// How far up the game layer's own screen is. Not a phase: it outlives the insert, since
@@ -615,16 +619,6 @@ fn shelves_of(carts: Vec<Cart>) -> Vec<(Platform, Shelf)> {
     rows.into_iter()
         .map(|(platform, carts)| (platform, Shelf::new(carts)))
         .collect()
-}
-
-/// What the banner says when the carousel lands on a shelf. `slot_ui` knows nothing of
-/// platforms and `slot_store` nothing of toasts, so the two names are married here.
-fn shelf_toast(platform: Platform) -> Toast {
-    match platform {
-        Platform::Gba => Toast::GbaShelf,
-        Platform::Gb => Toast::GameBoyShelf,
-        Platform::Gbc => Toast::GameBoyColorShelf,
-    }
 }
 
 impl App {
@@ -694,6 +688,7 @@ impl App {
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
             bolt: None,
+            mark_faces: Vec::new(),
             shelf_clock: slot_ui::Printed::default(),
             hud: Hud::new(),
             screen: 0.0,
@@ -798,12 +793,10 @@ impl App {
         self.shelf_mut().release_hold();
         self.play_held = None;
         self.shelf_at = to;
-        // The carousel is one row of carts wherever it stands, so which system it is showing is
-        // the one thing this changes that the row cannot say for itself. A second press
-        // overwrites the pair the HUD holds rather than stacking a banner behind it, which is
-        // what keeps the name legible while a held shoulder walks the ring.
-        let now = self.now();
-        self.hud.toast(shelf_toast(self.shelves[to].0), now);
+        // Nothing is said. Which system the row is showing is the one thing this changes that
+        // the row cannot say for itself, and the case band says it: the shelf's mark is already
+        // drawn there and changes with `shelf_at`, so a banner would be the same fact stated
+        // twice — once permanently and once for a second and a half.
     }
 
     /// The shelf `by` steps round the ring from the one showing, passing over every shelf with
@@ -965,6 +958,23 @@ impl App {
 
     pub fn set_bolt_face(&mut self, bolt: TexId) {
         self.bolt = Some(bolt);
+    }
+
+    /// The shelves' marks, in `Platform::ALL` order. Uploaded once, at boot: there are three of
+    /// them, they never change, and the shoulders only ever choose between them.
+    pub fn set_mark_faces(&mut self, faces: Vec<TexId>) {
+        self.mark_faces = faces;
+    }
+
+    /// The mark for the shelf on screen. Found by the shelf's own platform rather than by
+    /// `shelf_at` directly: the two happen to agree today, since `shelves_of` builds one shelf
+    /// per `Platform::ALL` entry in that order, but a shelf list that ever stopped mirroring
+    /// `ALL` would otherwise start drawing the wrong machine on the case with nothing to say it
+    /// had.
+    fn shelf_mark(&self) -> Option<TexId> {
+        let platform = self.shelves[self.shelf_at].0;
+        let at = Platform::ALL.iter().position(|p| *p == platform)?;
+        self.mark_faces.get(at).copied()
     }
 
     pub fn set_battery_percent_face(&mut self, face: TexId, w: u32) {
@@ -2209,10 +2219,17 @@ impl App {
                     }
                     _ => self.shelf().draw(self.shelf_shake(), out),
                 }
+                // The mark is drawn here and nowhere else. It answers "which shelf is this",
+                // which is a question only the carousel can be asked: once a cart is seated the
+                // shelf is off screen, the cartridge in the slot is the answer, and the game
+                // over it is a louder one. The switcher's band has no use for it either — the
+                // paused game's platform cannot change while it is up, so a mark there would
+                // never move.
                 draw_footer(
                     self.battery,
                     self.battery_percent,
                     self.bolt,
+                    self.shelf_mark(),
                     self.shelf_clock,
                     out,
                 );

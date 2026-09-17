@@ -10,6 +10,7 @@ mod footer;
 mod hud;
 mod icon;
 mod link_art;
+mod mark;
 mod plate;
 mod polaroids;
 mod power_menu;
@@ -51,6 +52,7 @@ pub use link_art::{
     ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y, PLUG_H,
     PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
 };
+pub use mark::{mark_box, mark_face, MARK_H, MARK_W};
 pub use plate::{
     arrows_hint_face, arrows_hint_width, cap_width, centred_hints, hint_face, hint_quad, hint_row,
     hint_width, title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP,

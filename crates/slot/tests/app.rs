@@ -13,7 +13,7 @@ use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Placed, TexId,
-    Toast, BOARD_W, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
+    BOARD_W, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
     SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
@@ -394,14 +394,12 @@ fn a_colour_cart_stands_on_a_shelf_of_its_own() {
     ]);
     tap(&mut a, Btn::R1);
     assert_eq!(a.selected_stem(), Some("Tetris"));
-    assert_eq!(a.toast(), Some(Toast::GameBoyShelf));
     tap(&mut a, Btn::R1);
     assert_eq!(
         a.selected_stem(),
         Some("Chromatic"),
         "the Colour cart shares the Game Boy shelf"
     );
-    assert_eq!(a.toast(), Some(Toast::GameBoyColorShelf));
     tap(&mut a, Btn::R1);
     assert_eq!(
         a.selected_stem(),
@@ -505,7 +503,7 @@ fn the_shoulders_do_nothing_when_there_is_one_shelf_to_be_on() {
         assert_eq!(
             a.toast(),
             None,
-            "{btn:?} named a shelf it never switched to"
+            "{btn:?} said something about doing nothing"
         );
         assert_eq!(
             a.shelf_shake(),
@@ -515,26 +513,58 @@ fn the_shoulders_do_nothing_when_there_is_one_shelf_to_be_on() {
     }
 }
 
-/// The switch names the system it landed on, and a second press re-shows that banner rather
-/// than stacking a second one behind it: the clock is re-stamped, so the name stays legible for
-/// as long as the button is being worked.
+/// The switch says which system it landed on with the mark on the case band, and says it in
+/// silence: no banner goes up over the carts, then or ever, and the mark does not fade. This
+/// replaced three banners that named the shelf and then went away, which meant the one fact the
+/// row could not state about itself was on screen for a second and a half out of every visit.
+///
+/// The faces are pushed in the way the frontend pushes them at boot, in `Platform::ALL` order,
+/// and the frame is read for which of the three actually reached the band.
 #[test]
-fn the_switch_names_the_system_and_the_name_fades() {
-    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
-    a.apply_at(Action::GbaDown(Btn::R1), 1_000);
-    assert_eq!(a.toast(), Some(Toast::GameBoyShelf));
-    a.apply_at(Action::GbaDown(Btn::R1), 2_400);
+fn the_switch_changes_the_mark_on_the_case_and_says_nothing() {
+    let mut a = app_with_platforms(&[
+        (Platform::Gba, "Emerald"),
+        (Platform::Gb, "Tetris"),
+        (Platform::Gbc, "Chromatic"),
+    ]);
+    let marks: Vec<TexId> = (0..Platform::ALL.len())
+        .map(|i| TexId::from_raw(900 + i))
+        .collect();
+    a.set_mark_faces(marks.clone());
+    let on_the_band = |a: &App| {
+        let out = frame(a);
+        let found: Vec<TexId> = marks
+            .iter()
+            .copied()
+            .filter(|m| tex_at(&out, *m).is_some())
+            .collect();
+        assert_eq!(found.len(), 1, "the band is showing {} marks", found.len());
+        found[0]
+    };
+
     assert_eq!(
-        a.toast(),
-        Some(Toast::GbaShelf),
-        "the banner still names the shelf that was left"
+        on_the_band(&a),
+        marks[0],
+        "the card did not open on the GBA"
     );
-    // Past the first press's own fade and short of the second's: the banner is on screen here
-    // only because the second press re-stamped it.
-    a.update(1.4);
-    assert_eq!(a.toast(), Some(Toast::GbaShelf), "the name did not re-show");
-    a.update(0.2);
-    assert_eq!(a.toast(), None, "the name never faded");
+    for (btn, want) in [
+        (Btn::R1, marks[1]),
+        (Btn::R1, marks[2]),
+        (Btn::R1, marks[0]),
+        (Btn::L1, marks[2]),
+    ] {
+        a.apply_at(Action::GbaDown(btn), 1_000);
+        assert_eq!(
+            on_the_band(&a),
+            want,
+            "{btn:?} left the wrong mark on the case"
+        );
+        assert_eq!(a.toast(), None, "{btn:?} put a banner up over the carts");
+    }
+    // And it is still there long after any banner would have faded, because it is printed on
+    // the case rather than said.
+    a.update(5.0);
+    assert_eq!(on_the_band(&a), marks[2], "the mark faded");
 }
 
 /// A card with no Game Boy Advance carts opens on the shelf that has some. Booting onto an
