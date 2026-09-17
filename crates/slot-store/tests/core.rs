@@ -68,6 +68,43 @@ fn a_later_duplicate_wins() {
     assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
 }
 
+/// The same rule where the later line is the unreadable one. `crate::ini` keeps the last line
+/// for a key whatever it says, and the value is parsed after that — so a typo on the last line
+/// falls back to the default exactly as a typo on the only line does.
+///
+/// Worth pinning because it has not always been so, and the change arrived quietly with the ini
+/// extraction: `read_selected_cores` used to parse line by line and insert only what it could
+/// read, which left `Emerald = gpsp` followed by `Emerald = notacore` running gpSP. That is a
+/// cart running a core no readable line in the file asks for, and nothing the person holding the
+/// card could work out from looking at it. The rule now is the one `ini::write`'s own comment
+/// has always claimed — "the later line already won when read" — which is also what entitles it
+/// to drop earlier duplicates when it rewrites a line.
+///
+/// Pinned both ways round, so this is a claim about order rather than about `notacore` losing to
+/// whatever it is put beside, and asked of both readers, because the whole point of the
+/// extraction is that `core_for` and `read_selected_cores` cannot come to disagree.
+#[test]
+fn the_last_line_for_a_cart_wins_even_when_it_is_the_typo() {
+    let d = root_with(Some("Emerald = gpsp\nEmerald = notacore\n"));
+    assert_eq!(
+        core_for(d.path(), "Emerald"),
+        Core::Mgba,
+        "a line the later one superseded is still in force"
+    );
+    assert_eq!(
+        read_selected_cores(d.path()).get("Emerald"),
+        None,
+        "the map and core_for read the same two lines differently"
+    );
+
+    let d = root_with(Some("Emerald = notacore\nEmerald = gpsp\n"));
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
+    assert_eq!(
+        read_selected_cores(d.path()).get("Emerald"),
+        Some(&Core::Gpsp)
+    );
+}
+
 #[test]
 fn core_names_round_trip() {
     for c in Core::ALL {
