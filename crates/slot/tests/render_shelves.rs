@@ -18,7 +18,13 @@ use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Action, Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
-use slot_ui::{clean_label, label_colour, PLATE_H};
+// Aliased for the same reason `tests/common` aliases it: `slot_power::Platform` is the device
+// this runs on and is already spoken for, and this one is the console a cart is for.
+use slot_store::{Cart, Platform as CartPlatform};
+use slot_ui::{
+    cart_box, cart_face, clean_label, label_colour, Draw, SlotChrome, CART_W, FOOT_Y, GB_LABEL_H,
+    GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
+};
 
 /// One batch of events per poll, and nothing once they run out.
 struct Script(VecDeque<Vec<RawEvent>>);
@@ -311,9 +317,17 @@ fn span(px: &[u8], ink: [u8; 3]) -> (f32, usize) {
 fn shot(app: &App, c: &mut Compositor, name: &str) -> Vec<u8> {
     let mut out = Vec::new();
     app.draw(&mut out);
+    frame(c, &out, name)
+}
+
+/// The same for a draw list somebody built by hand, which is how the insertion below is driven.
+/// The travel is under half a second and the cartridge that goes down it is whichever one the
+/// shelf was on, so every frame of it has to be reachable by seat and by platform, not by
+/// stepping a clock and hoping to land somewhere useful.
+fn frame(c: &mut Compositor, out: &[Draw], name: &str) -> Vec<u8> {
     c.set_screen_power(1.0);
     c.begin_frame();
-    c.draw_list(&out);
+    c.draw_list(out);
     let px = c.read_frame();
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/shelves-{name}.png");
@@ -328,4 +342,197 @@ fn shot(app: &App, c: &mut Compositor, name: &str) -> Vec<u8> {
         println!("wrote {path}");
     }
     px
+}
+
+/// A cartridge for each shape, with a title that hashes to a label colour of its own so the two
+/// can be told apart on the screen as well as in the list.
+fn cartridges() -> [(&'static str, Cart); 2] {
+    [
+        (
+            "gba",
+            Cart {
+                platform: CartPlatform::Gba,
+                stem: "Emerald".into(),
+                rom: "Games/GBA/Emerald.gba".into(),
+                label: None,
+                code: String::new(),
+                title: "POKEMON EMER".into(),
+            },
+        ),
+        (
+            "pak",
+            Cart {
+                platform: CartPlatform::Gb,
+                stem: "Tetris".into(),
+                rom: "Games/GB/Tetris.gb".into(),
+                label: None,
+                code: String::new(),
+                title: "TETRIS".into(),
+            },
+        ),
+    ]
+}
+
+/// Where this cartridge's paper starts down its face. The trap this avoids is a fixed sample
+/// coordinate: a pak is 253 px tall against a GBA cart's 135, so a row that lands on paper for
+/// one lands on plastic for the other and the test passes for the wrong reason.
+fn label_top(p: CartPlatform) -> usize {
+    match p {
+        CartPlatform::Gba => LABEL_Y as usize,
+        CartPlatform::Gb | CartPlatform::Gbc => GB_LABEL_Y as usize,
+    }
+}
+
+/// The first and last screen rows showing the cartridge's own paper. The label well is the one
+/// broad flat colour on the screen that belongs to the cart and to nothing else — the housing,
+/// the recess and the opening are all theme greys, and the shell is the plastic around it.
+fn paper_rows(px: &[u8], ink: [u8; 3]) -> Option<(usize, usize)> {
+    let close = |c: [u8; 3]| (0..3).all(|k| c[k].abs_diff(ink[k]) <= 24);
+    let mut rows =
+        (0..OUT_H as usize).filter(|y| (0..OUT_W as usize).any(|x| close(at(px, x, *y))));
+    let first = rows.next()?;
+    Some((first, rows.next_back().unwrap_or(first)))
+}
+
+/// Where the top edge of the cartridge is, read back off its paper. Derived from the cart's own
+/// label inset rather than from a constant, so it means the same thing for both shapes.
+fn cart_top(px: &[u8], ink: [u8; 3], p: CartPlatform) -> Option<f32> {
+    paper_rows(px, ink).map(|(top, _)| top as f32 - label_top(p) as f32)
+}
+
+/// The insertion, rendered. A Game Boy pak has to go into the slot as the object it is: standing
+/// on the same row line a GBA cart stands on, travelling at its own size rather than squashed
+/// into one, catching on the lip where a cart's foot meets it, and coming to rest with exactly
+/// as much cartridge left out of the machine as a GBA cart leaves. None of that is a claim a
+/// draw list can settle, which is why this one goes through the compositor and writes the frames
+/// out to be looked at.
+#[test]
+fn both_cartridges_go_into_the_slot_at_their_own_size() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    // Named for what the frame is of, so a sequence read back in order is the animation.
+    let beats = [
+        ("0-standing", 0.0),
+        ("1-falling", 0.25),
+        ("2-at-the-catch", 0.42),
+        ("3-caught", 0.55),
+        ("4-pushed-through", 0.80),
+        ("5-seated", 1.0),
+    ];
+    let mut seated = Vec::new();
+    for (name, cart) in cartridges() {
+        let face = cart_face(&cart);
+        let (w, h) = cart_box(cart.platform);
+        assert_eq!(
+            (face.w, face.h),
+            (w, h),
+            "{name}: the face is not the size the layout thinks it is"
+        );
+        let tex = c.create_texture(face.w, face.h, &face.rgba);
+        let ink = label_colour(&clean_label(&cart.stem));
+        let rest = (OUT_W - w) as f32 / 2.0;
+
+        for (beat, seat) in beats {
+            let mut out = Vec::new();
+            SlotChrome {
+                cart: &cart,
+                face: Some(tex),
+                rest,
+                seat,
+                alert: None,
+                dim: 0.0,
+                screen: 0.0,
+                game: false,
+            }
+            .draw(&mut out);
+            let px = frame(&mut c, &out, &format!("insert-{name}-{beat}"));
+
+            let Some((top, bottom)) = paper_rows(&px, ink) else {
+                panic!("{name} at {beat}: no cartridge on the screen at all");
+            };
+            if seat == 0.0 {
+                // Standing. The foot is on the row floor and the paper is the full height the
+                // cartridge's own label well is: a squashed cart shows a squashed label.
+                let stands = top as f32 - label_top(cart.platform) as f32;
+                assert!(
+                    (stands - (FOOT_Y - h as f32)).abs() < 1.5,
+                    "{name} stands with its top edge at {stands}, not at {} where the row \
+                     floor puts a {h} px cartridge",
+                    FOOT_Y - h as f32
+                );
+                let paper = bottom - top + 1;
+                let want = match cart.platform {
+                    CartPlatform::Gba => LABEL_H as usize,
+                    _ => GB_LABEL_H as usize,
+                };
+                assert!(
+                    paper.abs_diff(want) <= 2,
+                    "{name}'s {want} px label came out {paper} px tall: it is being scaled"
+                );
+            }
+            if seat == 1.0 {
+                seated.push((
+                    name,
+                    cart_top(&px, ink, cart.platform).expect("a seated cartridge shows paper"),
+                ));
+            }
+        }
+    }
+
+    let (first, rest) = seated.split_first().expect("both cartridges seated");
+    for (name, top) in rest {
+        assert!(
+            (top - first.1).abs() < 1.5,
+            "{name} seats with its top edge at {top} and {} at {}: one is in deeper than the \
+             other",
+            first.0,
+            first.1
+        );
+    }
+}
+
+/// How far the cartridge moves on each frame of the travel, at the rate the device runs. Printed
+/// rather than asserted on a number pulled out of the air: what it is for is judging whether the
+/// push through the lip reads as a shove or as a teleport, and that is an eye's call. The one
+/// thing held here is that no frame of it is a jump of more than half the cartridge, which is
+/// where a moving object stops overlapping itself and starts reading as two objects.
+#[test]
+fn no_frame_of_the_travel_jumps_further_than_the_cartridge_is_tall() {
+    for (name, cart) in cartridges() {
+        let (_, h) = cart_box(cart.platform);
+        let ys: Vec<f32> = (0..=27)
+            .map(|f| {
+                let mut out = Vec::new();
+                SlotChrome {
+                    cart: &cart,
+                    face: None,
+                    rest: (OUT_W - CART_W) as f32 / 2.0,
+                    seat: (f as f32 / 27.0).min(1.0),
+                    alert: None,
+                    dim: 0.0,
+                    screen: 0.0,
+                    game: false,
+                }
+                .draw(&mut out);
+                out.iter()
+                    .find_map(|d| match d {
+                        Draw::Rect { y, h: qh, .. } if (*qh - h as f32).abs() < 0.01 => Some(*y),
+                        _ => None,
+                    })
+                    .expect("no cartridge in the list")
+            })
+            .collect();
+        let steps: Vec<f32> = ys.windows(2).map(|w| (w[1] - w[0]).round()).collect();
+        println!("{name}: {steps:?}");
+        let worst = steps.iter().cloned().fold(0.0f32, f32::max);
+        assert!(
+            worst < h as f32 / 2.0,
+            "{name} moves {worst} px in one frame, over half of its own {h} px: that is a \
+             cut, not a movement"
+        );
+    }
 }

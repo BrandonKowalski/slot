@@ -4,7 +4,7 @@ use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
 use slot_store::Theme;
 
-use crate::cart::{label_colour, label_text, CART_H, CART_W};
+use crate::cart::{cart_box, label_colour, label_text, CART_W};
 use crate::icon::icon_box;
 use crate::shelf::FOOT_Y;
 
@@ -101,22 +101,53 @@ const LIP_Y: f32 = BAND_Y;
 /// cart's own height, and not the screen's centre less half of it. The two agreed while there
 /// was one cart height in the program; they are different numbers for a Game Boy pak, and the
 /// shelf is the one that decides where a cart stands.
-const REST_Y: f32 = FOOT_Y - CART_H as f32;
+fn rest_y(h: f32) -> f32 {
+    FOOT_Y - h
+}
 
 /// Where the cart stops. In means *in*, not gone: it comes to rest filling the opening, so
 /// the base of the slot is covered by the cart rather than going dark again. Four pixels
 /// below the top of the recess, which leaves the far wall showing above the cart's rounded
 /// top edge instead of butting it flat against the lip.
+///
+/// The one number in the travel that carries no cart in it at all, and it must stay that way:
+/// it is the *top* edge that comes to rest here, so how much cartridge is left out of the
+/// machine is set by the recess and is the same for a pak as for a GBA cart. A seat derived
+/// from the cartridge instead would put a tall one in deeper, which is what "inserted deep"
+/// was: the pak's own 253 px squashed into a 135 px quad, so proportionally twice as much of
+/// its face went under the lip.
 const SEATED_Y: f32 = BAY_Y + 4.0;
-const CART_X: f32 = (OUT_W - CART_W) as f32 / 2.0;
+
+/// Where the cart stops across the screen: the mouth is the middle of the device and cannot
+/// move, so the cart arrives centred on it. Asked of the cartridge's own width for the same
+/// reason the shelf's `rest_x` is — both cartridges are 240 wide today and this is the same
+/// number either way, but the cart it centres is the one being drawn rather than a GBA cart
+/// standing in for it.
+fn seated_x(w: f32) -> f32 {
+    (OUT_W as f32 - w) / 2.0
+}
 
 /// How far into the travel the cart's bottom edge reaches the lip. Derived rather than
 /// tuned, because it is where the catch has to be to read as one. The numerator is the drop
 /// from the row floor to the lip and carries no cart height at all: every cart starts with its
 /// foot on the floor, whatever is above it, so they all have the same distance to fall.
-const CATCH_AT: f32 = (LIP_Y - FOOT_Y) / (SEATED_Y - REST_Y);
+///
+/// The denominator is the whole journey, and *that* is a different distance for a Game Boy
+/// pak: it stands 118 px higher and has that much further to come to the same seat. Which is
+/// why this is a fraction of a per-cartridge journey rather than a constant — multiplied back
+/// out by that journey in `draw`, the fall to the lip comes to the same 114.5 px for both.
+fn catch_at(h: f32) -> f32 {
+    (LIP_Y - FOOT_Y) / (SEATED_Y - rest_y(h))
+}
+
 /// The seat either side of the catch. It opens a little before halfway because the cart is
 /// resting on the lip for the whole of it, and the push comes after.
+///
+/// Fractions of the *animation*, not of the journey, and so the same two numbers for both
+/// cartridges. Two carts dropped from one line fall the same distance and must land together:
+/// holding these fixed while `catch_at` is re-derived makes the approach pixel for pixel the
+/// same movement on both, at the same instant, and leaves the difference where it belongs — in
+/// the push, which really is further for a pak.
 const CATCH_IN: f32 = 0.42;
 const CATCH_OUT: f32 = 0.62;
 /// How far the cart creeps while it is caught. Not zero: a dead stop reads as a dropped
@@ -171,12 +202,19 @@ impl SlotChrome<'_> {
         // on the way through rather than sliding behind a painted bar.
         draw_slot_back(chrome, out);
 
+        // The cartridge's own box, whatever platform it is for. A cart is an object and goes
+        // into the slot at the size it is: a pak drawn in a GBA cart's quad is squashed to
+        // 53% of its height, which is the smoosh.
+        let (cw, ch) = cart_box(self.cart.platform);
+        let (cw, ch) = (cw as f32, ch as f32);
+
         // Across and down on the one progress, so the cart arrives over the mouth exactly as it
         // reaches it. The slot is the middle of the device and cannot move, so a cart standing
         // anywhere else has to come to it.
-        let travel = travel(seat);
-        let x = self.rest + (CART_X - self.rest) * travel;
-        let y = REST_Y + (SEATED_Y - REST_Y) * travel;
+        let stands = rest_y(ch);
+        let travel = travel(seat, ch);
+        let x = self.rest + (seated_x(cw) - self.rest) * travel;
+        let y = stands + (SEATED_Y - stands) * travel;
         // The cart fades with the case rather than through it. A seated cart is really in the
         // slot and has to be drawn, so the whole device face has to leave as one object as the
         // picture takes over. Held at full while the screen is off, which is all of the travel.
@@ -185,8 +223,8 @@ impl SlotChrome<'_> {
             Some(tex) => Draw::Tex {
                 x,
                 y,
-                w: CART_W as f32,
-                h: CART_H as f32,
+                w: cw,
+                h: ch,
                 tex,
                 alpha: cart_alpha,
             },
@@ -195,8 +233,8 @@ impl SlotChrome<'_> {
                 Draw::Rect {
                     x,
                     y,
-                    w: CART_W as f32,
-                    h: CART_H as f32,
+                    w: cw,
+                    h: ch,
                     colour: [
                         c[0] as f32 / 255.0,
                         c[1] as f32 / 255.0,
@@ -213,8 +251,8 @@ impl SlotChrome<'_> {
             let (w, h) = icon_box(ALERT_PX);
             let (w, h) = (w as f32, h as f32);
             out.push(Draw::Tex {
-                x: x + (CART_W as f32 - w) / 2.0,
-                y: y + (CART_H as f32 - h) / 2.0,
+                x: x + (cw - w) / 2.0,
+                y: y + (ch - h) / 2.0,
                 w,
                 h,
                 tex,
@@ -336,13 +374,14 @@ pub fn draw_empty_slot(out: &mut Vec<Draw>) {
 /// The travel, in three parts: the cart falls to the lip, rests on it, then is pushed
 /// through and settles. A single ease covers the same ground but arrives seated without ever
 /// having met anything, which is what makes it read as a card going down a chute.
-fn travel(seat: f32) -> f32 {
+fn travel(seat: f32, h: f32) -> f32 {
+    let catch = catch_at(h);
     if seat < CATCH_IN {
-        CATCH_AT * ease(seat / CATCH_IN)
+        catch * ease(seat / CATCH_IN)
     } else if seat < CATCH_OUT {
-        CATCH_AT + CREEP * (seat - CATCH_IN) / (CATCH_OUT - CATCH_IN)
+        catch + CREEP * (seat - CATCH_IN) / (CATCH_OUT - CATCH_IN)
     } else {
-        let caught = CATCH_AT + CREEP;
+        let caught = catch + CREEP;
         caught + (1.0 - caught) * ease((seat - CATCH_OUT) / (1.0 - CATCH_OUT))
     }
 }
