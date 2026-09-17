@@ -1,12 +1,13 @@
 mod common;
 
+use slot::app::App;
 use slot::audio::{AudioSink, StubSink};
 use slot::emu::{CoreState, EmuHandle};
 use slot::persist;
 use slot::persist::Snapshot;
 use slot_retro::MockCore;
-use slot_store::Platform;
-use std::path::PathBuf;
+use slot_store::{write_slot_state, Platform, SlotState};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 fn wait_ready(emu: &EmuHandle) {
@@ -317,5 +318,174 @@ fn a_refusing_mock_does_not_evict_a_real_ring_entry_on_manual_save() {
     assert!(
         a.refusal_active(a.now()),
         "nothing told the player the save was declined"
+    );
+}
+
+/// `common::app_playing_with`, plus the one thing that helper has no way to say: whether the
+/// emulator that just opened is the one the cart's states are filed under. `session.rs` says it
+/// on every real insert, through `App::set_named_core`, and `App` will not move a refused state
+/// aside until something does — so a test about retiring one has to say it, and a test about a
+/// missing dylib has to say the opposite.
+fn seated_with_named_core(
+    root: &Path,
+    stem: &str,
+    snapshot: Box<dyn Snapshot>,
+    named: bool,
+) -> App {
+    write_slot_state(
+        root,
+        &SlotState {
+            cart: Some(stem.to_string()),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut a = App::boot(root);
+    a.set_snapshot(snapshot);
+    a.set_named_core(named);
+    // `on_core_ready` is what `session.rs` calls the moment the core settles, which is where a
+    // refusal first becomes knowable. Running past the insert floor afterwards, exactly as
+    // `common::app_playing_with` does, so what this hands back is a cart playing rather than
+    // one mid-animation.
+    a.on_core_ready();
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    a
+}
+
+/// A core opened on the cart's real resume, which it will refuse. Read back through
+/// `persist::read_resume` and handed over exactly the way `session.rs::spawn_core` does, so the
+/// refusal is `Worker::run`'s own — `MockCore::unserialize` takes eight bytes and nothing else,
+/// so a real state is genuinely rejected rather than reported rejected by a stub.
+fn a_core_that_refuses(root: &Path, stem: &str) -> EmuHandle {
+    let resume = persist::read_resume(root, Platform::Gba, slot_store::Core::Mgba, stem);
+    assert!(
+        resume.is_some(),
+        "there is no resume on the card, so nothing can be refused"
+    );
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        root.join(format!("Games/GBA/{stem}.gba")),
+        StubSink::new().ring(),
+        None,
+        resume,
+    );
+    wait_ready(&emu);
+    assert!(
+        !emu.snapshot().resume_trusted(),
+        "the core took the resume, so this test proves nothing"
+    );
+    emu
+}
+
+/// Every retired state in one cart's directory, by full path.
+fn retired_states(root: &Path, stem: &str) -> Vec<PathBuf> {
+    let dir = root.join("States/GBA/mgba").join(stem);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<PathBuf> = entries
+        .map(|e| e.expect("read the states directory").path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("resume-refused-"))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// The bug: slot already noticed a refused resume and already withheld the write that would
+/// have destroyed it, but nothing ever moved the file itself. So the same bytes were read back
+/// and handed to the same core on the next open, and the next, refused identically every time,
+/// with no gesture on the device that could clear it and no file manager to delete it with —
+/// the cart simply never resumed again. A state written by one core and read by another is
+/// refused by design, so this is a place a card really arrives at rather than a hypothetical.
+///
+/// Green means the second open finds nothing to resume from. It deliberately also holds the
+/// other half of the decision: the state is moved, not destroyed, because it is still a real
+/// session to the core that wrote it.
+#[test]
+fn a_refused_resume_is_not_offered_to_the_core_a_second_time() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let real_resume = vec![0xA5u8; 262_144];
+    persist::flush(
+        d.path(),
+        Platform::Gba,
+        slot_store::Core::Mgba,
+        "Emerald",
+        Some(&real_resume),
+        None,
+    )
+    .unwrap();
+
+    let emu = a_core_that_refuses(d.path(), "Emerald");
+    let _a = seated_with_named_core(d.path(), "Emerald", Box::new(emu.snapshot()), true);
+
+    assert_eq!(
+        persist::read_resume(d.path(), Platform::Gba, slot_store::Core::Mgba, "Emerald"),
+        None,
+        "the refused state is still where the next open will find it and be refused again"
+    );
+
+    let retired = retired_states(d.path(), "Emerald");
+    assert_eq!(
+        retired.len(),
+        1,
+        "expected exactly one retired state, found {retired:?}"
+    );
+    assert_eq!(
+        std::fs::read(&retired[0]).expect("read the retired state"),
+        real_resume,
+        "the retired file is not the bytes that were refused"
+    );
+
+    // The one thing the new name must never do: come back as something else the player can be
+    // offered. `list` is what the switcher and `load_newest` read, and `evict` only ever
+    // deletes what `list` returns.
+    let ring =
+        slot_store::StateRing::new(d.path(), Platform::Gba, slot_store::Core::Mgba, "Emerald");
+    assert!(
+        ring.list().expect("list").is_empty(),
+        "the retired state came back as a ring entry"
+    );
+}
+
+/// The other half of the decision, and the reason it is not simply "one refusal and it goes".
+/// A card whose core dylib is missing runs the mock, and the mock refuses every state it did
+/// not write itself. That refusal is about the emulator, not about the state — the player's
+/// session is fine and their only real problem is a file they can put back — so nothing may be
+/// filed away over it. A second refusal would not tell these apart either: a missing dylib
+/// refuses just as reliably on the next boot as on this one, which is why the guard is who
+/// refused rather than how many times.
+#[test]
+fn a_stand_in_core_refusing_a_resume_leaves_it_alone() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    let real_resume = vec![0xA5u8; 262_144];
+    persist::flush(
+        d.path(),
+        Platform::Gba,
+        slot_store::Core::Mgba,
+        "Emerald",
+        Some(&real_resume),
+        None,
+    )
+    .unwrap();
+
+    let emu = a_core_that_refuses(d.path(), "Emerald");
+    let _a = seated_with_named_core(d.path(), "Emerald", Box::new(emu.snapshot()), false);
+
+    assert_eq!(
+        persist::read_resume(d.path(), Platform::Gba, slot_store::Core::Mgba, "Emerald"),
+        Some(real_resume),
+        "a missing core cost the player the session it could not read"
+    );
+    assert!(
+        retired_states(d.path(), "Emerald").is_empty(),
+        "a stand-in's refusal filed the state away"
     );
 }
