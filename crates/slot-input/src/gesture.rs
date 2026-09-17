@@ -113,6 +113,9 @@ pub struct Gestures {
     ff_latched: bool,
     /// The press that established the latch, whose release must not clear it.
     ff_latching_press: bool,
+    /// A press `ff_down` turned away because L2 had the time. Its release is not the release of
+    /// anything, and must not be remembered as one: see `ff_up`.
+    r2_refused: bool,
     r2_last_release: Option<Millis>,
     rewinding: bool,
 }
@@ -396,6 +399,9 @@ impl Gestures {
 
     fn ff_down(&mut self, now: Millis) -> Vec<Action> {
         if self.rewinding {
+            // Turned away, and remembered as turned away. A press that produced nothing is not
+            // half of anything either — see `ff_up`.
+            self.r2_refused = true;
             return Vec::new();
         }
         if self.ff_latched {
@@ -416,6 +422,15 @@ impl Gestures {
     }
 
     fn ff_up(&mut self, now: Millis) -> Vec<Action> {
+        // Letting go of a press L2 turned away. `ff_down` did nothing with it, so this does
+        // nothing with it either — and above all it is not written down. Recorded as an
+        // ordinary release, it stood as the first half of a double tap the player never made:
+        // hold L2 to rewind, tap R2 and watch it be refused, let go of L2, then press R2 once
+        // and fast forward *latches* rather than being held, and stays on after the finger
+        // comes off. A refused press cannot be half of a gesture.
+        if std::mem::take(&mut self.r2_refused) {
+            return Vec::new();
+        }
         self.r2_last_release = Some(now);
         if self.ff_latching_press {
             self.ff_latching_press = false;

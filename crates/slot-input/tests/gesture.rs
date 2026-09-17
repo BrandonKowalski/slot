@@ -176,6 +176,34 @@ fn a_press_just_short_of_the_threshold_is_a_lock() {
     assert_eq!(g.feed(Up(Btn::Power), POWER_HOLD_MS - 1), vec![PowerTap]);
 }
 
+/// A press L2 turned away is not half of a double tap. It produced nothing, so its release
+/// must be remembered as nothing either — recorded as an ordinary release it stood as the
+/// first tap of a latch the player never made, and the *single* press that followed it turned
+/// fast forward on and left it on with nobody holding R2.
+///
+/// The whole thing is one ordinary sequence: rewinding, a stab at R2 that does nothing, the
+/// rewind ends, and R2 is pressed once. There is no timing to aim for beyond the 250 ms every
+/// double tap already has.
+#[test]
+fn a_press_the_rewind_turned_away_is_not_half_of_a_latch() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(L2), 0), vec![RewindStart]);
+    assert!(
+        g.feed(Down(R2), 50).is_empty(),
+        "the rewind let a fast forward start under it"
+    );
+    assert!(g.feed(Up(R2), 100).is_empty());
+    assert_eq!(g.feed(Up(L2), 150), vec![RewindStop]);
+    // One press of R2, inside the double tap window of that refused release.
+    assert_eq!(g.feed(Down(R2), 200), vec![FfStart]);
+    assert!(!g.ff_latched(), "a single press latched fast forward");
+    assert_eq!(
+        g.feed(Up(R2), 400),
+        vec![FfStop],
+        "the finger came off R2 and the speed stayed"
+    );
+}
+
 #[test]
 fn rewind_beats_latched_fast_forward() {
     let mut g = Gestures::new();
