@@ -31,12 +31,14 @@ const BADGE_MARGIN: f32 = 12.0;
 /// Where something of this size goes when it goes in that corner: hard against the right
 /// margin, centred in the plate's own height.
 ///
-/// Public because the link badge is not the only thing that takes it. The shelf's platform mark
-/// sits there too, and the two can never be on screen at once — a link badge only exists inside
-/// a live session, and the mark is only drawn on the carousel — so the corner ends up being one
-/// place that says the single thing worth knowing about where you are. Shared rather than
-/// copied: two statements of one measurement drift, and a badge and a mark half a pixel apart in
-/// the same corner would read as two corners.
+/// The shelf's platform mark used to take this too, and no longer does — it is `mark_at` now.
+/// The corner is still one corner and still says one thing, since the two can never be on screen
+/// at once: a badge only exists inside a live session and a mark only on the carousel. What came
+/// apart is what each is measured against. A badge is drawn on this plate, over a running game,
+/// and both of these numbers are the plate's own: 12 px in from the edge it shares with the bar,
+/// centred in the 40 px it has to sit in. A mark is drawn where there is no plate, so it is held
+/// off the screen's edges by the case's margin instead — and at the size a mark is now, nothing
+/// centred in 40 px would fit anyway.
 pub fn badge_at(w: f32, h: f32) -> (f32, f32) {
     (OUT_W as f32 - BADGE_MARGIN - w, (PLATE_H - h) / 2.0)
 }

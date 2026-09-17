@@ -22,7 +22,7 @@ use slot_power::SimPlatform;
 // this runs on and is already spoken for, and this one is the console a cart is for.
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    badge_at, cart_box, cart_face, clean_label, edge, housing, label_colour, mark_box, opening,
+    cart_box, cart_face, clean_label, edge, housing, label_colour, mark_at, mark_box, opening,
     recess, rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y,
     PLATE_H,
 };
@@ -82,12 +82,12 @@ fn banner_ink(px: &[u8]) -> usize {
         .count()
 }
 
-/// The mark's own box in the top plate's right corner, which is the corner a live session's link
-/// badge takes. Read out of `badge_at` and `mark_box` rather than typed as four numbers, so
-/// moving either moves the reading with it.
+/// The mark's own box in the screen's top right corner, which is the corner a live session's link
+/// badge takes. Read out of `mark_at` and `mark_box` rather than typed as four numbers, so moving
+/// either moves the reading with it.
 fn mark_window() -> (usize, usize, usize, usize) {
     let (w, h) = mark_box();
-    let (x, y) = badge_at(w as f32, h as f32);
+    let (x, y) = mark_at(w as f32);
     (x as usize, y as usize, w as usize, h as usize)
 }
 

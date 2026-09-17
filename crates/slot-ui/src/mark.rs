@@ -1,3 +1,4 @@
+use slot_gfx::OUT_W;
 use slot_store::Platform;
 
 use crate::art::render_svg;
@@ -14,17 +15,62 @@ const GBA_SVG: &str = include_str!("../assets/platform_gba.svg");
 const GB_SVG: &str = include_str!("../assets/platform_gb.svg");
 const GBC_SVG: &str = include_str!("../assets/platform_gbc.svg");
 
-/// How tall a mark is drawn, in offscreen pixels. It is a corner of the `PLATE_H` top plate now
-/// rather than a slot on the case band, and the plate is 40 px deep, so the size is no longer
-/// set by the height of a row of type: 32 leaves three pixels of air above and below the haloed
-/// box, which is the same air the plate gives the level bar.
+/// How tall a mark is drawn, in offscreen pixels.
 ///
-/// It was 24 on the band, and that was too small on the device. Rendered at 24, 28, 32 and 36
-/// beside a line of HUD type and looked at: 24 is a chip you have to go and read, 28 is better
-/// and still fiddly, 32 is the first size at which the SP's clamshell, the DMG's two round
-/// buttons and the Colour's rounded shoulders are each simply there, and 36 reads best of all
-/// but its haloed box is 38 px in a 40 px plate, which leaves it touching both edges.
-pub const MARK_H: u32 = 32;
+/// It was 24 on the case band and 32 in the corner, and both came back off the device as too
+/// small — the second time with the corner itself called too tight as well. Rendered at 32, 36,
+/// 40, 44 and 48 into the real shelf frame and looked at: 36 is not far enough from 32 to be
+/// worth the move, 40 reads cleanly, 44 is confident, and 48 is the largest that is still an
+/// annotation rather than a subject — beside a cart's own face it stays plainly the smaller
+/// thing. 48 is what a third pass on "still too small" should be: 1.5 times the last size and
+/// twice the first. It is also the size the physical panel argues for, since 480 px over a 53 mm
+/// screen is about 9 px to the millimetre and 48 px is a 5.3 mm badge in the hand.
+///
+/// Multiples of 8 only, so `MARK_W` stays exact: `render_svg` scales x and y independently, and
+/// a height that leaves `MARK_H * 5 / 8` with a remainder squeezes every drawing by the rounding.
+pub const MARK_H: u32 = 48;
+
+/// How far the mark's box is held off the right edge and the top of the screen.
+///
+/// The right margin is the case's own, the one `draw_footer` prints the gauge and the clock at,
+/// rather than the 12 px `badge_at` holds the link badge off at. That is the whole of what made
+/// this read as tucked into the corner: the mark sat half as far in as the clock directly below
+/// it, and two things at the same end of the screen inset by different amounts read as one of
+/// them being wrong. They now share an edge — the clock's type and the mark's ink both stop
+/// 24 px short, give or take the halo's pixel.
+///
+/// The top margin has nothing above it to line up with, so it is the clock's own air read the
+/// other way up: the band the footer prints its type in stops 17 px short of the bottom edge,
+/// and 16 px of box plus the halo puts a mark's first lit pixel 17 px down from the top. Off the
+/// rendered frame the two corners come out 17 above and 22 below, since the digits do not fill
+/// their band — near enough that the corners read as a pair. Rendered at 8, 12, 16 and 20 and
+/// looked at: 8 is still the complaint, 12 is comfortable, 16 is plainly deliberate, and by 20
+/// the mark has come away from its corner and floats.
+const MARK_MARGIN: f32 = 24.0;
+const MARK_TOP: f32 = 16.0;
+
+/// Where a mark of this size goes. Its own rule rather than `badge_at`, which it used to share.
+///
+/// The two are still the same idea — one corner, saying the single thing worth knowing about
+/// where you are — but they are measured against different things, and at this size the shared
+/// rule could no longer hold both. A badge is drawn inside the HUD's plate, only ever over a
+/// running game, and 12 px in and centred in 40 px of depth is the plate's own margin. A mark is
+/// drawn on the carousel, where there is no plate at all: the frame it is read against is the
+/// screen, and everything else the screen prints — the gauge, the clock — is 24 px in.
+///
+/// That is also why the size is not bounded by the plate any more. Centred in 40 px the mark's
+/// air is `(40 - box) / 2`, so every pixel of growth costs half a pixel of padding at each end,
+/// and "bigger, with more room above it" cannot both be had: at today's 50 px box it is already
+/// 5 px of overhang before any padding, and 16 px of air inside the plate would leave room for a
+/// 6 px machine. So the mark keeps to the screen's margins and the plate, when the HUD raises
+/// one, passes behind it. Over the shelf's black backdrop nothing shows; over a wallpaper the
+/// plate's lower edge crosses the drawing, for the second and a half the bar is up.
+///
+/// Width alone, where `badge_at` takes both: a badge is centred in the plate and so has to know
+/// how tall it is, and a mark is hung from the top of the screen and does not.
+pub fn mark_at(w: f32) -> (f32, f32) {
+    (OUT_W as f32 - MARK_MARGIN - w, MARK_TOP)
+}
 
 /// What the coverage is raised to before it is tinted, which is the whole of the fix for marks
 /// that came off the device looking like a different, dimmer class of thing than the type beside
@@ -116,6 +162,20 @@ mod tests {
             let inked = face.rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
             assert!(inked > 0, "{p:?}'s mark rastered to nothing at all");
         }
+    }
+
+    /// The box is the 5:8 the three viewBoxes were re-fitted to, exactly, with no rounding left
+    /// over. `render_svg` scales x and y independently, so a height that leaves `MARK_H * 5 / 8`
+    /// with a remainder does not letterbox the drawing — it squeezes it, by up to a pixel, in
+    /// every mark at once. Nothing about that would look broken on screen or fail a test; the
+    /// machines would simply come out a little narrower than they were drawn.
+    #[test]
+    fn the_box_is_whole_pixels_of_the_ratio_the_drawings_were_fitted_to() {
+        assert_eq!(
+            MARK_W * 8,
+            MARK_H * 5,
+            "a {MARK_W}x{MARK_H} mark is not 5:8: pick a height that is a multiple of 8"
+        );
     }
 
     /// The three are different pictures. Cheap to get wrong — the three files are one paste

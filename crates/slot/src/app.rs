@@ -10,8 +10,8 @@ use slot_store::{
     StateEntry, StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    badge_at, board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker,
-    ease, grown, lid_at, lid_from, lift_of, mark_box, on_board, shelf_cart_at, ClockPicker, Draw,
+    board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
+    lid_at, lid_from, lift_of, mark_at, mark_box, on_board, shelf_cart_at, ClockPicker, Draw,
     FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice,
     QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast,
     BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT,
@@ -2380,23 +2380,26 @@ impl App {
         }
         // Over everything, in every phase. The bar is never what the user is looking at.
         self.hud.draw(self.now(), out);
-        // And the shelf's mark on top of that, in the corner the link badge takes and at the
-        // same measurement. It answers "which shelf is this", which is a question only the
-        // carousel can be asked: once a cart is seated the shelf is off screen, the cartridge in
-        // the slot is the answer, and the game over it is a louder one. The switcher's band has
+        // And the shelf's mark on top of that, in the corner the link badge takes — the same
+        // corner, at its own measurement, since `mark_at` is held off the screen's edges and
+        // `badge_at` off the plate's. It answers "which shelf is this", which is a question only
+        // the carousel can be asked: once a cart is seated the shelf is off screen, the cartridge
+        // in the slot is the answer, and the game over it is a louder one. The switcher's band has
         // no use for it either — the paused game's platform cannot change while it is up, so a
-        // mark there would never move. That is also why it can share the badge's corner: a badge
+        // mark there would never move. That is also why it can take the badge's corner: a badge
         // belongs to a live session and this belongs to the carousel, so the two are never both
         // on screen.
         //
         // After the HUD rather than before it, because the HUD's plate is 72% black across the
         // whole width: under it the mark would dim every time the brightness was nudged, while
-        // the badge it stands in for sits over that plate rather than beneath it.
+        // the badge it stands in for sits over that plate rather than beneath it. The mark is
+        // taller than the plate is deep now, so on the frames where a bar or a toast is up the
+        // plate's lower edge passes behind it.
         if matches!(self.phase, Phase::Shelf) {
             if let Some(tex) = self.shelf_mark() {
                 let (w, h) = mark_box();
                 let (w, h) = (w as f32, h as f32);
-                let (x, y) = badge_at(w, h);
+                let (x, y) = mark_at(w);
                 out.push(Draw::Tex {
                     x,
                     y,
