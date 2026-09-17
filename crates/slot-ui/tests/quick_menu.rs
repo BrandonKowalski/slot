@@ -86,7 +86,9 @@ fn the_fast_forward_row_offers_the_four_ceilings_the_card_can_hold() {
     }
 }
 
-/// The order the user chose on 2026-09-15, top to bottom.
+/// The order the user chose on 2026-09-15, top to bottom, with Colour Correction added on
+/// 2026-09-16 between the Fast Forward pair and Rumble. `QuickRow::ALL`'s own comment is where
+/// that position is argued; this is what holds it.
 #[test]
 fn the_rows_run_in_the_order_the_user_chose() {
     let labels = QuickRow::ALL.map(QuickRow::label);
@@ -95,6 +97,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
         [
             "Fast Forward",
             "Fast Forward Sound",
+            "Colour Correction",
             "Rumble",
             "Date & Time",
             "About"

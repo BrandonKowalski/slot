@@ -552,7 +552,11 @@ impl Session {
             .then(|| persist::read_resume(&self.root, platform, core, stem))
             .flatten();
         let emu = EmuHandle::spawn(
-            open_core(&self.root, core, serial),
+            // Colour correction is read here, at the one moment a libretro core reads an option
+            // at all. The quick menu that sets it is only ever open on the shelf, with the core
+            // already dropped, so the cart going in now is always the first to see a change made
+            // there — the same way `sync_speed` picks up the fast forward settings.
+            open_core(&self.root, core, serial, self.app.colour_correction()),
             rom,
             self.sink.ring(),
             persist::read_sav(&self.root, platform, stem),

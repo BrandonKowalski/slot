@@ -11,15 +11,31 @@ use crate::text;
 pub enum QuickRow {
     FastForward,
     FastForwardSound,
+    ColourCorrection,
     Rumble,
     DateTime,
     About,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 5] = [
+    /// Colour Correction sits third, and the two rows either side of it are why.
+    ///
+    /// It cannot go first: `App::open_quick_menu` puts the bar on `ALL[0]` every time, so the
+    /// top row is the one an arrow lands on the instant the menu opens, and moving that from
+    /// Fast Forward to a setting that changes what every game looks like is a change nobody
+    /// asked for. It cannot go below Date & Time either: those two are the rows A opens, the
+    /// legend reads OPEN rather than CHANGE on them, and keeping them together is what makes
+    /// that legend flip exactly once as the bar travels down.
+    ///
+    /// That leaves above or below Rumble, and above is the better of the two. Fast Forward and
+    /// its Sound are a pair — the second reads as a qualifier of the first — so nothing may come
+    /// between them, and what follows the pair is the settings that stand alone. Of those,
+    /// colour correction is in effect every second a game is on screen while rumble only matters
+    /// when a cart asks for the motor, so the unconditional one comes first.
+    pub const ALL: [QuickRow; 6] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
+        QuickRow::ColourCorrection,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::About,
@@ -34,6 +50,7 @@ impl QuickRow {
         match self {
             QuickRow::FastForward => "Fast Forward",
             QuickRow::FastForwardSound => "Fast Forward Sound",
+            QuickRow::ColourCorrection => "Colour Correction",
             QuickRow::Rumble => "Rumble",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
@@ -119,7 +136,8 @@ impl QuickValue {
 /// A size up from the power menu's rows: 30 px type on 52 px rows, which the full width has
 /// room for.
 pub const QUICK_PITCH: f32 = 52.0;
-/// The first row's top, with all five centred on the panel.
+/// The first row's top, with all of them centred on the panel: derived from `QuickRow::ALL`, so
+/// a row added or removed moves the whole menu rather than hanging one off the bottom.
 pub const QUICK_TOP: f32 = (OUT_H as f32 - QUICK_PITCH * QuickRow::ALL.len() as f32) / 2.0;
 /// Labels start this far in from the left, and values end this far in from the right.
 pub const QUICK_EDGE: f32 = 32.0;
@@ -241,7 +259,7 @@ pub struct QuickMenuFaces {
 pub struct QuickMenu<'a> {
     pub row: QuickRow,
     /// What each row shows, in `QuickRow::ALL` order, and `None` for the two that open.
-    pub values: [Option<QuickValue>; 5],
+    pub values: [Option<QuickValue>; QuickRow::ALL.len()],
     /// Date & Time's value, grey then lit, once the binary has built it.
     pub clock: Option<[(TexId, u32, u32); 2]>,
     /// `None` until boot has uploaded them, when only the ground and the bar are drawn.

@@ -80,21 +80,34 @@ fn the_quick_menu_renders_full_screen() {
 
     let bar = [0x4d, 0x4d, 0x57];
     let ground = [0x05, 0x05, 0x08];
-    // Down presses from wherever the bar was before.
-    for (name, downs, selected) in [
-        ("fast-forward", 0, QuickRow::FastForward),
-        ("date-time", 3, QuickRow::DateTime),
-        ("about", 1, QuickRow::About),
+    // Walked down from wherever the bar was left, counted off the rows' own indices rather than
+    // written out: a row added to the menu then moves the bar the right distance on its own
+    // instead of leaving this quietly one press short of where it says it is.
+    let mut bar_on = QuickRow::ALL[0];
+    for (name, selected) in [
+        ("fast-forward", QuickRow::FastForward),
+        ("colour-correction", QuickRow::ColourCorrection),
+        ("date-time", QuickRow::DateTime),
+        ("about", QuickRow::About),
     ] {
-        for _ in 0..downs {
+        for _ in bar_on.index()..selected.index() {
             tap(&mut f, &mut input, Btn::Down);
         }
+        bar_on = selected;
         let px = composed(&mut f, &mut c, name);
 
         let top = (QUICK_TOP + QUICK_PITCH * selected.index() as f32) as usize;
-        for x in [1, 360, OUT_W as usize - 2] {
+        for x in [1, OUT_W as usize - 2] {
             assert_eq!(at(&px, x, top + 26), bar, "{name}: no bar at x {x}");
         }
+        // Edge to edge means unbroken all the way across, which is a stronger claim than the two
+        // ends and the panel's centre — and a truer one, now that Colour Correction's label is
+        // long enough to have type sitting on that centre. Ink over the bar is not a gap in it,
+        // and every ink here is lighter than the bar, so only the ground would be a real break.
+        assert!(
+            (0..OUT_W as usize).all(|x| at(&px, x, top + 26) != ground),
+            "{name}: the bar breaks somewhere across the row"
+        );
         assert_eq!(
             at(&px, 360, top + 1),
             ground,

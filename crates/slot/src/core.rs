@@ -58,9 +58,10 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
 /// the same value for every later read and write, and it does that by storing it rather than
 /// asking again.
 ///
-/// `serial` is the `gpsp_serial` a gpSP core loads with. See `apply_core_options`.
-pub fn open_core(root: &Path, core: Core, serial: &str) -> Box<dyn RetroCore> {
-    open_core_for(root, core, serial, &candidates(root, core))
+/// `serial` is the `gpsp_serial` a gpSP core loads with, and `colour` the quick menu's Colour
+/// Correction. See `apply_core_options`.
+pub fn open_core(root: &Path, core: Core, serial: &str, colour: bool) -> Box<dyn RetroCore> {
+    open_core_for(root, core, serial, colour, &candidates(root, core))
 }
 
 /// The named core if one of these opens, the mock if none of them do. A missing core is not
@@ -76,11 +77,12 @@ pub fn open_core(root: &Path, core: Core, serial: &str) -> Box<dyn RetroCore> {
 /// call it on: everything above here deals in `Box<dyn RetroCore>`, which has no `set_option`.
 /// That is also why the call sits here rather than at a caller — after `open_with` succeeds,
 /// before the `Box<dyn RetroCore>` is handed back and `load` becomes reachable at all. `serial`
-/// goes the same way, for the same reason.
+/// and `colour` go the same way, for the same reason.
 pub fn open_core_for(
     root: &Path,
     core: Core,
     serial: &str,
+    colour: bool,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
     let bios = root::bios_dir(root);
@@ -91,7 +93,7 @@ pub fn open_core_for(
         }
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
-                apply_core_options(&mut opened, core, serial, root::has_real_bios(root));
+                apply_core_options(&mut opened, core, serial, root::has_real_bios(root), colour);
                 eprintln!("slot: core {}", path.display());
                 return Box::new(opened);
             }
@@ -146,7 +148,17 @@ pub fn open_core_for(
 /// and before it publishes a single frame, so the restored machine replaces the BIOS's before
 /// anything reaches the screen. That covers a reload for a link too — `session::reload_for_link`
 /// flushes and resumes through the same path.
-pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str, bios: bool) {
+///
+/// `colour` is the quick menu's Colour Correction, and unlike everything else here it is set on
+/// both cores, because both of them have the option — which is worth stating outright, since it
+/// was assumed for a while that only mGBA did. Each spells it its own way; see below.
+pub fn apply_core_options(
+    core: &mut LibretroCore,
+    which: Core,
+    serial: &str,
+    bios: bool,
+    colour: bool,
+) {
     // Auto frameskip, on whichever core this is, for the whole session. Nothing is skipped by
     // merely turning it on: both cores only skip a frame when the frontend says its audio
     // buffer is about to run dry, and `RetroCore::set_frame_skip` is the one thing that ever
@@ -171,12 +183,35 @@ pub fn apply_core_options(core: &mut LibretroCore, which: Core, serial: &str, bi
         // cart's own header read honestly, and naming a model here would override what the cart
         // says about itself. Nothing sets `mgba_use_bios` or `mgba_skip_bios`.
         core.set_option("mgba_sgb_borders", "OFF");
+        // mGBA declares this one as `OFF|GBA|GBC|Auto`, read off the vendored dylib rather than
+        // guessed at, because nothing in this tree can tell a correct option value from a typo:
+        // `SET_VARIABLES` is answered `true` and the declared list thrown away, so a misspelt
+        // value is accepted in silence and simply never takes.
+        //
+        // `Auto` rather than `GBA` or `GBC`, because mGBA is the core that runs all three
+        // consoles here and `Auto` is the only value that picks the right tint for each of them.
+        // Naming one would give a Game Boy cart the GBA's correction, which is a tint of the
+        // wrong console rather than a stronger or weaker version of the right one.
+        core.set_option("mgba_color_correction", if colour { "Auto" } else { "OFF" });
     }
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
         if bios {
             core.set_option("gpsp_boot_mode", "bios");
         }
+        // gpSP has its own, declared `disabled|enabled` — a different key and a different pair of
+        // words from mGBA's, which is why this is spelled out here rather than shared. gpSP only
+        // ever runs GBA carts, so there is no console for an `Auto` to choose between and it
+        // offers none: on or off is the whole option.
+        //
+        // Setting it here is what keeps the row from being a lie on a gpSP cart. The quick menu
+        // is a device-wide screen shown on the shelf with nothing seated, so it cannot know which
+        // core the next cart will use; a row that only reached mGBA would do nothing, silently,
+        // for every cart whose `selected_core.ini` line says gpsp.
+        core.set_option(
+            "gpsp_color_correction",
+            if colour { "enabled" } else { "disabled" },
+        );
     }
 }
 
