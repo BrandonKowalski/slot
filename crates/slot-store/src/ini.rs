@@ -33,26 +33,31 @@ pub fn read(root: &Path, file: &str) -> HashMap<String, String> {
         return out;
     };
     for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty()
-            || line.starts_with('#')
-            || line.starts_with(';')
-            || line.starts_with('[')
-        {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
+        let Some((key, value)) = entry(line) else {
             continue;
         };
-        let key = key.trim();
-        if key.is_empty() {
-            continue;
-        }
         // A later line for the same key replaces the earlier one, which is what makes the
         // file say one thing per key however many times it was written by hand.
-        out.insert(key.to_string(), value.trim().to_string());
+        out.insert(key.to_string(), value.to_string());
     }
     out
+}
+
+/// What one line names, or `None` for a line that names nothing: blank, a comment, a section
+/// header, anything with no `=`, and anything whose key is empty.
+///
+/// The one rule, read by both `read` and `write`, so the two cannot come to disagree about
+/// which line belongs to which key. They did: `write` matched a line by splitting on `=` with
+/// none of the rules above applied, so it could claim a line `read` would never hand back, and
+/// could append a line it would then never find again on the next write.
+fn entry(line: &str) -> Option<(&str, &str)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') || line.starts_with(';') || line.starts_with('[') {
+        return None;
+    }
+    let (key, value) = line.split_once('=')?;
+    let key = key.trim();
+    (!key.is_empty()).then_some((key, value.trim()))
 }
 
 /// One key's value, or `None` when the file does not name it. The whole file is read, for the
@@ -66,21 +71,43 @@ pub fn value(root: &Path, file: &str, key: &str) -> Option<String> {
 ///
 /// The line is replaced in place, or appended when the key has none yet. See the module's own
 /// comment for why the file is never rebuilt from `read`'s map.
+///
+/// A key this format cannot say is refused rather than written. Not every string survives a
+/// trip through `entry` above: a stem with a space at either end comes back trimmed, one with
+/// an `=` in it comes back cut at the `=`, and one starting `#`, `;` or `[` comes back as a
+/// comment — and every one of those is a filename somebody can really put in `Games/`. Writing
+/// them anyway did three things, and only the first was harmless. The preference never
+/// persisted, because the line could not be found again. Every write appended another copy, so
+/// the card's file grew by a line on every press with nothing ever reading any of them. And a
+/// cart named `Cheats` claimed the line belonging to a cart named `Cheats = On` and destroyed
+/// it — one cart's preference deleting another's.
+///
+/// So the caller gets an error, which every one of them already logs, and the file on the card
+/// stays exactly as it was. What such a cart cannot do is keep a preference; making it able to
+/// would mean quoting or escaping, and that changes the shape of a file people hand-edit.
 pub fn write(root: &Path, file: &str, key: &str, value: &str) -> std::io::Result<()> {
+    let line = format!("{key} = {value}");
+    // Asked of `entry` itself rather than by restating its rules here, which is what stops this
+    // check and the parser it is checking against drifting apart. `lines` catches the one thing
+    // `entry` cannot see: a newline anywhere in either half would make this one entry two.
+    if line.lines().count() != 1 || entry(&line) != Some((key, value)) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{file} cannot hold the entry {line:?}"),
+        ));
+    }
+
     let path = root.join(file);
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
 
-    let entry = format!("{key} = {value}");
-    let mut out = String::with_capacity(existing.len() + entry.len() + 1);
+    let entry_line = line;
+    let mut out = String::with_capacity(existing.len() + entry_line.len() + 1);
     let mut replaced = false;
 
     for line in existing.lines() {
-        let is_this_key = line
-            .split_once('=')
-            .map(|(k, _)| k.trim() == key)
-            .unwrap_or(false);
+        let is_this_key = entry(line).is_some_and(|(k, _)| k == key);
         if is_this_key && !replaced {
-            out.push_str(&entry);
+            out.push_str(&entry_line);
             replaced = true;
         } else if is_this_key {
             // A duplicate for the same key: the later line already won when read, so
@@ -92,7 +119,7 @@ pub fn write(root: &Path, file: &str, key: &str, value: &str) -> std::io::Result
         out.push('\n');
     }
     if !replaced {
-        out.push_str(&entry);
+        out.push_str(&entry_line);
         out.push('\n');
     }
 
