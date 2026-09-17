@@ -52,13 +52,137 @@ code{
 
 .wrap{max-width:900px;margin:0 auto;padding:0 24px}
 
+/* ---------------------------------------------------------------- tabs --- */
+
+/* The navigation is a row of tabs rather than seventeen screens in a column, so the page
+   moves only when it is asked to. The masthead sticks, which is what lets a panel taller
+   than the screen be scrolled without losing the way out of it. */
+:root{--mast-h:60px;--foot-h:52px}
+.mast{
+  position:sticky;
+  top:0;
+  z-index:40;
+  display:grid;
+  grid-template-columns:1fr minmax(0,auto) 1fr;
+  align-items:center;
+  gap:clamp(12px,3vw,32px);
+  min-height:var(--mast-h);
+  padding:0 clamp(16px,3vw,32px);
+  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--rule);
+}
+.mast-mark{
+  font-weight:700;
+  font-size:22px;
+  color:var(--ink);
+  text-decoration:none;
+  letter-spacing:-.02em;
+  justify-self:start;
+}
+.tabs,.subtabs{
+  display:flex;
+  gap:2px;
+  /* A phone cannot fit six labels across, and wrapping them would push the panels down the
+     page by a whole row. The strip scrolls instead, which is the one place this page still
+     scrolls sideways on purpose. */
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar,.subtabs::-webkit-scrollbar{display:none}
+/* Centred while the row fits, packed to the start once it does not. Plain `center` on an
+   overflowing flex row pushes the first items off the scrollable origin, where no amount of
+   scrolling reaches them: on a phone that stranded the first tab behind the left edge. The
+   plain value stays first for anything that does not know `safe`. */
+.tabs{justify-content:center;justify-content:safe center}
+.tab,.subtab{
+  flex:0 0 auto;
+  appearance:none;
+  background:none;
+  border:0;
+  font:inherit;
+  color:var(--muted);
+  cursor:pointer;
+  white-space:nowrap;
+  border-radius:8px;
+  transition:color .2s ease,background .2s ease;
+}
+.tab{padding:9px 14px;font-size:16px;font-weight:600}
+.tab:hover,.subtab:hover{color:var(--ink)}
+.tab[aria-selected=true]{color:var(--ink);background:var(--rule)}
+.tab:focus-visible,.subtab:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* The second row belongs to its panel, not to the page, so it is quieter than the first
+   and sits under the heading it subdivides. */
+.subtabs{margin:0 0 22px;gap:4px;border-bottom:1px solid var(--rule)}
+.subtab{padding:8px 12px;font-size:15px;border-radius:8px 8px 0 0;margin-bottom:-1px}
+.subtab[aria-selected=true]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
+
+/* A panel is at least a screen, so a short one like the credits does not leave the masthead
+   stranded over a band of nothing. Taller ones simply scroll, which is now the only
+   scrolling on the page. */
+.panel{
+  min-height:calc(100vh - var(--mast-h) - var(--foot-h));
+  min-height:calc(100dvh - var(--mast-h) - var(--foot-h));
+}
+[hidden]{display:none!important}
+
+/* The page is a column: masthead, whichever panel is up, then the colophon. `main` taking the
+   slack is what puts the line on the bottom edge of a short panel without the panel having to
+   guess its own height, and leaves it directly under a tall one rather than fixed over it. */
+body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+main{flex:1 0 auto}
+.colophon{
+  flex:0 0 auto;
+  min-height:var(--foot-h);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-top:1px solid var(--rule);
+  color:var(--muted);
+  font-size:14px;
+}
+.colophon p{margin:0}
+
+/* The steps of the install, numbered, because unlike the guide these are done in order. */
+/* The same block the reference and the questions stand in, so the panels do not each
+   start at a different height as the tabs are stepped through. */
+.install{padding:clamp(26px,4vh,52px) 0}
+.install h2{margin-bottom:clamp(16px,2.4vh,26px)}
+.install-steps{list-style:none;counter-reset:step;margin:0;padding:0;max-width:64ch}
+.install-steps li{counter-increment:step;position:relative;padding:0 0 22px 52px}
+.install-steps li::before{
+  content:counter(step);
+  position:absolute;
+  left:0;
+  top:-2px;
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  border:1px solid var(--rule);
+  color:var(--ink);
+  font-size:15px;
+  font-weight:600;
+}
+.install-steps h3{margin:0 0 6px;font-size:21px;color:var(--ink)}
+.install-steps p{margin:0;color:var(--muted);line-height:1.65}
+.install-steps p + p{margin-top:10px}
+.install-steps a{color:var(--ink)}
+.install-note{
+  max-width:64ch;
+  margin:4px 0 0;
+  padding-top:16px;
+  border-top:1px solid var(--rule);
+  color:var(--muted);
+}
+
 /* ---------------------------------------------------------------- hero --- */
 
 .hero{
   max-width:1060px;
   margin:0 auto;
-  min-height:100vh;
-  min-height:100dvh;
   padding:24px;
   display:flex;
   align-items:center;
@@ -338,13 +462,17 @@ kbd{
 
 /* ---------------------------------------------------------- reference --- */
 
-/* The full control set, one section per list: anywhere, on the carousel, in game. Each is
-   a screen of its own; the longest, in game, still fits a 720px window with its heading on
-   screen once snapped. Two columns where there is room: the inputs form a left rail you can
-   run your eye down, and the actions read across from them. No rules between rows — the
-   chips carry the structure on their own. */
-.reference{padding:clamp(56px,9vh,110px) 0}
-.reference h2{margin-bottom:28px}
+/* The full control set, one list per sub-tab: anywhere, on the carousel, in game, in the
+   switcher. Laid out as a table across the full width of the column: the inputs form a left
+   rail you can run your eye down and the actions read across from them, with a rule under
+   every row so a binding that wraps to two lines still reads as one row rather than as two.
+   The rules replace an earlier layout that let the chips carry the structure alone, which
+   worked at four rows and stopped working at eight. */
+.reference{padding:clamp(26px,4vh,52px) 0}
+/* Wider than the prose columns elsewhere. A table wants the room, and nothing in it is a
+   paragraph that gets harder to read as the measure grows. */
+.reference .wrap{max-width:1040px}
+.reference h2{margin-bottom:20px}
 .reference h3,.faq h3{
   font-size:16px;
   font-weight:700;
@@ -357,14 +485,15 @@ kbd{
 /* The chips set small next to 19px text; the guide's own are read one at a time, these in
    a column you scan. */
 .reference kbd{font-size:15px;padding:3px 8px}
-.keys{margin:0}
+.keys{margin:0;width:100%;border-top:1px solid var(--rule)}
 .key{
   display:grid;
-  grid-template-columns:minmax(0,16.5rem) minmax(0,1fr);
-  gap:10px 24px;
+  grid-template-columns:minmax(0,17rem) minmax(0,1fr);
+  gap:10px 32px;
   align-items:baseline;
-  padding:10px 0;
+  padding:13px 2px;
   font-size:19px;
+  border-bottom:1px solid var(--rule);
 }
 .key dt{min-width:0}
 .key dd{margin:0;color:var(--muted);min-width:0}
@@ -374,8 +503,8 @@ kbd{
 /* Sized by its own questions. It was a centred 100dvh snap target, which on a phone
    made it 1133px of content centred in an 844px window: both ends permanently cropped
    and no way to scroll to them. */
-.faq{padding:clamp(64px,11vh,124px) 0}
-.faq h2{font-size:clamp(26px,3.2vw,34px);margin-bottom:30px}
+.faq{padding:clamp(26px,4vh,52px) 0}
+.faq h2{font-size:clamp(26px,3.2vw,34px);margin-bottom:22px}
 .faq dl{margin:0}
 .faq .qa{margin:0 0 26px;max-width:64ch}
 .faq .qa:last-child{margin-bottom:0}
@@ -389,7 +518,7 @@ footer{
   line-height:1.7;
   color:var(--muted);
 }
-.endnote{padding:clamp(56px,9vh,110px) 0}
+.endnote{padding:clamp(26px,4vh,52px) 0}
 footer h2{font-size:26px;color:var(--ink);margin-bottom:16px}
 /* At 20px the 900px wrap runs to about 85 characters a line. */
 footer p{max-width:64ch;margin:0 0 18px}
@@ -437,11 +566,20 @@ footer a{color:var(--ink)}
 .guide{
   max-width:1160px;
   margin:0 auto;
-  padding:0 24px;
+  padding:clamp(16px,2.5vh,44px) 24px;
   display:grid;
-  grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
-  gap:clamp(32px,6vw,80px);
-  align-items:start;
+  /* The stage sizes to the device; the copy column is a fixed 46ch and does not. Sized to its
+     content instead, the column was as wide as whichever step was showing, so paging from a
+     long step to a short one pulled the column in by up to 179px and slid the device across
+     the panel with it. A track that does not move is what makes the page turn look like the
+     words changing rather than the layout rearranging.
+     Fractions were no better: the stage column came out wider than the device standing in it
+     and the copy column wider than the measure the copy keeps, so the two blocks were pushed
+     apart by a gutter neither of them owned and the pair sat left of centre. */
+  grid-template-columns:auto 44ch;
+  justify-content:center;
+  gap:clamp(28px,5vw,72px);
+  align-items:center;
 }
 .guide-stage{
   /* Sized off viewport HEIGHT, because the stage is 100vh and the device is nearly
@@ -449,10 +587,9 @@ footer a{color:var(--ink)}
      it shrink against the view as the screen grew: 73% of the height at 1280x800 but
      58% at 1920x1080. 41vh holds it at about 78% everywhere. The clamp is only there to
      stop it outgrowing its own grid column. */
-  --dw:min(41vh,clamp(280px,32vw,440px));
+  --dw:min(35vh,clamp(240px,27vw,370px));
   position:sticky;
-  top:0;
-  height:100vh;
+  top:calc(var(--mast-h) + clamp(16px,3vh,40px));
   display:flex;
   align-items:center;
   justify-content:center;
@@ -490,68 +627,96 @@ footer a{color:var(--ink)}
 .guide-stage .device.is-shut .dv-lid{transform:rotateX(-178deg)}
 @media (prefers-reduced-motion:reduce){.guide-stage .dv-lid{transition:none}}
 
-/* Lead in and lead out. The stage is sticky, so on the way in it is still sliding up to
-   its pin and on the way out already sliding off it — and a step read during either does
-   not line up with the device beside it. Measured: without this the first step's copy
-   met the middle 135px before the stage got there, and the last one 130px after it left,
-   which is why those two were the only ones that looked wrong. Each is worth 15vh; 18
-   leaves a margin for a step whose copy runs longer than its 70vh box. */
-.guide-steps{padding:18vh 0}
-
-/* 70vh, not 100: the step only has to hold the pinned device on its clip long enough
-   to read one instruction. A full screen each made the guide 5100px of mostly nothing
-   and, while it was snapped, six separate stops to click through. */
-/* Side by side, the step is a box for its copy; its own panel is for the stacked layout
-   and is not shown here — the pinned device carries the picture. */
-.step-panel{display:none}
-.step{
-  min-height:70vh;
+/* One step at a time, stepped through rather than listed. Six at once asked the reader to
+   work out which of them the device was showing; one leaves no question.
+   A min-height so the shortest step and the longest do not move the controls under them. */
+/* The copy and the controls that move it are one column beside the device, so the grid gets
+   two children rather than three and the stepper cannot wrap under the artwork. The copy
+   stays ranged left, where a wrapped line starts where the last one did; only the page
+   turner is centred, so it reads as a control under the step rather than as more of it. */
+/* Capped to the measure the copy already keeps. Left at the column's full width the centred
+   page turner centred on the column rather than on the text above it, landing 58px to the
+   right of it and reading as misaligned rather than as centred. */
+.guide-body{min-width:0;max-width:44ch}
+/* Room for the tallest step, measured at 171px against a 117px shortest, so the controls
+   under it hold still as the steps are paged through instead of walking up and down. The step
+   is centred in that room: held to the top instead, every step shorter than the tallest left
+   its slack in one lump above the page turner, which read as a hole rather than as spacing. */
+.guide-steps{
+  list-style:none;
+  margin:0;
+  padding:0;
+  min-height:180px;
   display:flex;
-  flex-direction:column;
-  justify-content:center;
-  /* Dimmed, not hidden: the inactive steps stay readable if the observer never
-     fires, which is what happens with scripting off. */
-  opacity:.42;
-  transition:opacity .45s ease;
+  align-items:center;
 }
-.step.is-active{opacity:1}
-.step h2{font-size:clamp(25px,3.1vw,33px);margin-bottom:14px}
-.step p{max-width:44ch;margin:0}
+.guide-steps .step{width:100%}
+/* Without scripting nothing is ever marked active, so the first step stands by structure and
+   the guide still reads. `is-live` is set once the script has taken the list over, and from
+   then on the active step is the only one shown. */
+.step{display:none}
+.step:first-child{display:block}
+.guide-steps.is-live .step{display:none}
+.guide-steps.is-live .step.is-active{display:block}
+.step h3{margin:0 0 10px;font-size:clamp(21px,2.4vw,27px);letter-spacing:-.01em}
+.step p{margin:0;line-height:1.6}
+
+.stepper{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  margin-top:8px;
+  padding-top:18px;
+  border-top:1px solid var(--rule);
+}
+.step-nav{
+  appearance:none;
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--rule);
+  border-radius:50%;
+  background:none;
+  color:var(--ink);
+  font-size:17px;
+  line-height:1;
+  cursor:pointer;
+  transition:background .2s ease,opacity .2s ease;
+}
+.step-nav:hover:not(:disabled){background:var(--rule)}
+.step-nav:disabled{opacity:.3;cursor:default}
+.step-nav:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.step-count{margin:0;color:var(--muted);font-size:15px;font-variant-numeric:tabular-nums}
 
 @media (max-width:880px){
-  /* Stacked, the pinned panel has to be cleared by every step and the copy travels through
-     the band underneath it — so where the copy sits relative to the clip is a function of
-     scroll position, and there is no resting composition unless something snaps. Nobody
-     wants the snap. So narrow, nothing is pinned: each step carries its own panel, in its
-     own box, directly above its own words. The pairing is structural and no scroll
-     position can take it apart. The side-by-side layout above keeps the pinned device,
-     where the copy sits beside it and the whole viewport is the band. */
-  /* One gap between sections, set once. Each section carried its own desktop padding —
-     9vh here, 11vh there — so the joins below the guide were paying two of them, 169px of
+  /* One gap between sections, set once. Each section carried its own desktop padding,
+     9vh here and 11vh there, so the joins below the guide were paying two of them: 169px of
      nothing between the reference and the questions on an 844px screen. */
   :root{--gap-section:clamp(34px,5vh,52px)}
-  .guide{display:block;padding:0 24px var(--gap-section)}
   .reference,.faq,.endnote{padding:var(--gap-section) 0}
-  .guide-stage{display:none}
-  .guide-steps{padding:0}
 
-  .step{
-    min-height:0;
-    display:block;
-    opacity:1;                       /* every card is present; there is no active one */
-    padding:0 0 clamp(34px,5vh,52px);
+  /* Stacked, the device goes above the list rather than beside it. It is shown rather than
+     hidden, which is the opposite of what this layout used to do: the six per-step panels
+     it used to fall back on are gone, so the pinned screen is now the only place a clip is
+     ever drawn, at every width. Sticky under the masthead so it stays put while the step
+     being pressed is further down the list. */
+  .guide{display:block;padding:var(--gap-section) 24px}
+  /* Not sticky. Pinned under the masthead it painted over the step below it: on the longest
+     step the copy scrolls to reach the page turner, and the heading went under the artwork on
+     the way. The device leads the panel and scrolls away with it, which is what a phone does
+     with everything else on the page. */
+  .guide-stage{
+    --dw:min(58vw,230px);
+    /* Explicitly static, not merely left out: the rule above sets sticky for the side by side
+       layout, so dropping the declaration here inherited it rather than turning it off, and
+       the pinned artwork painted over the heading of the step underneath it. */
+    position:static;
+    margin:0 auto clamp(18px,3vh,30px);
   }
-  /* A rule between one step and the next. Stacked they are six panel-and-copy pairs down
-     one column at one margin, and whitespace alone left it ambiguous whether a paragraph
-     belonged to the panel above it or the one below. Inset to the content column, not full
-     bleed: these separate items within the guide, they do not end it. Split the gap either
-     side so the rule sits centred in it. */
-  .step + .step{
-    border-top:1px solid var(--rule);
-    padding-top:clamp(34px,5vh,52px);
-  }
-  .step:last-child{padding-bottom:0}
-  .step h2{margin:22px 0 10px;font-size:22px}
+  .guide-steps{min-height:150px}
+  .step h3{font-size:21px}
   .step p{line-height:1.58}
   /* Every <br> on the page separates one keybinding from the next, not one clause from the
      next, so the lines either side want a little air. Narrow, they also wrap, and without
@@ -561,92 +726,9 @@ footer a{color:var(--ink)}
   .step p br,
   .faq dd br{content:"";display:block;margin-top:7px}
 
-  /* The screen keeps its surround. slot's own UI is mostly black — the carousel is carts
-     on a shelf line with black above and below, the insert clip is dark while the cart goes
-     in, and the lid step is black on purpose. A bare black rectangle on a near-black page
-     reads as an image that failed to load; the same rectangle inside a bezel reads as a
-     handheld with a dark screen, which is what it is. Dropping the device for space took
-     this away without my noticing it was doing the work.
-
-     Proportions are the lid's own, scaled down: the screen sits 5.7% in from each side of
-     it, with more surround below than above. The gradient reads the colourway, so the
-     guide's panels match whichever shell the hero came up with. */
-  .step-panel{
-    display:block;
-    width:min(100%,460px);
-    padding:4.5% 4% 6.5%;
-    border-radius:14px;
-    background:linear-gradient(168deg,var(--shell-light),var(--shell-base) 45%,var(--shell-shade));
-    box-shadow:0 1px 0 rgba(255,255,255,.3) inset,
-               0 14px 28px rgba(0,0,0,.5),
-               0 2px 6px rgba(0,0,0,.4);
-  }
-  .step-panel video,
-  .step-panel:empty::before{
-    display:block;
-    width:100%;
-    /* height:auto or the element's own height="480" attribute wins as a presentational
-       hint and aspect-ratio never gets a free dimension to solve for — the panel comes
-       out portrait. */
-    height:auto;
-    aspect-ratio:3/2;
-    border-radius:5px;
-    background:var(--opening);
-    /* The cut edge of the plastic around the glass. */
-    box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.5) inset;
-    /* `fill`, not `cover`: the box and the clips are both 3:2, and `cover` has to derive a
-       fit from an intrinsic size that is not known on the first frame. */
-    object-fit:fill;
-    border:0;
-  }
-  /* The lid step has no clip of its own — the display is off. */
-  .step-panel:empty::before{content:''}
-  /* lvh, not dvh: dvh tracks the toolbar, so the hero is only ever exactly as tall as the
-     visible area *right now* — and while Safari animates the toolbar away the hero is still
-     the short height against an already-taller window, which is the gap the first guide card
-     shows through. lvh is the tallest the viewport ever gets, so the hero covers the screen
-     in either state and nothing below it can peek in.
-     The cost is that with the toolbar shown the hero box is taller than the window; measured
-     at 375x734 the buttons end at 657, still inside an SE's 667, so the whole hero is on
-     screen either way. */
-  .hero{min-height:100vh;min-height:100lvh;padding:24px}
 }
+
 @media (prefers-reduced-motion:reduce){.step{opacity:1}}
-
-/* Marks where you are and jumps you there. Anchors, so they work with scripting off;
-   the active state is the only part JS owns. */
-.dots{
-  position:fixed;
-  right:clamp(6px,1.4vw,20px);
-  top:50%;
-  transform:translateY(-50%);
-  z-index:40;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-.dots a{
-  display:grid;
-  place-items:center;
-  width:24px;
-  height:24px;   /* the dot is 9px; the rest is touch target */
-}
-.dots a::before{
-  content:"";
-  width:9px;
-  height:9px;
-  border-radius:50%;
-  background:var(--muted);
-  opacity:.34;
-  transition:opacity .25s ease,transform .25s ease,background .25s ease;
-}
-.dots a:hover::before{opacity:.75}
-.dots a:focus-visible{outline:2px solid var(--ink);outline-offset:-2px;border-radius:4px}
-.dots a.is-on::before{opacity:1;background:var(--ink);transform:scale(1.35)}
-/* Side by side only, and after the rule that sets display:flex or it never wins. On a
-   phone it was nine 9px targets stacked down the edge, floating over the copy, marking
-   sections on a page you simply scroll. */
-@media (max-width:880px){ .dots{display:none} }
 
 /* ------------------------------------------------------------- narrower --- */
 
@@ -673,35 +755,61 @@ footer a{color:var(--ink)}
   .faq dd{font-size:18px}
   footer{font-size:18px}
 
+  /* Narrow, the mark and six labels cannot share a line, so the mark gives up what it can
+     and the strip takes the rest and scrolls. */
+  .mast{padding:0 14px;gap:12px}
+  .mast-mark{font-size:19px}
+  .tab{padding:9px 11px;font-size:15px}
+
   /* Stacked: three chips and their separators do not fit a column beside the action at
      this width, so the input goes above what it does. */
-  .key{grid-template-columns:1fr;gap:6px;padding:12px 0;font-size:18px}
+  .key{grid-template-columns:1fr;gap:4px;padding:12px 2px;font-size:18px}
   .reference h3{margin-top:32px}
 }
 /* Shorter than an iPhone SE — the 2016 one is 320x568, and a phone held sideways lands
    here too. The height cap alone cannot save it: at that width the device is pinned by
    46vw, not by height, so the width cap comes in and the copy gives up a little of its
    own scale. Everything above stays untouched at 375x667. */
+/* Short and narrow: the screen on its own, which is what the stacked layout showed before the
+   guide became a stepper. The device is nearly twice as tall as it is wide, and on a short
+   screen that height is the whole problem. In pose-flat the lid is already the screen in its
+   own moulded surround, with the walls and the lid's back culled, so dropping the deck leaves
+   exactly the panel the old per-step cards drew by hand. A tall phone keeps the whole device,
+   where it fits with room to spare. */
+@media (max-width:880px) and (max-height:700px){
+  .guide-stage .dv-deck{display:none}
+  /* With the deck gone the lid is only 1.13 times as wide as it is tall, so the height that
+     forced the whole device to be small is no longer the constraint and the screen can take
+     the column. Against the viewport less the guide's own 24px gutters rather than a plain
+     vw, or the panel runs wider than the space it is padded into. */
+  .guide-stage{--dw:min(calc(100vw - 56px),380px)}
+  /* Nothing to fold onto once the deck has gone, and a lid folding over its own back with no
+     body under it reads as a mistake. So the lid step does not fold: it shows the outside of
+     the lid instead, which is the face you are looking at when the thing is shut and has no
+     screen on it at all. A dark screen in its surround said the display was off; the closed
+     lid says the lid is closed, which is what the step is about.
+     The back has to hold the box once the front is gone, so it comes out of the absolute
+     position it sits in while it is a face on a 3D object, and loses the rotateX that exists
+     only to turn it away until the lid folds. */
+  .guide-stage .device.is-shut,
+  .guide-stage .device.is-shut .dv-lid{transform:none}
+  .guide-stage .device.is-shut .dv-front{display:none}
+  .guide-stage .device.is-shut .dv-back{
+    display:block;
+    position:relative;
+    inset:auto;
+    width:100%;
+    aspect-ratio:820/725;
+    transform:none;
+  }
+}
+
 @media (max-width:880px) and (max-height:620px){
   .hero-device{--dw:min(210px,40vw,30vh)}
+  .guide-steps{min-height:132px}
   .wordmark{font-size:clamp(42px,12vw,56px)}
   .tagline{margin-top:12px}
   .actions{margin-top:22px}
-}
-
-/* Snap, side by side only. It is the thing everyone says not to do, and on this page it
-   is what makes the guide land: each step arrives dead centre against the pinned device
-   rather than wherever the flick stopped. Stacked it stays off — a phone is a page you
-   scroll, and the cards already sit exactly where they belong without it. */
-@media (min-width:881px){
-  html{scroll-snap-type:y mandatory}
-  .hero,.step,.reference,.faq,.endnote{scroll-snap-align:center}
-  /* A screen each, with the content centred in it, so what snap comes to rest on is a
-     composed thing rather than wherever the section happened to start. The reference and
-     the questions are split into pages for this: at 1280x720 each still lands with its
-     heading on screen. */
-  .reference,.faq,.endnote{min-height:100vh;display:flex;align-items:center}
-  .reference>.wrap,.faq>.wrap,.endnote>.wrap{width:100%}
 }
 
 @media (prefers-reduced-motion:reduce){
