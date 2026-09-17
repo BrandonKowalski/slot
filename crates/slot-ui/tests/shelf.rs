@@ -505,6 +505,61 @@ fn holding_a_direction_repeats_after_a_delay() {
     assert_eq!(s.index, 3, "it kept repeating after release");
 }
 
+/// A held direction speeds up the longer it is held, which is what makes a long library
+/// crossable without making a short hop overshoot. The rates are 110, 85, 65 then 50 ms, and the
+/// last one is a floor rather than a step on the way to zero.
+#[test]
+fn a_held_direction_winds_down_to_a_floor() {
+    let mut s = shelf_with(40);
+    s.hold_right(0);
+    assert_eq!(s.index, 1, "the first press did not move");
+
+    // The delay, then each rate in turn. Every tick is one millisecond before the repeat is due
+    // and then exactly on it, so a rate that had quietly changed would show up as a missed step.
+    let mut at = 400;
+    for (rate, want) in [(110, 2), (85, 3), (65, 4), (50, 5)] {
+        s.tick(at - 1);
+        assert_eq!(s.index, want - 1, "it repeated early on its way to {want}");
+        s.tick(at);
+        assert_eq!(s.index, want, "it never repeated into {want}");
+        at += rate;
+    }
+
+    // Held on, the floor holds: four more repeats at 50 ms and not one sooner.
+    for want in 6..=9 {
+        s.tick(at - 1);
+        assert_eq!(s.index, want - 1, "the floor gave way before {want}");
+        s.tick(at);
+        assert_eq!(s.index, want, "the floor stopped repeating at {want}");
+        at += 50;
+    }
+}
+
+/// Acceleration belongs to one hold, not to the shelf. A row of separate presses is someone
+/// choosing rather than travelling, and it is paced exactly as it was before any of this.
+#[test]
+fn a_new_press_starts_the_repeat_over_at_the_slow_rate() {
+    let mut s = shelf_with(40);
+    s.hold_right(0);
+    let mut at = 400;
+    for rate in [110, 85, 65] {
+        s.tick(at);
+        at += rate;
+    }
+    assert_eq!(s.index, 4, "the hold did not wind down as expected");
+
+    // Let go and press again: the delay is the long one again and so is the first repeat.
+    s.release_right();
+    s.hold_right(at);
+    assert_eq!(s.index, 5, "the fresh press did not move");
+    s.tick(at + 400 - 1);
+    assert_eq!(s.index, 5, "the fresh press repeated before the full delay");
+    s.tick(at + 400);
+    assert_eq!(s.index, 6, "the fresh press never repeated");
+    s.tick(at + 400 + 110 - 1);
+    assert_eq!(s.index, 6, "the fresh press kept the old hold's fast rate");
+}
+
 /// Letting go of one direction while the other is held is a change of direction, not a stop.
 #[test]
 fn the_other_direction_letting_go_does_not_stop_the_repeat() {

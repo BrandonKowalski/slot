@@ -45,9 +45,19 @@ const SLOTS: i32 = 3;
 
 /// Before the first repeat. Long enough that a press meaning one cart cannot become two.
 const REPEAT_DELAY_MS: Millis = 400;
-/// Between repeats after that. Fast enough to cross a thirty cart library, slow enough to
-/// stop on one.
-const REPEAT_MS: Millis = 110;
+/// Between repeats, and they get shorter the longer a direction is held.
+///
+/// A single flat rate has to answer two questions with one number: fast enough to cross a long
+/// library, slow enough to stop on the cart you meant. Those pull opposite ways, and at thirty
+/// carts the flat 110 ms this used to be was the wrong answer to the first one. Holding longer
+/// is the signal that the player is travelling rather than choosing, so the rate reads it: the
+/// first repeats stay at the old 110 ms, where stopping on one cart is what matters, and a hold
+/// that keeps going winds down to 50 ms, which crosses thirty carts in about two seconds.
+///
+/// The last entry is the floor and repeats stay there for as long as the direction is held.
+/// Nothing here accelerates a *tap*: each press starts the sequence again from the top, so a
+/// row of deliberate single presses is paced exactly as it always was.
+const REPEAT_MS: [Millis; 4] = [110, 85, 65, 50];
 
 pub struct Shelf {
     pub carts: Vec<Cart>,
@@ -71,9 +81,11 @@ pub struct Shelf {
     /// it is the only thing that remembers which button was pressed once the row has wrapped.
     ride: f32,
     vel: f32,
-    /// The direction being held and when it next repeats. Repeat lives here rather than in
-    /// the gesture layer so nothing in game starts auto firing.
-    held: Option<(i32, Millis)>,
+    /// The direction being held, when it next repeats, and how many repeats it has already
+    /// fired. Repeat lives here rather than in the gesture layer so nothing in game starts auto
+    /// firing, and the count lives with it because the rate is a function of how long this one
+    /// hold has been going: a new press resets it, which is what keeps taps unaccelerated.
+    held: Option<(i32, Millis, usize)>,
 }
 
 impl Shelf {
@@ -150,7 +162,7 @@ impl Shelf {
     /// rather than what it produces.
     fn hold(&mut self, by: i32, now: Millis) {
         self.step(by);
-        self.held = Some((by, now + REPEAT_DELAY_MS));
+        self.held = Some((by, now + REPEAT_DELAY_MS, 0));
     }
 
     pub fn release_left(&mut self) {
@@ -164,7 +176,7 @@ impl Shelf {
     /// Only the direction that is being held stops it. Letting go of the other one is a
     /// change of direction the shelf has already acted on.
     fn release(&mut self, by: i32) {
-        if matches!(self.held, Some((held, _)) if held == by) {
+        if matches!(self.held, Some((held, _, _)) if held == by) {
             self.held = None;
         }
     }
@@ -177,14 +189,18 @@ impl Shelf {
     /// Fires the repeat. Due from `now` rather than from the deadline it passed, so a frame
     /// the app was late for costs one cart instead of a burst of catching up.
     pub fn tick(&mut self, now: Millis) {
-        let Some((by, due)) = self.held else {
+        let Some((by, due, fired)) = self.held else {
             return;
         };
         if now < due {
             return;
         }
         self.step(by);
-        self.held = Some((by, now + REPEAT_MS));
+        // Due from `now` rather than from the deadline it passed, and at the rate this hold has
+        // wound down to. `fired` saturates on the last entry, so a long hold settles at the
+        // floor instead of ever reaching zero.
+        let rate = REPEAT_MS[fired.min(REPEAT_MS.len() - 1)];
+        self.held = Some((by, now + rate, fired + 1));
     }
 
     /// A press, and nothing at all on a row with fewer than two carts. An empty row has nothing
