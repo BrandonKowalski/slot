@@ -45,6 +45,44 @@ fn select_released_inside_the_window_still_reaches_the_game() {
     assert!(g.tick(1_000).is_empty());
 }
 
+/// The release that tap owes, when the next press lands before the tick can hand it over.
+/// `SELECT_TAP_MS` is 50 ms — three frames — so this is not a gesture anyone performs on
+/// purpose: it is a switch that bounced, or a worn membrane making one press twice.
+///
+/// The press that arrives inside the window used to overwrite the state owing the release, and
+/// a press that then became a chord delivered no SELECT of its own to end the tap with. The
+/// core was left holding SELECT with no up ever coming — for the rest of the session, if the
+/// player kept chording, since every chorded press is swallowed the same way.
+///
+/// The invariant is the one the pad reads: SELECT goes down exactly as often as it comes up.
+#[test]
+fn a_select_press_inside_the_tap_window_hands_back_the_release_it_interrupted() {
+    let mut g = Gestures::new();
+    let mut log = Vec::new();
+    log.extend(g.feed(Down(Select), 0));
+    log.extend(g.feed(Up(Select), 20));
+    // The bounce, inside the window the tap's release is still owed in.
+    log.extend(g.feed(Down(Select), 20 + SELECT_TAP_MS - 1));
+    // And that press is a chord, so it hands the core nothing of its own.
+    log.extend(g.feed(Down(Btn::Up), 100));
+    log.extend(g.feed(Up(Btn::Up), 140));
+    log.extend(g.feed(Up(Select), 200));
+    for t in 200..2_000 {
+        log.extend(g.tick(t));
+    }
+    let downs = log.iter().filter(|a| **a == GbaDown(Select)).count();
+    let ups = log.iter().filter(|a| **a == GbaUp(Select)).count();
+    assert_eq!(
+        (downs, ups),
+        (1, 1),
+        "the core was handed {downs} SELECT press(es) and {ups} release(s): {log:?}"
+    );
+    assert!(
+        log.contains(&BrightnessUp),
+        "the chord off the second press stopped working: {log:?}"
+    );
+}
+
 /// A tap of MENU opens the quick menu, on the release. The other two MENU gestures are
 /// unchanged: a tap was the one press this button did not already mean something by.
 #[test]

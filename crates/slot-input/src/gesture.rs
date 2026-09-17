@@ -189,10 +189,7 @@ impl Gestures {
 
     fn down(&mut self, b: Btn, now: Millis) -> Vec<Action> {
         match b {
-            Btn::Select => {
-                self.select = Select::Pending(now);
-                Vec::new()
-            }
+            Btn::Select => self.select_down(now),
             Btn::Menu => self.menu_down(now),
             // The flush hangs off the press, because a POWER that is being held may be cut
             // by the PMIC before there is any release to see. Everything the user can
@@ -236,6 +233,31 @@ impl Gestures {
                 }
                 vec![Action::GbaUp(b)]
             }
+        }
+    }
+
+    /// A press, plus whatever the press before it still owed. `select_up` hands the core the
+    /// press on the release and leaves the release itself to the tick, so for `SELECT_TAP_MS`
+    /// after every tap there is a `GbaUp` the core has not been given yet.
+    ///
+    /// A second press inside that window overwrote the state that owed it, and the owed release
+    /// went with it. That heals by itself for a press that goes on to be delivered — its own
+    /// release ends the tap that never ended — but a press that becomes a chord delivers
+    /// nothing at all, and `select_up` has no up to hand back for a press it swallowed. The
+    /// core is then left holding SELECT until some later tap happens to end it, which is the
+    /// rest of the session if the player keeps chording.
+    ///
+    /// Fifty milliseconds is three frames, so this is not a gesture anyone performs: it is a
+    /// switch that bounced, or a thumb on a worn membrane. The fix is to hand the release back
+    /// here, ahead of the new press. The cost is that the first half of a sub-50 ms double tap
+    /// reaches the core for however far apart the two presses really were rather than for the
+    /// full tap, and nothing else changes: every other state answers exactly as it did.
+    fn select_down(&mut self, now: Millis) -> Vec<Action> {
+        let owed = matches!(self.select, Select::ReleaseDue(_));
+        self.select = Select::Pending(now);
+        match owed {
+            true => vec![Action::GbaUp(Btn::Select)],
+            false => Vec::new(),
         }
     }
 
