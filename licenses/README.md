@@ -11,10 +11,11 @@ a fork that ships without its source is not.
 
 The release also distributes compiled libretro cores `slot` did not write:
 
-| Core            | Source                                   | License              | Text here                |
-|-----------------|------------------------------------------|----------------------|---------------------------|
-| `gpsp_libretro`  | https://github.com/libretro/gpsp        | GPL-2.0-or-later     | `gpsp-GPL-2.0.txt`        |
-| `mgba_libretro`  | https://github.com/libretro/mgba        | MPL-2.0              | `mgba-MPL-2.0.txt`        |
+| Core                | Source                                             | License              | Text here                  |
+|---------------------|----------------------------------------------------|----------------------|----------------------------|
+| `gpsp_libretro`     | https://github.com/libretro/gpsp                   | GPL-2.0-or-later     | `gpsp-GPL-2.0.txt`         |
+| `mgba_libretro`     | https://github.com/libretro/mgba                   | MPL-2.0              | `mgba-MPL-2.0.txt`         |
+| `tgbdual_libretro`  | https://github.com/libretro/tgbdual-libretro       | GPL-2.0-or-later     | `tgbdual-GPL-2.0.txt`      |
 
 **Every one of those is why GPL-3.0 was available to take, and it was checked rather than
 assumed.** gpSP carries the "either version 2 of the License, or (at your option) any later
@@ -27,7 +28,15 @@ cannot be used here rather than anything about how it performs.
 
 gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core above is the
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
-libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba.
+libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba. TGB Dual was written by
+Hii in 2001 and is the reason Game Boy link play works at all: it emulates two Game Boys in one
+process with a cable between them, which is what a linked pair on two handhelds needs.
+
+`tgbdual-GPL-2.0.txt` is the FSF's current printing of GPL-2.0, the same file as gpSP's. TGB
+Dual's own tree carries an older printing of the same licence at `docs/COPYING-2.0.txt`, from
+before the FSF moved offices: 280 lines against 339, differing in the FSF's postal address and
+in calling the LGPL the "Library" General Public License. It is the same licence and the current
+text is the clearer thing to hand somebody.
 
 Both cores are built by this repo, and both are patched. `cores/gpsp/build.sh`, run by
 `taskfile.yml`'s `core:gpsp`, builds libretro/gpsp at a pinned commit from the source archive
@@ -94,6 +103,28 @@ from this repo carries the same notice the release zip does.
   the pin and with the build script's stamp. If any one does not, all of them are cleared, and
   the archive is refetched and the binary rebuilt from it in the same run, so nothing here can
   pair a binary from one build with a source recorded by another.
+
+- **GPL-2.0-or-later (TGB Dual): the corresponding source ships in this directory, under section
+  3(a), on exactly the terms gpSP's does above.** `taskfile.yml`'s `core:tgbdual` downloads the
+  source archive of the commit pinned as `TGBDUAL_COMMIT`, compiles the binary from that archive
+  with `cores/tgbdual/build.sh`, and checks the archive, the sha, the binary and both `.meta`
+  files as one set, so a binary from one build can never sit beside a source recorded by another.
+  `dist:device` and `deploy:device` carry the result here, as:
+
+  ```
+  licenses/tgbdual-<commit>.tar.gz
+  licenses/tgbdual-<commit>.meta
+  ```
+
+  **This build is not modified.** There is no patch, and that is worth stating rather than leaving
+  to be inferred from an empty directory: TGB Dual needed none. It builds clean for aarch64 from
+  upstream's own `make platform=unix` with no external assets and no boot ROM, and it turns its
+  link on by itself when two ROMs arrive, so slot does not have to patch in the behaviour it wants.
+  The only thing `cores/tgbdual/build.sh` adds to upstream's recipe is `-flto=auto`, which the
+  `.meta` records as `device_cflags` and which changes how the core is compiled rather than what it
+  computes: both builds produce byte-identical framebuffers. If a patch is ever added, it ships
+  here beside the archive with its file name prefixed `tgbdual-`, the way gpSP's does, and section
+  2(a)'s change notice belongs in this paragraph.
 
 ## Artwork
 

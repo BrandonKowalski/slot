@@ -11,7 +11,9 @@ mod stamp;
 mod theme;
 
 pub use atomic::atomic_write;
-pub use core::{core_for, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE};
+pub use core::{
+    core_for, core_for_platform, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE,
+};
 pub use gba::{header_clean, header_code, header_title};
 pub use platform::Platform;
 pub use ring::{StateEntry, StateRing, RING_MAX};

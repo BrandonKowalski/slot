@@ -3294,8 +3294,9 @@ impl App {
         // The board this opens onto is a traced GBA cartridge PCB — 32 contacts, a GBA ROM
         // package — so a Game Boy shell coming apart to reveal it would be showing the player
         // hardware that is not in their hand, which is not a liberty the art takes anywhere else.
-        // Nor is there a choice underneath it to justify one: `session::spawn_core` runs a Game
-        // Boy cart on mGBA whatever the ini says, because mGBA is the only core that runs one.
+        // Nor is there a choice underneath it that this picker could express: a Game Boy cart's
+        // core is decided by its platform, and the one way to override it is a line in
+        // `selected_core.ini`, which is a thing done on a computer rather than on this panel.
         //
         // So the press does nothing at all, and deliberately not a refusal shake either: a shake
         // answers a choice declined, and there is no choice here to decline. Same reasoning as

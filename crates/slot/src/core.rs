@@ -220,8 +220,17 @@ pub fn apply_core_options(
     // would mean re-entering `set_option`, whose doc comment spells out the aliasing that
     // invites. The option is the standing arrangement; the callback is the per-frame lever.
     //
-    // The key is the core's own name with `_frameskip` after it, which is how both spell it.
-    core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
+    // The key is the core's own name with `_frameskip` after it, which is how mGBA and gpSP
+    // both spell it. TGB Dual has no frameskip option at all: its whole option list is the six
+    // at `libretro/libretro.cpp:19-28`, all of them about the two screens and which one is
+    // heard. Setting a key a core does not have would be ignored rather than harmful, but it
+    // would also be a quiet lie in a function whose whole job is to say what each core was
+    // told, so it is not set. The consequence is that a Game Boy cart's fast forward has no
+    // core frameskip behind it and is capped by emulation speed alone, which for a core that
+    // costs 2 ms of a 16.7 ms frame is not the binding constraint.
+    if matches!(which, Core::Mgba | Core::Gpsp) {
+        core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
+    }
     if which == Core::Mgba {
         // An SGB border makes the picture 256x224, and 256 is wider than the 240 this whole path
         // is built on — `video_refresh` would crop it. The core declares this one as `ON|OFF`

@@ -1,4 +1,6 @@
-use slot_store::{core_for, read_selected_cores, Core};
+use slot_store::{
+    core_for, core_for_platform, read_selected_cores, write_selected_core, Core, Platform,
+};
 use tempfile::tempdir;
 
 fn root_with(ini: Option<&str>) -> tempfile::TempDir {
@@ -171,4 +173,73 @@ fn writing_the_default_still_records_it() {
     assert_eq!(core_for(d.path(), "Emerald"), Core::Mgba);
     let text = std::fs::read_to_string(d.path().join("System/selected_core.ini")).unwrap();
     assert!(text.contains("Emerald = mgba"));
+}
+
+// TGB Dual arrives as the Game Boy and Game Boy Color default, and the rules around it are the
+// ones a hand-edited card can exercise, so they are the ones worth pinning down.
+
+#[test]
+fn game_boy_carts_default_to_tgb_dual_and_gba_carts_do_not() {
+    let d = tempfile::tempdir().unwrap();
+    assert_eq!(
+        core_for_platform(d.path(), "Tetris", Platform::Gb),
+        Core::TgbDual
+    );
+    assert_eq!(
+        core_for_platform(d.path(), "Tetris Chromatic", Platform::Gbc),
+        Core::TgbDual
+    );
+    assert_eq!(
+        core_for_platform(d.path(), "Emerald", Platform::Gba),
+        Core::Mgba
+    );
+}
+
+#[test]
+fn a_game_boy_cart_can_ask_for_mgba_by_hand() {
+    // The escape hatch the Game Boy support design asked for: TGB Dual is the default because it
+    // is the core that can link, and someone who would rather have mGBA's accuracy says so.
+    let d = tempfile::tempdir().unwrap();
+    write_selected_core(d.path(), "Tetris", Core::Mgba).unwrap();
+    assert_eq!(
+        core_for_platform(d.path(), "Tetris", Platform::Gb),
+        Core::Mgba
+    );
+}
+
+#[test]
+fn a_line_naming_a_core_the_platform_cannot_run_is_dropped() {
+    // `selected_core.ini` is hand-edited, so `Tetris = gpsp` is a line a card can really hold.
+    // gpSP does not run Game Boy games: obeying it would refuse the ROM or paint garbage, with
+    // the cart's states filed under a core that never ran it. The platform's default is the safe
+    // reading, and it is the same reading an unparseable line already gets.
+    let d = tempfile::tempdir().unwrap();
+    write_selected_core(d.path(), "Tetris", Core::Gpsp).unwrap();
+    assert_eq!(
+        core_for_platform(d.path(), "Tetris", Platform::Gb),
+        Core::TgbDual
+    );
+
+    // And the mirror image: TGB Dual has no GBA in it, so a GBA cart asking for it gets mGBA.
+    write_selected_core(d.path(), "Emerald", Core::TgbDual).unwrap();
+    assert_eq!(
+        core_for_platform(d.path(), "Emerald", Platform::Gba),
+        Core::Mgba
+    );
+}
+
+#[test]
+fn tgb_dual_is_not_a_socket_on_the_picker_board() {
+    // The picker is drawn as a two-socket GBA cartridge PCB traced from real hardware. A third
+    // socket would be a liberty taken with the drawing to express a choice nobody makes on the
+    // panel, so `ALL` stays at two and TGB Dual is reached by platform instead.
+    assert_eq!(Core::ALL.len(), 2);
+    assert!(!Core::ALL.contains(&Core::TgbDual));
+}
+
+#[test]
+fn every_core_round_trips_through_the_ini_spelling() {
+    for core in [Core::Mgba, Core::Gpsp, Core::TgbDual] {
+        assert_eq!(Core::parse(core.as_str()), Some(core));
+    }
 }

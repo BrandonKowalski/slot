@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use slot_input::{Action, Gestures, Millis, RawEvent};
 use slot_retro::Rumble;
-use slot_store::{Core, Platform};
 use slot_ui::FfState;
 
 use crate::app::{App, Phase};
@@ -584,18 +583,17 @@ impl Session {
         // `Core` existed. `App` stores this rather than re-deriving it later, which is what
         // makes that class of drift structurally unreachable now instead of merely unobserved.
         //
-        // The platform outranks the file, and only a GBA cart's line is read at all.
-        // `selected_core.ini` is hand-edited on the card, so nothing there stops a line reading
-        // `Tetris = gpsp` — and gpSP does not run Game Boy games: it would refuse the ROM or
-        // paint garbage, with the cart's states filed under a core that never ran it. mGBA is
-        // the only core that runs one, so there is no choice for the file to be expressing and
-        // nothing is lost by not reading it. A GBA cart's line still means everything it did.
-        // `SLOT_CORE` is untouched by this: it names a dylib rather than a `Core`, and its own
-        // doc comment already calls it the trap it is.
-        let core = match platform {
-            Platform::Gba => slot_store::core_for(&self.root, stem),
-            Platform::Gb | Platform::Gbc => Core::Mgba,
-        };
+        // The platform outranks the file, and `core_for_platform` is where that rule lives now
+        // rather than here. It used to be a match with a hardcoded `Core::Mgba` arm for the two
+        // Game Boy platforms, because mGBA was the only core that ran a Game Boy cart and so
+        // there was no choice for the file to be expressing. There is one now: TGB Dual is the
+        // Game Boy and Game Boy Color default, for the link, and a player who would rather have
+        // mGBA's accuracy writes `Tetris = mgba` and gets it. What has not changed is that a
+        // line naming a core the platform cannot run is dropped rather than obeyed, which is
+        // what still stops `Tetris = gpsp` from filing a cart's states under a core that never
+        // ran it. `SLOT_CORE` is untouched by this: it names a dylib rather than a `Core`, and
+        // its own doc comment already calls it the trap it is.
+        let core = slot_store::core_for_platform(&self.root, stem, platform);
         self.app.set_core(core);
         // `platform` comes straight off the `Cart` the shelf scanned, not re-derived from the
         // stem: it is what closes the same class of drift for a `.gb` and a `.gba` cart that
