@@ -1,3 +1,15 @@
+<!--
+  Class A and class B Game Pak: the shell CGB flag 0x00 (grey) and 0x80 (black) were both
+  moulded in. Traced from the user's own square-on line drawing, which is kept beside this file
+  as gb-cart-lineart.svg — it is the source this and gb_cart_detail.svg were measured off, not
+  an asset the build reads, and it stays here so the pair can be re-derived rather than guessed
+  at. Its outer contour is what this path fills.
+
+  The body is 227 wide inside a 240 box because a pak and a GBA cart are both 57 mm across and
+  the GBA canvas spans 60 mm to clear its grip ridge.
+  The step at the top right is the power-switch notch: the tab on an original Game Boy's power
+  switch slides into it, so a cart without one cannot be switched on.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 253">
-  <path d="M26.50 0.00 L213.50 0.00 C224.55 0.00 233.50 8.95 233.50 20.00 L233.50 247.00 C233.50 250.31 230.81 253.00 227.50 253.00 L12.50 253.00 C9.19 253.00 6.50 250.31 6.50 247.00 L6.50 20.00 C6.50 8.95 15.45 0.00 26.50 0.00 Z" fill="#fff"/>
+  <path d="M 9.8 0 L 208.9 0 A 4.2 4 0 0 1 213.1 4 L 213.1 10.7 A 0.8 0.8 0 0 0 213.9 11.5 L 228.7 11.5 A 4.8 5 0 0 1 233.5 16.5 L 233.5 249.6 A 4.3 3.4 0 0 1 229.2 253 L 10.8 253 A 4.3 3.4 0 0 1 6.5 249.6 L 6.5 2.4 A 3.3 2.4 0 0 1 9.8 0 Z" fill="#fff"/>
 </svg>

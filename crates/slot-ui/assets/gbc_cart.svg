@@ -1,0 +1,11 @@
+<!--
+  Class C Game Pak: the clear shell a CGB flag of 0xc0 shipped in. Derived from gb_cart.svg
+  rather than drawn a second time, so the pair cannot drift apart stylistically, and the two
+  edits are the only two differences the shells actually have. The top corners are rounded
+  where the older mould chamfers them, and the power-switch notch is gone — which is what
+  stops one of these turning an original Game Boy on. Everything below the shoulder, the
+  bottom corners included, is the same contour.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 253">
+  <path d="M 26.5 0 L 213.5 0 A 20 17 0 0 1 233.5 17 L 233.5 249.6 A 4.3 3.4 0 0 1 229.2 253 L 10.8 253 A 4.3 3.4 0 0 1 6.5 249.6 L 6.5 17 A 20 17 0 0 1 26.5 0 Z" fill="#fff"/>
+</svg>
