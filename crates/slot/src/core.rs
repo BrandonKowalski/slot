@@ -166,6 +166,35 @@ fn report_missing(core: Core, paths: &[PathBuf]) {
     );
 }
 
+/// The core option that turns colour correction on and off, and the word this core spells each
+/// state with. `None` for a core that has no such option.
+///
+/// One function rather than two call sites, because there are now two moments this is needed and
+/// they must not drift: once before `load`, where every option is handed over, and once while a
+/// game is on screen, when the quick menu row is toggled. A key that was right in one place and
+/// stale in the other would be invisible from both, since a libretro core ignores an option it
+/// does not have without saying so.
+///
+/// mGBA gets `Auto` rather than `GBA` or `GBC`: it is the core that runs all three consoles here
+/// and `Auto` is the only value that picks the right tint for each. Naming one would give a Game
+/// Boy cart the GBA's correction, a tint of the wrong console rather than a weaker version of the
+/// right one. gpSP declares its own as `disabled|enabled`, a different key and a different pair of
+/// words, and only ever runs GBA carts so it has no console to choose between.
+///
+/// TGB Dual is `None`, and that is the whole of its colour story: it declares five options
+/// (`libretro/libretro.cpp:19-28`) and not one of them is about colour. The row is therefore inert
+/// for a cart running on it, which `App` is careful to say rather than pretend otherwise.
+pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static str)> {
+    match which {
+        Core::Mgba => Some(("mgba_color_correction", if on { "Auto" } else { "OFF" })),
+        Core::Gpsp => Some((
+            "gpsp_color_correction",
+            if on { "enabled" } else { "disabled" },
+        )),
+        Core::TgbDual => None,
+    }
+}
+
 /// Options a core needs before `load`, because libretro cores read them during
 /// `retro_load_game` rather than continuously.
 ///
@@ -290,7 +319,10 @@ pub fn apply_core_options(
         // consoles here and `Auto` is the only value that picks the right tint for each of them.
         // Naming one would give a Game Boy cart the GBA's correction, which is a tint of the
         // wrong console rather than a stronger or weaker version of the right one.
-        core.set_option("mgba_color_correction", if colour { "Auto" } else { "OFF" });
+        // Through `colour_option`, which is also what the quick menu pushes at a running core.
+        if let Some((key, value)) = colour_option(which, colour) {
+            core.set_option(key, value);
+        }
     }
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
@@ -306,10 +338,9 @@ pub fn apply_core_options(
         // is a device-wide screen shown on the shelf with nothing seated, so it cannot know which
         // core the next cart will use; a row that only reached mGBA would do nothing, silently,
         // for every cart whose `selected_core.ini` line says gpsp.
-        core.set_option(
-            "gpsp_color_correction",
-            if colour { "enabled" } else { "disabled" },
-        );
+        if let Some((key, value)) = colour_option(which, colour) {
+            core.set_option(key, value);
+        }
     }
 }
 
@@ -322,6 +353,40 @@ mod tests {
     /// tests in this module on separate threads by default, so without this they can
     /// interleave and read back a value neither of them set.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// One spelling per core, and the two words each of them uses. The load path and the live
+    /// path both go through here, so this is the thing that stops them drifting apart, which is
+    /// a drift neither side could see: a libretro core ignores an option it does not have
+    /// without a word.
+    #[test]
+    fn each_core_spells_colour_correction_its_own_way() {
+        assert_eq!(
+            colour_option(Core::Mgba, true),
+            Some(("mgba_color_correction", "Auto"))
+        );
+        assert_eq!(
+            colour_option(Core::Mgba, false),
+            Some(("mgba_color_correction", "OFF"))
+        );
+        assert_eq!(
+            colour_option(Core::Gpsp, true),
+            Some(("gpsp_color_correction", "enabled"))
+        );
+        assert_eq!(
+            colour_option(Core::Gpsp, false),
+            Some(("gpsp_color_correction", "disabled"))
+        );
+    }
+
+    /// TGB Dual has no colour correction option at all: its whole declared list is five entries
+    /// and none of them is about colour. `None` is what keeps `Session` from sending a key the
+    /// core would silently swallow, and it is the reason the row cannot work on a Game Boy cart
+    /// until the core grows one.
+    #[test]
+    fn tgb_dual_has_no_colour_correction_to_set() {
+        assert_eq!(colour_option(Core::TgbDual, true), None);
+        assert_eq!(colour_option(Core::TgbDual, false), None);
+    }
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())

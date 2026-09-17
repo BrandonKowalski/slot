@@ -66,6 +66,17 @@ pub trait RetroCore: Send {
     fn run_frame_linked(&mut self, p1: ButtonMask, _p2: ButtonMask) {
         self.run_frame(p1);
     }
+    /// Sets a core option on a core that is already running.
+    ///
+    /// Options are normally handed over once, before `load`, because that is when a libretro core
+    /// reads them. A few are not like that: a core re-reads its options whenever the frontend
+    /// says they changed, so a setting a player can reach while a game is on screen has to be
+    /// able to arrive after `load` too. Colour correction is the one that does.
+    ///
+    /// The default does nothing, which is the honest answer for a core with no options at all.
+    /// It is not silently wrong for a core that has them: `LibretroCore` overrides it, and
+    /// nothing else in this crate is a real emulator.
+    fn set_option(&mut self, _key: &str, _value: &str) {}
     /// Whether the *next* `run_frame` should emulate without drawing a picture. A skipped frame
     /// advances the machine exactly as a drawn one does and leaves `video_xrgb8888` holding the
     /// last picture that was drawn.

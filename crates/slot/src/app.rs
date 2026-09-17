@@ -517,6 +517,15 @@ pub struct App {
     /// exactly the way `snapshot` is — both are set together and neither is cleared on eject —
     /// which is safe because every reader of either is gated on a cart actually being seated.
     core: Core,
+    /// A colour correction change waiting to be carried to the running core, and `None` the rest
+    /// of the time. `App` never touches the core itself, so this is the same shape
+    /// `link_reload` and the link transport use: set here, drained by `Session::update`.
+    ///
+    /// It exists because colour correction is the one option a player can reach while a game is
+    /// on screen. Every other option is handed over once before `load`, which is where
+    /// `core::apply_core_options` puts them, and a row that only did that would appear to do
+    /// nothing until the cart was next inserted.
+    colour_pending: Option<bool>,
     /// The seated cart's `Platform`, resolved and stored the same way and in the same breath as
     /// `core` — see `set_platform`. Saves and states are filed under it, so a `.gb` and a `.gba`
     /// cart sharing a stem never share a save or a ring either.
@@ -686,6 +695,7 @@ impl App {
             vol_before: Vec::new(),
             snapshot: None,
             core: Core::default(),
+            colour_pending: None,
             platform: Platform::default(),
             named_core: false,
             video_mode: VideoMode::default(),
@@ -1496,6 +1506,18 @@ impl App {
         self.link_reload.take()
     }
 
+    /// A colour correction change to carry to the running core, once. `Session::update` drains
+    /// it and decides from the seated core whether there is an option to send at all.
+    pub fn take_colour_correction(&mut self) -> Option<bool> {
+        self.colour_pending.take()
+    }
+
+    /// The seated cart's core. Read by `Session` to work out which option name a setting has on
+    /// the core that is actually running, which is not a thing `App` should be spelling itself.
+    pub fn core(&self) -> Core {
+        self.core
+    }
+
     /// The game is loaded again and back where it was. After a switch, the link starts now in
     /// the role that was picked — unless B asked in the meantime for it not to, and then the
     /// screen closes and hands the game back the way a cancelled start does. After a reload that
@@ -1809,7 +1831,13 @@ impl App {
             }
             // Two values each, so either arrow is the other one.
             QuickRow::FastForwardSound => s.ff_sound = !s.ff_sound,
-            QuickRow::ColourCorrection => s.colour_correction = !s.colour_correction,
+            QuickRow::ColourCorrection => {
+                s.colour_correction = !s.colour_correction;
+                // Carried to the running core as well as written down. Without this the row
+                // would take effect only the next time a core was opened, which is to say the
+                // next time the cart was inserted, which from the player's side is not at all.
+                self.colour_pending = Some(s.colour_correction);
+            }
             QuickRow::Rumble => s.rumble = !s.rumble,
             QuickRow::DateTime | QuickRow::About => return,
         }

@@ -143,6 +143,14 @@ enum Cmd {
     /// Drops the transport — which is what actually closes the wire, see `TcpLink`'s `Drop`
     /// — and marks the session no longer active.
     EndLink,
+    /// A core option set on a core that is already running.
+    ///
+    /// Almost every option is handed over once, before `load`, because that is when a libretro
+    /// core reads them, and `core::apply_core_options` is where that happens. The exception is a
+    /// setting the player can reach while a game is on screen: it has to arrive afterwards too,
+    /// or the row that changed it does nothing until the cart is next inserted. Owned `String`s
+    /// rather than `&'static str` because this crosses a channel to another thread.
+    SetOption(String, String),
 }
 
 struct Shared {
@@ -301,6 +309,14 @@ impl EmuHandle {
     /// request as far as the worker is concerned.
     pub fn end_link(&self) {
         let _ = self.cmds.send(Cmd::EndLink);
+    }
+
+    /// Hands a core option to the running core. Dropped if the worker has already gone, the
+    /// way every other command here is: a core that is not running has nothing to be told.
+    pub fn set_option(&self, key: &str, value: &str) {
+        let _ = self
+            .cmds
+            .send(Cmd::SetOption(key.to_owned(), value.to_owned()));
     }
 
     pub fn set_input(&self, mask: ButtonMask) {
@@ -885,6 +901,14 @@ impl Worker {
                 core.start_link(client_id);
                 link.set_active(true);
                 *transport = Some(t);
+            }
+            Cmd::SetOption(key, value) => {
+                // The core re-reads its options on its next `retro_run`, through the
+                // `GET_VARIABLE_UPDATE` flag `set_option` raises, so nothing here has to reload
+                // the game or reach into the frame loop. A core that does not have this option
+                // ignores it, which is why `core::colour_option` decides whether to send one at
+                // all rather than sending to everyone and hoping.
+                core.set_option(&key, &value);
             }
             Cmd::EndLink => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);

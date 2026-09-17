@@ -305,6 +305,18 @@ impl Session {
                 None => eprintln!("slot: link: a transport arrived with no core to run it"),
             }
         }
+        // Colour correction, the one option a player can change with a game on screen. Carried
+        // here for the same reason the wire is: `App` never touches the core. Which key to send,
+        // and whether there is one to send at all, is the seated core's business rather than the
+        // menu's: mGBA and gpSP spell it differently and TGB Dual has no such option, so
+        // `colour_option` answers `None` and nothing is sent.
+        if let Some(on) = self.app.take_colour_correction() {
+            if let Some((key, value)) = crate::core::colour_option(self.app.core(), on) {
+                if let Some(emu) = &self.emu {
+                    emu.set_option(key, value);
+                }
+            }
+        }
         // A link picked in a mode the running core was not loaded with. Carried out here for the
         // same reason the wire is: `App` never touches the core.
         if let Some((stem, serial)) = self.app.take_link_reload() {

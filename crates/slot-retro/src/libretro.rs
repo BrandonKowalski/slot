@@ -756,6 +756,13 @@ impl Drop for LibretroCore {
 }
 
 impl RetroCore for LibretroCore {
+    /// The inherent `set_option` above, reachable through the trait so a running core can be
+    /// told. It marks the options dirty, which is what makes the core re-read them on its next
+    /// `retro_run` through `GET_VARIABLE_UPDATE`.
+    fn set_option(&mut self, key: &str, value: &str) {
+        LibretroCore::set_option(self, key, value);
+    }
+
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.unload();
         self.rom = std::fs::read(rom)?;
