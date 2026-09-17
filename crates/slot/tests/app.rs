@@ -1,6 +1,7 @@
 mod common;
 
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
@@ -2276,6 +2277,64 @@ fn the_power_menus_own_buttons_never_reach_the_game() {
         pad(&s) & ButtonMask::B,
         0,
         "the B that cancelled the power menu was handed to the game underneath it"
+    );
+}
+
+/// The reported bug, read at the seam the core is actually polled through. SELECT was withheld
+/// for the whole 600 ms chord window, so a *held* SELECT reached the game 600 ms late whether or
+/// not a chord ever followed it — the whole of a hold-piece gesture on a Game Boy cart, and the
+/// reason turning chords off for Game Boy carts would not have fixed it. The latency was never
+/// the chord's; it was the waiting to find out whether there would be one.
+///
+/// `EmuHandle::input` rather than the action list, because what the player feels is the mask the
+/// core is polled for on the frame the thumb went down.
+///
+/// The chord and the release are asserted in the same test on purpose: passing the press through
+/// is only correct if the gesture it was withheld for still works, and if the game is handed the
+/// up edge it is now owed. A press delivered with no release ever coming is the worst failure
+/// this area produces, and it has been produced here before.
+#[test]
+fn a_held_select_reaches_the_pad_on_the_frame_it_is_pressed() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    let mut s = session_playing(d.path());
+    // A panel, so the chord's own outcome is readable on the far side of `Platform` rather than
+    // taken on trust from the action it produced.
+    let (power, backlight) = common::panel(d.path(), Duration::from_secs(180));
+    s.app_mut().set_power(power);
+    let lit = backlight.load(Ordering::Relaxed);
+    assert!(lit > 0 && lit < 9, "the level has to have room to move");
+
+    s.feed([RawEvent::Down(Btn::Select)], 1000);
+    assert_ne!(
+        pad(&s) & ButtonMask::SELECT,
+        0,
+        "the game is still waiting for a SELECT the player already has their thumb on"
+    );
+
+    // Inside the window, so the chord still arms off that same hold.
+    s.feed([RawEvent::Down(Btn::Up)], 1120);
+    assert_eq!(
+        backlight.load(Ordering::Relaxed),
+        lit + 1,
+        "SELECT+Up stopped being the brightness chord"
+    );
+    assert_eq!(
+        pad(&s) & ButtonMask::UP,
+        0,
+        "the chord's second key reached the game as well as firing the chord"
+    );
+    s.feed([RawEvent::Up(Btn::Up)], 1200);
+    assert_eq!(
+        pad(&s) & ButtonMask::UP,
+        0,
+        "the release of a swallowed press reached the game on its own"
+    );
+
+    s.feed([RawEvent::Up(Btn::Select)], 1400);
+    assert_eq!(
+        pad(&s) & ButtonMask::SELECT,
+        0,
+        "the game was left holding a SELECT nobody is holding"
     );
 }
 

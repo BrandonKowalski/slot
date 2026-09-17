@@ -3452,8 +3452,13 @@ impl App {
                     self.last_role = role.other();
                     self.game_menu = Some(GameMenu::Pick(role.other()));
                 }
-                // A tap, never the half of a chord: the gesture layer only delivers SELECT once
-                // no second key can follow it.
+                // On the press, which is where the gesture layer now hands SELECT over: it used
+                // to withhold it for the whole chord window, so this row answered a third of a
+                // second after the thumb went down. A chord landing on top of that press fires
+                // as well, so SELECT+Up in here changes the brightness *and* flips the mode.
+                // That is the price of SELECT reaching a game the instant it is pressed, and
+                // this is the one screen in the tree that pays it: the mode is a toggle, so the
+                // same press undoes it.
                 Action::GbaDown(Btn::Select) => self.switch_hardware(),
                 Action::GbaDown(Btn::A) => self.pick_link(role),
                 Action::GbaDown(Btn::B) | Action::GameMenu => self.close_game_menu(),
