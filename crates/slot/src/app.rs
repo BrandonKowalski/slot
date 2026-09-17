@@ -1085,6 +1085,23 @@ impl App {
         matches!(self.phase, Phase::Playing { .. }) && self.platform != Platform::Gba
     }
 
+    /// The buttons slot has taken for itself *right now*, which the core must not be handed and
+    /// must not be left holding. Empty wherever the game has the whole pad.
+    ///
+    /// A list rather than a predicate, because the answer moves without any button being touched:
+    /// it is a function of the phase and of the seated cart's platform, and both of those change
+    /// under a finger that never lifts. Something has to be able to ask "what is slot holding?"
+    /// at a moment of its choosing rather than only "is this press slot's?" as a press arrives —
+    /// see `Session::sync_pad`, which is what puts these down on the pad whenever the answer
+    /// moves. Two callers, one statement of the answer.
+    pub fn taken_buttons(&self) -> &'static [Btn] {
+        if self.slot_owns_the_shoulders() {
+            &[Btn::L1, Btn::R1]
+        } else {
+            &[]
+        }
+    }
+
     /// Whether this action is one slot has taken for itself, and therefore one the core must
     /// not also be handed. `Session` asks on its way to the pad; the same predicate decides
     /// here and in `apply`, so a button cannot be acted on in one place and passed on in the
@@ -1095,10 +1112,10 @@ impl App {
     /// this plan has already been bitten once by a title match that was reachable only by
     /// accident.
     pub fn takes_from_the_game(&self, action: Action) -> bool {
-        matches!(
-            action,
-            Action::GbaDown(Btn::L1 | Btn::R1) | Action::GbaUp(Btn::L1 | Btn::R1)
-        ) && self.slot_owns_the_shoulders()
+        match action {
+            Action::GbaDown(btn) | Action::GbaUp(btn) => self.taken_buttons().contains(&btn),
+            _ => false,
+        }
     }
 
     /// L or R, acted on and written down. No toast: a picture that has just become fullscreen

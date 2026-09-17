@@ -168,6 +168,34 @@ impl Session {
         for action in actions {
             self.act(action);
         }
+        self.sync_pad();
+    }
+
+    /// The one seam the pad reaches the core through, and the one place ownership of a button is
+    /// settled rather than merely answered for a press.
+    ///
+    /// Everything `act` decides, it decides on an edge — and a phase change is not an edge. Who
+    /// owns L and R is a function of the phase and of the seated cart's platform
+    /// (`App::taken_buttons`), so the answer moves when a cart is seated, when a game starts, and
+    /// when one ends: all things that happen with nobody touching a button. Press and hold L on
+    /// the shelf, where nothing has taken it, and insert a Game Boy cart under it — the edge that
+    /// would have released it on the pad has already been and gone, and there is no next one
+    /// while the thumb stays down. The core is handed L held for as long as the player keeps
+    /// holding it, which is not a moment they pass through but the state they are in.
+    ///
+    /// So this asks the question again every time it runs, rather than waiting for an edge that
+    /// may never come while the state is wrong, and it runs everywhere the mask can reach the
+    /// core: at the end of every `feed`, where an edge may have changed the pad, and at the end
+    /// of every `update`, where a phase may have changed who owns it. Idempotent and two buttons
+    /// wide, so running it every frame costs nothing.
+    ///
+    /// *Released* rather than withheld, and released one button at a time rather than by clearing
+    /// the pad: this is a button being spoken for, not the whole pad changing hands the way an
+    /// overlay opening is, and a direction held through the same moment is still the game's.
+    fn sync_pad(&mut self) {
+        for btn in self.app.taken_buttons() {
+            self.pad.apply(Action::GbaUp(*btn));
+        }
         if let Some(emu) = &self.emu {
             emu.set_input(self.pad.mask());
         }
@@ -246,6 +274,12 @@ impl Session {
             // Released rather than cleared, because unlike a menu opening this is one button
             // being spoken for and not the whole pad changing hands: a stretch pressed while
             // the player is holding a direction must not put that direction down.
+            //
+            // This is what an edge means as it arrives, and it is only half the answer: a finger
+            // that never lifts produces no edge at all, so `sync_pad` asks the same question
+            // again wherever ownership can have moved. Kept here as well because the gate has to
+            // hold inside a batch too — an edge and the frame's own re-decision are different
+            // moments, and only this one can keep a press slot took from touching the pad at all.
             if let Action::GbaDown(btn) | Action::GbaUp(btn) = action {
                 self.pad.apply(Action::GbaUp(btn));
             }
@@ -308,6 +342,9 @@ impl Session {
         self.sync_rewind_hud();
         self.sync_ff_hud();
         self.sync_rumble();
+        // Last, after the phase has moved and after a core spawned this frame exists to be told:
+        // this is the frame a cart seats on, and whoever owns a shoulder now owns it from here.
+        self.sync_pad();
     }
 
     /// The core writes its motor from the emulator thread and this is the one place that

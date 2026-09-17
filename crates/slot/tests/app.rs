@@ -2058,6 +2058,68 @@ fn a_shoulder_held_across_the_insert_does_not_stick_on_the_pad() {
     );
 }
 
+/// The same shoulder, still held. The test above lets go once the cart is playing, so it is
+/// answered by acting on that release — an edge. This one never releases, and there is no edge
+/// to answer with: the finger goes down on the shelf, the cart seats under it, and the thumb
+/// stays where it is.
+///
+/// Ownership is a function of the phase and the platform, and nothing about a phase changing is
+/// an edge on a button. So a gate that only ever runs on an edge hands the core a pad with L
+/// held for as long as the finger stays down, however long that is — the state the player is in
+/// while they keep holding, not a state they pass through.
+///
+/// Harmless on this cart only because mGBA maps libretro's L and R to nothing on a Game Boy.
+/// That is the fourth time this plan has been asked to rely on correct-by-accident, which is why
+/// the answer here is to re-decide ownership wherever the answer can move rather than to add
+/// another edge.
+///
+/// The GBA half is the control, and it is the reason this cannot be satisfied by simply never
+/// sending the shoulders: on a GBA cart L is the game's own button, and a thumb resting on it
+/// through the insert has to arrive in the game still holding it.
+#[test]
+fn a_shoulder_still_held_when_the_cart_seats_never_reaches_a_game_boy_core() {
+    for (label, root, want_held) in [
+        (
+            "Game Boy",
+            common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]),
+            false,
+        ),
+        (
+            "Game Boy Advance",
+            common::tmp_root_with_carts(&["Emerald", "Zzz"]),
+            true,
+        ),
+    ] {
+        common::clocked(root.path());
+        let mut s = Session::boot(root.path().to_path_buf());
+        // Down on the shelf, where nothing has taken it, and never let go of.
+        s.feed([RawEvent::Down(Btn::L1)], 16);
+        s.feed([RawEvent::Down(Btn::A)], 32);
+        s.feed([RawEvent::Up(Btn::A)], 48);
+        // Fed and updated every frame, in that order, which is what `Frontend::advance` does on
+        // the device: a thumb held down is an absence of events, not a stream of them.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut now = 48;
+        while !matches!(s.app().phase(), Phase::Playing { .. }) {
+            assert!(Instant::now() < deadline, "{label}: the cart never seated");
+            now += 16;
+            s.feed([], now);
+            s.update(1.0 / 60.0);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            pad(&s) & ButtonMask::L != 0,
+            want_held,
+            "{label}: the core is holding L {} the cart seated under a thumb that never moved",
+            if want_held {
+                "nowhere after"
+            } else {
+                "ever since"
+            }
+        );
+    }
+}
+
 /// A display preference, remembered per cart, in the shape `selected_core.ini` already has —
 /// and it is the card that remembers it, which is why the second half boots the whole session
 /// again rather than reading the app's own field back.
