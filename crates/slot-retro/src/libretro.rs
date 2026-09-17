@@ -66,6 +66,16 @@ struct Host {
     options: std::collections::HashMap<String, std::ffi::CString>,
     /// Set when an option changed since the core last asked, cleared when it does.
     options_dirty: bool,
+    /// What the core said its options are, keyed as libretro names them, each with the values
+    /// it declared for that key in the order it listed them — so the first of them is the
+    /// core's own default.
+    ///
+    /// Kept because without it nothing in this tree can tell a correct option key from a typo.
+    /// `set_option` writes into `options` above and `option` reads back out of the same map, so
+    /// a misspelt key round trips through the frontend perfectly and reaches the core never;
+    /// three wrong assumptions about core options shipped that way before this was recorded.
+    /// This is the core's own answer, and the only thing here that can contradict a guess.
+    declared: std::collections::HashMap<String, Vec<String>>,
 }
 
 thread_local! {
@@ -195,7 +205,56 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             })
             .unwrap_or(false)
         }
-        SET_VARIABLES => true,
+        SET_VARIABLES => {
+            // A NULL list is legal and means the core has no options at all, which is a fact
+            // worth recording as an empty map rather than as "never asked".
+            if data.is_null() {
+                return with_host(|h| h.declared.clear()).is_some();
+            }
+            // `RETRO_ENVIRONMENT_SET_VARIABLES` hands over an array of `{key, value}` that ends
+            // at the first entry whose `key` is NULL, and each `value` reads
+            // `"Description; first|second|third"` — the description up to the first `;`, then
+            // the values separated by `|`, the first being the core's default.
+            //
+            // This is the v0 shape, and it is what both cores really send: they build their
+            // options with libretro's own `libretro_set_core_options`, which asks
+            // `GET_CORE_OPTIONS_VERSION` first, is answered `false` by the arm this frontend
+            // does not have, and falls back to converting the v2 tables down to this. That is
+            // also why the values arrive as bare `0|1|2|3` for an option whose v2 table gives
+            // each digit a label — the labels do not survive the conversion.
+            let mut list = std::collections::HashMap::new();
+            let mut p = data as *const Variable;
+            // A core with a list this long has gone wrong; stopping is better than walking off
+            // the end of a terminator that never comes.
+            for _ in 0..4096 {
+                let var = &*p;
+                if var.key.is_null() {
+                    break;
+                }
+                let Ok(key) = std::ffi::CStr::from_ptr(var.key).to_str() else {
+                    break;
+                };
+                let values = if var.value.is_null() {
+                    Vec::new()
+                } else {
+                    std::ffi::CStr::from_ptr(var.value)
+                        .to_str()
+                        .ok()
+                        .and_then(|v| v.split_once(';'))
+                        .map(|(_, values)| {
+                            values
+                                .trim()
+                                .split('|')
+                                .map(|s| s.trim().to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                list.insert(key.to_string(), values);
+                p = p.add(1);
+            }
+            with_host(|h| h.declared = list).is_some()
+        }
         GET_RUMBLE_INTERFACE => {
             if data.is_null() {
                 return false;
@@ -569,11 +628,54 @@ impl LibretroCore {
     /// and `with_host` would silently do nothing. These are called from the frontend, never
     /// from a core callback.
     pub fn set_option(&mut self, key: &str, value: &str) {
+        // Said out loud, because the frontend's own map cannot say it: `option` below reads back
+        // whatever was put in here, so a key the core never heard of and a key it acts on are
+        // indistinguishable from this side. The core's declaration is the only thing that can
+        // tell them apart, and a line on the log at the moment of the mistake is what turns
+        // "the option did nothing" from an afternoon into a sentence.
+        //
+        // Quiet when the core declared nothing at all: that is a core which never sent
+        // `SET_VARIABLES`, not a core that denied this key, and warning about every option on
+        // one would be noise with no signal in it.
+        if !self.host.declared.is_empty() {
+            match self.host.declared.get(key) {
+                None => eprintln!("slot-retro: core declares no option {key:?}, setting it anyway"),
+                Some(values) if !values.is_empty() && !values.iter().any(|v| v == value) => {
+                    eprintln!("slot-retro: core declares {key:?} as {values:?}, not {value:?}")
+                }
+                Some(_) => {}
+            }
+        }
         let Ok(value) = CString::new(value) else {
             return;
         };
         self.host.options.insert(key.to_string(), value);
         self.host.options_dirty = true;
+    }
+
+    /// Every option the frontend has set on this core, key and value, in no particular order.
+    ///
+    /// The counterpart to `declared_options`, and only useful beside it: crossing the two is
+    /// what lets a test ask "is every option slot sets one this core actually has" without
+    /// naming a single key itself — which is the only form of that question a typo cannot
+    /// survive, since a test that spells the key out would spell the typo the same way.
+    pub fn options(&self) -> Vec<(String, String)> {
+        self.host
+            .options
+            .iter()
+            .filter_map(|(k, v)| Some((k.clone(), v.to_str().ok()?.to_string())))
+            .collect()
+    }
+
+    /// Every option the core declared, each with the values it offered for it in the order it
+    /// listed them. Empty for a core that never sent `SET_VARIABLES`.
+    ///
+    /// This is the core's own word rather than the frontend's, and it is the only thing that
+    /// can contradict a guess about an option key: `option` reads back out of the map
+    /// `set_option` writes into, so a typo is perfectly preserved there and perfectly ignored
+    /// by the core. Tests in `slot` check every key `apply_core_options` sets against this.
+    pub fn declared_options(&self) -> &std::collections::HashMap<String, Vec<String>> {
+        &self.host.declared
     }
 
     pub fn option(&self, key: &str) -> Option<String> {
@@ -606,6 +708,7 @@ impl LibretroCore {
             audio_status: None,
             options: std::collections::HashMap::new(),
             options_dirty: false,
+            declared: std::collections::HashMap::new(),
         });
         unsafe {
             let _a = Active::bind(&mut host);
@@ -859,7 +962,89 @@ mod tests {
             audio_status: None,
             options,
             options_dirty,
+            declared: HashMap::new(),
         })
+    }
+
+    /// One `{key, value}` entry as a core builds it, plus the `CString`s it points into: the
+    /// array holds raw pointers, so the storage behind them has to outlive the call and a test
+    /// that let the strings drop would be reading freed memory rather than a declaration.
+    fn declaration(key: &str, value: &str) -> (Variable, CString, CString) {
+        let key = CString::new(key).unwrap();
+        let value = CString::new(value).unwrap();
+        let var = Variable {
+            key: key.as_ptr(),
+            value: value.as_ptr(),
+        };
+        (var, key, value)
+    }
+
+    /// The terminator every `SET_VARIABLES` list ends with, and the only thing that stops the
+    /// walk: a core hands over an array with no length.
+    fn end_of_list() -> Variable {
+        Variable {
+            key: ptr::null(),
+            value: ptr::null(),
+        }
+    }
+
+    /// The arm that closes the gap this whole facility exists for. `set_option` and `option`
+    /// are a HashMap round trip that never crosses the ABI, so before this the frontend had no
+    /// way at all to tell an option key the core has from one it does not — three wrong
+    /// assumptions about core options shipped through that hole. This is `environment` itself,
+    /// driven with the array shape a real core passes.
+    #[test]
+    fn set_variables_records_what_the_core_declared() {
+        let mut host = host_with(HashMap::new(), false);
+        let (a, _ak, _av) = declaration("mgba_sgb_borders", "Use Super Game Boy Borders; ON|OFF");
+        let (b, _bk, _bv) =
+            declaration("mgba_gb_colors_preset", "Game Boy Palette Preset; 0|1|2|3");
+        let list = [a, b, end_of_list()];
+        // Scoped, because the binding holds `host` mutably for as long as it lives and the
+        // assertions below read the field it wrote.
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe { environment(SET_VARIABLES, list.as_ptr() as *mut c_void) }
+        };
+
+        assert!(ok);
+        assert_eq!(
+            host.declared.get("mgba_sgb_borders").map(Vec::as_slice),
+            Some(["ON".to_string(), "OFF".to_string()].as_slice())
+        );
+        assert_eq!(
+            host.declared
+                .get("mgba_gb_colors_preset")
+                .map(Vec::as_slice),
+            Some(["0", "1", "2", "3"].map(str::to_string).as_slice())
+        );
+        assert_eq!(
+            host.declared.len(),
+            2,
+            "the walk ran past the terminator and read whatever was after it"
+        );
+        assert!(
+            !host.declared.contains_key("mgba_sgb_border"),
+            "a key the core never declared came back declared"
+        );
+    }
+
+    /// A core is allowed to send no list at all. Recording that as an empty map rather than
+    /// leaving whatever was there is what keeps a second core opened in the same process from
+    /// inheriting the first one's declarations — and every test in this crate shares a process.
+    #[test]
+    fn set_variables_with_no_list_declares_nothing() {
+        let mut host = host_with(HashMap::new(), false);
+        host.declared
+            .insert("stale".to_string(), vec!["x".to_string()]);
+
+        let ok = {
+            let _active = Active::bind(&mut host);
+            unsafe { environment(SET_VARIABLES, ptr::null_mut()) }
+        };
+
+        assert!(ok);
+        assert!(host.declared.is_empty(), "a stale declaration survived");
     }
 
     #[test]
