@@ -434,11 +434,12 @@ fn a_card_with_no_directories_is_fine() {
 #[test]
 fn a_blocked_directory_fails_soft_and_does_not_stop_the_others() {
     let d = tempdir().unwrap();
-    for sub in ["Games", "Saves"] {
+    for sub in ["Games", "Saves", "Labels"] {
         std::fs::create_dir_all(d.path().join(sub)).unwrap();
     }
     std::fs::write(d.path().join("Games/Metroid Fusion.gba"), b"rom").unwrap();
     std::fs::write(d.path().join("Saves/Metroid Fusion.sav"), b"save").unwrap();
+    std::fs::write(d.path().join("Labels/Metroid Fusion.png"), b"png").unwrap();
     std::fs::write(d.path().join("Saves/GBA"), b"not a directory").unwrap();
 
     let report = migrate_platforms(d.path()).unwrap();
@@ -455,10 +456,70 @@ fn a_blocked_directory_fails_soft_and_does_not_stop_the_others() {
         b"save",
         "the source was disturbed"
     );
-    // Games/ still went: one stuck directory does not abort the sweep of the other three.
+    // `Labels/` still went: one stuck directory does not abort the sweep of the others.
+    assert_eq!(
+        std::fs::read(d.path().join("Labels/GBA/Metroid Fusion.png")).unwrap(),
+        b"png"
+    );
+}
+
+/// The rom is what puts a cart on the shelf, so it is the one thing that must not overtake the
+/// player's save. With `Saves/` stuck, a rom in `Games/GBA/` is a cart that opens on a blank
+/// battery while its real save sits loose in `Saves/`, which is where the game announces the
+/// save file is corrupt and writes a fresh one over the top of the reader's path. This test used
+/// to assert the opposite — that `Games/` swept anyway — which is how the hole got in.
+#[test]
+fn a_stuck_saves_sweep_holds_the_roms_back_rather_than_shelving_them_saveless() {
+    let d = tempdir().unwrap();
+    for sub in ["Games", "Saves"] {
+        std::fs::create_dir_all(d.path().join(sub)).unwrap();
+    }
+    std::fs::write(d.path().join("Games/Metroid Fusion.gba"), b"rom").unwrap();
+    std::fs::write(d.path().join("Saves/Metroid Fusion.sav"), b"save").unwrap();
+    std::fs::write(d.path().join("Saves/GBA"), b"not a directory").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert!(
+        !d.path().join("Games/GBA/Metroid Fusion.gba").exists(),
+        "the rom reached the shelf while its save was still loose in Saves/"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Games/Metroid Fusion.gba")).unwrap(),
+        b"rom",
+        "the rom was moved somewhere else instead of being left alone"
+    );
+
+    // And the moment the card is fixed, the same call finishes the job.
+    std::fs::remove_file(d.path().join("Saves/GBA")).unwrap();
+    migrate_platforms(d.path()).unwrap();
     assert_eq!(
         std::fs::read(d.path().join("Games/GBA/Metroid Fusion.gba")).unwrap(),
         b"rom"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/Metroid Fusion.sav")).unwrap(),
+        b"save"
+    );
+}
+
+/// `States/` is the player's data too: a rom shelved while its save states are stranded at the
+/// old `States/<core>/` is a cart whose ten polaroids and whose resume have all vanished.
+#[test]
+fn a_stuck_states_sweep_holds_the_roms_back_too() {
+    let d = tempdir().unwrap();
+    for sub in ["Games", "States"] {
+        std::fs::create_dir_all(d.path().join(sub)).unwrap();
+    }
+    std::fs::write(d.path().join("Games/Metroid Fusion.gba"), b"rom").unwrap();
+    std::fs::create_dir_all(d.path().join("States/mgba/Metroid Fusion")).unwrap();
+    std::fs::write(d.path().join("States/GBA"), b"not a directory").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert!(
+        !d.path().join("Games/GBA/Metroid Fusion.gba").exists(),
+        "the rom reached the shelf while its states were still under States/mgba/"
     );
 }
 
