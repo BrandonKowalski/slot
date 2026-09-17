@@ -739,7 +739,8 @@ impl App {
             Some((self.shelf_at, 0))
         } else {
             let stem = self.state.cart.clone();
-            stem.and_then(|stem| self.seat_of(&stem))
+            let platform = self.state.cart_platform;
+            stem.and_then(|stem| self.seat_of(&stem, platform))
         };
         self.phase = Phase::Shelf;
         match seated {
@@ -810,14 +811,24 @@ impl App {
     }
 
     /// Where the cart named `stem` stands: which shelf, and where along it. A stem can collide
-    /// across platforms — `Tetris.gb` and `Tetris.gba` are two carts under one name — so the
-    /// shelves are asked in ring order and the first answer wins, which puts Game Boy Advance
-    /// ahead of both Game Boy shelves. That is the right way round for a card written before
-    /// there was more than one shelf, where every stem meant a GBA cart.
-    fn seat_of(&self, stem: &str) -> Option<(usize, usize)> {
+    /// across platforms — `Tetris.gb` and `Tetris.gba` are two carts under one name — so
+    /// `platform` is what the card said about which of them was in the slot.
+    ///
+    /// Given one, that shelf is the only shelf asked. A cart that is no longer on it is gone
+    /// even if another shelf has a cart of the same name, because the cart of the same name on
+    /// another shelf is a different game: seating it would resume a session that belongs to
+    /// something the player never put in.
+    ///
+    /// `None` is a card that never said, and it resolves the way slot has always resolved a
+    /// stem: the shelves are asked in ring order and the first answer wins, which puts Game Boy
+    /// Advance ahead of both Game Boy shelves. That is the right way round for a card written
+    /// before there was more than one shelf, where every stem meant a GBA cart — which is every
+    /// card that can be holding a `cart` line with no `cart_platform` beside it.
+    fn seat_of(&self, stem: &str, platform: Option<Platform>) -> Option<(usize, usize)> {
         self.shelves
             .iter()
             .enumerate()
+            .filter(|(_, (p, _))| platform.is_none_or(|want| *p == want))
             .find_map(|(at, (_, shelf))| {
                 shelf
                     .carts
@@ -1008,6 +1019,28 @@ impl App {
             .flat_map(|(_, shelf)| shelf.carts.iter())
     }
 
+    /// The cartridge in the slot, on every screen that has one: on its way in, playing, showing
+    /// its polaroids, asleep, or on its way back out. `None` wherever the slot is empty.
+    ///
+    /// Found on the shelf the cart was taken from, not with `carts()`. `carts()` walks the whole
+    /// card in ring order and stops at the first stem that matches, which for `Tetris.gb` beside
+    /// `Tetris.gba` answers with the GBA cartridge whichever one the player actually chose — the
+    /// wrong rom for the core to load, and the wrong platform for every save and state to be
+    /// filed under. The carousel cannot leave the shelf a cart was taken from while that cart is
+    /// in the slot: `switch_shelf` is only reachable from `Phase::Shelf`, and `insert` refuses
+    /// from anywhere else. So the shelf showing is still the shelf holding it.
+    pub fn seated_cart(&self) -> Option<&Cart> {
+        let stem = match &self.phase {
+            Phase::Inserting { cart, .. }
+            | Phase::Playing { cart }
+            | Phase::Ejecting { cart, .. }
+            | Phase::Polaroids { cart } => cart,
+            Phase::Doze { cart: Some(cart) } => cart,
+            _ => return None,
+        };
+        self.shelf().carts.iter().find(|c| c.stem == *stem)
+    }
+
     /// Exactly one cart on the card, counting every shelf. The shelf is unreachable and eject is
     /// refused.
     pub fn single_cart(&self) -> bool {
@@ -1072,6 +1105,23 @@ impl App {
         matches!(self.phase, Phase::Playing { .. }) && self.platform != Platform::Gba
     }
 
+    /// The buttons slot has taken for itself *right now*, which the core must not be handed and
+    /// must not be left holding. Empty wherever the game has the whole pad.
+    ///
+    /// A list rather than a predicate, because the answer moves without any button being touched:
+    /// it is a function of the phase and of the seated cart's platform, and both of those change
+    /// under a finger that never lifts. Something has to be able to ask "what is slot holding?"
+    /// at a moment of its choosing rather than only "is this press slot's?" as a press arrives —
+    /// see `Session::sync_pad`, which is what puts these down on the pad whenever the answer
+    /// moves. Two callers, one statement of the answer.
+    pub fn taken_buttons(&self) -> &'static [Btn] {
+        if self.slot_owns_the_shoulders() {
+            &[Btn::L1, Btn::R1]
+        } else {
+            &[]
+        }
+    }
+
     /// Whether this action is one slot has taken for itself, and therefore one the core must
     /// not also be handed. `Session` asks on its way to the pad; the same predicate decides
     /// here and in `apply`, so a button cannot be acted on in one place and passed on in the
@@ -1082,10 +1132,10 @@ impl App {
     /// this plan has already been bitten once by a title match that was reachable only by
     /// accident.
     pub fn takes_from_the_game(&self, action: Action) -> bool {
-        matches!(
-            action,
-            Action::GbaDown(Btn::L1 | Btn::R1) | Action::GbaUp(Btn::L1 | Btn::R1)
-        ) && self.slot_owns_the_shoulders()
+        match action {
+            Action::GbaDown(btn) | Action::GbaUp(btn) => self.taken_buttons().contains(&btn),
+            _ => false,
+        }
     }
 
     /// L or R, acted on and written down. No toast: a picture that has just become fullscreen
@@ -2079,10 +2129,16 @@ impl App {
     }
 
     fn record_cart(&mut self, cart: Option<String>) {
-        if self.state.cart == cart {
+        // Read off the same cartridge the stem came from, so the two lines the card ends up
+        // holding can never describe different objects. Not from `self.platform`: that is
+        // written by whoever spawned the core, and a run with `SLOT_NO_CORE=1` has no core to
+        // have written it.
+        let platform = self.seated_cart().map(|c| c.platform);
+        if self.state.cart == cart && self.state.cart_platform == platform {
             return;
         }
         self.state.cart = cart;
+        self.state.cart_platform = platform;
         self.persist();
     }
 
@@ -2890,7 +2946,12 @@ impl App {
             state.as_deref(),
             sav.as_deref(),
         ) {
-            Ok(()) => self.state.cart = None,
+            // Mirroring what `persist::eject` just wrote to the card: the slot is empty, and
+            // which platform was in it is part of what emptying it forgets.
+            Ok(()) => {
+                self.state.cart = None;
+                self.state.cart_platform = None;
+            }
             Err(e) => eprintln!("slot: eject: {e}"),
         }
     }

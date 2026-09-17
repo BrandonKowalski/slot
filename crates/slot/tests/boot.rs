@@ -5,8 +5,8 @@ mod common;
 
 use common::{boot, tmp_root_with_carts};
 use slot::app::{App, Phase};
-use slot_input::Action;
-use slot_store::{read_slot_state, write_slot_state, SlotState};
+use slot_input::{Action, Btn};
+use slot_store::{read_slot_state, write_slot_state, Platform, SlotState};
 
 fn seated(cart: &str) -> SlotState {
     SlotState {
@@ -208,6 +208,137 @@ fn boot_migrates_a_pre_namespacing_state_shelf() {
             .exists(),
         "boot did not carry the pre-namespacing state shelf under States/GBA/mgba/"
     );
+}
+
+/// A card holding both Tetrises: `Games/GBA/Tetris.gba` and `Games/GB/Tetris.gb`, which is the
+/// only shape of card `cart_platform` exists for. `Emerald` is there so the GBA shelf is not a
+/// single cart library, which boots past the shelf entirely.
+fn two_tetrises() -> tempfile::TempDir {
+    let d = tmp_root_with_carts(&["Tetris", "Emerald"]);
+    common::write_gb_cart(&d, "Tetris", "TETRIS");
+    d
+}
+
+fn resumed(d: &tempfile::TempDir, platform: Option<Platform>) -> App {
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Tetris".into()),
+            cart_platform: platform,
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    App::boot(d.path())
+}
+
+/// The line the card writes is the line the next boot obeys. `cart=Tetris` on its own names two
+/// cartridges once a card can hold both, and the platform beside it is the only thing that says
+/// which of them the player was holding.
+#[test]
+fn the_platform_on_the_card_decides_which_tetris_comes_back() {
+    let d = two_tetrises();
+    for platform in [Platform::Gb, Platform::Gba] {
+        let a = resumed(&d, Some(platform));
+        let cart = a.seated_cart().expect("nothing seated");
+        assert_eq!(
+            cart.platform, platform,
+            "the card named {platform:?} and a {:?} cart came back",
+            cart.platform
+        );
+        assert!(
+            cart.rom.ends_with(format!(
+                "{}/Tetris.{}",
+                platform.dir_name(),
+                platform.extensions()[0]
+            )),
+            "the rom the slot is holding is {:?}",
+            cart.rom
+        );
+    }
+}
+
+/// Every card written before this line existed held only GBA carts, so that is what a card with
+/// no line means — and it is also what slot did before the line existed, so nothing about an
+/// upgraded card changes.
+#[test]
+fn a_card_that_never_said_resumes_the_gba_cart() {
+    let d = two_tetrises();
+    let a = resumed(&d, None);
+    assert_eq!(
+        a.seated_cart().expect("nothing seated").platform,
+        Platform::Gba
+    );
+}
+
+/// A named shelf is the only shelf asked. The cart of the same name on another shelf is a
+/// different game with a different save, so seating it would resume a session belonging to
+/// something the player never put in — an empty slot is the honest answer, and it is the one an
+/// unreadable stem has always got.
+#[test]
+fn a_named_shelf_that_no_longer_has_the_cart_is_an_empty_slot() {
+    let d = two_tetrises();
+    let a = resumed(&d, Some(Platform::Gbc));
+    assert!(
+        matches!(a.phase(), Phase::Shelf),
+        "a Colour Tetris that is not on the card seated something: {:?}",
+        a.phase()
+    );
+}
+
+/// The other half of the round trip: what a session actually writes down. Ringing to the Game
+/// Boy shelf and seating the cart standing on it has to record that shelf, or the next boot
+/// resolves the same ambiguous stem all over again and lands on the GBA cart.
+#[test]
+fn seating_a_cart_records_the_shelf_it_came_off() {
+    let d = two_tetrises();
+    let mut a = boot(d.path());
+    a.apply(Action::GbaDown(Btn::R1));
+    assert_eq!(
+        a.selected_stem(),
+        Some("Tetris"),
+        "the shoulder did not ring to the Game Boy shelf"
+    );
+    a.apply(Action::Insert);
+    a.on_core_ready();
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    let s = read_slot_state(d.path());
+    assert_eq!(
+        (s.cart.as_deref(), s.cart_platform),
+        (Some("Tetris"), Some(Platform::Gb)),
+        "the card does not say which Tetris is in the slot"
+    );
+
+    // And the next boot comes back to it rather than to the GBA cart of the same name.
+    let again = App::boot(d.path());
+    assert_eq!(
+        again.seated_cart().expect("nothing seated").platform,
+        Platform::Gb
+    );
+}
+
+/// An empty slot says nothing about a platform. A shelf left naming one would be read next boot
+/// beside a `cart` line naming no cart.
+#[test]
+fn an_eject_forgets_the_platform_with_the_cart() {
+    let d = two_tetrises();
+    let mut a = resumed(&d, Some(Platform::Gb));
+    a.on_core_ready();
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    a.apply(Action::Eject);
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(matches!(a.phase(), Phase::Shelf));
+    let s = read_slot_state(d.path());
+    assert_eq!((s.cart, s.cart_platform), (None, None));
 }
 
 /// And it is already home rather than travelling there.

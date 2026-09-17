@@ -312,7 +312,15 @@ impl Shelf {
             if alpha < 1.0 {
                 // Three backings for three moulds: it is the cart's own outline, and a class C
                 // pak's corners are not a class A/B pak's. See `cart::gb_cart_shadow`.
-                let backing = match self.shells[i] {
+                //
+                // Asked for rather than indexed, the way `faces` is asked for eighteen lines
+                // below and for the same reason: `carts` is public, `shells` is not, and a push
+                // through the public field would leave this one entry short. Indexed, that is a
+                // panic inside the draw loop — on the device a black screen and a dead handset,
+                // with no message anywhere — for a row that would otherwise have drawn. A cart
+                // whose mould was never recorded gets the straight sided backing, which is the
+                // same degrading a cart whose face was never uploaded already gets.
+                let backing = match self.shells.get(i).copied().flatten() {
                     None => self.shadow,
                     Some(GbShell::Notched) => self.gb_shadow,
                     Some(GbShell::Rounded) => self.gbc_shadow,

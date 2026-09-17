@@ -78,6 +78,10 @@ pub fn eject(
     flush(root, platform, core, stem, state, sav)?;
     let mut slot = read_slot_state(root);
     slot.cart = None;
+    // The two are one fact — which cartridge is in the slot — so they are cleared together.
+    // A platform left behind on an empty slot would be read next boot beside a `cart` line
+    // that says nothing, and the pair would no longer describe anything that ever happened.
+    slot.cart_platform = None;
     write_slot_state(root, &slot)
 }
 

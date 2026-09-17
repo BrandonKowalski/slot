@@ -749,3 +749,55 @@ fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
         );
     }
 }
+
+/// `carts` is public and the mould each one came out of is not: `shells` is built once, in
+/// `Shelf::new`, with one entry per cart. Nothing in the workspace mutates `carts` today, so the
+/// two cannot currently disagree — but they are two vectors kept in step by nobody, and the
+/// place that reads them together is the draw loop. A cart pushed straight onto the public field
+/// used to index one entry past the end of `shells` and panic there, which on the device is a
+/// black screen and a handset that has stopped, with the message nowhere anybody can read it.
+///
+/// So the row draws whatever it has been given. A cart whose mould was never recorded is backed
+/// with the straight sided silhouette, exactly as a cart whose face was never uploaded still
+/// holds its place in the row rather than leaving a hole in it.
+///
+/// The pushed cart is a Game Boy pak on a Game Boy row, which is the shape that makes the
+/// difference visible at all: if this ever goes back to indexing, it is a panic and not a wrong
+/// backing, and the row is one cart longer than the shells are either way.
+#[test]
+fn a_cart_pushed_onto_the_row_draws_rather_than_stopping_the_device() {
+    let mut s = gb_shelf_with(2);
+    let gb = TexId::from_raw(97);
+    let gba = TexId::from_raw(98);
+    s.set_shadow(gba);
+    s.set_gb_shadow(GbShell::Notched, gb);
+    settle(&mut s);
+    let backed = |s: &Shelf| {
+        let mut out = Vec::new();
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        out.iter()
+            .filter(|d| matches!(**d, Draw::Tex { tex, .. } if tex == gb || tex == gba))
+            .count()
+    };
+    assert_eq!(backed(&s), 1, "the neighbour was not backed to begin with");
+
+    // Straight onto the public field, which is the only way the two can come apart. The
+    // selection stays where it is, so the new cart stands as a *neighbour* — dimmed, and
+    // therefore backed, which is the one read that ever looks a cart's mould up.
+    s.carts.push(Cart {
+        platform: Platform::Gb,
+        stem: "Pushed".into(),
+        rom: "Games/GB/Pushed.gb".into(),
+        label: None,
+        code: String::new(),
+        title: "PUSHED".into(),
+    });
+    settle(&mut s);
+    // Drawn at all is the whole claim. Which silhouette backs it is the graceful part; that the
+    // device is still running to draw anything is the part this exists for.
+    assert_eq!(
+        backed(&s),
+        2,
+        "the row holding a cart the shells never heard of did not draw both its neighbours"
+    );
+}
