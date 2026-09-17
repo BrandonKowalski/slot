@@ -1,4 +1,9 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
 use slot::audio::{ring_capacity, AudioSink, Ring, StubSink, GBA_HZ};
+use slot::emu::{CoreState, EmuHandle, Speed};
+use slot_retro::MockCore;
 
 fn ramp(frames: usize, from: i16) -> Vec<i16> {
     (0..frames * 2)
@@ -242,6 +247,53 @@ fn a_cart_sound_is_not_held_back_by_the_cushion() {
     assert!(
         out.iter().any(|s| *s != 0),
         "the cart sound was swallowed by the cushion"
+    );
+}
+
+/// The other half of `a_held_core_does_not_report_the_device_as_starved`, and the same
+/// mistake: a rewinding core feeds the ring nothing either. Reverse audio is noise, so the
+/// worker throws the core's samples away for as long as the trigger is held, and the device
+/// drains into silence exactly as it does behind a pause. Counted as starvation it reported
+/// about 65000 samples a second of a fault nobody had, and every session anyone rewound in
+/// printed one on its way out.
+#[test]
+fn a_rewinding_core_does_not_report_the_device_as_starved() {
+    let mut sink = StubSink::new();
+    sink.open(GBA_HZ).expect("the stub refused to open");
+    let ring = sink.ring();
+    let emu = EmuHandle::spawn(
+        Box::new(MockCore::new()),
+        PathBuf::from("mock"),
+        ring.clone(),
+        None,
+        None,
+    );
+    emu.set_speed(Speed::Normal);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while emu.state() == CoreState::Loading {
+        assert!(Instant::now() < deadline, "the core never settled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Run it forward first, draining the way a device with room to spare does, so there is a
+    // trail to walk back through and nothing is left queued from before the trigger.
+    for _ in 0..40 {
+        sink.device_drain();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    emu.set_rewinding(true);
+    // Several presents, so the worker is certainly in the branch that discards audio.
+    std::thread::sleep(Duration::from_millis(60));
+    // Takes exactly what is queued, so this cannot starve on its own.
+    sink.device_drain();
+    let before = ring.underruns();
+    for _ in 0..10 {
+        sink.device_read(512);
+    }
+    assert_eq!(
+        ring.underruns(),
+        before,
+        "a rewind was reported as the device going hungry"
     );
 }
 

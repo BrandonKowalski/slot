@@ -699,15 +699,23 @@ impl Worker {
             // does not come from the core at all.
             //
             // A held core feeds it nothing, so the device reading silence out of it is the
-            // arrangement working rather than a starve worth reporting.
-            let gate = (speed == Speed::Fast && !ff_sound, speed == Speed::Paused);
+            // arrangement working rather than a starve worth reporting. A rewinding one feeds
+            // it nothing either — reverse audio is noise, so the branch below throws the
+            // core's samples away — and it has to say so for the same reason: without this
+            // every second of rewind counted about 65000 samples of starvation the device was
+            // never owed, so a session where anyone touched the trigger reported a fault on
+            // its way out and the counter stopped meaning "the emulator could not keep up".
+            let rewinding = speed != Speed::Paused && self.shared.rewind.load(Ordering::Relaxed);
+            let gate = (
+                speed == Speed::Fast && !ff_sound,
+                speed == Speed::Paused || rewinding,
+            );
             if gate != gated {
                 ring.set_muted(gate.0);
                 ring.set_idle(gate.1);
                 gated = gate;
             }
             let input = ButtonMask(self.shared.input.load(Ordering::Relaxed));
-            let rewinding = speed != Speed::Paused && self.shared.rewind.load(Ordering::Relaxed);
             let ceiling = match speed {
                 Speed::Paused => 0,
                 Speed::Normal => 1,
