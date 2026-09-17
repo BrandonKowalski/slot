@@ -27,6 +27,12 @@
 # compute differently from every other TGB Dual build in the world, which is a worse position to
 # be in than sharing upstream's.
 #
+# Measured on an SP at 1512 MHz, a linked Colour pair, 4400 frames: 1.978 ms with the correction
+# off and 2.206 ms with it on, so it costs 0.228 ms, about 11%, and leaves the pair at 13% of a
+# 16.743 ms frame with no frame over budget. Off, the framebuffer hash is 88d9dbd5904ddda0, which
+# is exactly what the unpatched core produced in the same harness: the patch is a byte-for-byte
+# no-op until it is switched on.
+#
 # One patch, color-correction.patch, which adds the tgbdual_color_correction option upstream has
 # no equivalent of and which the quick menu's Colour Correction row needs in order to mean
 # anything on a Game Boy cart. It works on the finished framebuffer rather than in map_color,
