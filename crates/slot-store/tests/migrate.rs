@@ -185,6 +185,23 @@ fn a_stray_file_does_not_stop_a_real_cart_migrating() {
     );
 }
 
+/// Finder leaves `.Trashes` and `.Spotlight-V100` on every FAT volume it touches, and both are
+/// directories sitting at exactly the level `migrate_states` reads as a pre-namespacing cart.
+/// Raking them into the player's state tree makes them look like a cart nobody can account for.
+#[test]
+fn a_hidden_directory_under_states_is_not_taken_for_a_cart() {
+    let d = card();
+    std::fs::create_dir_all(d.path().join("States/.Trashes")).unwrap();
+    std::fs::write(d.path().join("States/.Trashes/junk"), b"x").unwrap();
+
+    let report = migrate_states(d.path()).unwrap();
+
+    assert_eq!(report.moved, 0);
+    assert_eq!(report.failed, 0);
+    assert!(d.path().join("States/.Trashes/junk").exists());
+    assert!(!d.path().join("States/mgba/.Trashes").exists());
+}
+
 /// `States/mgba` existing as a plain file is not something a healthy card produces, but a
 /// corrupted one is not impossible, and it must not abort the call or destroy the cart it
 /// was about to move. `create_dir_all` fails because a non-directory sits where a directory

@@ -67,6 +67,14 @@ pub fn migrate_states(root: &Path) -> std::io::Result<MigrationReport> {
             continue;
         }
         let name = entry.file_name();
+        // A leading dot is card metadata rather than content, the same rule `sweep_files`
+        // reads every other folder on the card through. Without it a volume's own
+        // `.Trashes` or `.Spotlight-V100`, both of which are directories sitting at exactly
+        // this level, are taken for pre-namespacing carts and raked into the player's state
+        // tree — where they then look like a cart nobody can account for.
+        if crate::is_hidden(Path::new(&name)) {
+            continue;
+        }
         let Some(name) = name.to_str() else {
             report.failed += 1;
             continue;
