@@ -2022,6 +2022,42 @@ fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
     );
 }
 
+/// A shoulder held across the insert. Which side of the gate a button falls on is decided on
+/// the phase it lands in, and a finger can stay down across a change of phase: L pressed on the
+/// shelf is nobody's and reaches the pad, and the release that follows it arrives in
+/// `Phase::Playing` on a Game Boy cart, where slot owns it. Withholding that release rather than
+/// acting on it leaves the bit set and the core holding L for the rest of the session.
+///
+/// It goes unnoticed today because mGBA maps libretro's L and R to nothing on a Game Boy, so
+/// nothing in the game moves. That is the reasoning this plan has already been bitten by three
+/// times, which is why it is pinned here instead of relied on.
+#[test]
+fn a_shoulder_held_across_the_insert_does_not_stick_on_the_pad() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    common::clocked(d.path());
+    let mut s = Session::boot(d.path().to_path_buf());
+    // Down on the shelf, where nothing has taken it. The library is Game Boy only, so there is
+    // no other shelf to ring to and the press moves nothing on screen — it is here to put the
+    // bit on the pad, which is exactly what a player's thumb resting on L would do.
+    s.feed([RawEvent::Down(Btn::L1)], 16);
+    // In it goes, with L still held.
+    s.feed([RawEvent::Down(Btn::A)], 32);
+    s.feed([RawEvent::Up(Btn::A)], 48);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // And the finger comes off, now that slot owns the shoulders.
+    s.feed([RawEvent::Up(Btn::L1)], 1000);
+    assert_eq!(
+        pad(&s) & ButtonMask::L,
+        0,
+        "the pad is still holding L after the finger came off it"
+    );
+}
+
 /// A display preference, remembered per cart, in the shape `selected_core.ini` already has —
 /// and it is the card that remembers it, which is why the second half boots the whole session
 /// again rather than reading the app's own field back.

@@ -229,11 +229,27 @@ impl Session {
         }
         if menu || self.overlaid() {
             self.pad.clear();
-        } else if !self.app.takes_from_the_game(action) {
-            // A button slot has taken is a button the core never sees. Skipped rather than
-            // cleared, because unlike a menu opening this is one button being spoken for and
-            // not the whole pad changing hands: a stretch pressed while the player is holding
-            // a direction must not put that direction down.
+        } else if self.app.takes_from_the_game(action) {
+            // A button slot has taken is a button the core never sees — and it is *released*
+            // on the pad rather than merely withheld from it, whichever edge this was.
+            //
+            // Ownership is decided on the phase the action lands in, and a shoulder can be
+            // held across a change of phase. Press and hold L on the shelf, where nothing owns
+            // it and it reaches the pad; insert a Game Boy cart; let go in `Phase::Playing`,
+            // where slot does own it. Withholding that release leaves the bit set and the core
+            // holding L for the rest of the session. It is the mirror of the asymmetry
+            // `takes_from_the_game` already guards by answering for `GbaUp` as well as
+            // `GbaDown`, and it is invisible today only because mGBA maps libretro's L and R to
+            // nothing on a Game Boy — correct by accident, which is a thing this plan has been
+            // caught by before.
+            //
+            // Released rather than cleared, because unlike a menu opening this is one button
+            // being spoken for and not the whole pad changing hands: a stretch pressed while
+            // the player is holding a direction must not put that direction down.
+            if let Action::GbaDown(btn) | Action::GbaUp(btn) = action {
+                self.pad.apply(Action::GbaUp(btn));
+            }
+        } else {
             self.pad.apply(action);
         }
         // On the action rather than on the next frame: an eject or a doze may be the last
