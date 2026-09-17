@@ -4,22 +4,58 @@ use slot_input::{
     SELECT_TAP_MS, VOLUME_REPEAT_DELAY_MS, VOLUME_REPEAT_MS,
 };
 
+/// The reported bug, and the half of it this fixes. SELECT used to be withheld for the whole
+/// chord window, so a *held* SELECT arrived at the game `SELECT_CHORD_MS` late whether or not a
+/// chord ever followed it. On a Game Boy cart that uses SELECT to hold a piece, 600 ms is the
+/// whole gesture — and disabling chords for Game Boy carts would not have helped, because the
+/// latency was never the chord's, it was the waiting.
+///
+/// The press goes straight through now and the chord arms off the same hold, so nothing about
+/// the gesture moves: only the game stops being kept waiting to find out.
 #[test]
-fn select_alone_reaches_the_game_after_the_chord_window() {
+fn a_held_select_reaches_the_game_on_the_press() {
     let mut g = Gestures::new();
-    assert!(g.feed(Down(Select), 0).is_empty()); // deferred, not swallowed
-    assert!(g.tick(SELECT_CHORD_MS - 1).is_empty());
-    assert_eq!(g.tick(SELECT_CHORD_MS), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    // And the hold is still the chord's to arm from.
+    assert_eq!(g.feed(Down(Btn::Up), 120), vec![BrightnessUp]);
+    // The second key is the chord's alone, on both of its edges.
+    assert!(g.feed(Up(Btn::Up), 160).is_empty());
+    // And the release the game is owed for that press reaches it.
+    assert_eq!(g.feed(Up(Select), 900), vec![GbaUp(Select)]);
+    assert!(g.tick(5_000).is_empty());
 }
 
+/// The chord takes the *second* key and nothing else now. SELECT is the game's from the press,
+/// which is the cost of the fix above: a player reaching for brightness hands the game a SELECT
+/// it did not mean to send. That is inherent to sharing the button — the press is already out
+/// by the time the second key says what it was for, and taking it back would be a release the
+/// player never made.
 #[test]
-fn select_chord_swallows_select_entirely() {
+fn a_chord_takes_the_second_key_and_leaves_select_with_the_game() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(R1), 50), vec![SaveState]);
+    assert!(
+        g.feed(Up(R1), 60).is_empty(),
+        "the chord key reached the game"
+    );
+    assert_eq!(g.feed(Up(Select), 70), vec![GbaUp(Select)]);
+}
+
+/// A chord already fired under this hold keeps the window open for the rest of it, which is
+/// what lets a held SELECT ramp the brightness rather than handing the game every press after
+/// the first. The window alone would have expired between the second press and the third.
+#[test]
+fn a_held_select_keeps_chording_long_past_the_window() {
     let mut g = Gestures::new();
     g.feed(Down(Select), 0);
-    assert_eq!(g.feed(Down(R1), 50), vec![SaveState]);
-    assert!(g.tick(500).is_empty()); // SELECT never reaches the game
-    assert!(g.feed(Up(R1), 60).is_empty());
-    assert!(g.feed(Up(Select), 70).is_empty());
+    assert_eq!(g.feed(Down(Btn::Up), 100), vec![BrightnessUp]);
+    g.feed(Up(Btn::Up), 150);
+    assert_eq!(
+        g.feed(Down(Btn::Up), SELECT_CHORD_MS + 500),
+        vec![BrightnessUp],
+        "the second nudge of the brightness reached the game as a direction"
+    );
 }
 
 #[test]
@@ -36,23 +72,30 @@ fn select_chords_map_to_all_four_axes() {
     }
 }
 
+/// A tap inside the chord window is an ordinary press and an ordinary release, both on the
+/// edges the player actually made. Nothing waits for the window: releasing SELECT was never
+/// what settled the question, since the press had already gone.
 #[test]
-fn select_released_inside_the_window_still_reaches_the_game() {
+fn select_tapped_inside_the_window_is_a_plain_press_and_release() {
     let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    assert_eq!(g.feed(Up(Select), 40), vec![GbaDown(Select)]);
-    assert_eq!(g.tick(40 + SELECT_TAP_MS), vec![GbaUp(Select)]);
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Up(Select), 80), vec![GbaUp(Select)]);
     assert!(g.tick(1_000).is_empty());
 }
 
-/// The release that tap owes, when the next press lands before the tick can hand it over.
+/// The release a tap still owes, when the next press lands before the tick can hand it over.
 /// `SELECT_TAP_MS` is 50 ms — three frames — so this is not a gesture anyone performs on
 /// purpose: it is a switch that bounced, or a worn membrane making one press twice.
 ///
-/// The press that arrives inside the window used to overwrite the state owing the release, and
+/// The press that arrives inside that window used to overwrite the state owing the release, and
 /// a press that then became a chord delivered no SELECT of its own to end the tap with. The
 /// core was left holding SELECT with no up ever coming — for the rest of the session, if the
-/// player kept chording, since every chorded press is swallowed the same way.
+/// player kept chording, since every chorded press was swallowed the same way.
+///
+/// Handing the press straight to the game takes the second half of that away for good: a
+/// chorded press is no longer swallowed, so there is no press that cannot end its own tap. The
+/// hand-back stays, because the first half is still real — the bounce still lands inside a
+/// window a release is owed in.
 ///
 /// The invariant is the one the pad reads: SELECT goes down exactly as often as it comes up.
 #[test]
@@ -63,7 +106,7 @@ fn a_select_press_inside_the_tap_window_hands_back_the_release_it_interrupted() 
     log.extend(g.feed(Up(Select), 20));
     // The bounce, inside the window the tap's release is still owed in.
     log.extend(g.feed(Down(Select), 20 + SELECT_TAP_MS - 1));
-    // And that press is a chord, so it hands the core nothing of its own.
+    // And that press goes on to be a chord, which used to hand the core nothing of its own.
     log.extend(g.feed(Down(Btn::Up), 100));
     log.extend(g.feed(Up(Btn::Up), 140));
     log.extend(g.feed(Up(Select), 200));
@@ -74,8 +117,13 @@ fn a_select_press_inside_the_tap_window_hands_back_the_release_it_interrupted() 
     let ups = log.iter().filter(|a| **a == GbaUp(Select)).count();
     assert_eq!(
         (downs, ups),
-        (1, 1),
+        (2, 2),
         "the core was handed {downs} SELECT press(es) and {ups} release(s): {log:?}"
+    );
+    assert_eq!(
+        log.last(),
+        Some(&GbaUp(Select)),
+        "the pad was left holding SELECT: {log:?}"
     );
     assert!(
         log.contains(&BrightnessUp),
@@ -214,15 +262,26 @@ fn rewind_beats_latched_fast_forward() {
     assert_eq!(g.feed(Down(L2), 200), vec![FfStop, RewindStart]);
 }
 
-/// 120 ms was not enough time to land the second key of a chord, so SELECT reached the game
-/// and opened a menu mid press. A held SELECT can wait much longer: the only reason to ever
-/// give up on the chord is a game that wants SELECT held down.
+/// 120 ms was not enough time to land the second key of a chord, so the window is generous.
+/// It now governs only the arming: SELECT is the game's from the press either way, and this is
+/// how long a second key on top of it still means brightness rather than a direction.
 #[test]
-fn a_held_select_waits_much_longer_than_it_used_to() {
+fn the_chord_window_governs_the_second_key_and_nothing_else() {
     let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    assert!(g.tick(400).is_empty(), "gave up on the chord at 400 ms");
-    assert_eq!(g.tick(SELECT_CHORD_MS), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert!(
+        g.tick(400).is_empty(),
+        "the tick still had something to hand over"
+    );
+    assert!(
+        g.tick(SELECT_CHORD_MS).is_empty(),
+        "the window's expiry is still an event the game hears about"
+    );
+    // Past the window, with no chord to have kept it open, a chord key is the game's own.
+    assert_eq!(
+        g.feed(Down(Btn::Up), SELECT_CHORD_MS + 1),
+        vec![GbaDown(Btn::Up)]
+    );
 }
 
 #[test]
@@ -233,36 +292,38 @@ fn a_chord_landing_late_is_still_a_chord() {
     assert_eq!(g.feed(Down(R1), 400), vec![SaveState]);
     assert!(
         g.tick(5_000).is_empty(),
-        "SELECT leaked to the game after a late chord"
+        "the tick handed something over behind a late chord"
     );
-}
-
-/// The other half: releasing SELECT settles the question, so a tap should cost the game no
-/// latency at all rather than waiting out a window that can no longer produce a chord.
-#[test]
-fn a_released_select_reaches_the_game_immediately() {
-    let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    assert_eq!(g.feed(Up(Select), 80), vec![GbaDown(Select)]);
 }
 
 /// Down and up in one batch net out to nothing: the mask is set and cleared before the core
-/// ever reads it, so the press is invisible to the game.
+/// ever reads it, so the press would be invisible to the game. A tap shorter than three frames
+/// is therefore held on until the tick can let go of it — measured from the press, which is
+/// where the game got it, rather than from the release.
 #[test]
-fn a_select_tap_is_held_long_enough_for_the_core_to_see_it() {
+fn a_select_tap_too_short_to_be_polled_is_held_on_to() {
     let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    let on_release = g.feed(Up(Select), 80);
-    assert_eq!(on_release, vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
     assert!(
-        !on_release.contains(&GbaUp(Select)),
-        "press and release in the same frame"
-    );
-    assert!(
-        g.tick(100).is_empty(),
+        g.feed(Up(Select), 20).is_empty(),
         "released before the core could poll it"
     );
-    assert_eq!(g.tick(80 + SELECT_TAP_MS), vec![GbaUp(Select)]);
+    assert!(g.tick(SELECT_TAP_MS - 1).is_empty());
+    assert_eq!(g.tick(SELECT_TAP_MS), vec![GbaUp(Select)]);
+    assert!(
+        g.tick(5_000).is_empty(),
+        "the release was handed over twice"
+    );
+}
+
+/// And a tap the core has certainly already polled ends on its own release, with nothing owed
+/// and nothing deferred. Three frames is the whole of the guarantee.
+#[test]
+fn a_select_tap_the_core_has_seen_ends_on_its_own_release() {
+    let mut g = Gestures::new();
+    g.feed(Down(Select), 0);
+    assert_eq!(g.feed(Up(Select), SELECT_TAP_MS), vec![GbaUp(Select)]);
+    assert!(g.tick(5_000).is_empty());
 }
 
 #[test]
@@ -384,10 +445,10 @@ fn select_and_menu_open_the_in_game_menu() {
         g.feed(Up(Menu), 150).is_empty(),
         "the release landed as a second gesture on top of the menu"
     );
-    assert!(
-        g.feed(Up(Select), 200).is_empty(),
-        "SELECT reached the game behind the chord that consumed it"
-    );
+    // The game was handed SELECT on the press, as it is for every chord, so it is owed the
+    // release. The menu is up by the time this lands and `Session::overlaid` keeps both edges
+    // off the pad; what matters here is only that the gesture layer never leaves one owed.
+    assert_eq!(g.feed(Up(Select), 200), vec![GbaUp(Select)]);
 }
 
 /// The chorded press must not also arm the eject hold, or reading the menu with the buttons
@@ -418,13 +479,13 @@ fn a_chord_after_a_recent_menu_tap_is_still_the_menu() {
     );
 }
 
-/// The difference between a chord and a trap. SELECT commits to being the game's after
-/// `SELECT_CHORD_MS`, and MENU under a SELECT the game already has is an ordinary MENU.
+/// The difference between a chord and a trap. The chord window closes after `SELECT_CHORD_MS`,
+/// and MENU under a SELECT that has stopped being able to chord is an ordinary MENU.
 #[test]
 fn menu_under_a_select_the_game_already_has_is_not_the_menu() {
     let mut g = Gestures::new();
-    g.feed(Down(Select), 0);
-    assert_eq!(g.tick(SELECT_CHORD_MS), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert!(g.tick(SELECT_CHORD_MS).is_empty());
     assert!(
         g.feed(Down(Menu), 700).is_empty(),
         "a SELECT the game already owns still chorded"
@@ -446,7 +507,7 @@ fn the_menu_button_still_works_after_a_chord() {
     g.feed(Down(Select), 150);
     assert_eq!(g.feed(Down(Menu), 200), vec![GameMenu]);
     assert!(g.feed(Up(Menu), 250).is_empty());
-    assert!(g.feed(Up(Select), 260).is_empty());
+    assert_eq!(g.feed(Up(Select), 260), vec![GbaUp(Select)]);
     assert!(
         g.feed(Down(Menu), 400).is_empty(),
         "the tap before the chord was still standing as half of a double tap"

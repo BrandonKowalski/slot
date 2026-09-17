@@ -589,6 +589,10 @@ pub struct App {
     /// `None` in unit tests, where there is no panel to darken and no battery to run out.
     power: Option<Power>,
     dozed_at: Millis,
+    /// The POWER press being held right now is the one that woke the panel. Set on every press
+    /// — assigned, never or-ed — so it is always about the press in hand and heals itself if a
+    /// release never reaches `power_press`. See that function for what it is for.
+    woke_on_press: bool,
     /// When the state next has to be on the card. Moved by every resume write, not only by
     /// the autosave itself.
     autosave_at: Millis,
@@ -706,6 +710,7 @@ impl App {
             clock: 0.0,
             power: None,
             dozed_at: 0,
+            woke_on_press: false,
             autosave_at: AUTOSAVE_MS,
             battery_at: BATTERY_POLL_MS,
             charge_at: CHARGE_POLL_MS,
@@ -1585,6 +1590,31 @@ impl App {
                 if self.link_active() {
                     self.end_link();
                     return;
+                }
+                // A press on a dark panel lights it, here on the press rather than on the
+                // release the wake used to wait for. Holding POWER on a dozing device raised
+                // the power menu into a framebuffer nobody could see — `doze` writes
+                // `set_backlight(0)` and nothing on that path lit it again — so the user got a
+                // second of nothing, kept holding, and reached the PMIC's own six second
+                // cutoff, which is the ungraceful stop `POWER_HOLD_MS` exists to get in front
+                // of.
+                //
+                // The press, because a thumb going down on a dark device is asking for it back
+                // and the answer should not wait to hear whether this is a tap. The hold runs
+                // on from here unchanged, so the user who really did mean "turn this off" still
+                // gets the menu off the one press — and now on a panel they can read it on.
+                //
+                // This is the only thing a POWER press may do to the panel, and the direction
+                // matters: a press may light it, never darken it. Darkening still waits for the
+                // release, so a press on its way to becoming a hold does not put the screen out
+                // on the way through.
+                //
+                // Assigned rather than or-ed, so the flag is always about the press in hand.
+                // Nothing clears it on the `PowerOff` path — a hold's release is swallowed by
+                // the menu it raised — and nothing needs to: the next press overwrites it.
+                self.woke_on_press = matches!(self.phase, Phase::Doze { .. });
+                if self.woke_on_press {
+                    self.wake();
                 }
                 return self.flush_resume();
             }
@@ -3168,9 +3198,19 @@ impl App {
         self.begin_power_off();
     }
 
-    /// The lid's twin, and the only one of the two the device is certain to see. A tap
-    /// dozes and a second one wakes.
+    /// The lid's twin, and the only one of the two the device is certain to see. A tap dozes
+    /// and a second one wakes.
+    ///
+    /// The wake itself has already happened, on the press (see `apply`'s `PowerPress` arm), and
+    /// this is where that press stops. Without it the tap that lit the panel would reach its own
+    /// release still meaning "doze", and a tap of POWER on a sleeping device would flash the
+    /// screen and put it straight back out — worse than the bug it was fixing, which at least
+    /// woke on the release. The `Doze` arm below is what still catches a wake this did not do:
+    /// a phase that reached a doze between the press and the release.
     fn power_press(&mut self) {
+        if std::mem::take(&mut self.woke_on_press) {
+            return;
+        }
         match self.phase {
             Phase::Doze { .. } => self.wake(),
             _ => self.doze(),
@@ -3454,8 +3494,13 @@ impl App {
                     self.last_role = role.other();
                     self.game_menu = Some(GameMenu::Pick(role.other()));
                 }
-                // A tap, never the half of a chord: the gesture layer only delivers SELECT once
-                // no second key can follow it.
+                // On the press, which is where the gesture layer now hands SELECT over: it used
+                // to withhold it for the whole chord window, so this row answered a third of a
+                // second after the thumb went down. A chord landing on top of that press fires
+                // as well, so SELECT+Up in here changes the brightness *and* flips the mode.
+                // That is the price of SELECT reaching a game the instant it is pressed, and
+                // this is the one screen in the tree that pays it: the mode is a toggle, so the
+                // same press undoes it.
                 Action::GbaDown(Btn::Select) => self.switch_hardware(),
                 Action::GbaDown(Btn::A) => self.pick_link(role),
                 Action::GbaDown(Btn::B) | Action::GameMenu => self.close_game_menu(),
