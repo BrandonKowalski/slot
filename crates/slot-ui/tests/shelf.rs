@@ -337,23 +337,66 @@ fn a_held_scroll_never_travels_against_the_button() {
 }
 
 /// Where the selected cart stands, which is what a cart going into the slot and a cart the
-/// picker opens both start from. Every length of row centres its selection, so the answer is
-/// the middle of the screen at each of them — asked here rather than assumed, because the
-/// handover is a jump the moment the two disagree.
+/// picker opens both start from. Every length of row centres its selection, so a settled row
+/// answers with the middle of the screen at full size — asked here rather than assumed, because
+/// the handover is a jump the moment the two disagree.
+///
+/// And asked on the frames that are not settled, which is where it was wrong. `rest_x`, which
+/// this replaces, answered "dead centre, 240 wide" whatever the spring was doing, and the app
+/// reads it on the frame A or START goes down — which nothing makes the player delay until the
+/// row has stopped. Two frames after a shoulder press the selection is most of a pitch off
+/// centre and shrunk to near `SIDE_SCALE`, so the cart handed to the slot jumped 266 px sideways
+/// and grew a third of its own width on that one frame, with the cart it was passing still
+/// sliding behind it.
+///
+/// The reading is taken as the difference between the row drawn whole and the row drawn with
+/// the selection held back — which is exactly the swap the handover performs — so what is
+/// compared is the quad the chrome has to replace and not a quad picked out by being the widest.
+/// Mid-travel the selection is not the widest: at half a pitch out it is the same size as the
+/// neighbour it is passing.
 #[test]
 fn the_shelf_says_where_its_selected_cart_stands() {
     for n in [1usize, 2, 3, 5] {
-        let mut s = shelf_with(n);
-        settle(&mut s);
-        let widest = placed(&s)
-            .into_iter()
-            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a });
-        assert!(
-            (widest.0 - s.rest_x()).abs() < 0.5,
-            "{n} carts: the selection stands at {} and the shelf says {}",
-            widest.0,
-            s.rest_x()
-        );
+        // Settled, then every frame of a press's travel, so the claim covers the frames the row
+        // is moving rather than only the one it has stopped on.
+        for frames in [0usize, 1, 2, 3, 5, 8, 13, 400] {
+            let mut s = shelf_with(n);
+            settle(&mut s);
+            s.right();
+            for _ in 0..frames {
+                s.update(1.0 / 60.0);
+            }
+            let stem = s.carts[s.index].stem.clone();
+            let mut whole = Vec::new();
+            s.draw_row(None, 0.0, 0.0, 1.0, &mut whole);
+            let mut without = Vec::new();
+            s.draw_row(Some(&stem), 0.0, 0.0, 1.0, &mut without);
+            let dropped: Vec<(f32, f32)> = whole
+                .iter()
+                .map(xw)
+                .filter(|q| !without.iter().map(xw).any(|k| k == *q))
+                .collect();
+            // One image, except on a ring of two while it is travelling: there the selection
+            // really is at both edges at once, and the chrome replacing both with one is the
+            // row of two's own business rather than this claim's.
+            if n != 2 || frames == 400 {
+                assert_eq!(
+                    dropped.len(),
+                    1,
+                    "{n} carts, {frames} frames in: the row drew {} images of its selection",
+                    dropped.len()
+                );
+            }
+            let (said_x, scale) = s.selected_at();
+            let said = (said_x, CART_W as f32 * scale);
+            assert!(
+                dropped
+                    .iter()
+                    .any(|(x, w)| (x - said.0).abs() < 0.01 && (w - said.1).abs() < 0.01),
+                "{n} carts, {frames} frames in: the shelf says its selection is at {said:?} and \
+                 the row drew it at {dropped:?}"
+            );
+        }
     }
 }
 

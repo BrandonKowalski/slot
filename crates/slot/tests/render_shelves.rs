@@ -798,6 +798,8 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
                 cart: &cart,
                 face: Some(tex),
                 rest,
+                // A settled row, which is what every one of these beats is of.
+                scale: 1.0,
                 seat,
                 alert: None,
                 dim: 0.0,
@@ -894,6 +896,7 @@ fn no_frame_of_the_travel_jumps_further_than_the_cartridge_is_tall() {
                     cart: &cart,
                     face: None,
                     rest: (OUT_W - CART_W) as f32 / 2.0,
+                    scale: 1.0,
                     seat: (f as f32 / 27.0).min(1.0),
                     alert: None,
                     dim: 0.0,

@@ -15,7 +15,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot_gfx::{Compositor, HeadlessSurface};
 use slot_store::{Cart, Platform};
-use slot_ui::{cart_face, cart_shadow, Draw, Shelf, TexId, CART_W, OUT_H, OUT_W};
+use slot_ui::{cart_face, cart_shadow, Draw, Shelf, SlotChrome, TexId, CART_W, OUT_H, OUT_W};
 
 /// `gl::load_with` writes global function pointers, so two GL tests must not overlap.
 static GL: Mutex<()> = Mutex::new(());
@@ -201,4 +201,66 @@ fn a_shelf_of_one_does_not_move_when_a_shoulder_is_held() {
             bare_edges(px)
         );
     }
+}
+
+/// The cart the slot takes over is the cart the row was drawing, in the same place and at the
+/// same size. Nothing makes the player wait for the spring before pressing A, and the app reads
+/// the row's answer on the frame the button goes down: the two have to agree on the frames the
+/// row is still moving, not only on the ones it has stopped on.
+///
+/// Measured as the panel either side of the handover. The frame before is the row with its
+/// selection in it; the frame after is the row with that cart held back and the chrome drawing it
+/// instead. Bar the slot coming up along the bottom, they have to be the same picture — and when
+/// the chrome was handed a settled row's answer they were not: the chosen cart jumped 266 px
+/// sideways and grew a third of its own width between them.
+#[test]
+fn the_slot_takes_over_the_cart_where_the_row_had_it() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let (mut s, faces) = uploaded(5, &mut c);
+    s.select(0);
+    s.right();
+    // Two frames in, which is where a quick press lands: far enough that the spring has begun
+    // and nowhere near far enough that it has finished.
+    s.update(1.0 / 60.0);
+    s.update(1.0 / 60.0);
+    let mut before = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut before);
+    let before = composed(&mut c, &before);
+    shot(&before, "handover-before");
+
+    let cart = s.carts[s.index].clone();
+    let (rest, scale) = s.selected_at();
+    let mut after = Vec::new();
+    s.draw_row(Some(&cart.stem), 0.0, 0.0, 1.0, &mut after);
+    SlotChrome {
+        cart: &cart,
+        face: Some(faces[s.index]),
+        rest,
+        scale,
+        // The first frame of the travel, which is the frame the button went down on.
+        seat: 0.0,
+        alert: None,
+        dim: 0.0,
+        screen: 0.0,
+        game: false,
+    }
+    .draw(&mut after);
+    let after = composed(&mut c, &after);
+    shot(&after, "handover-after");
+
+    // Which columns of the cart band hold an object, before and after. The silhouette and not
+    // the colour: the chrome draws the chosen cart at full strength where the row had it at the
+    // alpha its distance from the selection earns, so the cart is brighter after the handover
+    // even when it has not moved a pixel. Where it *is* is what the handover has to preserve.
+    let columns =
+        |px: &[u8]| -> Vec<bool> { (0..OUT_W as usize).map(|x| occupied(px, x)).collect() };
+    let (a, b) = (columns(&before), columns(&after));
+    let moved = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+    assert!(
+        moved <= 2,
+        "{moved} columns of the row changed on the frame the slot took the cart over: the \
+         cartridge jumped rather than being handed across"
+    );
 }
