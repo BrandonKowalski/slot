@@ -63,15 +63,31 @@ void main() {
 
 /// `u_src` is the source size in pixels, which is also the number of times the 3x3 mask
 /// tiles across the target: one RGB triad per source pixel, exactly.
+///
+/// `u_uv` is the part of the texture the quad shows — origin in `xy`, size in `zw`, both in
+/// texture coordinates. `(0, 0, 1, 1)` is the whole texture and is what every caller that has
+/// not asked for anything else gets, which makes that case `0.0 + v_uv * 1.0`: the arithmetic
+/// this line did before the uniform existed, to the bit.
+///
+/// Only the picture is read through it. The mask stays on `v_uv`, which runs 0..1 across the
+/// quad — and the quad for the game is the whole panel — so the grille repeats every `u_src.x`
+/// of the panel's width whatever the picture is doing. That is what makes a stretch cheap: it
+/// changes which part of the texture fills the panel, never the regularity of the grille over
+/// it. What it does change is the relationship between the two. At 3x one mask cell sits on
+/// exactly one source pixel; stretched, a source pixel is wider than a cell and the grille
+/// stops landing on pixel edges. That is what a blown-up Game Boy picture looked like, and it
+/// is the honest consequence of the stretch rather than a defect to design around.
 pub const GAME_FRAG: &str = r#"
 precision mediump float;
 uniform sampler2D u_game;
 uniform sampler2D u_mask;
 uniform vec2 u_src;
+uniform vec4 u_uv;
 uniform float u_bright;
 varying vec2 v_uv;
 void main() {
-    vec3 rgb = texture2D(u_game, v_uv).rgb * texture2D(u_mask, v_uv * u_src).rgb;
+    vec2 uv = u_uv.xy + v_uv * u_uv.zw;
+    vec3 rgb = texture2D(u_game, uv).rgb * texture2D(u_mask, v_uv * u_src).rgb;
     FRAG_COLOR = vec4(rgb * u_bright, 1.0);
 }
 "#;

@@ -229,7 +229,11 @@ impl Session {
         }
         if menu || self.overlaid() {
             self.pad.clear();
-        } else {
+        } else if !self.app.takes_from_the_game(action) {
+            // A button slot has taken is a button the core never sees. Skipped rather than
+            // cleared, because unlike a menu opening this is one button being spoken for and
+            // not the whole pad changing hands: a stretch pressed while the player is holding
+            // a direction must not put that direction down.
             self.pad.apply(action);
         }
         // On the action rather than on the next frame: an eject or a doze may be the last
@@ -517,6 +521,12 @@ impl Session {
         // stem: it is what closes the same class of drift for a `.gb` and a `.gba` cart that
         // happen to share a stem.
         self.app.set_platform(platform);
+        // Read for every cart rather than only for the Game Boy ones. It is a cosmetic
+        // preference with no core or directory hanging off it, and reading it unconditionally
+        // is what stops a GBA cart inheriting whatever the last Game Boy cart was left in —
+        // `App::source_rect` is the one place that decides a GBA picture never moves.
+        self.app
+            .set_video_mode(crate::video_mode::video_mode_for(&self.root, stem));
         // gpSP reads its link mode only while a game loads, so what this hands the core is what
         // the game links over from here on, and what `App` compares a picked link against.
         self.app.set_link_loaded(serial);

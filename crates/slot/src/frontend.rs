@@ -347,6 +347,9 @@ impl Frontend {
         compositor.set_blue_light(self.session.app().blue_light());
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
+        // Every frame rather than on the edge, for the same reason the grade and the power are:
+        // the pass has to be told what to draw whether or not anything just changed it.
+        compositor.set_game_source_rect(self.session.app().source_rect());
         compositor.begin_frame();
         if let Some(frame) = self.session.frame() {
             compositor.upload_game(&frame);

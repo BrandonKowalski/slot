@@ -44,6 +44,23 @@ impl Platform {
         }
     }
 
+    /// The picture this console draws, in pixels. The GBA's is the whole frame buffer the
+    /// device is built around; a Game Boy's is smaller and `video_refresh` centres it inside
+    /// that same buffer, so this is also what says how much of the buffer is the picture and
+    /// how much is the margin around it.
+    ///
+    /// A Game Boy Color draws the same 160x144 as a Game Boy — the colour is in the pixels,
+    /// not in how many of them there are.
+    ///
+    /// Spelled out here rather than taken from `slot_retro`: this crate is the card's own view
+    /// of what a platform is, and it does not know a libretro core exists.
+    pub fn picture(self) -> (u32, u32) {
+        match self {
+            Platform::Gba => (240, 160),
+            Platform::Gb | Platform::Gbc => (160, 144),
+        }
+    }
+
     pub fn accepts(self, path: &Path) -> bool {
         path.extension()
             .and_then(|e| e.to_str())

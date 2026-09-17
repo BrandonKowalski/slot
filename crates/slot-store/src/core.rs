@@ -50,90 +50,27 @@ impl Core {
     }
 }
 
-/// `<rom stem> = <core>`, one per line. Keyed on the stem because that is already the key
-/// for `Labels/`, `Saves/` and `States/`; a card stays consistent with itself.
-///
-/// Every malformed line is skipped rather than raised. This file is edited by hand on a
-/// card, and the cost of a typo must be that one cart opens with the default core, never
-/// that the shelf fails to load.
+/// `<rom stem> = <core>`, one per line — `crate::ini`'s shape, and every rule about hand-edited
+/// files that goes with it lives there. This is only the value type on top: a name we do not
+/// know is dropped rather than raised, because it is a card written for a newer build, or a
+/// typo, and either way the default is the safe reading.
 pub fn read_selected_cores(root: &Path) -> HashMap<String, Core> {
-    let mut out = HashMap::new();
-    let Ok(text) = std::fs::read_to_string(root.join(SELECTED_CORE_FILE)) else {
-        return out;
-    };
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty()
-            || line.starts_with('#')
-            || line.starts_with(';')
-            || line.starts_with('[')
-        {
-            continue;
-        }
-        let Some((stem, core)) = line.split_once('=') else {
-            continue;
-        };
-        let stem = stem.trim();
-        if stem.is_empty() {
-            continue;
-        }
-        // A name we do not know is not a failure: it is a card written for a newer build,
-        // or a typo. Either way the default is the safe reading.
-        if let Some(core) = Core::parse(core) {
-            out.insert(stem.to_string(), core);
-        }
-    }
-    out
+    crate::ini::read(root, SELECTED_CORE_FILE)
+        .into_iter()
+        .filter_map(|(stem, name)| Core::parse(&name).map(|core| (stem, core)))
+        .collect()
 }
 
-/// The core one cart wants. Reads the file each time: it is a few lines on a card that a
-/// person edits between boots, and caching it would only create a staleness question
-/// nobody asked for.
+/// The core one cart wants, or the default for a cart the file does not name — which is also
+/// what a cart whose line nobody can parse gets.
 pub fn core_for(root: &Path, stem: &str) -> Core {
-    read_selected_cores(root)
-        .get(stem)
-        .copied()
+    crate::ini::value(root, SELECTED_CORE_FILE, stem)
+        .as_deref()
+        .and_then(Core::parse)
         .unwrap_or_default()
 }
 
 /// Set one cart's core, leaving the rest of the file exactly as it was.
-///
-/// The line is replaced in place, or appended when the cart has no line yet. The file is
-/// never rebuilt from `read_selected_cores`' map: it is meant to be opened in a text editor
-/// on a computer, and a rebuild would quietly drop every comment, blank line and unparsed
-/// line in it — including the note somebody wrote to themselves above a cart.
 pub fn write_selected_core(root: &Path, stem: &str, core: Core) -> std::io::Result<()> {
-    let path = root.join(SELECTED_CORE_FILE);
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-
-    let entry = format!("{stem} = {}", core.as_str());
-    let mut out = String::with_capacity(existing.len() + entry.len() + 1);
-    let mut replaced = false;
-
-    for line in existing.lines() {
-        let is_this_cart = line
-            .split_once('=')
-            .map(|(k, _)| k.trim() == stem)
-            .unwrap_or(false);
-        if is_this_cart && !replaced {
-            out.push_str(&entry);
-            replaced = true;
-        } else if is_this_cart {
-            // A duplicate for the same cart: the later line already won when read, so
-            // dropping it keeps the file saying one thing per cart.
-            continue;
-        } else {
-            out.push_str(line);
-        }
-        out.push('\n');
-    }
-    if !replaced {
-        out.push_str(&entry);
-        out.push('\n');
-    }
-
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    crate::atomic::atomic_write(&path, out.as_bytes())
+    crate::ini::write(root, SELECTED_CORE_FILE, stem, core.as_str())
 }
