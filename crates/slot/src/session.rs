@@ -334,6 +334,19 @@ impl Session {
         }
         self.sync_core();
         self.sync_reload();
+        // A latched fast forward is the one gesture with nothing holding it: R2 has been let go
+        // of and the speed stays, which is the whole point of the latch. It is meant to outlive
+        // the button, not the cart — left standing through an eject it brought the *next* game
+        // up fast forwarding, boot animation and all, with nobody near R2 and the badge in the
+        // corner the only clue what was wrong. Asked here rather than on the eject itself,
+        // because "no core to run fast" is the condition, and a cart refused at load reaches it
+        // by a different road than a cart ejected. Put through `act` so the session's own flag,
+        // the speed the worker is given and the badge all end in the same breath.
+        if !self.has_core() {
+            for action in self.gestures.drop_ff_latch() {
+                self.act(action);
+            }
+        }
         // After the core sync: a handle spawned or dropped this frame has published nothing
         // the renderer may show.
         self.app

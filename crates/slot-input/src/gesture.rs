@@ -143,6 +143,21 @@ impl Gestures {
         self.ff_latched
     }
 
+    /// Lets go of a latched fast forward from outside the machine. The latch is the one thing
+    /// this file holds with no finger on it — every other hold ends when its own button does —
+    /// so it is the only one that can outlive the thing it was applied to. This file is blind
+    /// to screens on purpose, so whoever knows the slot is empty is what calls this.
+    ///
+    /// A *held* fast forward is deliberately left alone: a thumb still on R2 through an eject
+    /// is a thumb still asking for it, exactly as a held direction is, and it ends the moment
+    /// the thumb does.
+    pub fn drop_ff_latch(&mut self) -> Vec<Action> {
+        if !self.ff_latched {
+            return Vec::new();
+        }
+        self.ff_clear()
+    }
+
     pub fn feed(&mut self, ev: RawEvent, now: Millis) -> Vec<Action> {
         match ev {
             RawEvent::Down(b) => self.down(b, now),

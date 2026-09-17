@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
+use slot::emu::{EmuHandle, Speed};
 use slot::session::Session;
 use slot::video_mode::{video_mode_for, VideoMode, VIDEO_MODE_FILE};
 use slot_gfx::WHOLE_TEXTURE;
@@ -12,7 +13,7 @@ use slot_input::{Action, Btn, RawEvent};
 use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Placed, TexId,
+    board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Icon, Placed, TexId,
     BOARD_W, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
     SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
@@ -2276,4 +2277,88 @@ fn the_power_menus_own_buttons_never_reach_the_game() {
         0,
         "the B that cancelled the power menu was handed to the game underneath it"
     );
+}
+
+/// A latched fast forward is the one gesture with nothing holding it: R2 has been let go of and
+/// the speed stays. That is the point of the latch — it outlives the button. It must not
+/// outlive the cart.
+///
+/// Left standing through an eject it came back on for whatever went in next: a different game,
+/// running its boot animation at four times speed, with nobody within reach of R2. The badge in
+/// the corner reading Latched is the only thing on screen that says why, and nothing the player
+/// pressed on this cart asked for it.
+///
+/// The held case is the control, and it stays as it was: a thumb still on R2 through an eject
+/// is a thumb still asking, the same as a held direction.
+#[test]
+fn a_latched_fast_forward_does_not_outlive_the_cart() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    let mut s = session_playing(d.path());
+    // Two taps of R2 inside the double tap window is the latch.
+    s.feed([RawEvent::Down(Btn::R2)], 1000);
+    s.feed([RawEvent::Up(Btn::R2)], 1050);
+    s.feed([RawEvent::Down(Btn::R2)], 1150);
+    s.feed([RawEvent::Up(Btn::R2)], 1200);
+    let mut now = run(&mut s, 1200, 2);
+    assert_eq!(
+        s.app().ff_badge(),
+        Some(Icon::FastForwardLatched),
+        "the latch never took"
+    );
+    // And it is a real one, not only a badge: waited for rather than sampled, because
+    // `observed_speed` is the worker's own last pass through its loop and it reports when it
+    // gets there.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while s.emu().map(EmuHandle::observed_speed) != Some(Speed::Fast) {
+        assert!(Instant::now() < deadline, "the worker never ran fast");
+        now = run(&mut s, now, 1);
+    }
+    // MENU held past the eject threshold, and the cart comes out.
+    s.feed([RawEvent::Down(Btn::Menu)], now + 16);
+    now = run(&mut s, now + 1100, 250);
+    s.feed([RawEvent::Up(Btn::Menu)], now + 16);
+    now += 32;
+    assert!(
+        matches!(s.app().phase(), Phase::Shelf),
+        "the cart never came out"
+    );
+    // And in goes the next one, with nobody near R2.
+    s.feed([RawEvent::Down(Btn::A)], now);
+    s.feed([RawEvent::Up(Btn::A)], now + 16);
+    now += 32;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Long enough that the worker has had every chance to report the speed it was given, which
+    // is what makes a negative here worth anything.
+    run(&mut s, now, 60);
+    assert_eq!(
+        s.app().ff_badge(),
+        None,
+        "the next cart came up with the last cart's latch still showing"
+    );
+    assert_ne!(
+        s.emu().map(EmuHandle::observed_speed),
+        Some(Speed::Fast),
+        "the next cart came up fast forwarding off a latch the last one was left holding"
+    );
+}
+
+/// Frames fed and updated in the order `Frontend::advance` does them on the device, with no
+/// events: a thumb held down, or a hand nowhere near the case, is an absence of edges rather
+/// than a stream of them.
+fn run(s: &mut Session, from: u64, frames: u64) -> u64 {
+    let mut now = from;
+    for _ in 0..frames {
+        now += 16;
+        s.feed([], now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    now
 }
