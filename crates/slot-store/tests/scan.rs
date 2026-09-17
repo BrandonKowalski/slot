@@ -103,6 +103,27 @@ fn a_gba_rom_in_the_game_boy_folder_does_not_appear() {
     assert!(scan(d.path()).unwrap().is_empty());
 }
 
+/// `App::boot` does `scan(root).unwrap_or_default()`, so an `Err` out of `scan` is not a message
+/// anywhere — it is every cart on the card gone from the shelf. One platform folder that will
+/// not open must cost the player that folder and nothing else, the same isolation the two boot
+/// sweeps already argue for at length.
+#[test]
+fn an_unreadable_platform_folder_does_not_take_the_rest_of_the_library_with_it() {
+    let d = tmp_root();
+    write_rom(&d, "GBA/Metroid Fusion.gba", "METROID");
+    std::fs::write(d.path().join("Games/GB/Tetris.gb"), vec![0u8; 0x150]).unwrap();
+    // A corrupted card: a plain file standing where the Colour folder belongs, so `read_dir`
+    // answers ENOTDIR rather than "nothing here".
+    std::fs::remove_dir(d.path().join("Games/GBC")).unwrap();
+    std::fs::write(d.path().join("Games/GBC"), b"not a directory").unwrap();
+
+    let carts = scan(d.path()).expect("one bad folder must not fail the whole scan");
+
+    assert_eq!(carts.len(), 2, "the readable shelves were lost too");
+    assert!(carts.iter().any(|c| c.stem == "Metroid Fusion"));
+    assert!(carts.iter().any(|c| c.stem == "Tetris"));
+}
+
 /// Two carts of the same name on different platforms are two carts, and their labels are two
 /// files. This is the collision the whole layout exists to close.
 #[test]
