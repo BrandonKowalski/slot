@@ -8,6 +8,12 @@ use crate::core::CoreError;
 
 pub const API_VERSION: c_uint = 1;
 
+/// `RETRO_ENVIRONMENT_GET_CAN_DUPE`. libretro.h: "Boolean value whether or not frontend
+/// supports frame duping, passing NULL to video frame callback." A core that is told no has to
+/// render a picture for every frame it runs, whether or not anything will ever look at it —
+/// and at least one Game Boy core, Gambatte, refuses to load content at all rather than run
+/// that way. See the `GET_CAN_DUPE` arm in `libretro.rs` for why the honest answer here is yes.
+pub const GET_CAN_DUPE: c_uint = 3;
 pub const GET_SYSTEM_DIRECTORY: c_uint = 9;
 pub const SET_PIXEL_FORMAT: c_uint = 10;
 pub const GET_VARIABLE: c_uint = 15;

@@ -110,6 +110,26 @@ unsafe extern "C" fn set_rumble_state(port: c_uint, effect: c_uint, strength: u1
 
 unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
     match cmd {
+        GET_CAN_DUPE => {
+            if data.is_null() {
+                return false;
+            }
+            // Yes, and it has been true for as long as `video_refresh` has returned early on a
+            // null frame: nothing is read, nothing is written, and `video_xrgb8888` hands back
+            // the picture the last real frame left there. That is precisely what duping means.
+            // It is not a claim made on paper either — slot's own fast forward runs on it.
+            // `set_frame_skip` asks the core not to draw the frames between presents, and
+            // gpSP's answer to a skipped frame is `video_cb(NULL, ...)` (`video_run`, its
+            // `libretro.c`), so every fast-forwarded frame on the device already comes through
+            // that early return.
+            //
+            // Answering falsely was not free. A core that asks and is told no draws a frame
+            // this frontend then throws away, and Gambatte goes further and refuses the rom
+            // outright — which would make an untrue `false` here a hard block on ever shipping
+            // a second core rather than a small inefficiency.
+            *(data as *mut bool) = true;
+            true
+        }
         SET_PIXEL_FORMAT => {
             if data.is_null() {
                 return false;
@@ -1802,24 +1822,29 @@ mod tests {
         assert_eq!(corner, 0, "the previous picture is still in the margin");
     }
 
+    /// A gradient rather than a flat fill: a frame that came back shifted by any amount, or with
+    /// its rows walked in the wrong order, then reads back bytes that belong to some other texel
+    /// instead of matching a fill that looks the same everywhere.
+    fn gradient(w: usize, h: usize) -> Vec<u8> {
+        let mut px = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let o = (y * w + x) * 4;
+                px[o] = x as u8;
+                px[o + 1] = y as u8;
+                px[o + 2] = (x ^ y) as u8;
+            }
+        }
+        px
+    }
+
     /// Every GBA pixel must land exactly where it does today: a full-size frame has no margin and
     /// no offset, so this path is arithmetically unchanged for the platform that already works.
     #[test]
     fn a_full_size_picture_is_unmoved() {
         let mut host = host_with(HashMap::new(), false);
         let _active = Active::bind(&mut host);
-        // A gradient rather than a flat fill: a frame that came back shifted by any amount, or
-        // with its rows walked in the wrong order, then reads back bytes that belong to some
-        // other texel instead of matching a fill that looks the same everywhere.
-        let mut frame = vec![0u8; VIDEO_BYTES];
-        for y in 0..GBA_H as usize {
-            for x in 0..GBA_W as usize {
-                let o = (y * GBA_W as usize + x) * 4;
-                frame[o] = x as u8;
-                frame[o + 1] = y as u8;
-                frame[o + 2] = (x ^ y) as u8;
-            }
-        }
+        let frame = gradient(GBA_W as usize, GBA_H as usize);
         unsafe {
             video_refresh(
                 frame.as_ptr() as *const c_void,
@@ -1830,5 +1855,99 @@ mod tests {
         };
 
         assert_eq!(unsafe { with_host(|h| h.video.clone()) }.unwrap(), frame);
+    }
+
+    // --- duplicate frames -----------------------------------------------------------------
+    //
+    // A core that dupes hands `video_refresh` a null frame and expects the frontend to go on
+    // showing the last real one. `GET_CAN_DUPE` is answered `true`, and these are what makes
+    // that answer a fact about the code rather than a promise: the answer arm and the frame
+    // path are tested separately, so an arm that started lying would be caught by the pair
+    // disagreeing rather than by a core failing in the field.
+
+    #[test]
+    fn get_can_dupe_tells_a_core_the_frontend_keeps_the_last_frame() {
+        // The number is half the claim: answering `true` to the wrong command would be a lie
+        // about something else entirely. libretro.h: `RETRO_ENVIRONMENT_GET_CAN_DUPE 3`.
+        assert_eq!(GET_CAN_DUPE, 3);
+
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+
+        let mut can_dupe = false;
+        let ok = unsafe { environment(GET_CAN_DUPE, &mut can_dupe as *mut bool as *mut c_void) };
+
+        assert!(ok, "a core that asks has to be answered, not ignored");
+        assert!(
+            can_dupe,
+            "the frontend does keep the last frame, so it must say so"
+        );
+    }
+
+    /// The same null guard every other arm carries: a core that asks with nowhere to put the
+    /// answer gets a refusal rather than a write through a null pointer.
+    #[test]
+    fn get_can_dupe_refuses_a_null_pointer() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+
+        assert!(!unsafe { environment(GET_CAN_DUPE, ptr::null_mut()) });
+    }
+
+    /// A duplicate frame must leave the picture exactly as it was — not blanked, not torn, not
+    /// shifted. The null pointer arrives with the real dimensions and pitch beside it, because
+    /// that is what a live core sends: gpSP's skipped-frame path is `video_cb(NULL,
+    /// GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT, GBA_SCREEN_PITCH * 2)`, which is also the path
+    /// slot's own fast forward drives through `set_frame_skip` on every device.
+    #[test]
+    fn a_duplicate_frame_leaves_the_previous_picture_exactly_as_it_was() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+        let frame = gradient(GBA_W as usize, GBA_H as usize);
+        unsafe {
+            video_refresh(
+                frame.as_ptr() as *const c_void,
+                GBA_W,
+                GBA_H,
+                GBA_W as usize * 4,
+            );
+            video_refresh(ptr::null(), GBA_W, GBA_H, GBA_W as usize * 4);
+        }
+
+        assert_eq!(
+            unsafe { with_host(|h| h.video.clone()) }.unwrap(),
+            frame,
+            "a duplicate frame changed the picture instead of keeping it"
+        );
+    }
+
+    /// The Game Boy case, which is the one a second core would arrive on: a 160x144 picture sits
+    /// centred in a buffer built for a GBA, so a duplicate frame has both a picture and a margin
+    /// to leave alone. Two in a row, because a fast forward never sends only one.
+    #[test]
+    fn a_duplicate_frame_keeps_a_centred_game_boy_picture_where_it_is() {
+        let mut host = host_with(HashMap::new(), false);
+        let _active = Active::bind(&mut host);
+        let frame = gradient(160, 144);
+        unsafe { video_refresh(frame.as_ptr() as *const c_void, 160, 144, 160 * 4) };
+        let drawn = unsafe { with_host(|h| h.video.clone()) }.unwrap();
+
+        unsafe {
+            video_refresh(ptr::null(), 160, 144, 160 * 4);
+            video_refresh(ptr::null(), 160, 144, 160 * 4);
+        }
+
+        let kept = unsafe { with_host(|h| h.video.clone()) }.unwrap();
+        assert_eq!(kept, drawn, "the picture did not survive two duplicates");
+        // The comparison above is only worth anything if there was a picture there to keep, so
+        // one texel well inside it — source (100, 50), which the centring puts at (140, 58) —
+        // is read back on its own. A setup that drew nothing would otherwise pass by comparing
+        // two blank buffers.
+        let lit = (58 * GBA_W as usize + 140) * 4;
+        assert_eq!(
+            &kept[lit..lit + 3],
+            &[100u8, 50, 100 ^ 50],
+            "the picture was blanked or moved where a duplicate should have kept it"
+        );
     }
 }
