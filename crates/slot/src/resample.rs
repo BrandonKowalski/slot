@@ -9,8 +9,21 @@ pub struct Resampler {
 }
 
 impl Resampler {
+    /// Both rates have to be real and positive, because `process` walks its input in steps of
+    /// `step` and only stops when it reaches the end: a step of zero never gets there, so the
+    /// emulator thread spins inside one call pushing output until the device runs out of
+    /// memory. A negative step walks backwards and never gets there either. A NaN fails the
+    /// comparison instead and the resampler goes silent for the rest of the session. All three
+    /// arrive the same way — `src_hz` is `retro_system_av_info.timing.sample_rate`, whatever a
+    /// core chose to put there — so a rate that is not a rate passes the core's samples
+    /// through untouched rather than describing a conversion that does not exist.
     pub fn new(src_hz: f64, dst_hz: f64) -> Self {
-        let step = if dst_hz > 0.0 { src_hz / dst_hz } else { 1.0 };
+        let usable = |hz: f64| hz.is_finite() && hz > 0.0;
+        let step = if usable(src_hz) && usable(dst_hz) {
+            src_hz / dst_hz
+        } else {
+            1.0
+        };
         Resampler {
             step,
             scaled: step,

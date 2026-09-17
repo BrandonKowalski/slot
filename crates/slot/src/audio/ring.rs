@@ -18,6 +18,18 @@ struct Inner {
     buf: Vec<i16>,
     head: usize,
     len: usize,
+    /// A mixed clip that is longer than the ring, kept until the device has made room for the
+    /// rest of it. Empty the rest of the time.
+    pending: Vec<i16>,
+    /// How much of `pending` has been laid into the buffer already.
+    placed: usize,
+    /// Where the next unplaced sample of `pending` belongs, counted in `drained`'s units. A
+    /// clip that spans several device reads has to be positioned against the stream rather
+    /// than against the head, which has moved by the time the rest of it fits.
+    pending_at: u64,
+    /// Samples handed to the device since the ring opened. Monotonic, and the only fixed
+    /// reference the two ends of a long clip can both be placed against.
+    drained: u64,
 }
 
 /// Interleaved stereo between the emulator thread and the device callback.
@@ -51,6 +63,10 @@ impl Ring {
                 buf: vec![0; capacity_frames * 2],
                 head: 0,
                 len: 0,
+                pending: Vec::new(),
+                placed: 0,
+                pending_at: 0,
+                drained: 0,
             }),
             room: Condvar::new(),
             queued: AtomicUsize::new(0),
@@ -74,6 +90,11 @@ impl Ring {
         let mut i = self.lock();
         i.buf = vec![0; frames * 2];
         i.head = 0;
+        // A clip half laid into the buffer that was just thrown away has nowhere left to go.
+        i.pending = Vec::new();
+        i.placed = 0;
+        i.pending_at = 0;
+        i.drained = 0;
         // `len` counts samples and a stereo frame is two of them, so the cushion has to be an
         // even number: an odd one leaves every sample pushed afterwards one slot out, and the
         // ring never recovers because `fill` only ever drains whole periods. The device opens
@@ -139,27 +160,29 @@ impl Ring {
     /// Adds on top of what is already queued, extending the ring only where the sound runs
     /// past it. A UI sound appended behind the game's audio would arrive a whole buffer after
     /// the thing it is meant to be the sound of.
+    ///
+    /// What does not fit is kept and laid down by the device reads that follow, because the
+    /// cart sounds are longer than the ring is: the insert runs 240 ms and the eject 315, and
+    /// the ring holds 133 at every rate it has ever opened at. Writing only what fitted cut
+    /// 45% off every insert and 58% off every eject, mid waveform rather than at a zero
+    /// crossing, and the part it cut was the whole of what `Sfx::tail` exists to protect —
+    /// the shell settling on the way in, the shell still moving on the way out.
     pub fn mix(&self, samples: &[i16]) {
         // Nothing is going to build a cushion behind a cart sound: on the shelf there is no
         // core at all, so a rebuild in progress would swallow it whole.
         self.priming.store(false, Ordering::Relaxed);
         let mut i = self.lock();
-        let cap = i.buf.len();
-        if cap == 0 {
+        // Whatever was still waiting belongs to a sound this one has replaced.
+        i.pending.clear();
+        i.placed = 0;
+        if i.buf.is_empty() {
             return;
         }
-        let n = samples.len().min(cap);
-        for (k, s) in samples[..n].iter().enumerate() {
-            let at = (i.head + k) % cap;
-            // Past the queued run the buffer holds samples the device has already played,
-            // so those are overwritten rather than added to.
-            i.buf[at] = if k < i.len {
-                i.buf[at].saturating_add(*s)
-            } else {
-                *s
-            };
-        }
-        i.len = i.len.max(n);
+        // The clip starts at the head, which in the stream the device is reading is exactly
+        // as far along as it has drained to.
+        i.pending_at = i.drained;
+        i.pending.extend_from_slice(samples);
+        lay_pending(&mut i);
         self.queued.store(i.len, Ordering::Relaxed);
     }
 
@@ -167,6 +190,10 @@ impl Ring {
     /// keeps meaning the same thing to DRC while the sink is silent.
     pub fn fill(&self, out: &mut [i16]) {
         let mut i = self.lock();
+        // Before the copy, not after: a clip too long for the ring is only ever finished by
+        // the room a read like this one is about to make, and laying it first is what puts the
+        // rest of it in this read rather than a period later.
+        lay_pending(&mut i);
         let cap = i.buf.len();
         // Half the buffer in samples is the DRC target in frames, which is the cushion the
         // rest of the pipeline is tuned around. Holding below it hands over clean silence and
@@ -180,6 +207,7 @@ impl Ring {
             out[first..n].copy_from_slice(&i.buf[..n - first]);
             i.head = (i.head + n) % cap;
             i.len -= n;
+            i.drained += n as u64;
         }
         out[n..].fill(0);
         self.queued.store(i.len, Ordering::Relaxed);
@@ -250,6 +278,50 @@ impl Ring {
     /// outcome than losing audio for the rest of the session.
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Lays as much of a held clip into the buffer as there is room for, at the point in the
+/// stream the clip belongs at rather than wherever the head has reached. Called by `mix` and
+/// again by every device read, which is where the room comes from.
+fn lay_pending(i: &mut Inner) {
+    let cap = i.buf.len();
+    if cap == 0 || i.placed >= i.pending.len() {
+        return;
+    }
+    // How far past the head the next unplaced sample belongs. `fill` lays before it drains and
+    // never drains more than the ring holds in one read, so this only counts down.
+    let Some(off) = i.pending_at.checked_sub(i.drained) else {
+        // The device read past where the rest of the clip was going to go, so the moment that
+        // part of the sound belonged to has already been played as something else.
+        i.pending.clear();
+        i.placed = 0;
+        return;
+    };
+    let off = off as usize;
+    if off >= cap {
+        return;
+    }
+    let n = (i.pending.len() - i.placed).min(cap - off);
+    // Read before the writes below move it, so the whole run is judged against the same queue.
+    let len = i.len;
+    for k in 0..n {
+        let s = i.pending[i.placed + k];
+        let at = (i.head + off + k) % cap;
+        // Past the queued run the buffer holds samples the device has already played, so
+        // those are overwritten rather than added to.
+        i.buf[at] = if off + k < len {
+            i.buf[at].saturating_add(s)
+        } else {
+            s
+        };
+    }
+    i.len = i.len.max(off + n);
+    i.placed += n;
+    i.pending_at += n as u64;
+    if i.placed >= i.pending.len() {
+        i.pending = Vec::new();
+        i.placed = 0;
     }
 }
 
