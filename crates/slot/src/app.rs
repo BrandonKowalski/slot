@@ -752,9 +752,7 @@ impl App {
                 // The carousel opens on the resumed cart's own shelf, sitting on the cart
                 // itself, so ejecting it lands where it left.
                 self.shelf_at = at;
-                let shelf = self.shelf_mut();
-                shelf.index = i;
-                shelf.scroll = i as f32;
+                self.shelf_mut().select(i);
                 // Never clean: a resume is the whole point of the cart still being in there.
                 self.insert(false);
                 if let Phase::Inserting { resumed, t, .. } = &mut self.phase {

@@ -132,10 +132,12 @@ fn the_neighbour_of_the_last_cart_is_the_first() {
     assert_eq!(s.cart_at_offset(1), Some(1));
 }
 
-/// Two carts would otherwise appear on both sides of the selection at once.
+/// Three or more carts have one image each on the row. Only a ring of two repeats, and it does
+/// so because there is no third cart to put in the third slot: a longer row has one and must
+/// use it, or the shelf is showing a cart twice while another is not on screen at all.
 #[test]
-fn no_cart_is_drawn_twice_in_one_row() {
-    for n in [2usize, 3, 4] {
+fn no_cart_is_drawn_twice_in_a_row_of_three_or_more() {
+    for n in [3usize, 4, 7] {
         let s = shelf_with(n);
         let mut out = Vec::new();
         s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
@@ -147,9 +149,11 @@ fn no_cart_is_drawn_twice_in_one_row() {
     }
 }
 
-/// A shelf with one cart on it stands that cart dead centre and draws nothing else. Nothing
-/// beside it is right: there is no other cart, and a slot left empty beside the only one would
-/// read as a cart that failed to load.
+/// A shelf with one cart on it stands that cart dead centre and draws nothing else — it does
+/// *not* repeat the way a shelf of two does. Repeating would put three identical faces across a
+/// row that can never move, because there is no second cart for a press to select, and three
+/// copies of one cart holding still read as a drawing fault rather than as a ring. A slot left
+/// empty beside it would be no better, so the row is the one cart and nothing else.
 #[test]
 fn one_cart_stands_alone_in_the_middle() {
     let s = shelf_with(1);
@@ -164,32 +168,130 @@ fn one_cart_stands_alone_in_the_middle() {
     );
 }
 
-/// Two carts are centred as a pair rather than on the selection. A row of two has only one
-/// neighbour to give — the same cart may not stand on both sides of the selection — so
-/// centring the selection leaves a hole beside the pair where a cart would be, and a hole in a
-/// row of carts reads as one that failed to load rather than as an end.
+/// Two carts fill all three slots, which means the cart that is not selected stands on both
+/// sides of the one that is. The user asked for this on the hardware, against both of the
+/// layouts that came before it — a hole beside the pair, then the pair centred together — so it
+/// is the shape of the row, not an accident of the wrap.
 #[test]
-fn two_carts_are_centred_as_a_pair() {
+fn two_carts_repeat_around_the_ring() {
     let mut s = shelf_with(2);
     settle(&mut s);
-    let row = placed(&s);
-    assert_eq!(row.len(), 2, "a row of two drew {} carts", row.len());
-    let centres: Vec<f32> = row.iter().map(|(x, w)| x + w / 2.0).collect();
-    let middle = (centres[0] + centres[1]) / 2.0;
-    assert!(
-        (middle - 360.0).abs() < 0.5,
-        "the pair sits at {middle}, not the middle of the screen"
+    let mut out = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+    assert_eq!(
+        drawn_cart_indices(&out),
+        vec![1, 0, 1],
+        "a row of two is not the other cart, the selection, the other cart again"
     );
+    let row = placed(&s);
+    let centres: Vec<f32> = row.iter().map(|(x, w)| x + w / 2.0).collect();
     assert!(
-        (centres[1] - centres[0] - 240.0).abs() < 0.5,
-        "the two carts are {} apart rather than one pitch",
-        centres[1] - centres[0]
+        (centres[1] - 360.0).abs() < 0.5,
+        "the selected cart sits at {}, not the middle of the screen",
+        centres[1]
+    );
+    for (a, b) in [(centres[0], centres[1]), (centres[1], centres[2])] {
+        assert!(
+            (b - a - 240.0).abs() < 0.5,
+            "the row is {} apart rather than one pitch",
+            b - a
+        );
+    }
+    assert!(
+        (row[0].1 - row[2].1).abs() < 0.01,
+        "the two images of one cart came out at different sizes: {} and {}",
+        row[0].1,
+        row[2].1
     );
 }
 
+/// The whole reason the repeat was refused when it was first proposed: a ring of two wraps on
+/// every press, and the same cart is both the selection and a neighbour. What the eye has to
+/// read is a row sliding one pitch, so no cart may change which offset it stands at between the
+/// frame before a press and the frame after it — a cart that blinks out at one edge and back in
+/// at the other is the row teleporting rather than turning.
+#[test]
+fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
+    // Each drawn cart as (which cart, where it is in pitches from the middle), rounded, so the
+    // two sides of a press can be compared as sets of positions.
+    let occupied = |s: &Shelf| {
+        let mut out = Vec::new();
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        let which = drawn_cart_indices(&out);
+        let mut row: Vec<(i64, usize)> = out
+            .iter()
+            .zip(which)
+            .map(|(d, i)| {
+                let (x, w) = xw(d);
+                (((x + w / 2.0 - 360.0) / 240.0 * 1000.0).round() as i64, i)
+            })
+            .collect();
+        row.sort();
+        row
+    };
+    for (name, press) in [
+        ("right", Shelf::right as fn(&mut Shelf)),
+        ("left", Shelf::left as fn(&mut Shelf)),
+    ] {
+        let mut s = shelf_with(2);
+        settle(&mut s);
+        let before = occupied(&s);
+        press(&mut s);
+        assert_eq!(
+            occupied(&s),
+            before,
+            "the {name} press redrew the row instead of moving it"
+        );
+    }
+}
+
+/// Which way the row goes is the only thing on screen that says which button was pressed, since
+/// both neighbours are the same cart. A ring of two wraps on every press, so the nearest image
+/// of the selection is one slot either side and the spring cannot choose between them on
+/// distance. What settles it is the press, including a press that lands while the row is still
+/// moving from the one before it — which is where measuring from where the row happens to be
+/// picked the image behind it and turned the row round.
+#[test]
+fn a_row_of_two_travels_the_way_it_was_pressed() {
+    for (name, press, way) in [
+        ("right", Shelf::right as fn(&mut Shelf), 1.0f32),
+        ("left", Shelf::left as fn(&mut Shelf), -1.0),
+    ] {
+        let mut s = shelf_with(2);
+        settle(&mut s);
+        let mut aim = s.scroll_target();
+        for tap in 0..4 {
+            press(&mut s);
+            let sent = s.scroll_target();
+            assert!(
+                (sent - aim - way).abs() < 0.01,
+                "tap {tap} {name}: the row was sent {} from {aim}, not one slot {name}",
+                sent - aim
+            );
+            assert_eq!(
+                (sent - s.scroll).signum(),
+                way,
+                "tap {tap} {name}: the row is travelling the other way"
+            );
+            aim = sent;
+            // Part way there, so the next press lands with the spring still moving, which is
+            // where measuring from the row's own place picked the image behind it.
+            for _ in 0..4 {
+                s.update(1.0 / 60.0);
+            }
+            assert_eq!(
+                s.scroll_target(),
+                sent,
+                "tap {tap} {name}: the row changed its mind in mid flight"
+            );
+        }
+    }
+}
+
 /// Where the selected cart stands, which is what a cart going into the slot and a cart the
-/// picker opens both start from. A row that is not centred on its selection has to be able to
-/// say so, or the handover to the slot is a jump.
+/// picker opens both start from. Every length of row centres its selection, so the answer is
+/// the middle of the screen at each of them — asked here rather than assumed, because the
+/// handover is a jump the moment the two disagree.
 #[test]
 fn the_shelf_says_where_its_selected_cart_stands() {
     for n in [1usize, 2, 3, 5] {
@@ -680,10 +782,12 @@ fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
     let notched = TexId::from_raw(90);
     let rounded = TexId::from_raw(91);
     // Only a dimmed cart is backed, and the selection is not dimmed — so whichever backing the
-    // row draws belongs to the *neighbour*, which is what makes the answer unambiguous.
+    // row draws belongs to the *neighbour*, which is what makes the answer unambiguous. A row
+    // of two repeats, so that neighbour stands on both sides of the selection and its backing
+    // comes back twice: the same shell, drawn under each of its two images.
     for (selected, neighbour_shell) in [(0usize, rounded), (1, notched)] {
         let mut s = Shelf::new(carts.clone());
-        s.index = selected;
+        s.select(selected);
         settle(&mut s);
         s.set_faces(vec![TexId::from_raw(20), TexId::from_raw(21)]);
         s.set_gb_shadow(GbShell::Notched, notched);
@@ -699,7 +803,7 @@ fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
             .collect();
         assert_eq!(
             backings,
-            vec![neighbour_shell],
+            vec![neighbour_shell; 2],
             "with the {} pak selected, its neighbour was backed by the wrong shell",
             carts[selected].stem
         );
