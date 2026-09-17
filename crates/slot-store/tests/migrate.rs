@@ -386,6 +386,48 @@ fn a_half_finished_sweep_resumes_without_clobbering() {
     assert!(d.path().join("Games/GBA/Metroid Fusion.gba").exists());
 }
 
+/// No shipped build of slot could run a Game Boy cart, so a loose `.gb` cannot have come from a
+/// pre-Game-Boy card: somebody dropped it at the top of `Games/` afterwards, which is what the
+/// old layout taught them to do. Sweeping it into `Games/GBA/` files a player's rom in the one
+/// folder `scan` refuses to read a `.gb` out of — the game does not appear *and* it is no longer
+/// where they put it.
+#[test]
+fn a_loose_game_boy_rom_is_not_swept_into_the_gba_folder() {
+    let d = loose_card();
+    std::fs::write(d.path().join("Games/Tetris.gb"), b"gb").unwrap();
+    std::fs::write(d.path().join("Games/Crystal.gbc"), b"gbc").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert!(!d.path().join("Games/GBA/Tetris.gb").exists());
+    assert!(!d.path().join("Games/GBA/Crystal.gbc").exists());
+    assert_eq!(
+        std::fs::read(d.path().join("Games/Tetris.gb")).unwrap(),
+        b"gb"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Games/Crystal.gbc")).unwrap(),
+        b"gbc"
+    );
+    // The GBA rom beside them is untouched by the exception.
+    assert!(d.path().join("Games/GBA/Metroid Fusion.gba").exists());
+}
+
+/// A `.gb` in `Saves/` is not a rom and carries no such signal — the exception above is for
+/// `Games/` alone, and everything else loose is still GBA by the rule the sweep rests on.
+#[test]
+fn the_rom_exception_does_not_reach_saves_or_labels() {
+    let d = loose_card();
+    std::fs::write(d.path().join("Saves/Tetris.gb"), b"odd").unwrap();
+
+    migrate_platforms(d.path()).unwrap();
+
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/GBA/Tetris.gb")).unwrap(),
+        b"odd"
+    );
+}
+
 /// Finder drops `.DS_Store` and `._` sidecars onto every FAT volume it touches. Those are card
 /// metadata, not content, and sweeping them would be noise.
 #[test]
