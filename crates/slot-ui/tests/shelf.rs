@@ -132,11 +132,20 @@ fn the_neighbour_of_the_last_cart_is_the_first() {
     assert_eq!(s.cart_at_offset(1), Some(1));
 }
 
-/// Three or more carts have one image each on the row. Only a ring of two repeats, and it does
-/// so because there is no third cart to put in the third slot: a longer row has one and must
-/// use it, or the shelf is showing a cart twice while another is not on screen at all.
+/// A row of three or more, *standing still*, has one image of each cart on screen. Only a ring
+/// of two repeats when it is settled, and it does so because there is no third cart to put in the
+/// third slot: a longer row has one and must use it, or the shelf is showing a cart twice while
+/// another is not on screen at all.
+///
+/// Standing still is the whole of the claim and the reason the row below is never pressed. The
+/// ring fills every slot at every length, and while a row is moving the screen is wider than
+/// three pitches — so a ring of three or of four does put one cart at both edges at once, each
+/// half out of frame, which is what a ring shorter than the window looks like drawn honestly. The
+/// alternative was withholding that image, and withholding it left the cart leaving the frame
+/// undrawn: see `render_row_edges.rs`. From five carts up the ring is wider than the screen and
+/// nothing is ever repeated, moving or not.
 #[test]
-fn no_cart_is_drawn_twice_in_a_row_of_three_or_more() {
+fn no_cart_is_drawn_twice_in_a_settled_row_of_three_or_more() {
     for n in [3usize, 4, 7] {
         let s = shelf_with(n);
         let mut out = Vec::new();
@@ -210,8 +219,15 @@ fn two_carts_repeat_around_the_ring() {
 /// read is a row sliding one pitch, so no cart may change which offset it stands at between the
 /// frame before a press and the frame after it — a cart that blinks out at one edge and back in
 /// at the other is the row teleporting rather than turning.
+///
+/// Every length, not only two. A press moves the selection before the spring has moved the row,
+/// so the frame after it has to draw the same carts in the same places the frame before it did —
+/// which is a claim about the *row*, and the row of two was merely where it was noticed. It was
+/// false at three carts and at four: the cart in the left slot, fully on screen, was not in the
+/// list at all on the frame after the press. Held at ten too, which was always right, so this
+/// cannot start passing because every length got equally wrong.
 #[test]
-fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
+fn a_press_slides_the_row_rather_than_redrawing_it() {
     // Each drawn cart as (which cart, where it is in pitches from the middle), rounded, so the
     // two sides of a press can be compared as sets of positions.
     let occupied = |s: &Shelf| {
@@ -229,19 +245,21 @@ fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
         row.sort();
         row
     };
-    for (name, press) in [
-        ("right", Shelf::right as fn(&mut Shelf)),
-        ("left", Shelf::left as fn(&mut Shelf)),
-    ] {
-        let mut s = shelf_with(2);
-        settle(&mut s);
-        let before = occupied(&s);
-        press(&mut s);
-        assert_eq!(
-            occupied(&s),
-            before,
-            "the {name} press redrew the row instead of moving it"
-        );
+    for n in [2usize, 3, 4, 5, 10] {
+        for (name, press) in [
+            ("right", Shelf::right as fn(&mut Shelf)),
+            ("left", Shelf::left as fn(&mut Shelf)),
+        ] {
+            let mut s = shelf_with(n);
+            settle(&mut s);
+            let before = occupied(&s);
+            press(&mut s);
+            assert_eq!(
+                occupied(&s),
+                before,
+                "{n} carts: the {name} press redrew the row instead of moving it"
+            );
+        }
     }
 }
 
