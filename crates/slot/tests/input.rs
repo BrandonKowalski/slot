@@ -1,5 +1,6 @@
 use slot::input::HostInput;
 use slot_input::{Btn, InputSource, RawEvent};
+use winit::event::WindowEvent;
 use winit::keyboard::KeyCode;
 
 fn edge(h: &mut HostInput, code: KeyCode, pressed: bool) -> Vec<RawEvent> {
@@ -83,4 +84,45 @@ fn the_two_reflex_keys_no_longer_end_a_session() {
             "{reflex:?} is bound again, and it can end a live link"
         );
     }
+}
+
+/// The window losing focus takes the key releases with it. A key-up is delivered to whatever
+/// took focus, and this never hears about it — so a key that was down when the window went
+/// away is a key nothing downstream can tell apart from a finger still on it. The bit stays set
+/// on the pad and the game goes on holding the button for the rest of the session.
+///
+/// Cmd-tab out of a game with Z down and the game is still pressing A when the window comes
+/// back; the only thing that clears it is pressing and releasing that one key again, by which
+/// point the player is guessing which key it was. So the keys are let go of here instead, which
+/// is what actually happened: the window stopped being what the keyboard was talking to.
+#[test]
+fn a_window_that_loses_focus_lets_go_of_the_keys_held_in_it() {
+    let mut h = HostInput::new();
+    assert_eq!(
+        edge(&mut h, KeyCode::KeyZ, true),
+        vec![RawEvent::Down(Btn::A)]
+    );
+    assert_eq!(
+        edge(&mut h, KeyCode::ArrowRight, true),
+        vec![RawEvent::Down(Btn::Right)]
+    );
+    // One key let go of the ordinary way, so what follows cannot be "release everything ever
+    // pressed".
+    assert_eq!(
+        edge(&mut h, KeyCode::KeyZ, false),
+        vec![RawEvent::Up(Btn::A)]
+    );
+    h.on_window_event(&WindowEvent::Focused(false));
+    assert_eq!(
+        h.poll(0),
+        vec![RawEvent::Up(Btn::Right)],
+        "the key still down when the window went away was never released"
+    );
+    // And nothing is released twice: a second loss with nothing pressed in between has nothing
+    // left to let go of, and a release the game already had would put the button down again.
+    h.on_window_event(&WindowEvent::Focused(false));
+    assert!(h.poll(0).is_empty());
+    // Focus coming back says nothing about what is held, so it says nothing at all.
+    h.on_window_event(&WindowEvent::Focused(true));
+    assert!(h.poll(0).is_empty());
 }

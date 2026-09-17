@@ -113,6 +113,9 @@ pub struct Gestures {
     ff_latched: bool,
     /// The press that established the latch, whose release must not clear it.
     ff_latching_press: bool,
+    /// A press `ff_down` turned away because L2 had the time. Its release is not the release of
+    /// anything, and must not be remembered as one: see `ff_up`.
+    r2_refused: bool,
     r2_last_release: Option<Millis>,
     rewinding: bool,
 }
@@ -138,6 +141,21 @@ impl Gestures {
     /// established by a release that emits nothing, and only this machine knows it happened.
     pub fn ff_latched(&self) -> bool {
         self.ff_latched
+    }
+
+    /// Lets go of a latched fast forward from outside the machine. The latch is the one thing
+    /// this file holds with no finger on it — every other hold ends when its own button does —
+    /// so it is the only one that can outlive the thing it was applied to. This file is blind
+    /// to screens on purpose, so whoever knows the slot is empty is what calls this.
+    ///
+    /// A *held* fast forward is deliberately left alone: a thumb still on R2 through an eject
+    /// is a thumb still asking for it, exactly as a held direction is, and it ends the moment
+    /// the thumb does.
+    pub fn drop_ff_latch(&mut self) -> Vec<Action> {
+        if !self.ff_latched {
+            return Vec::new();
+        }
+        self.ff_clear()
     }
 
     pub fn feed(&mut self, ev: RawEvent, now: Millis) -> Vec<Action> {
@@ -189,10 +207,7 @@ impl Gestures {
 
     fn down(&mut self, b: Btn, now: Millis) -> Vec<Action> {
         match b {
-            Btn::Select => {
-                self.select = Select::Pending(now);
-                Vec::new()
-            }
+            Btn::Select => self.select_down(now),
             Btn::Menu => self.menu_down(now),
             // The flush hangs off the press, because a POWER that is being held may be cut
             // by the PMIC before there is any release to see. Everything the user can
@@ -236,6 +251,31 @@ impl Gestures {
                 }
                 vec![Action::GbaUp(b)]
             }
+        }
+    }
+
+    /// A press, plus whatever the press before it still owed. `select_up` hands the core the
+    /// press on the release and leaves the release itself to the tick, so for `SELECT_TAP_MS`
+    /// after every tap there is a `GbaUp` the core has not been given yet.
+    ///
+    /// A second press inside that window overwrote the state that owed it, and the owed release
+    /// went with it. That heals by itself for a press that goes on to be delivered — its own
+    /// release ends the tap that never ended — but a press that becomes a chord delivers
+    /// nothing at all, and `select_up` has no up to hand back for a press it swallowed. The
+    /// core is then left holding SELECT until some later tap happens to end it, which is the
+    /// rest of the session if the player keeps chording.
+    ///
+    /// Fifty milliseconds is three frames, so this is not a gesture anyone performs: it is a
+    /// switch that bounced, or a thumb on a worn membrane. The fix is to hand the release back
+    /// here, ahead of the new press. The cost is that the first half of a sub-50 ms double tap
+    /// reaches the core for however far apart the two presses really were rather than for the
+    /// full tap, and nothing else changes: every other state answers exactly as it did.
+    fn select_down(&mut self, now: Millis) -> Vec<Action> {
+        let owed = matches!(self.select, Select::ReleaseDue(_));
+        self.select = Select::Pending(now);
+        match owed {
+            true => vec![Action::GbaUp(Btn::Select)],
+            false => Vec::new(),
         }
     }
 
@@ -374,6 +414,9 @@ impl Gestures {
 
     fn ff_down(&mut self, now: Millis) -> Vec<Action> {
         if self.rewinding {
+            // Turned away, and remembered as turned away. A press that produced nothing is not
+            // half of anything either — see `ff_up`.
+            self.r2_refused = true;
             return Vec::new();
         }
         if self.ff_latched {
@@ -394,6 +437,15 @@ impl Gestures {
     }
 
     fn ff_up(&mut self, now: Millis) -> Vec<Action> {
+        // Letting go of a press L2 turned away. `ff_down` did nothing with it, so this does
+        // nothing with it either — and above all it is not written down. Recorded as an
+        // ordinary release, it stood as the first half of a double tap the player never made:
+        // hold L2 to rewind, tap R2 and watch it be refused, let go of L2, then press R2 once
+        // and fast forward *latches* rather than being held, and stays on after the finger
+        // comes off. A refused press cannot be half of a gesture.
+        if std::mem::take(&mut self.r2_refused) {
+            return Vec::new();
+        }
         self.r2_last_release = Some(now);
         if self.ff_latching_press {
             self.ff_latching_press = false;

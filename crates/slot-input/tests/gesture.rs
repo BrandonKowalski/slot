@@ -45,6 +45,44 @@ fn select_released_inside_the_window_still_reaches_the_game() {
     assert!(g.tick(1_000).is_empty());
 }
 
+/// The release that tap owes, when the next press lands before the tick can hand it over.
+/// `SELECT_TAP_MS` is 50 ms — three frames — so this is not a gesture anyone performs on
+/// purpose: it is a switch that bounced, or a worn membrane making one press twice.
+///
+/// The press that arrives inside the window used to overwrite the state owing the release, and
+/// a press that then became a chord delivered no SELECT of its own to end the tap with. The
+/// core was left holding SELECT with no up ever coming — for the rest of the session, if the
+/// player kept chording, since every chorded press is swallowed the same way.
+///
+/// The invariant is the one the pad reads: SELECT goes down exactly as often as it comes up.
+#[test]
+fn a_select_press_inside_the_tap_window_hands_back_the_release_it_interrupted() {
+    let mut g = Gestures::new();
+    let mut log = Vec::new();
+    log.extend(g.feed(Down(Select), 0));
+    log.extend(g.feed(Up(Select), 20));
+    // The bounce, inside the window the tap's release is still owed in.
+    log.extend(g.feed(Down(Select), 20 + SELECT_TAP_MS - 1));
+    // And that press is a chord, so it hands the core nothing of its own.
+    log.extend(g.feed(Down(Btn::Up), 100));
+    log.extend(g.feed(Up(Btn::Up), 140));
+    log.extend(g.feed(Up(Select), 200));
+    for t in 200..2_000 {
+        log.extend(g.tick(t));
+    }
+    let downs = log.iter().filter(|a| **a == GbaDown(Select)).count();
+    let ups = log.iter().filter(|a| **a == GbaUp(Select)).count();
+    assert_eq!(
+        (downs, ups),
+        (1, 1),
+        "the core was handed {downs} SELECT press(es) and {ups} release(s): {log:?}"
+    );
+    assert!(
+        log.contains(&BrightnessUp),
+        "the chord off the second press stopped working: {log:?}"
+    );
+}
+
 /// A tap of MENU opens the quick menu, on the release. The other two MENU gestures are
 /// unchanged: a tap was the one press this button did not already mean something by.
 #[test]
@@ -136,6 +174,34 @@ fn a_press_just_short_of_the_threshold_is_a_lock() {
     g.feed(Down(Btn::Power), 0);
     assert!(g.tick(POWER_HOLD_MS - 1).is_empty());
     assert_eq!(g.feed(Up(Btn::Power), POWER_HOLD_MS - 1), vec![PowerTap]);
+}
+
+/// A press L2 turned away is not half of a double tap. It produced nothing, so its release
+/// must be remembered as nothing either — recorded as an ordinary release it stood as the
+/// first tap of a latch the player never made, and the *single* press that followed it turned
+/// fast forward on and left it on with nobody holding R2.
+///
+/// The whole thing is one ordinary sequence: rewinding, a stab at R2 that does nothing, the
+/// rewind ends, and R2 is pressed once. There is no timing to aim for beyond the 250 ms every
+/// double tap already has.
+#[test]
+fn a_press_the_rewind_turned_away_is_not_half_of_a_latch() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(L2), 0), vec![RewindStart]);
+    assert!(
+        g.feed(Down(R2), 50).is_empty(),
+        "the rewind let a fast forward start under it"
+    );
+    assert!(g.feed(Up(R2), 100).is_empty());
+    assert_eq!(g.feed(Up(L2), 150), vec![RewindStop]);
+    // One press of R2, inside the double tap window of that refused release.
+    assert_eq!(g.feed(Down(R2), 200), vec![FfStart]);
+    assert!(!g.ff_latched(), "a single press latched fast forward");
+    assert_eq!(
+        g.feed(Up(R2), 400),
+        vec![FfStop],
+        "the finger came off R2 and the speed stayed"
+    );
 }
 
 #[test]
