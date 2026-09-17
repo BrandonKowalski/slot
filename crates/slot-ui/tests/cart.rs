@@ -444,6 +444,59 @@ fn the_game_boy_label_well_is_near_square_and_sits_under_the_lettering_plate() {
     );
 }
 
+/// The class C top edge is modelled as a roll, not as a flat plate. Read down the middle of the
+/// face, where nothing else is drawn above the lettering plate, it has to come out in three
+/// parts: a lit band along the top, a darker break where the roll turns onto the shoulder, and
+/// the shoulder itself at the shell's own value. Any one of those missing and the top is flat
+/// again, which is the thing the user asked to have fixed.
+///
+/// This is a weak test on purpose and it is not what settled the drawing — the renders were.
+/// What it is for is the regression: the roll lives in an SVG that is read at runtime, so a
+/// mistyped path or a lost group would otherwise take the whole feature out in silence and
+/// nothing else in the suite would notice.
+#[test]
+fn the_colour_only_shell_has_a_rolled_top_edge_and_the_older_mould_does_not() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GBC", "Rolled.gbc", 0xc0);
+    write_gb_rom(&d, "GB", "Flat.gb", 0x00);
+    let carts = scan(d.path()).expect("scan");
+    let face = |stem: &str| {
+        cart_face(
+            carts
+                .iter()
+                .find(|c| c.stem == stem)
+                .unwrap_or_else(|| panic!("no cart {stem}")),
+        )
+    };
+    // Green alone, since all three channels move together here and one number reads better.
+    let down = |f: &slot_ui::CartFace, y: u32| pixel(f, GB_CART_W / 2, y)[1] as i32;
+
+    let rolled = face("Rolled");
+    let band = (2..=9).map(|y| down(&rolled, y)).min().expect("a band");
+    let brk = (10..=13).map(|y| down(&rolled, y)).min().expect("a break");
+    let shoulder = down(&rolled, 14);
+    assert!(
+        band > shoulder + 10,
+        "the class C top edge is {band} against a {shoulder} shoulder: the roll carries no light"
+    );
+    assert!(
+        brk < shoulder - 10,
+        "the break under the roll is {brk} against a {shoulder} shoulder: the roll does not turn, \
+         it just fades"
+    );
+
+    // The same rows on the shell this one was derived from, which is flat there and stays flat.
+    let flat = face("Flat");
+    let shoulder = down(&flat, 14);
+    for y in 0..=13 {
+        assert_eq!(
+            down(&flat, y),
+            shoulder,
+            "the class A/B top edge moved at row {y}: the roll is not class C only"
+        );
+    }
+}
+
 #[test]
 fn a_game_boy_cart_face_is_drawn_at_the_game_boy_size() {
     let d = tmp_root();

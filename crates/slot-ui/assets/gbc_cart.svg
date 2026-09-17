@@ -5,7 +5,29 @@
   where the older mould chamfers them, and the power-switch notch is gone — which is what
   stops one of these turning an original Game Boy on. Everything below the shoulder, the
   bottom corners included, is the same contour.
+
+  The corners are a circle rather than the 20 x 17 ellipse they used to be. Measured off the
+  square-on photograph of the shell, its top right corner — the one the lens distorts least in
+  that frame — fits a circle within a pixel or two: 67 px across against 71 down on a 1335 px
+  body. An ellipse wider than it is tall puts the tightest part of the turn against the side
+  edge, which is the half of the corner the eye reads; circular, the curvature is even the
+  whole way round, which is what a moulded corner does.
+
+  18 px on a 227 px body is 7.9%, which is wider than that photograph measures — its corner is
+  5% of the body width, and the class C radius was already past that before this change. It
+  stays past it deliberately, for two reasons. The rolled top edge in gbc_cart_detail.svg has to
+  turn this corner and needs room: the roll is 12 px deep, so at 5% it would be deeper than the
+  corner is wide and its inner break would come to a point rather than turning. And the corner
+  is the one place the user has asked for more roundness, not less.
+-->
+<!--
+  One measurement that did not survive contact with the pixels, recorded so nobody re-derives it:
+  the corner sweep of that photograph's top *left* corner reads much wider, 93 px across against
+  65 down. The two corners of one moulded shell are the same corner, so the difference is the
+  frame, not the object — the top edge bows 15 px across the photograph, which is a lens, and it
+  is the left corner that sits furthest into the distortion. The right corner is the one to
+  trust.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 253">
-  <path d="M 26.5 0 L 213.5 0 A 20 17 0 0 1 233.5 17 L 233.5 249.6 A 4.3 3.4 0 0 1 229.2 253 L 10.8 253 A 4.3 3.4 0 0 1 6.5 249.6 L 6.5 17 A 20 17 0 0 1 26.5 0 Z" fill="#fff"/>
+  <path d="M 24.5 0 L 215.5 0 A 18 18 0 0 1 233.5 18 L 233.5 249.6 A 4.3 3.4 0 0 1 229.2 253 L 10.8 253 A 4.3 3.4 0 0 1 6.5 249.6 L 6.5 18 A 18 18 0 0 1 24.5 0 Z" fill="#fff"/>
 </svg>
