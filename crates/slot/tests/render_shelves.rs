@@ -82,6 +82,16 @@ fn banner_ink(px: &[u8]) -> usize {
         .count()
 }
 
+/// Lit pixels across the bottom plate, which is where the HUD prints the battery and the clock.
+/// The one thing on screen that is there whatever the shelf holds, so it is what says a frame was
+/// composed at all rather than handed back cleared — the distinction an empty library turns on.
+fn hud_ink(px: &[u8]) -> usize {
+    ((OUT_H as usize - 40)..OUT_H as usize)
+        .flat_map(|y| (0..OUT_W as usize).map(move |x| (x, y)))
+        .filter(|(x, y)| at(px, *x, *y).iter().all(|c| *c > 0x80))
+        .count()
+}
+
 /// The mark's own box in the screen's top right corner, which is the corner a live session's link
 /// badge takes. Read out of `mark_at` and `mark_box` rather than typed as four numbers, so moving
 /// either moves the reading with it.
@@ -330,6 +340,110 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         mark_pixels(&back),
         marks[0],
         "the ring came back to the Game Boy Advance shelf under another system's mark"
+    );
+}
+
+/// A card nobody has organised yet, on the panel. slot no longer sweeps loose files into the
+/// platform folders, so a card whose roms are still sitting at the top of `Games/` has nothing
+/// the scan will read and comes up an empty shelf.
+///
+/// That is a claim about a picture, so it is settled against the picture. The whole risk of
+/// dropping the sweep is that "no carts" turns out to be a crash, a hang or a half-drawn screen
+/// rather than a clean empty shelf, and every one of those reads the same in a draw list: an
+/// empty list and a list of chrome with no carts in it are both "no `Draw::Tex` for a cart". The
+/// panel can tell them apart. So this composes the frame, requires the housing to be up — the
+/// shelf drew itself, it did not fail to draw — and requires all three carousel slots to be the
+/// bare ground behind it, with the organised card from `tmp_root_with_carts` beside it proving
+/// the same readings do find carts when there are carts to find.
+///
+/// It also runs the frontend on for a second of frames and composes again. An empty library is
+/// the one shape with no cart to animate and no selection to move, which is exactly where a
+/// carousel that divides by the number of carts or waits on a face that is never coming would
+/// hang — and a hang is not visible in one frame.
+#[test]
+fn a_card_nobody_has_organised_comes_up_an_empty_shelf() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+
+    // Exactly the card the sweep used to rescue: a rom, its battery save and its label all loose
+    // at the top of their folders, plus a pre-namespacing state directory. `tmp_root_with_carts`
+    // builds the folders and then the files are put beside the platform directories rather than
+    // in them.
+    let d = tmp_root_with_carts(&[]);
+    std::fs::write(d.path().join("Games/Emerald.gba"), vec![0u8; 0x100]).expect("loose rom");
+    std::fs::write(d.path().join("Saves/Emerald.sav"), vec![7u8; 0x10000]).expect("loose save");
+    std::fs::write(d.path().join("Labels/Emerald.png"), b"png").expect("loose label");
+    clocked(d.path());
+
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    f.advance(&mut input);
+    let empty = composed(&mut f, &mut c, "loose-card");
+
+    // The chrome is up, so what follows is an empty shelf and not an unpainted screen. The
+    // bottom plate is the part of the case that is on screen no matter what the shelf holds —
+    // an empty library draws no carts and no top plate, so the top of the panel is honestly
+    // black — and the HUD's own type is printed across it, which is a live frame rather than a
+    // cleared buffer.
+    let plate = patch(&empty, 150, 470);
+    assert!(
+        apart(plate, GROUND) > 20,
+        "the bottom plate is not there, so this is a blank screen rather than an empty shelf: \
+         {plate:?}"
+    );
+    assert!(
+        hud_ink(&empty) > 100,
+        "the plate came up with no battery and no clock printed on it: {} lit pixels",
+        hud_ink(&empty)
+    );
+    for (name, (x, y)) in [
+        ("left", SIDE_LEFT),
+        ("middle", MIDDLE),
+        ("right", SIDE_RIGHT),
+    ] {
+        let slot = patch(&empty, x, y);
+        assert!(
+            apart(slot, GROUND) < 30,
+            "the {name} slot of an unorganised card is holding something: {slot:?}"
+        );
+    }
+
+    // A second of frames later it is still the same screen, and still composing.
+    for _ in 0..60 {
+        f.advance(&mut input);
+    }
+    let later = composed(&mut f, &mut c, "loose-card-later");
+    for (name, (x, y)) in [
+        ("left", SIDE_LEFT),
+        ("middle", MIDDLE),
+        ("right", SIDE_RIGHT),
+    ] {
+        let slot = patch(&later, x, y);
+        assert!(
+            apart(slot, GROUND) < 30,
+            "a cart appeared in the {name} slot a second after an unorganised card booted: \
+             {slot:?}"
+        );
+    }
+
+    // The contrast. The same three readings on a card whose rom is in `Games/GBA/` find a cart,
+    // so "bare ground" above is the library being empty and not the readings being blind.
+    let organised = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(organised.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(organised.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.advance(&mut input);
+    let full = composed(&mut f, &mut c, "organised-card");
+    let middle = patch(&full, MIDDLE.0, MIDDLE.1);
+    assert!(
+        apart(middle, GROUND) > 60,
+        "the organised card's own shelf is bare too, so this test cannot see a cart at all: \
+         {middle:?}"
     );
 }
 

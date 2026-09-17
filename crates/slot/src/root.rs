@@ -1,22 +1,34 @@
 use std::path::{Path, PathBuf};
 
-/// The folders of a content root, including the platform subdirectories under `Games/` and
-/// `Labels/` so `ensure` creates them and the card teaches its own layout to someone dropping
-/// files in over USB.
+/// The folders of a content root, including a platform subdirectory under each of the four
+/// folders whose contents are filed per platform, so `ensure` creates them and the card teaches
+/// its own layout to someone dropping files in over USB.
 ///
-/// Those two folders and no others, and what separates them from the rest is who puts a file
-/// there. A person places a rom and a piece of label art by hand, over USB, and needs somewhere
-/// to put each that says which platform it is for — a `.gb` and a `.gba` cart may share a stem,
-/// so `Tetris.png` alone does not say which cart it is the face of. Nobody hand-places a battery
-/// save or a save state; slot writes both. So `Saves/` and `States/` grow their platform
-/// subdirectories on first write instead, the same as their contents already do.
+/// The card teaching its own layout is now the whole of the guidance there is. slot used to
+/// sweep loose files into these folders on every boot; it does not any more, so an empty folder
+/// with the right name is the only thing on the card that says where a file belongs, and every
+/// folder a person has to put something in has to be here.
+///
+/// `Saves/` and `States/` are on that list for the first time, and the reason they were kept off
+/// it went out with the sweep. The old rule was who places a file: a person places a rom and a
+/// piece of label art by hand and needs somewhere to put each that names a platform — a `.gb` and
+/// a `.gba` cart may share a stem, so `Tetris.png` alone does not say which cart it is the face
+/// of — whereas nobody hand-placed a battery save or a save state, because slot wrote both and
+/// the sweep moved whatever was already there. Now that a card is organised by hand, a person
+/// bringing an old card across carries their own `.sav` files and their own `States/<core>/`
+/// trees over, and those two folders need to say where they go as much as `Games/` does.
+///
+/// `States/` goes one level deeper than this — `States/<platform>/<core>/<stem>/` — and the core
+/// level is deliberately not scaffolded: slot creates it on first write, and someone moving an
+/// old card's `States/mgba/` wholesale into `States/GBA/` lands on exactly the right shape
+/// without having to be told the core's spelling.
 ///
 /// A card that has never held slot. has none of them, and every write path below assumes its
 /// own is already there.
 ///
 /// Parents come before their children: `ensure` creates each in turn, and so does the test
 /// harness's own root.
-pub const DIRS: [&str; 13] = [
+pub const DIRS: [&str; 19] = [
     "BIOS",
     "Games",
     "Games/GBA",
@@ -27,7 +39,13 @@ pub const DIRS: [&str; 13] = [
     "Labels/GB",
     "Labels/GBC",
     "Saves",
+    "Saves/GBA",
+    "Saves/GB",
+    "Saves/GBC",
     "States",
+    "States/GBA",
+    "States/GB",
+    "States/GBC",
     "System",
     "Wallpapers",
 ];
@@ -36,45 +54,6 @@ pub const DIRS: [&str; 13] = [
 pub fn ensure(root: &Path) {
     for sub in DIRS {
         let _ = std::fs::create_dir_all(root.join(sub));
-    }
-}
-
-/// Bring a card up to the current layout: pre-namespacing states first, then everything loose
-/// into its platform folder. Best effort on purpose: a read only or half mounted card is an
-/// empty shelf, not a boot failure, exactly as `ensure` treats it.
-///
-/// **Order is load-bearing.** `migrate_states` has to run first. Reversed, a pre-namespacing
-/// `States/<stem>/` would still be sitting at the top of `States/` when `migrate_platforms`
-/// swept it into `States/GBA/<stem>/` — a cart folder landing exactly where a core folder
-/// belongs — and `migrate_states`, which only ever looks at `States/`'s own top level, would
-/// never see it there to finish the job.
-///
-/// A per-entry failure does not stop either sweep — the rest of the shelf still gets a chance —
-/// but silently eating every one of them would leave a cart stuck pre-migration forever with
-/// nothing on the card to say so. Logged here, once per boot per sweep, rather than inside
-/// `migrate_states` or `migrate_platforms` themselves, which only count and have no read on
-/// where "once per boot" ends.
-pub fn migrate(root: &Path) {
-    report_migration("state", slot_store::migrate_states(root));
-    report_migration("platform", slot_store::migrate_platforms(root));
-}
-
-/// Puts a nonzero `failed` on the boot log. `what` names the sweep so two failing at once
-/// read as two lines rather than one count with no way to tell which sweep it came from.
-fn report_migration(what: &str, result: std::io::Result<slot_store::MigrationReport>) {
-    if let Ok(report) = result {
-        if report.failed > 0 {
-            eprintln!(
-                "slot: migrate: {} of {} {what} director{} did not move",
-                report.failed,
-                report.moved + report.failed,
-                if report.moved + report.failed == 1 {
-                    "y"
-                } else {
-                    "ies"
-                }
-            );
-        }
     }
 }
 

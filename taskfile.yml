@@ -149,7 +149,10 @@ tasks:
       ROOT: '{{.ROOT | default "./sdcard"}}'
     cmds:
       - ./target/debug/slot --init-root {{.ROOT}}
-      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, gba_bios.bin in BIOS, pngs in Wallpapers, palette in System/theme.txt"'
+      # Every folder a person puts a file in, because nothing is filed for them: slot reads the
+      # platform folders and leaves anything loose exactly where it is.
+      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, battery saves in the matching Saves/GBA, Saves/GB or Saves/GBC, save states under the matching States/GBA, States/GB or States/GBC, gba_bios.bin in BIOS, pngs in Wallpapers, palette in System/theme.txt"'
+      - 'echo "nothing is moved for you: a file loose at the top of Games/, Saves/, Labels/ or States/ is left where it is and never reaches the shelf"'
 
   run:
     desc: >-

@@ -103,9 +103,8 @@ pub fn write(root: &Path, file: &str, key: &str, value: &str) -> std::io::Result
     // anything but UTF-8 — Notepad's ANSI default is enough, and a European rom set puts an
     // accent in a stem sooner or later — had the whole file replaced by this one line on the
     // next press. Every other write on the card refuses to destroy what it cannot account for:
-    // `write_sav` will not shrink a save, `retire_resume` renames rather than deletes,
-    // `migrate_states` leaves a name it finds taken. This one now does too, and the caller,
-    // which already logs a failed write, is told why.
+    // `write_sav` will not shrink a save and `retire_resume` renames rather than deletes. This
+    // one now does too, and the caller, which already logs a failed write, is told why.
     let existing = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),

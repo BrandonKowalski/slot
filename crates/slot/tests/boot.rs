@@ -223,57 +223,74 @@ fn draw_count(a: &App) -> usize {
     out.len()
 }
 
-/// `App::boot` is the only caller of `crate::root::migrate`. Every other migration test
-/// calls `slot_store::migrate_states` directly, so none of them would notice if boot ever
-/// stopped calling it — that call would just quietly stop moving anyone's states.
+/// A card nobody has organised yet. slot reads the platform folders and nothing else, so an
+/// entirely loose card is an empty shelf — the same thing an unmounted card has always been —
+/// and, crucially, boot leaves every one of those files exactly where the player put them.
+///
+/// Boot used to sweep them into place. It does not, and this is what stands in the place of the
+/// tests that asserted it did: the promise is no longer "your files will be moved for you", it is
+/// "nothing of yours will be moved at all".
 #[test]
-fn boot_migrates_a_pre_namespacing_state_shelf() {
-    let d = tmp_root_with_carts(&["Emerald"]);
-    let old = d.path().join("States/Emerald");
-    std::fs::create_dir_all(&old).unwrap();
-    std::fs::write(old.join("resume.state"), b"pre-namespacing").unwrap();
-
-    App::boot(d.path());
-
-    assert!(
-        d.path()
-            .join("States/GBA/mgba/Emerald/resume.state")
-            .exists(),
-        "boot did not carry the pre-namespacing state shelf under States/GBA/mgba/"
-    );
-}
-
-/// The whole loss, end to end and through the real boot: a pre-namespacing card whose `Saves/`
-/// sweep cannot run must not put the rom on the shelf. If it does, the cart is playable, the
-/// battery save is still loose in `Saves/` where `read_sav` does not look, and the game opens on
-/// a blank battery and writes a fresh save over the reader's path — which then shadows the real
-/// one forever, because the next sweep finds the destination taken and leaves the original where
-/// it is under the never-clobber rule.
-#[test]
-fn a_boot_that_cannot_move_a_save_does_not_shelve_the_cart_without_it() {
+fn a_loose_card_shows_an_empty_shelf_and_nothing_on_it_is_moved() {
     let d = tempfile::tempdir().unwrap();
-    for sub in ["Games", "Saves"] {
+    for sub in ["Games", "Saves", "Labels", "States"] {
         std::fs::create_dir_all(d.path().join(sub)).unwrap();
     }
     std::fs::write(d.path().join("Games/Emerald.gba"), vec![0u8; 0x100]).unwrap();
     std::fs::write(d.path().join("Saves/Emerald.sav"), vec![7u8; 0x10000]).unwrap();
-    // A corrupted card: `Saves/GBA` cannot be created, so nothing loose in `Saves/` can move.
-    std::fs::write(d.path().join("Saves/GBA"), b"not a directory").unwrap();
+    std::fs::write(d.path().join("Labels/Emerald.png"), b"png").unwrap();
+    let old_states = d.path().join("States/mgba/Emerald");
+    std::fs::create_dir_all(&old_states).unwrap();
+    std::fs::write(old_states.join("resume.state"), b"resume").unwrap();
 
     let a = App::boot(d.path());
 
     assert_eq!(
         a.carts().count(),
         0,
-        "a cart reached the shelf with its save stranded loose in Saves/"
+        "a loose rom reached the shelf, so something is still reading outside Games/<platform>/"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Games/Emerald.gba"))
+            .unwrap()
+            .len(),
+        0x100,
+        "the loose rom was moved or disturbed"
     );
     assert_eq!(
         std::fs::read(d.path().join("Saves/Emerald.sav"))
             .unwrap()
             .len(),
         0x10000,
-        "the stranded save was disturbed"
+        "the loose battery save was moved or disturbed"
     );
+    assert_eq!(
+        std::fs::read(d.path().join("Labels/Emerald.png")).unwrap(),
+        b"png",
+        "the loose label was moved"
+    );
+    assert_eq!(
+        std::fs::read(old_states.join("resume.state")).unwrap(),
+        b"resume",
+        "a pre-namespacing state directory was moved"
+    );
+}
+
+/// The folders that say where a hand-organised card files things are created on a card that has
+/// never held slot., not merely on one that already has them. They are the only guidance there
+/// is now that nothing is swept, so an empty card has to come up carrying all of them.
+#[test]
+fn boot_creates_the_folders_a_person_has_to_file_into() {
+    let d = tempfile::tempdir().unwrap();
+
+    App::boot(d.path());
+
+    for name in slot::root::DIRS {
+        assert!(
+            d.path().join(name).is_dir(),
+            "{name} is missing, so nothing on the card says where its files go"
+        );
+    }
 }
 
 /// A card holding both Tetrises: `Games/GBA/Tetris.gba` and `Games/GB/Tetris.gb`, which is the

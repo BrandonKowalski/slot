@@ -717,10 +717,12 @@ impl App {
 
     /// A seated cart goes back in through the insert animation rather than appearing
     /// already playing, so a boot and a resume are the same movement. A card with no
-    /// `Games` directory scans empty, which is a shelf, not a boot failure.
+    /// `Games` directory scans empty, which is a shelf, not a boot failure — and so is a
+    /// card whose files are all still loose at the top of `Games/`, because boot reads the
+    /// platform folders and nothing else. Nothing on the card is moved on the way past:
+    /// `ensure` creates the folders a person files into and that is the whole of it.
     pub fn boot(root: &Path) -> Self {
         crate::root::ensure(root);
-        crate::root::migrate(root);
         // Before anything is drawn. The card's palette cannot change while the device is on,
         // so it is read once and never asked for again.
         slot_ui::set_theme(Theme::read(root));
