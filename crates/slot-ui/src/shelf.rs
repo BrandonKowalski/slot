@@ -66,6 +66,11 @@ pub struct Shelf {
     /// here because the answer is in the rom's header: asking it while drawing would open a
     /// file on every cart of every frame.
     shells: Vec<Option<GbShell>>,
+    /// The presses added up, in the same continuous coordinate `scroll` lives in, so it counts
+    /// laps rather than wrapping. Only a ring of two reads it — see `scroll_target` — but it is
+    /// kept for every row because `step` is the one place a press is known about, and a row
+    /// never changes how many carts it holds without being built again.
+    ride: f32,
     vel: f32,
     /// The direction being held and when it next repeats. Repeat lives here rather than in
     /// the gesture layer so nothing in game starts auto firing.
@@ -83,9 +88,21 @@ impl Shelf {
             shadow: None,
             gb_shadow: None,
             gbc_shadow: None,
+            ride: 0.0,
             vel: 0.0,
             held: None,
         }
+    }
+
+    /// Put the row on a cart without a ride: the selection, where the row stands and where its
+    /// spring is heading all become this cart at once. Assigning `index` on its own leaves the
+    /// spring aiming at the cart that was selected before, so this is how anything outside the
+    /// left and right presses moves the shelf — the carousel opening on a resumed cart, say.
+    pub fn select(&mut self, i: usize) {
+        self.index = i;
+        self.scroll = i as f32;
+        self.ride = i as f32;
+        self.vel = 0.0;
     }
 
     /// Face textures in `carts` order. The caller uploads them because only the compositor
@@ -177,53 +194,74 @@ impl Shelf {
             return;
         }
         self.index = (self.index as i32 + by).rem_euclid(n as i32) as usize;
+        self.ride += by as f32;
     }
 
-    /// Where the spring is heading, in the continuous coordinate `scroll` lives in. The row
-    /// is a ring, so the selected cart has an image every `n` slots; this is the one nearest
-    /// where the row already is, which is what stops a wrap unwinding the whole row.
+    /// Where the spring is heading, in the continuous coordinate `scroll` lives in. The row is
+    /// a ring, so the selected cart has an image every `n` slots; this is the one nearest the
+    /// place measured from, which is what stops a wrap unwinding the whole row.
+    ///
+    /// A row of three or more measures from where the row already stands. A row of two cannot:
+    /// on a ring of two the selection's two nearest images sit exactly one slot either side, so
+    /// "the nearest" has nothing to choose between them, and a press arriving while the spring
+    /// is still moving lands on the image behind the row and sends it back the way it came. On a
+    /// shelf of two both neighbours are the same cart, so the direction of travel is the only
+    /// thing on screen that says which button was pressed, and a reversal reads as the row
+    /// glitching. It measures from `ride` — the presses added up, laps and all — instead, so a
+    /// second right press carries on rightwards through the wrap.
+    ///
+    /// Wrapping `ride` back onto the ring is what keeps this honest if `index` was moved without
+    /// it: the answer is still an image of the cart that is actually selected.
     pub fn scroll_target(&self) -> f32 {
         let n = self.carts.len();
         if n == 0 {
             return 0.0;
         }
+        let from = if n == 2 { self.ride } else { self.scroll };
         let n = n as f32;
-        self.scroll + (self.index as f32 - self.scroll + n / 2.0).rem_euclid(n) - n / 2.0
+        from + (self.index as f32 - from + n / 2.0).rem_euclid(n) - n / 2.0
     }
 
-    /// The cart `off` slots right of the selection. `None` when the row is empty, or when
-    /// this slot would repeat a cart another slot is already showing: with two carts the
-    /// left and right neighbours are the same one, and a row holding it twice reads as a
-    /// bug. The row is left with a gap instead.
+    /// The cart `off` slots right of the selection, or `None` when the row is empty or when this
+    /// slot falls off the end of a row too short to reach it.
+    ///
+    /// A ring of two fills every slot, which means one of the two carts is drawn twice at once.
+    /// The user asked for that having seen the alternatives running on the device: the row was
+    /// first left with a hole where the repeat would have been, then stood as a centred pair,
+    /// and their answer to both was "if there are only two carts the carts should repeat to fill
+    /// all three carousel slots". Do not take it back out — a row that shows a cart twice is
+    /// what a carousel of two *is*, and it is the only one of the three that scrolls, since the
+    /// other two had nothing to put in the slot the row moves into.
+    ///
+    /// Filling every slot rather than only the three on screen is what makes the scroll
+    /// continuous: with every slot taken, each offset along the row holds the same cart before
+    /// and after a press, so the row slides by a pitch instead of a cart blinking out at one
+    /// edge and back in at the other. The ones past the edges are thrown away by `draw_row`'s
+    /// own bounds check, as they are on any other row.
+    ///
+    /// One cart stays alone in the middle. Repeating it would put three identical faces across a
+    /// row that cannot scroll — the selection never changes, so nothing would ever move — and
+    /// three copies of one cart standing still read as a drawing fault, not as a ring. Two carts
+    /// differ on both counts: the neighbours are a different cart from the selection, and the
+    /// row does turn.
     pub fn cart_at_offset(&self, off: i32) -> Option<usize> {
         let n = self.carts.len() as i32;
         if n == 0 {
             return None;
         }
+        let at = |off: i32| (self.index as i32 + off).rem_euclid(n) as usize;
+        if n == 2 {
+            return Some(at(off));
+        }
         let r = off.rem_euclid(n);
         let nearest = if r * 2 > n { r - n } else { r };
-        (nearest == off).then(|| (self.index as i32 + off).rem_euclid(n) as usize)
+        (nearest == off).then(|| at(off))
     }
 
-    /// How far the row stands from the selection being dead centre, in pitches.
-    ///
-    /// Zero for a row of one, which is centred already, and for a row of three or more, where
-    /// the selection has a neighbour peeking in at either side. Half a pitch left for a row of
-    /// two: that row has only one neighbour to give, since `cart_at_offset` refuses to stand
-    /// the same cart on both sides of the selection, and centring the selection would put the
-    /// pair off to the left with a hole beside it. A hole in a row of carts reads as a cart
-    /// that failed to load rather than as the end of the row, so the two are centred together.
-    fn shift(&self) -> f32 {
-        match self.carts.len() {
-            2 => -0.5,
-            _ => 0.0,
-        }
-    }
-
-    /// Where the selected cart stands once the row has settled, in offscreen pixels. The cart
-    /// going into the slot and the cart the picker opens are both drawn by somebody else,
-    /// starting from where this row left it, so a row that is not centred on its selection has
-    /// to be able to say where that is.
+    /// Where the selected cart stands once the row has settled, in offscreen pixels: dead
+    /// centre, whatever the row holds. The cart going into the slot and the cart the picker
+    /// opens are both drawn by somebody else, starting from where this row left it, so the row
+    /// has to be able to say where that is rather than have each of them assume it.
     ///
     /// The width is asked of the selected cart rather than assumed to be `CART_W`, so this is
     /// `draw_row`'s own placement of that cart with `offset` at zero rather than a second copy
@@ -235,7 +273,7 @@ impl Shelf {
             .carts
             .get(self.index)
             .map_or(CART_W, |c| cart_box(c.platform).0);
-        (OUT_W as f32 - w as f32) / 2.0 + self.shift() * PITCH
+        (OUT_W as f32 - w as f32) / 2.0
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -277,7 +315,6 @@ impl Shelf {
         let recede = recede.clamp(0.0, 1.0);
         let dim = dim.clamp(0.0, 1.0);
         let target = self.scroll_target();
-        let shift = self.shift();
         for slot in -SLOTS..=SLOTS {
             let Some(i) = self.cart_at_offset(slot) else {
                 continue;
@@ -286,9 +323,8 @@ impl Shelf {
             if hidden == Some(cart.stem.as_str()) {
                 continue;
             }
-            // How far this cart is from the selection, which is what decides its size and how
-            // solid it is. The row's own place on screen is `shift` further along — the two
-            // were one number while every row was centred on its selection.
+            // How far this cart is from the selection, which is what decides both its size and
+            // where on the row it stands: every row is centred on the cart it has selected.
             let offset = target + slot as f32 - self.scroll;
             let t = offset.abs().min(1.0);
             let scale = 1.0 + (SIDE_SCALE - 1.0) * t;
@@ -298,7 +334,7 @@ impl Shelf {
             // Away from the middle, and further the further out it already was, so the row
             // opens rather than sliding sideways.
             let away = offset.signum() * (1.0 + offset.abs());
-            let x = OUT_W as f32 / 2.0 + (offset + shift) * PITCH - w / 2.0 + away * PART * recede;
+            let x = OUT_W as f32 / 2.0 + offset * PITCH - w / 2.0 + away * PART * recede;
             if x + w <= 0.0 || x >= OUT_W as f32 || alpha <= 0.0 {
                 continue;
             }
