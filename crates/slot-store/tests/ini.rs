@@ -234,6 +234,41 @@ fn every_key_a_write_accepts_reads_back_as_itself() {
     }
 }
 
+/// A file that will not read as text is not an empty file. The two used to be treated the
+/// same, so one press replaced every line on the card with a single entry — and the card is
+/// exactly where a file gets saved in something other than UTF-8: Notepad's ANSI default is
+/// enough, and a European rom set puts an accent in a stem sooner or later.
+///
+/// The bytes below are `Pokémon` in cp1252, which is what an editor with that default writes.
+#[test]
+fn a_file_that_will_not_read_as_text_is_left_alone_rather_than_replaced() {
+    let d = root_with(None);
+    let mut latin1 = b"Pok\xe9mon = actual\nEmerald = actual\n".to_vec();
+    latin1.extend_from_slice(b"Metroid Fusion = stretch\n");
+    std::fs::write(d.path().join(FILE), &latin1).unwrap();
+
+    let e = ini::write(d.path(), FILE, "Emerald", "stretch")
+        .expect_err("the unreadable file was overwritten");
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(
+        std::fs::read(d.path().join(FILE)).unwrap(),
+        latin1,
+        "the rest of the card's choices were destroyed"
+    );
+}
+
+/// The other half of the same distinction: a file that is genuinely absent is still created,
+/// which is what every first write on a fresh card is.
+#[test]
+fn an_absent_file_is_still_created_by_a_write() {
+    let d = root_with(None);
+    ini::write(d.path(), FILE, "Emerald", "stretch").unwrap();
+    assert_eq!(
+        ini::value(d.path(), FILE, "Emerald").as_deref(),
+        Some("stretch")
+    );
+}
+
 /// A key written twice by hand collapses to one line on the next write, so the file goes on
 /// saying one thing per key — the same reading `read` already takes.
 #[test]

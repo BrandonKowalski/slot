@@ -98,7 +98,19 @@ pub fn write(root: &Path, file: &str, key: &str, value: &str) -> std::io::Result
     }
 
     let path = root.join(file);
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    // A file that is not there is an empty one; a file that is there and will not read is not.
+    // `unwrap_or_default` treated the two the same, so a card whose ini had been saved in
+    // anything but UTF-8 — Notepad's ANSI default is enough, and a European rom set puts an
+    // accent in a stem sooner or later — had the whole file replaced by this one line on the
+    // next press. Every other write on the card refuses to destroy what it cannot account for:
+    // `write_sav` will not shrink a save, `retire_resume` renames rather than deletes,
+    // `migrate_states` leaves a name it finds taken. This one now does too, and the caller,
+    // which already logs a failed write, is told why.
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
 
     let entry_line = line;
     let mut out = String::with_capacity(existing.len() + entry_line.len() + 1);
