@@ -183,6 +183,45 @@ pub fn apply_core_options(
         // cart's own header read honestly, and naming a model here would override what the cart
         // says about itself. Nothing sets `mgba_use_bios` or `mgba_skip_bios`.
         core.set_option("mgba_sgb_borders", "OFF");
+        // The next two put back what a Game Boy Advance SP showed when an original monochrome
+        // Game Boy cartridge was pushed into it. The SP has no monochrome mode to fall back on:
+        // a Game Boy cart runs through the Game Boy Color compatibility the AGB inherits, and
+        // that boot ROM colourises the cart before handing it control. It colourises from a
+        // table built into the ROM and keyed on the cartridge's own header — the licensee code
+        // has to be Nintendo's `01`, and a checksum of the sixteen title bytes then selects one
+        // of ninety-four palette assignments, with the fourth title letter breaking the ties.
+        // A cart that misses, for either reason, is given the table's entry zero. So grayscale,
+        // which is what mGBA does when left alone, is the one thing no hardware here ever put on
+        // a screen: a Game Boy's own panel was green, and every machine that could still take
+        // its cartridges afterwards coloured it. Two options rather than one because the
+        // hardware behaviour has two halves, and setting either alone reproduces half of it.
+        //
+        // `mgba_gb_colors_preset` is the table. mGBA declares it as the bare digits `0|1|2|3`
+        // with no labels in the list this frontend is old enough to be handed, so a digit is all
+        // there is to set: 0 is off, 1 the Game Boy Color's presets, 2 the Super Game Boy's, 3
+        // both. `1` is the SP exactly — for these cartridges an SP *is* a Game Boy Color, and it
+        // is emphatically not a Super Game Boy, so `3` would hand a cart a palette no SP could
+        // have shown. mGBA keys its own copy of the table on a CRC32 of the header instead of on
+        // the licensee and title checksum, which reaches the same palette for a cart it has an
+        // entry for by a different route, and can miss one the hardware would have matched.
+        //
+        // `mgba_gb_colors` is the other half: what a cart the table has no entry for is given.
+        // The hardware's answer to that is not a neutral grey but one specific triple — the
+        // background on the boot ROM's palette 29, white through green and blue to black, and
+        // both object palettes on its 4, white through salmon and dark red to black — and it is
+        // what every unlicensed, third-party and homebrew monochrome cart came up in. mGBA
+        // exposes that triple under the name of a boot button combination, `GBC Dark Green →A`,
+        // because the boot ROM reuses one entry for the default and for that combination. The
+        // name is the coincidence; the colours are the hardware's default, which is why this is
+        // that value rather than one of the grey or green ramps that sit above it in the list.
+        //
+        // Neither of these is the Colour Correction row below. That one is about how the SP's
+        // screen answered a colour it was given; these decide which colours a cartridge with no
+        // colours of its own is given in the first place. Both are Game Boy only: a Game Boy
+        // Color or Game Boy Advance cart carries its own palettes and renders identically either
+        // way, which `render_gb_palette.rs` holds to pixel for pixel.
+        core.set_option("mgba_gb_colors_preset", "1");
+        core.set_option("mgba_gb_colors", "GBC Dark Green →A");
         // mGBA declares this one as `OFF|GBA|GBC|Auto`, read off the vendored dylib rather than
         // guessed at, because nothing in this tree can tell a correct option value from a typo:
         // `SET_VARIABLES` is answered `true` and the declared list thrown away, so a misspelt
