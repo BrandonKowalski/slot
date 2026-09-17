@@ -256,18 +256,36 @@ impl Shelf {
     /// three copies of one cart standing still read as a drawing fault, not as a ring. Two carts
     /// differ on both counts: the neighbours are a different cart from the selection, and the
     /// row does turn.
+    ///
+    /// Every other length fills every slot too, for exactly the reason the row of two does.
+    /// This used to hand each cart *one* image — the slot nearest the selection — and hold the
+    /// rest of the ring empty. That reads correctly while the row is still, because at rest only
+    /// the three middle slots are on screen and three or more carts fill all three. It does not
+    /// survive a press. A press moves the selection before the spring has moved the row, so for
+    /// the length of the travel every image is one slot further from the selection than it is
+    /// from the screen's middle, and the image the rule refuses to hand out is the one leaving
+    /// the frame. At three carts and at four, the cart standing in the left slot was still fully
+    /// on screen when the press struck it out of the row: it vanished where it stood instead of
+    /// sliding off the edge, and the left third of the screen then stayed bare — 343 px of it
+    /// under a held scroll — until the row settled. Composited and looked at, a ten cart row
+    /// carries a cart off the left edge on the same frames that a three cart row shows black.
+    ///
+    /// So the ring is a ring at every length, and which images are on screen is `draw_row`'s
+    /// bounds check to decide rather than this. At rest that check still leaves exactly the three
+    /// middle slots standing, so a settled row of three or more shows each of its carts once and
+    /// nothing is repeated; from five carts up the ring is wider than the screen and nothing is
+    /// ever repeated at all. Three and four carts do show one cart at both edges at once while
+    /// the row is moving, each half out of frame — which is a ring shorter than the window, drawn
+    /// honestly, and is the same thing the row of two does on every frame.
     pub fn cart_at_offset(&self, off: i32) -> Option<usize> {
         let n = self.carts.len() as i32;
         if n == 0 {
             return None;
         }
-        let at = |off: i32| (self.index as i32 + off).rem_euclid(n) as usize;
-        if n == 2 {
-            return Some(at(off));
+        if n == 1 {
+            return (off == 0).then_some(self.index);
         }
-        let r = off.rem_euclid(n);
-        let nearest = if r * 2 > n { r - n } else { r };
-        (nearest == off).then(|| at(off))
+        Some((self.index as i32 + off).rem_euclid(n) as usize)
     }
 
     /// Where the selected cart stands once the row has settled, in offscreen pixels: dead
