@@ -181,9 +181,11 @@ fn report_missing(core: Core, paths: &[PathBuf]) {
 /// right one. gpSP declares its own as `disabled|enabled`, a different key and a different pair of
 /// words, and only ever runs GBA carts so it has no console to choose between.
 ///
-/// TGB Dual is `None`, and that is the whole of its colour story: it declares five options
-/// (`libretro/libretro.cpp:19-28`) and not one of them is about colour. The row is therefore inert
-/// for a cart running on it, which `App` is careful to say rather than pretend otherwise.
+/// TGB Dual had no such option at all until slot gave it one: upstream declares five options and
+/// not one of them is about colour, which left the row inert for every Game Boy and Colour cart.
+/// `cores/tgbdual/color-correction.patch` adds it, so the key here is real, and the `None` arm is
+/// gone. It is still worth keeping the shape: a core with nothing to set is a thing this has had
+/// to express once and may again.
 pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static str)> {
     match which {
         Core::Mgba => Some(("mgba_color_correction", if on { "Auto" } else { "OFF" })),
@@ -191,7 +193,10 @@ pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static st
             "gpsp_color_correction",
             if on { "enabled" } else { "disabled" },
         )),
-        Core::TgbDual => None,
+        Core::TgbDual => Some((
+            "tgbdual_color_correction",
+            if on { "enabled" } else { "disabled" },
+        )),
     }
 }
 
@@ -378,14 +383,21 @@ mod tests {
         );
     }
 
-    /// TGB Dual has no colour correction option at all: its whole declared list is five entries
-    /// and none of them is about colour. `None` is what keeps `Session` from sending a key the
-    /// core would silently swallow, and it is the reason the row cannot work on a Game Boy cart
-    /// until the core grows one.
+    /// TGB Dual's option is slot's own, added by `cores/tgbdual/color-correction.patch`, so this
+    /// pins the name the patch declares as well as the one the frontend sends. Those two are in
+    /// different repositories and nothing but this test holds them together: a rename on either
+    /// side would leave the row silently inert again, which is exactly the failure it was in
+    /// before the patch existed.
     #[test]
-    fn tgb_dual_has_no_colour_correction_to_set() {
-        assert_eq!(colour_option(Core::TgbDual, true), None);
-        assert_eq!(colour_option(Core::TgbDual, false), None);
+    fn tgb_dual_takes_the_option_slots_own_patch_adds() {
+        assert_eq!(
+            colour_option(Core::TgbDual, true),
+            Some(("tgbdual_color_correction", "enabled"))
+        );
+        assert_eq!(
+            colour_option(Core::TgbDual, false),
+            Some(("tgbdual_color_correction", "disabled"))
+        );
     }
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {

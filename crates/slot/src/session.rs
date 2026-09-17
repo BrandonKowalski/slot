@@ -308,8 +308,8 @@ impl Session {
         // Colour correction, the one option a player can change with a game on screen. Carried
         // here for the same reason the wire is: `App` never touches the core. Which key to send,
         // and whether there is one to send at all, is the seated core's business rather than the
-        // menu's: mGBA and gpSP spell it differently and TGB Dual has no such option, so
-        // `colour_option` answers `None` and nothing is sent.
+        // menu's: all three cores spell it differently, and a core with no such option at all
+        // would have `colour_option` answer `None` and nothing would be sent.
         if let Some(on) = self.app.take_colour_correction() {
             if let Some((key, value)) = crate::core::colour_option(self.app.core(), on) {
                 if let Some(emu) = &self.emu {

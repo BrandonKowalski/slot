@@ -116,15 +116,30 @@ from this repo carries the same notice the release zip does.
   licenses/tgbdual-<commit>.meta
   ```
 
-  **This build is not modified.** There is no patch, and that is worth stating rather than leaving
-  to be inferred from an empty directory: TGB Dual needed none. It builds clean for aarch64 from
-  upstream's own `make platform=unix` with no external assets and no boot ROM, and it turns its
-  link on by itself when two ROMs arrive, so slot does not have to patch in the behaviour it wants.
-  The only thing `cores/tgbdual/build.sh` adds to upstream's recipe is `-flto=auto`, which the
-  `.meta` records as `device_cflags` and which changes how the core is compiled rather than what it
-  computes: both builds produce byte-identical framebuffers. If a patch is ever added, it ships
-  here beside the archive with its file name prefixed `tgbdual-`, the way gpSP's does, and section
-  2(a)'s change notice belongs in this paragraph.
+  **This build is modified, and this is the modification**, which is what GPL-2.0 section 2(a)
+  asks be carried in the changed files. The patch ships here beside the archive, its file name
+  prefixed `tgbdual-`, the way gpSP's does.
+
+  `color-correction.patch` adds a `tgbdual_color_correction` core option, off by default, which
+  simulates the Game Boy Color's own screen. A CGB game writes palette values meant for that
+  screen, which is dimmer and far less saturated than the panel in an SP; shown literally they
+  come out harsh. Upstream declares five options and not one of them is about colour, so before
+  this the quick menu's Colour Correction row was inert for every Game Boy and Colour cart.
+
+  Where the correction is applied is the whole of the design, and it is deliberately not where it
+  first looks like it belongs. `map_color` has an inverse, `unmap_color`, which a game reads its
+  own palette back through (`gb_core/cpu.cpp`, the BCPD register). Correcting there would stop the
+  pair being inverses and hand a game colours it never wrote, which is a change to emulated
+  behaviour rather than to how a result is displayed. The patch works on the finished framebuffer
+  instead, in `render_screen`, immediately before it is handed to the frontend, so nothing the
+  emulated console can observe is touched. The cost is one lookup per pixel in a table rebuilt
+  only when the option changes.
+
+  The other thing `cores/tgbdual/build.sh` adds to upstream's recipe is `-flto=auto`, which the
+  `.meta` records as `device_cflags`. That one changes how the core is compiled rather than what
+  it computes, and both builds produce byte-identical framebuffers. The colour patch is the
+  opposite: with the option on it changes computed pixels on purpose, which is worth knowing for
+  anything that compares two devices' framebuffers rather than their emulated state.
 
 ## Artwork
 

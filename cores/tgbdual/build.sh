@@ -27,11 +27,14 @@
 # compute differently from every other TGB Dual build in the world, which is a worse position to
 # be in than sharing upstream's.
 #
-# There are no patches. The core needs none: Makefile-level, it builds clean for aarch64 with no
-# external assets and no boot ROM, and code-level, libretro/libretro.cpp:406-407 turns the link on
-# by itself when two ROMs arrive through retro_load_game_special, so slot does not have to set a
-# core option to get the behaviour it wants. The patch loop below stays anyway, in the shape
-# cores/gpsp/build.sh has, so that adding one later is a matter of dropping a file in here.
+# One patch, color-correction.patch, which adds the tgbdual_color_correction option upstream has
+# no equivalent of and which the quick menu's Colour Correction row needs in order to mean
+# anything on a Game Boy cart. It works on the finished framebuffer rather than in map_color,
+# because map_color has an inverse a game reads its palette back through; licenses/README.md
+# carries the reasoning and the section 2(a) notice. Nothing else is patched: the core builds
+# clean for aarch64 from upstream's own recipe with no external assets and no boot ROM, and
+# libretro/libretro.cpp:406-407 turns the link on by itself when two ROMs arrive through
+# retro_load_game_special, so slot does not have to patch in the behaviour it wants.
 #
 # The .meta file is how the taskfile tells a stale core from a current one: it is compared against
 # `stamp`, so a changed pin or flag rebuilds, and a core fetched from the buildbot (which has no
@@ -100,6 +103,9 @@ build() {
 	rm -rf "$work"
 	mkdir -p "$work"
 	tar -xzf "$tarball" -C "$work"
+	# A second, untouched extraction, purely so the patch step can prove it changed something.
+	mkdir -p "$work/pristine"
+	tar -xzf "$tarball" -C "$work/pristine" --strip-components=1
 	if [ ! -f "$src/Makefile" ]; then
 		echo "$tarball does not hold tgbdual-libretro-$commit/Makefile" >&2
 		exit 1
@@ -107,11 +113,29 @@ build() {
 
 	# Every patch beside this script, onto the pristine tree above. `stamp` records their sha256,
 	# so editing one rebuilds instead of leaving a core that no longer matches the source shipped
-	# with it. There are none today; see the note at the top.
+	# with it.
+	#
+	# `patch` rather than the `git apply` the other three recipes use, and this is not a style
+	# choice. Some of TGB Dual's sources ship with CRLF line endings, and `git apply` answers a
+	# patch against one of those by printing `Skipped patch 'libretro/dmy_renderer.cpp'` and
+	# exiting **zero**. Nothing fails, `set -e` sees success, and the build goes on to compile a
+	# core with none of the patch in it. That is exactly what happened the first time this patch
+	# was added, and it was caught by looking for the option's name in the built binary rather
+	# than by anything the build said. `patch` applies it and returns nonzero when it cannot.
+	#
+	# The check below is the belt to that brace: a patch set that produced no change to the tree
+	# is a build recipe lying about what it built, so it stops here rather than at whatever
+	# behaviour goes missing downstream.
 	for p in "$here"/*.patch; do
 		[ -e "$p" ] || continue
-		git -C "$src" apply -p1 "$p"
+		patch -p1 -d "$src" -i "$p"
+		patched=yes
 	done
+	if [ "${patched:-no}" = yes ] && diff -rq "$src" "$work/pristine" >/dev/null 2>&1; then
+		echo "patches applied but the source is unchanged; see the note above" >&2
+		exit 1
+	fi
+	rm -rf "$work/pristine"
 
 	# Passed even when empty, so a tree reused from another run cannot keep its flags.
 	cflags=""

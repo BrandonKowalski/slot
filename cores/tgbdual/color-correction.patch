@@ -1,0 +1,161 @@
+diff --git a/libretro/dmy_renderer.cpp b/libretro/dmy_renderer.cpp
+index 07c5510..3bb8fb8 100644
+--- a/libretro/dmy_renderer.cpp
++++ b/libretro/dmy_renderer.cpp
+@@ -220,6 +220,65 @@ int dmy_renderer::check_pad()
+       ((joypad_bits & (1 << RETRO_DEVICE_ID_JOYPAD_RIGHT))  ? 1 : 0) << 7;
+ }
+ 
++// Game Boy Color screen simulation, off by default.
++//
++// A CGB game writes palette values meant for the console's own LCD, which is dimmer and far less
++// saturated than a modern panel. Shown literally, those colours come out harsh and oversaturated.
++// The transform below is the long-standing approximation of that screen used across emulators:
++// each output channel is a fixed blend of the three input channels, which desaturates and warms
++// the picture without touching its brightness ordering.
++//
++// Applied to the finished framebuffer rather than in map_color, and that placement is the whole
++// design. map_color has an inverse, unmap_color, which a game reads its own palette back through
++// (gb_core/cpu.cpp, the BCPD register). Correcting there would make the pair no longer inverses
++// and would hand a game colours it never wrote, which is a change to emulated behaviour rather
++// than to how the result is displayed. Here nothing the console can observe is touched.
++//
++// The cost is one table lookup per pixel. The table is 128 KB and is rebuilt only when the option
++// changes, so a frame pays 23,040 lookups per screen and no arithmetic at all.
++static bool _color_correction = false;
++static bool _correction_table_ready = false;
++static word _correction_table[0x10000];
++
++static void build_correction_table(void)
++{
++   for (int c = 0; c < 0x10000; ++c)
++   {
++      // RGB565 in, RGB565 out. The blend is defined on 5-bit channels, so green is brought down
++      // to five bits for the arithmetic and returned to six, which keeps the three channels on
++      // one scale rather than giving green a quietly different weight.
++      int r = (c >> 11) & 0x1f;
++      int g = (c >> 6) & 0x1f;
++      int b = c & 0x1f;
++      int nr = (r * 26 + g * 4 + b * 2) / 32;
++      int ng = (g * 24 + b * 8) / 32;
++      int nb = (r * 6 + g * 4 + b * 22) / 32;
++      if (nr > 31) nr = 31;
++      if (ng > 31) ng = 31;
++      if (nb > 31) nb = 31;
++      _correction_table[c] = (word)((nr << 11) | (ng << 6) | nb);
++   }
++   _correction_table_ready = true;
++}
++
++void dmy_renderer::set_color_correction(bool on)
++{
++   if (on && !_correction_table_ready)
++      build_correction_table();
++   _color_correction = on;
++}
++
++// In place over the buffer about to be shown. Every caller below hands this a buffer it owns.
++static void apply_color_correction(byte *buf, int bytes)
++{
++   if (!_color_correction)
++      return;
++   word *px = (word *)buf;
++   int n = bytes / 2;
++   for (int i = 0; i < n; ++i)
++      px[i] = _correction_table[px[i]];
++}
++
+ void dmy_renderer::render_screen(byte *buf,int width,int height,int depth)
+ {
+    static byte joined_buf[160*144*2*2]; // two screens' worth of 16-bit data
+@@ -239,14 +298,20 @@ void dmy_renderer::render_screen(byte *buf,int width,int height,int depth)
+          {
+             memcpy(joined_buf + switched_gb*half, buf, half);
+             if(which_gb == 1)
++            {
++               apply_color_correction(joined_buf, pitch*height*2);
+                video_cb(joined_buf, width, height*2, pitch);
++            }
+          }
+          else
+          {
+             for (int row = 0; row < height; ++row)
+                memcpy(joined_buf + pitch*(2*row + switched_gb), buf+pitch*row, pitch);
+             if(which_gb == 1)
++            {
++               apply_color_correction(joined_buf, pitch*height*2);
+                video_cb(joined_buf, width*2, height, pitch*2);
++            }
+          }
+       }
+       else
+@@ -256,11 +321,17 @@ void dmy_renderer::render_screen(byte *buf,int width,int height,int depth)
+          if (_show_player_screens == which_gb)
+             memcpy(joined_buf, buf, half);
+          if (which_gb == 1)
++         {
++            apply_color_correction(joined_buf, pitch*height);
+             video_cb(joined_buf, width, height, pitch);
++         }
+       }
+    }
+    else
++   {
++      apply_color_correction(buf, pitch*height);
+       video_cb(buf, width, height, pitch);
++   }
+ }
+ 
+ byte dmy_renderer::get_time(int type)
+diff --git a/libretro/dmy_renderer.h b/libretro/dmy_renderer.h
+index 1930547..75e9c91 100644
+--- a/libretro/dmy_renderer.h
++++ b/libretro/dmy_renderer.h
+@@ -25,6 +25,12 @@ public:
+ 	dmy_renderer(int which);
+ 	virtual ~dmy_renderer(){};
+ 
++	// Simulating the Game Boy Color's own screen, which is dimmer and less saturated than the
++	// raw palette values a game writes. Static because it is a property of the display rather
++	// than of either emulated console: both screens of a linked pair are looked at through the
++	// same panel, so one switch serves both renderers.
++	static void set_color_correction(bool on);
++
+ 	virtual void reset() {}
+ 	virtual word get_sensor(bool x_y) { return 0; }
+ 	virtual void set_bibrate(bool bibrate) {}
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index b7030e1..b34709a 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -17,6 +17,7 @@
+ 
+ static const struct retro_variable vars_single[] = {
+     { "tgbdual_gblink_enable", "Link cable emulation (reload); disabled|enabled" },
++    { "tgbdual_color_correction", "Color correction; disabled|enabled" },
+     { NULL, NULL },
+ };
+ 
+@@ -26,6 +27,7 @@ static const struct retro_variable vars_dual[] = {
+     { "tgbdual_switch_screens", "Switch player screens; normal|switched" },
+     { "tgbdual_single_screen_mp", "Show player screens; both players|player 1 only|player 2 only" },
+     { "tgbdual_audio_output", "Audio output; Game Boy #1|Game Boy #2|Both (mixed)" },
++    { "tgbdual_color_correction", "Color correction; disabled|enabled" },
+     { NULL, NULL },
+ };
+ 
+@@ -249,6 +251,14 @@ static void check_variables(void)
+ 
+    already_checked_options = true;
+ 
++   // check whether the Game Boy Color's screen is being simulated
++   var.key = "tgbdual_color_correction";
++   var.value = NULL;
++   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
++      dmy_renderer::set_color_correction(!strcmp(var.value, "enabled"));
++   else
++      dmy_renderer::set_color_correction(false);
++
+    // check audio output mode
+    var.key = "tgbdual_audio_output";
+    var.value = NULL;
