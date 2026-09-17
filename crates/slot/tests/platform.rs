@@ -19,7 +19,16 @@ use std::time::{Duration, Instant};
 use slot::app::Phase;
 use slot::session::Session;
 use slot_input::{Btn, RawEvent};
-use slot_store::{Core, Platform, StateRing};
+use slot_store::{core_for_platform, Core, Platform, StateRing};
+
+/// The core the session would actually open a Game Boy cart on, asked the same way `session.rs`
+/// asks it. Naming a core here instead makes both assertions below vacuous the day a platform's
+/// default moves: the state lands under the core the session used, so a path built from any
+/// other core is one nothing ever writes, and "it is not in the GBA folder" stops meaning
+/// anything. This is the platform's test, not the core's; `gpsp.rs` is where the core is pinned.
+fn seated_core(root: &Path, stem: &str) -> Core {
+    core_for_platform(root, stem, Platform::Gb)
+}
 
 /// Taps A on the shelf to seat whatever is under it, waits for the insert to finish, and runs
 /// past the autosave deadline — the cheapest way to get the core's own state and save ram
@@ -60,17 +69,27 @@ fn a_game_boy_carts_autosave_lands_under_gb_and_never_under_gba() {
     seat_and_autosave(d.path());
 
     assert!(
-        StateRing::new(d.path(), Platform::Gb, Core::Mgba, "Tetris")
-            .read_resume()
-            .unwrap()
-            .is_some(),
+        StateRing::new(
+            d.path(),
+            Platform::Gb,
+            seated_core(d.path(), "Tetris"),
+            "Tetris"
+        )
+        .read_resume()
+        .unwrap()
+        .is_some(),
         "the Game Boy cart's autosave did not land under its own platform's directory"
     );
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Tetris")
-            .read_resume()
-            .unwrap()
-            .is_none(),
+        StateRing::new(
+            d.path(),
+            Platform::Gba,
+            seated_core(d.path(), "Tetris"),
+            "Tetris"
+        )
+        .read_resume()
+        .unwrap()
+        .is_none(),
         "the Game Boy cart's autosave was filed as a GBA cart's, which is where a GBA game \
          of the same name keeps its own"
     );
@@ -106,9 +125,14 @@ fn a_hand_organised_game_boy_card_scans_seats_saves_and_resumes() {
     seat_and_autosave(d.path());
 
     // The session is on the card, filed under the cart's own platform.
-    let resume = StateRing::new(d.path(), Platform::Gb, Core::Mgba, "Tetris")
-        .read_resume()
-        .unwrap();
+    let resume = StateRing::new(
+        d.path(),
+        Platform::Gb,
+        seated_core(d.path(), "Tetris"),
+        "Tetris",
+    )
+    .read_resume()
+    .unwrap();
     assert!(resume.is_some(), "nothing was written back to resume from");
 
     // And the boot after it walks back in through `scan`, off the same folders, to the same cart.

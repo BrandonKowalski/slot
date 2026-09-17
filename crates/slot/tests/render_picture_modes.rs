@@ -20,11 +20,12 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use common::{clocked, core_lock, repo_root, tmp_root_with_gb_carts, vendored_core};
+use common::{clocked, core_lock, repo_root, tmp_root_with_gb_carts};
 use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
+use slot_store::{Core, Platform};
 
 /// One batch of events per poll, and nothing once they run out.
 struct Script(VecDeque<Vec<RawEvent>>);
@@ -150,10 +151,22 @@ fn run_for(f: &mut Frontend, input: &mut Script, secs: f32) {
 #[test]
 fn l_fills_the_panel_and_r_gives_back_the_centred_picture() {
     let _core = core_lock();
-    let Some(dylib) = vendored_core() else {
-        eprintln!("no mgba dylib, skipping");
+    // The core this cart will actually be opened on, not a named one. Planting mgba here while
+    // the cart resolved to another core left nothing for the search to find, so `open_core` fell
+    // back to `MockCore` and this test measured its test pattern: a full-bleed gradient, which
+    // lights every margin the assertions below require to be dark, for a reason that has nothing
+    // to do with picture modes.
+    let core = Core::default_for(Platform::Gb);
+    let file = format!(
+        "{}_libretro.{}",
+        core.as_str(),
+        std::env::consts::DLL_EXTENSION
+    );
+    let dylib = repo_root().join("vendor").join(&file);
+    if !dylib.exists() {
+        eprintln!("no {} dylib, skipping", core.as_str());
         return;
-    };
+    }
     let Ok(surface) = HeadlessSurface::new() else {
         return;
     };
@@ -169,7 +182,7 @@ fn l_fills_the_panel_and_r_gives_back_the_centred_picture() {
     };
     // `candidates` looks in the content root's own `System/` first, which is how a test plants
     // a core somewhere the search will actually find it.
-    std::fs::copy(&dylib, d.path().join("System/mgba_libretro.dylib")).expect("plant the core");
+    std::fs::copy(&dylib, d.path().join("System").join(&file)).expect("plant the core");
     clocked(d.path());
 
     let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
