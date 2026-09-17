@@ -1,12 +1,29 @@
-# Third-party licenses
+# Licenses
 
-`slot` itself is MIT (see the repo's top-level `LICENSE`). The release also distributes two
-compiled libretro cores it did not write:
+`slot` is **GPL-3.0-or-later**. Copyright (C) 2026 Brandon T. Kowalski. The repo's top-level
+`LICENSE` is the GNU General Public License version 3, verbatim from the FSF.
 
-| Core            | Source                                   | License  | Text here                |
-|-----------------|------------------------------------------|----------|---------------------------|
-| `gpsp_libretro`  | https://github.com/libretro/gpsp        | GPL-2.0  | `gpsp-GPL-2.0.txt`        |
-| `mgba_libretro`  | https://github.com/libretro/mgba        | MPL-2.0  | `mgba-MPL-2.0.txt`        |
+**It was MIT until 2026-09-17, and that does not un-happen.** Every commit up to and including
+`1a655b8` was published under the MIT license and stays available under it to anyone holding a
+copy; the change binds what is released from here on. The reason for it is that a permissive
+license had no answer to a closed binary repack of this work, and the GPL does: a fork is welcome,
+a fork that ships without its source is not.
+
+The release also distributes compiled libretro cores `slot` did not write:
+
+| Core            | Source                                   | License              | Text here                |
+|-----------------|------------------------------------------|----------------------|---------------------------|
+| `gpsp_libretro`  | https://github.com/libretro/gpsp        | GPL-2.0-or-later     | `gpsp-GPL-2.0.txt`        |
+| `mgba_libretro`  | https://github.com/libretro/mgba        | MPL-2.0              | `mgba-MPL-2.0.txt`        |
+
+**Every one of those is why GPL-3.0 was available to take, and it was checked rather than
+assumed.** gpSP carries the "either version 2 of the License, or (at your option) any later
+version" grant in 36 of its source files and version-2-only wording in none of them, so its
+or-later grant is what permits the upgrade. mGBA is MPL-2.0, whose section 3.3 secondary-license
+clause exists for exactly this combination. A core under GPL-2.0-**only** could not be shipped
+beside a GPL-3.0 `slot`, which is not hypothetical: Gambatte is GPL-2.0-only, with the FSF
+template's "or any later version" clause deliberately struck out, and that is now the reason it
+cannot be used here rather than anything about how it performs.
 
 gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core above is the
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
@@ -32,7 +49,7 @@ from this repo carries the same notice the release zip does.
   https://github.com/mgba-emu/mgba/commit/685023e05d90d87050fb357f46f7bd2d907083f5, which
   libretro/mgba had not picked up when this build was set up. Once it has, the patch can go.
 
-- **GPL-2.0 (gpSP): the corresponding source ships in this directory, under section 3(a).**
+- **GPL-2.0-or-later (gpSP): the corresponding source ships in this directory, under section 3(a).**
   Section 3 allows conveying object code three ways: with the corresponding source, with a
   written offer for it, or — noncommercial only — by passing along an offer you received. This
   release takes the first and makes no offer: the source is here, in the same directory and
