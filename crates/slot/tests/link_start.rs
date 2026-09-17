@@ -338,3 +338,49 @@ fn a_cancel_while_the_radio_is_coming_up_is_not_a_fault() {
         LinkProgress::Failed(LinkFail::Cancelled)
     ));
 }
+
+/// A starter nobody is holding any more has to stop, not run out its bound.
+///
+/// `LinkStarter::spawn` is given thirty seconds to find the other player, and the screen that
+/// asked for it can go before that is up — a lid shut, a cart out, a process exiting. A worker
+/// left running behind it holds the radio and, for a host, the bound port, and then takes the
+/// radio down whenever it finally finishes: half a minute later, under whatever has started in
+/// the meantime.
+///
+/// Driven through the socket step, because that is the long one and the only one a player can
+/// actually be waiting in. The fake below stands where `host_until` stands and, like it, only
+/// leaves when the flag it was handed says to.
+#[test]
+fn a_starter_that_is_dropped_stops_waiting() {
+    let gave_up = Arc::new(AtomicBool::new(false));
+    let noticed = gave_up.clone();
+    let starter = LinkStarter::spawn_with(
+        Box::new(|_, _| Ok(())),
+        Box::new(|| {}),
+        LinkRole::Host,
+        0,
+        Box::new(move |_, cancel| {
+            let deadline = Instant::now() + BAIL;
+            while !cancel.is_cancelled() {
+                assert!(
+                    Instant::now() < deadline,
+                    "the dropped starter was never told to give up"
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            noticed.store(true, Ordering::SeqCst);
+            Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
+        }),
+    );
+
+    drop(starter);
+
+    let deadline = Instant::now() + BAIL;
+    while !gave_up.load(Ordering::SeqCst) {
+        assert!(
+            Instant::now() < deadline,
+            "the worker kept waiting for a peer nobody was left to play with"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
