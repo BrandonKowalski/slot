@@ -4,8 +4,8 @@ use slot_store::{Cart, Platform};
 use crate::art;
 use crate::shell::{shell_for, Finish, Shell};
 use crate::silhouette::{
-    cart_depth, cart_mask, detail_mask, gb_cart_depth, gb_cart_mask, gb_detail_mask,
-    gb_shadow_mask, Detail, GbShell,
+    cart_depth, cart_mask, detail_mask, gb_cart_depth, gb_cart_mask, gb_detail_mask, Detail,
+    GbShell,
 };
 use crate::text;
 
@@ -125,13 +125,24 @@ enum Shape {
     Gb(GbShell),
 }
 
-fn shape_of(cart: &Cart) -> Shape {
+/// Which Game Pak mould this cart came out of, or `None` for a GBA cart, which came out of
+/// neither. It opens the rom for the CGB flag, so it is a question to ask once and remember and
+/// never one to ask on a frame: `Shelf::new` asks it when a row is built and `cart_face` when a
+/// face is rasterised, and both of those happen at boot.
+pub fn gb_shell_of(cart: &Cart) -> Option<GbShell> {
     match cart.platform {
-        Platform::Gba => Shape::Gba,
-        Platform::Gb | Platform::Gbc => match slot_store::gb::class(&cart.rom) {
-            Class::ColourOnly => Shape::Gb(GbShell::Rounded),
-            Class::Original | Class::DualMode => Shape::Gb(GbShell::Notched),
-        },
+        Platform::Gba => None,
+        Platform::Gb | Platform::Gbc => Some(match slot_store::gb::class(&cart.rom) {
+            Class::ColourOnly => GbShell::Rounded,
+            Class::Original | Class::DualMode => GbShell::Notched,
+        }),
+    }
+}
+
+fn shape_of(cart: &Cart) -> Shape {
+    match gb_shell_of(cart) {
+        None => Shape::Gba,
+        Some(shell) => Shape::Gb(shell),
     }
 }
 
@@ -156,7 +167,7 @@ fn spec(shape: Shape) -> Spec {
             label: (GB_LABEL_X, GB_LABEL_Y, GB_LABEL_W, GB_LABEL_H),
             mask: gb_cart_mask(shell),
             depth: gb_cart_depth(shell),
-            detail: gb_detail_mask(),
+            detail: gb_detail_mask(shell),
             max_px: GB_MAX_PX,
             max_h: (GB_LABEL_H - 2 * PAD) as f32,
             rim: GB_RIM,
@@ -187,11 +198,16 @@ pub fn cart_shadow() -> CartFace {
 /// The same backing for the Game Boy shelves. Stretching the GBA one to a taller box would put
 /// a tapered shadow under a straight sided cart.
 ///
-/// One texture covers both shells rather than one each, because the shelf uploads a backing per
-/// shelf and not per cart. `gb_shadow_mask` is where the two are reconciled, and what it costs
-/// is written down there.
-pub fn gb_cart_shadow() -> CartFace {
-    shadow(GB_CART_W, GB_CART_H, gb_shadow_mask())
+/// One per shell mould, where there used to be one covering both. The shared one was the two
+/// outlines *intersected* — backing larger than the cart draws black over the wallpaper beside
+/// it, so the only safe way to share was to meet in the middle — and that left 72 px of a
+/// notched pak and 169 px of a rounded one with nothing behind them, in two corner wedges where
+/// the moulds disagree. Rendered dimmed over a light wallpaper, those wedges are not a rounding
+/// error: a class C pak's top right corner came up as a pale bite taken out of it, and a class
+/// A/B pak ghosted at the top left. The shelf picks between these per cart instead, off a shell
+/// it worked out once when the row was built.
+pub fn gb_cart_shadow(shell: GbShell) -> CartFace {
+    shadow(GB_CART_W, GB_CART_H, gb_cart_mask(shell))
 }
 
 fn shadow(w: u32, h: u32, mask: &[u8]) -> CartFace {

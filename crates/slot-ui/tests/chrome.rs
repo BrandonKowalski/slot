@@ -374,37 +374,52 @@ fn every_cartridge_seats_to_the_same_depth() {
     }
 }
 
-/// Both cartridges stand with their foot on the row floor, so both have the same distance to
-/// fall before they meet the lip — and they must take the same time over it. The catch is the
-/// moment the cart lands on the slot, and it cannot happen sooner for one cartridge than for
-/// another that was dropped from the same line.
+/// The cartridges no longer fall together, and cannot: the row centres each one, so a pak's
+/// foot starts 59 px nearer the lip than a GBA cart's and has that much less ground to cover.
+/// What is still the same for both, and is the thing the insert is actually built out of, is
+/// *when* the fall ends. The catch is a collision — the foot arriving on the lip — and it has to
+/// land on the same frame of the animation whichever shelf the cartridge came off, or one
+/// system's insert reads as a different mechanism from another's.
+///
+/// So this asks two things of each cartridge and then compares the answers: the moment its foot
+/// first reaches the lip, and that it arrives *on* the lip rather than sailing through it.
 #[test]
-fn every_cartridge_reaches_the_lip_at_the_same_moment() {
+fn every_cartridge_lands_its_foot_on_the_lip_at_the_same_moment() {
     let lip = OUT_H as f32 - MOUTH_H;
-    let feet: Vec<(&str, Vec<f32>)> = both()
+    let landings: Vec<(&str, f32, f32)> = both()
         .iter()
         .map(|(name, c)| {
             let (_, h) = cart_box(c.platform);
             let foot = |t: f32| cart_y(c, t) + h as f32;
-            (*name, (0..=20).map(|s| foot(s as f32 / 20.0)).collect())
+            // Finely enough that the answer is the animation's and not the sampling's: the
+            // fall is under half the travel and this walks it in 1/400ths.
+            let at = (0..=400)
+                .map(|s| s as f32 / 400.0)
+                .find(|t| foot(*t) >= lip)
+                .unwrap_or_else(|| panic!("{name} never reaches the lip at all"));
+            (*name, at, foot(at))
         })
         .collect();
-    let (first, rest) = feet.split_first().expect("two cartridges");
-    for (name, drop) in rest {
-        for (step, (a, b)) in first.1.iter().zip(drop).enumerate() {
-            // Only the fall and the catch: past the lip the two are pushed different
-            // distances into the machine, deliberately, and stop being comparable.
-            if *a > lip {
-                break;
-            }
-            assert!(
-                (a - b).abs() < 0.5,
-                "at seat {}, {} has its foot at {a} and {name} at {b}: they are not falling \
-                 together",
-                step as f32 / 20.0,
-                first.0
-            );
-        }
+    for (name, at, landed) in &landings {
+        assert!(
+            (landed - lip).abs() < 1.0,
+            "{name} is at {landed} on the frame it passes a lip at {lip}: it went through it \
+             rather than onto it"
+        );
+        assert!(
+            *at > 0.0,
+            "{name} is already on the lip before the travel starts"
+        );
+    }
+    let (first, rest) = landings.split_first().expect("two cartridges");
+    for (name, at, _) in rest {
+        assert!(
+            (at - first.1).abs() < 0.01,
+            "{name} lands on the lip at seat {at} and {} at {}: the catch is not the same \
+             moment for both",
+            first.0,
+            first.1
+        );
     }
 }
 
@@ -438,12 +453,29 @@ fn a_seated_cart_stops_in_the_opening_and_covers_its_base() {
     }
 }
 
-/// A seated cart shows its moulded grip and the top edge of its label through the thumb
-/// scoop, and no more. The recess depth against the cart's own label inset is what sets it:
-/// too shallow and the slot looks empty, too deep and the title reads out of the machine.
+/// What a seated cartridge leaves out of the machine. The recess is a fixed depth, so it is the
+/// same 38 px of cartridge whichever one went in — and what that 38 px *is* depends on where
+/// that cartridge's own label sits down its face. The two answers differ, and are written down
+/// separately rather than covered by one tolerance wide enough to swallow both:
+///
+/// - A GBA cart's paper starts 31 px down a 135 px body, so 7 px of it clears the scoop. A
+///   sliver, and nothing on it readable.
+/// - A Game Boy pak's starts 70 px down a 253 px body, so the whole label is 32 px inside the
+///   machine and none of it shows. That is what the hardware does: an inserted Game Pak shows
+///   its ribbed grip and the moulded lettering plate, and its label genuinely disappears. The
+///   user's own line drawing is what puts the well down under that plate, and the drawing is
+///   the authority on it.
+///
+/// So "the slot must not read as empty" cannot be spelled `peek > 0` — that is a fact about the
+/// GBA cart, not a rule the slot imposes on every cartridge. The opening being filled is held by
+/// `a_seated_cart_stops_in_the_opening_and_covers_its_base` instead, which asks the question of
+/// the cartridge's whole body rather than of its paper.
 #[test]
-fn a_seated_cart_shows_a_sliver_of_label_and_nothing_readable() {
-    for (name, c) in both() {
+fn a_seated_cart_shows_at_most_a_sliver_of_label_and_a_pak_shows_none() {
+    for (name, c, shows_paper) in [
+        ("the GBA cart", cart(), true),
+        ("the Game Boy pak", pak(), false),
+    ] {
         let out = chrome(&c, 1.0);
         let cart = quad(&out[cart_at(&out)]);
         let deepest = out
@@ -457,12 +489,14 @@ fn a_seated_cart_shows_a_sliver_of_label_and_nothing_readable() {
         let (label_y, label_h) = label_band(&c);
         let peek = deepest - (cart.y + label_y);
         assert!(
-            peek > 0.0,
-            "{name} shows no label at all: the slot reads as empty"
-        );
-        assert!(
             peek < label_h / 4.0,
             "{peek}px of {name}'s {label_h}px label is out of the machine"
+        );
+        assert_eq!(
+            peek > 0.0,
+            shows_paper,
+            "{name} shows {peek}px of label, which is not what this cartridge is supposed to \
+             leave showing"
         );
     }
 }

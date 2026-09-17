@@ -22,8 +22,8 @@ use slot_power::SimPlatform;
 // this runs on and is already spoken for, and this one is the console a cart is for.
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    cart_box, cart_face, clean_label, label_colour, Draw, SlotChrome, CART_W, FOOT_Y, GB_LABEL_H,
-    GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
+    cart_box, cart_face, clean_label, edge, housing, label_colour, opening, recess, rest_y, Draw,
+    SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
 };
 
 /// One batch of events per poll, and nothing once they run out.
@@ -122,16 +122,27 @@ fn gb_rom(cgb: u8) -> Vec<u8> {
     rom
 }
 
-/// Where a cart lands, in screen pixels. A lone cart stands dead centre; a shelf of two is
-/// centred as a pair, which puts the selection at x 141 to 338 and its neighbour out at 402 to
-/// 557, lower and shorter for standing shrunk. Each of these three reads one layout and lands on
-/// bare ground in the other, which is what makes them able to tell the two apart.
-///
-/// `ALONE` is only ever read on a Game Boy shelf, and it is the pak's bare plastic rather than
-/// its label: the pak is 253 px tall against a GBA cart's 135, so it stands from y 55 to 308
-/// with its label well up at y 87 to 230, and this sits below that on the moulded face.
-const ALONE: (usize, usize) = (360, 250);
-/// The middle of that same pak's label well. Read beside `ALONE` because neither reading can
+/// A point `down` pixels down the face of the lone pak on a Game Boy shelf, which is the only
+/// shelf either reading below is ever taken on. Both go through here rather than naming a screen
+/// row, because a screen row is only right for as long as nobody moves the cartridge: they were
+/// typed when a pak stood on a floor it shared with a GBA cart, from y 55 to 308, and the
+/// carousel centring dropped it to 113 to 366. That is far enough that the constant meant to
+/// land on plastic would have landed on paper and the one meant for paper on plastic — with both
+/// readings still passing and neither meaning what its name says.
+fn on_the_lone_pak(down: u32) -> (usize, usize) {
+    (
+        (OUT_W / 2) as usize,
+        (rest_y(GB_CART_H as f32) + down as f32) as usize,
+    )
+}
+
+/// The pak's bare plastic: half way down the shoulder above its label, which is the moulded
+/// lettering plate.
+fn alone() -> (usize, usize) {
+    on_the_lone_pak(GB_LABEL_Y / 2)
+}
+
+/// The middle of that same pak's label well. Read beside `alone` because neither reading can
 /// tell a Game Boy shelf from a Colour one on its own any more:
 ///
 /// - The plastic is 55 apart. A pak and a Colour pak are the same silhouette, and the two
@@ -144,7 +155,14 @@ const ALONE: (usize, usize) = (360, 250);
 /// Both sit inside the tolerance; together they are twice outside it. That is also the stronger
 /// claim: what is worth refusing is a shelf showing the same plastic *and* the same label, not
 /// one that merely came up in a similar colour.
-const ALONE_LABEL: (usize, usize) = (360, 158);
+fn alone_label() -> (usize, usize) {
+    on_the_lone_pak(GB_LABEL_Y + GB_LABEL_H / 2)
+}
+
+/// Where a shelf of two lands its carts, in screen pixels: it is centred as a pair, which puts
+/// the selection at x 141 to 338 and its neighbour out at 402 to 557, lower and shorter for
+/// standing shrunk. Read on a Game Boy shelf too, where they are out beyond the lone pak's own
+/// 240 px width and so must come back as bare ground.
 const PAIR_LEFT: (usize, usize) = (180, 250);
 const PAIR_RIGHT: (usize, usize) = (540, 260);
 /// Out at the edges of the row, where neither layout puts anything. A cart here is a row that
@@ -205,8 +223,10 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     ] {
         tap(&mut f, &mut input, Btn::R1);
         let px = composed(&mut f, &mut c, name);
-        let cart = patch(&px, ALONE.0, ALONE.1);
-        let label = patch(&px, ALONE_LABEL.0, ALONE_LABEL.1);
+        let (ax, ay) = alone();
+        let cart = patch(&px, ax, ay);
+        let (lx, ly) = alone_label();
+        let label = patch(&px, lx, ly);
         assert!(
             apart(cart, GROUND) > 60,
             "no cart in the middle of the {banner} shelf: {cart:?}"
@@ -383,9 +403,9 @@ fn label_top(p: CartPlatform) -> usize {
     }
 }
 
-/// The first and last screen rows showing the cartridge's own paper. The label well is the one
-/// broad flat colour on the screen that belongs to the cart and to nothing else — the housing,
-/// the recess and the opening are all theme greys, and the shell is the plastic around it.
+/// The first and last screen rows showing the cartridge's own paper. Only ever asked of a
+/// cartridge standing clear of the machine: a seated one may legitimately show none, which is
+/// what a Game Boy pak does and why this is no longer how the cartridge itself is found.
 fn paper_rows(px: &[u8], ink: [u8; 3]) -> Option<(usize, usize)> {
     let close = |c: [u8; 3]| (0..3).all(|k| c[k].abs_diff(ink[k]) <= 24);
     let mut rows =
@@ -394,18 +414,46 @@ fn paper_rows(px: &[u8], ink: [u8; 3]) -> Option<(usize, usize)> {
     Some((first, rows.next_back().unwrap_or(first)))
 }
 
-/// Where the top edge of the cartridge is, read back off its paper. Derived from the cart's own
-/// label inset rather than from a constant, so it means the same thing for both shapes.
-fn cart_top(px: &[u8], ink: [u8; 3], p: CartPlatform) -> Option<f32> {
-    paper_rows(px, ink).map(|(top, _)| top as f32 - label_top(p) as f32)
+/// Everything this frame is made of that is *not* the cartridge: the black the compositor clears
+/// to, and the four flat theme colours the slot's own bands are painted in. The list under test
+/// holds those and one cart, so whatever is none of them is the cart.
+fn backdrop() -> [[f32; 4]; 5] {
+    [[0.0, 0.0, 0.0, 1.0], housing(), opening(), edge(), recess()]
+}
+
+/// The first and last screen rows the cartridge covers, found by its shell.
+///
+/// This used to scan for the label's paper colour, which worked only while every cartridge's
+/// label stayed outside the machine. A seated Game Boy pak's does not — its well is 27.7% down
+/// a 253 px body, so the whole of it is swallowed — and the finder then reported an empty
+/// screen for a frame with a cartridge plainly in it. What is true of every cartridge in every
+/// frame is that it is the one object on screen that is neither the backdrop nor the machine,
+/// so that is what is looked for. Nothing here names a coordinate: the answer is wherever the
+/// cart turns out to be.
+///
+/// The tolerance is 8 a channel against a 17 gap: the nearest a cartridge's plastic comes to a
+/// theme colour is the GBA cart's 0x35 shell against the 0x24 housing.
+fn shell_rows(px: &[u8]) -> Option<(usize, usize)> {
+    let flat = backdrop();
+    let cart = |c: [u8; 3]| {
+        !flat.iter().any(|f| {
+            (0..3).all(|k| {
+                let want = (f[k] * 255.0).round() as u8;
+                c[k].abs_diff(want) <= 8
+            })
+        })
+    };
+    let mut rows = (0..OUT_H as usize).filter(|y| (0..OUT_W as usize).any(|x| cart(at(px, x, *y))));
+    let first = rows.next()?;
+    Some((first, rows.next_back().unwrap_or(first)))
 }
 
 /// The insertion, rendered. A Game Boy pak has to go into the slot as the object it is: standing
-/// on the same row line a GBA cart stands on, travelling at its own size rather than squashed
-/// into one, catching on the lip where a cart's foot meets it, and coming to rest with exactly
-/// as much cartridge left out of the machine as a GBA cart leaves. None of that is a claim a
-/// draw list can settle, which is why this one goes through the compositor and writes the frames
-/// out to be looked at.
+/// centred on the carousel where a GBA cart stands centred, travelling at its own size rather
+/// than squashed into one, catching on the lip where a cart's foot meets it, and coming to rest
+/// with exactly as much cartridge left out of the machine as a GBA cart leaves. None of that is
+/// a claim a draw list can settle, which is why this one goes through the compositor and writes
+/// the frames out to be looked at.
 #[test]
 fn both_cartridges_go_into_the_slot_at_their_own_size() {
     let Ok(surface) = HeadlessSurface::new() else {
@@ -451,20 +499,39 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
             .draw(&mut out);
             let px = frame(&mut c, &out, &format!("insert-{name}-{beat}"));
 
-            let Some((top, bottom)) = paper_rows(&px, ink) else {
+            let Some((top, bottom)) = shell_rows(&px) else {
                 panic!("{name} at {beat}: no cartridge on the screen at all");
             };
             if seat == 0.0 {
-                // Standing. The foot is on the row floor and the paper is the full height the
-                // cartridge's own label well is: a squashed cart shows a squashed label.
-                let stands = top as f32 - label_top(cart.platform) as f32;
+                // Standing, centred on the screen: the carousel shares a centre across
+                // platforms, not a floor, so a 253 px pak and a 135 px cart are in the same
+                // place in the frame with the pak simply reaching further both ways.
                 assert!(
-                    (stands - (FOOT_Y - h as f32)).abs() < 1.5,
-                    "{name} stands with its top edge at {stands}, not at {} where the row \
-                     floor puts a {h} px cartridge",
-                    FOOT_Y - h as f32
+                    (top as f32 - rest_y(h as f32)).abs() < 1.5,
+                    "{name} stands with its top edge at {top}, not at {} where the carousel \
+                     centres a {h} px cartridge",
+                    rest_y(h as f32)
                 );
-                let paper = bottom - top + 1;
+                let middle = (top + bottom) as f32 / 2.0;
+                assert!(
+                    (middle - OUT_H as f32 / 2.0).abs() < 1.5,
+                    "{name} stands {top}..{bottom}, centred on {middle} rather than on the \
+                     screen's own {}",
+                    OUT_H as f32 / 2.0
+                );
+                // The paper is the full height the cartridge's own label well is, and starts
+                // its own inset down the shell: a squashed cart shows a squashed label, and one
+                // drawn from the wrong platform's numbers shows it in the wrong place.
+                let (paper_top, paper_bottom) =
+                    paper_rows(&px, ink).expect("a standing cartridge shows its label");
+                let inset = paper_top - top;
+                assert!(
+                    inset.abs_diff(label_top(cart.platform)) <= 2,
+                    "{name}'s paper starts {inset} px down its face, not the {} its platform \
+                     puts it at",
+                    label_top(cart.platform)
+                );
+                let paper = paper_bottom - paper_top + 1;
                 let want = match cart.platform {
                     CartPlatform::Gba => LABEL_H as usize,
                     _ => GB_LABEL_H as usize,
@@ -475,22 +542,30 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
                 );
             }
             if seat == 1.0 {
-                seated.push((
-                    name,
-                    cart_top(&px, ink, cart.platform).expect("a seated cartridge shows paper"),
-                ));
+                seated.push((name, top as f32, bottom as f32));
             }
         }
     }
 
+    // Seated, the two are the same picture: the same top edge, and the same run of cartridge
+    // left out of the machine. How much shows is the recess's business and not the cartridge's,
+    // so a taller one may not be swallowed further than a short one.
     let (first, rest) = seated.split_first().expect("both cartridges seated");
-    for (name, top) in rest {
+    for (name, top, bottom) in rest {
         assert!(
             (top - first.1).abs() < 1.5,
             "{name} seats with its top edge at {top} and {} at {}: one is in deeper than the \
              other",
             first.0,
             first.1
+        );
+        assert!(
+            ((bottom - top) - (first.2 - first.1)).abs() < 1.5,
+            "{name} leaves {} px of itself out of the machine and {} leaves {}: the slot is \
+             showing one cartridge more of itself than the other",
+            bottom - top,
+            first.0,
+            first.2 - first.1
         );
     }
 }

@@ -1,13 +1,14 @@
 //! The Game Boy paks as they stand on the row, rasterised to a PNG so the drawing can be looked
 //! at rather than asserted about. Four carts on one screen-high ground: a GBA cart for scale and
 //! all three Game Boy classes — 0x00 grey in the notched shell, 0x80 black in the same shell,
-//! 0xc0 clear in the rounded one — each with its foot on the row floor, under a band the height
-//! of the HUD plate. Does nothing unless `SCRATCH_PNG` names an output file:
+//! 0xc0 clear in the rounded one — each centred on the row the way the carousel centres it,
+//! under a band the height of the HUD plate. Does nothing unless `SCRATCH_PNG` names an output
+//! file:
 //!
 //! `SCRATCH_PNG=/tmp/gb-carts.png cargo test -p slot-ui --test render_gb_cart -- --nocapture`
 
 use slot_store::scan;
-use slot_ui::{cart_face, CartFace, CART_W, FOOT_Y, OUT_H, PLATE_H};
+use slot_ui::{cart_face, rest_y, CartFace, CART_W, MOUTH_H, OUT_H, PLATE_H};
 use tempfile::TempDir;
 
 /// Four carts side by side, which is wider than the screen. The row is a contact sheet rather
@@ -46,7 +47,7 @@ fn paste(frame: &mut [u8], face: &CartFace, left: u32) {
             if a == 0 {
                 continue;
             }
-            let top = (FOOT_Y - face.h as f32) as u32;
+            let top = rest_y(face.h as f32) as u32;
             let d = (((y + top) * SHEET_W + x + left) * 3) as usize;
             for c in 0..3 {
                 frame[d + c] =
@@ -76,16 +77,30 @@ fn render_gb_cart() {
             frame.extend_from_slice(&c);
         }
     }
-    // The line the carts stand on, drawn so a cart that floats off it is visible rather than
-    // inferred.
+    // The line the carts are centred on, drawn so a cart hanging off it is visible rather than
+    // inferred. It is the middle of the screen and not a floor: the row shares a centre across
+    // platforms now, which is what puts a pak and a GBA cart in the same place in the frame.
     for x in 0..SHEET_W {
-        let d = ((FOOT_Y as u32 * SHEET_W + x) * 3) as usize;
+        let d = (((OUT_H / 2) * SHEET_W + x) * 3) as usize;
+        frame[d..d + 3].copy_from_slice(&FLOOR);
+    }
+    // And the lip of the slot, so "closer to the slot" can be read off the sheet rather than
+    // taken on trust: no cartridge may reach it.
+    for x in 0..SHEET_W {
+        let d = (((OUT_H - MOUTH_H as u32) * SHEET_W + x) * 3) as usize;
         frame[d..d + 3].copy_from_slice(&FLOOR);
     }
 
     for (i, cart) in carts.iter().enumerate() {
-        paste(&mut frame, &cart_face(cart), i as u32 * CART_W);
-        println!("{} at column {}", cart.stem, i as u32 * CART_W);
+        let face = cart_face(cart);
+        paste(&mut frame, &face, i as u32 * CART_W);
+        println!(
+            "{} at column {}, standing {}..{}",
+            cart.stem,
+            i as u32 * CART_W,
+            rest_y(face.h as f32),
+            rest_y(face.h as f32) + face.h as f32
+        );
     }
 
     let f = std::fs::File::create(&out).expect("create png");

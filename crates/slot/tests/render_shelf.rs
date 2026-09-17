@@ -19,7 +19,7 @@ use slot_input::{Action, Btn};
 use slot_store::{write_slot_state, Core, SlotState};
 use slot_ui::{
     arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
-    gb_cart_shadow, hint_face, padded, socket_face, TURN_PAD,
+    gb_cart_shadow, hint_face, padded, socket_face, GbShell, TURN_PAD,
 };
 use tempfile::TempDir;
 
@@ -61,9 +61,13 @@ fn upload_faces(app: &mut App, c: &mut Compositor) {
     let shadow = cart_shadow();
     let shadow = tex(c, shadow.w, shadow.h, &shadow.rgba);
     app.set_cart_shadow(shadow);
-    let gb_shadow = gb_cart_shadow();
-    let gb_shadow = tex(c, gb_shadow.w, gb_shadow.h, &gb_shadow.rgba);
-    app.set_gb_cart_shadow(gb_shadow);
+    // One per Game Pak mould, as the frontend uploads them: the two shells' top corners
+    // disagree, and a shared backing showed through a dimmed cart where they do.
+    let notched = gb_cart_shadow(GbShell::Notched);
+    let notched = tex(c, notched.w, notched.h, &notched.rgba);
+    let rounded = gb_cart_shadow(GbShell::Rounded);
+    let rounded = tex(c, rounded.w, rounded.h, &rounded.rgba);
+    app.set_gb_cart_shadows(notched, rounded);
 
     let sockets = Core::ALL
         .iter()

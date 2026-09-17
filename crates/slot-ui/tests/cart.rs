@@ -1,9 +1,9 @@
 use slot_store::scan;
 use slot_ui::{
-    cart_face, clean_label, gb_label_panel, gb_silhouette, label_colour, label_panel, label_text,
-    shell_for, silhouette, Finish, GbShell, CART_H, CART_W, FOOT_Y, GB_CART_H, GB_CART_W,
-    GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_X, LABEL_Y, OUT_W,
-    PLATE_H,
+    cart_face, clean_label, foot_y, gb_label_panel, gb_silhouette, label_colour, label_panel,
+    label_text, rest_y, shell_for, silhouette, Finish, GbShell, CART_H, CART_W, GB_CART_H,
+    GB_CART_W, GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
+    MOUTH_H, OUT_H, OUT_W, PLATE_H,
 };
 use tempfile::TempDir;
 
@@ -453,19 +453,45 @@ fn a_game_boy_cart_face_is_drawn_at_the_game_boy_size() {
     assert!(face.rgba.iter().any(|b| *b != 0), "face is blank");
 }
 
-/// Both carts stand on one row floor, and each platform's rest position is that floor less its
-/// own height. `FOOT_Y` and the old `REST_Y` agreed only because both were arithmetic on the
-/// one cart height there used to be; a 253px pak worked out from the screen's centre would
-/// float 118px off the row.
+/// Every cartridge is centred on the carousel, which is what a GBA cart has always been and
+/// what the user asked for the paks to be. They share a centre and not a floor: a pak stood on
+/// a GBA cart's floor sat 59 px higher up the frame, top-heavy against the HUD plate with a gap
+/// under it, and the user named that as the thing to fix. The floors are per platform now and
+/// fall out of the centre rather than the other way round.
+///
+/// The consequence the user accepted in as many words is that a pak ends up closer to the slot.
+/// Closer is not touching, and the numbers that say so are pinned here: a centred pak's foot is
+/// at 366.5 against a lip at 422, which is 55.5 px of ground between the cartridge and the
+/// machine. It also buys back headroom at the top — 113.5 against 54.5 — so the clearance the
+/// old test was written to protect got better, not worse.
 #[test]
-fn a_game_boy_pak_stands_on_the_same_row_floor_and_clears_the_hud_plate() {
-    assert_eq!(FOOT_Y, 307.5);
-    assert_eq!(FOOT_Y - CART_H as f32, 172.5, "the GBA cart left the row");
-    let top = FOOT_Y - GB_CART_H as f32;
-    assert_eq!(top, 54.5);
-    assert!(
-        top > PLATE_H,
-        "the pak's top edge at {top} is under the {PLATE_H}px HUD plate"
+fn every_cartridge_is_centred_on_the_row_and_clears_both_the_plate_and_the_slot() {
+    let lip = OUT_H as f32 - MOUTH_H;
+    for (name, h) in [("the GBA cart", CART_H), ("the Game Boy pak", GB_CART_H)] {
+        let (top, foot) = (rest_y(h as f32), foot_y(h as f32));
+        assert_eq!(
+            top + foot,
+            OUT_H as f32,
+            "{name} stands at {top}..{foot}, which is not centred on a {OUT_H}px screen"
+        );
+        assert!(
+            top > PLATE_H,
+            "{name}'s top edge at {top} is under the {PLATE_H}px HUD plate"
+        );
+        assert!(
+            foot < lip,
+            "{name}'s foot at {foot} has reached the lip at {lip}: it is standing in the slot"
+        );
+    }
+    // The GBA cart is where it has always been, which is the point of centring rather than
+    // moving: nothing about the shelf the user already liked changed.
+    assert_eq!(
+        (rest_y(CART_H as f32), foot_y(CART_H as f32)),
+        (172.5, 307.5)
+    );
+    assert_eq!(
+        (rest_y(GB_CART_H as f32), foot_y(GB_CART_H as f32)),
+        (113.5, 366.5)
     );
 }
 
@@ -540,6 +566,51 @@ fn the_notch_follows_the_cgb_flag_and_not_the_folder() {
     assert!(
         notched_away("Filed As Colour"),
         "a 0x80 rom in the GBC folder lost the notch its shell was moulded with"
+    );
+}
+
+/// The moulding follows the flag too, and the shoulder is where the two shells part company.
+/// A class A/B pak wears five ribs a side running most of the way across its shoulder; a class C
+/// pak's shoulder is smooth, with its ribbing left only as short ridges on the outer side edges.
+/// The user named this looking at the rendered shelf — "gbc carts don't have lines on the
+/// header" — and a square-on photograph of a class C shell bears it out.
+///
+/// Read off the drawn face, in the band the class A/B ribs occupy and far enough in from the
+/// edge to clear the class C ridges. A rib is a horizontal line, so it shows as a step between
+/// one row and the next; flat plastic has no steps in it at all.
+#[test]
+fn only_the_notched_shell_has_lines_across_its_shoulder() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GB", "Grey.gb", 0x00);
+    write_gb_rom(&d, "GB", "Black.gb", 0x80);
+    write_gb_rom(&d, "GBC", "Clear.gbc", 0xc0);
+    let carts = scan(d.path()).unwrap();
+    // The rib band: rows 21 to 57, from past the class C ridges at x 14 to short of x 33,
+    // where the lettering plate's own rounded left cap starts bulging into the shoulder.
+    let steps = |stem: &str| {
+        let cart = carts.iter().find(|c| c.stem == stem).expect("scanned");
+        let face = cart_face(cart);
+        let lum = |x: u32, y: u32| {
+            let p = pixel(&face, x, y);
+            p.iter().map(|c| u32::from(*c)).sum::<u32>() / 3
+        };
+        (16..32)
+            .flat_map(|x| (21..58).map(move |y| (x, y)))
+            .filter(|(x, y)| lum(*x, *y).abs_diff(lum(*x, y - 1)) > 10)
+            .count()
+    };
+    for stem in ["Grey", "Black"] {
+        assert!(
+            steps(stem) > 200,
+            "the {stem} pak's shoulder came up smooth: {} stepped pixels, and five ribs a \
+             side should leave hundreds",
+            steps(stem)
+        );
+    }
+    assert_eq!(
+        steps("Clear"),
+        0,
+        "the Colour pak has lines across its header, which that shell does not have"
     );
 }
 
@@ -630,31 +701,39 @@ fn the_cart_shadow_is_the_cart_in_black() {
 /// The same black backing in the Game Boy pak's own shape. Stretching the GBA one to a taller
 /// box would put a tapered shadow under a straight sided cart.
 ///
-/// One texture serves both shells, because the shelf uploads a backing per shelf rather than
-/// per cart, and the two shells are not the same shape at the top. It is their intersection:
-/// backing wider than the cart would paint black over the wallpaper beside it, which is the
-/// fault worth avoiding, where backing narrower only leaves a few pixels of a dimmed face
-/// unbacked. So it may be smaller than either outline and must never be larger than one.
+/// One texture per shell, exactly that shell's outline. It used to be one for both, and it had
+/// to be their *intersection*: backing wider than the cart paints black over the wallpaper
+/// beside it, so the only safe way to share was to meet in the middle. What that cost was 72 px
+/// of a notched pak and 169 px of a rounded one left with nothing behind them, in the two corner
+/// wedges where the moulds disagree — and dimmed over a light wallpaper those are not
+/// invisible: the class C corner came up as a pale bite out of the cart. So they are separate,
+/// and each is required to be its own shell precisely rather than merely to stay inside it.
 #[test]
-fn the_game_boy_shadow_is_black_and_inside_both_shells() {
-    let s = slot_ui::gb_cart_shadow();
-    assert_eq!((s.w, s.h), (GB_CART_W, GB_CART_H));
-    let notched = gb_silhouette(GbShell::Notched, GB_CART_W, GB_CART_H);
-    let rounded = gb_silhouette(GbShell::Rounded, GB_CART_W, GB_CART_H);
-    let mut inside_both = 0usize;
-    for (i, px) in s.rgba.chunks_exact(4).enumerate() {
-        assert_eq!(&px[..3], &[0, 0, 0], "the shadow is not black");
-        assert!(
-            px[3] <= notched[i] && px[3] <= rounded[i],
-            "the shadow reaches past a shell at pixel {i}, so it would draw black beside it"
-        );
-        if notched[i] > 250 && rounded[i] > 250 {
-            inside_both += 1;
-            assert!(px[3] > 250, "a pixel both shells cover is unbacked at {i}");
+fn each_game_boy_shell_gets_a_black_shadow_of_its_own_exact_outline() {
+    for shell in [GbShell::Notched, GbShell::Rounded] {
+        let s = slot_ui::gb_cart_shadow(shell);
+        assert_eq!((s.w, s.h), (GB_CART_W, GB_CART_H));
+        let own = gb_silhouette(shell, GB_CART_W, GB_CART_H);
+        for (i, px) in s.rgba.chunks_exact(4).enumerate() {
+            assert_eq!(&px[..3], &[0, 0, 0], "{shell:?}: the shadow is not black");
+            assert_eq!(
+                px[3], own[i],
+                "{shell:?}: the shadow is not the shell's own shape at pixel {i}"
+            );
         }
     }
+    // And the two really are different objects, so sharing one was a choice with a cost rather
+    // than a tidy-up: this is the count of cartridge the shared intersection used to leave bare.
+    let notched = gb_silhouette(GbShell::Notched, GB_CART_W, GB_CART_H);
+    let rounded = gb_silhouette(GbShell::Rounded, GB_CART_W, GB_CART_H);
+    let bare: u32 = notched
+        .iter()
+        .zip(&rounded)
+        .map(|(n, r)| u32::from(n.abs_diff(*r)))
+        .sum();
     assert!(
-        inside_both > (GB_CART_W * GB_CART_H) as usize / 2,
-        "the shadow backs almost none of the cart"
+        bare / 255 > 100,
+        "the two shells now differ by {} px, so the shared backing was harmless after all",
+        bare / 255
     );
 }

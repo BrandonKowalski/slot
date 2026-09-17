@@ -1,0 +1,58 @@
+<!--
+  The moulding on a class C Game Pak's face — the clear shell a CGB flag of 0xc0 shipped in.
+  Derived from gb_cart_detail.svg the way gbc_cart.svg is derived from gb_cart.svg, so the pair
+  cannot drift apart stylistically and the one difference is the only difference.
+
+  That difference is the shoulder. A class A/B pak wears five moulded ribs a side running most
+  of the way across its shoulder and up to the lettering plate; a class C pak's shoulder is
+  completely smooth, and its ribbing survives only as short ridges on the outer *side* edges,
+  sitting just below the rounded top corners. The user named this looking at the rendered
+  shelf — "gbc carts don't have lines on the header" — and a square-on photograph of the shell
+  bears it out: the header panel carrying the moulded GAME BOY COLOR lettering has nothing
+  across it at all. The ridges keep the rows the class A/B ribs are on, so the two shells are
+  plainly the same object with one feature cut back rather than two drawings of it.
+
+  The photograph is a commercial parts listing for a replacement shell with no licence stated.
+  Nothing here is traced from it: what it settled is a fact about the hardware — which surfaces
+  carry ribbing — and the geometry below is gb_cart_detail.svg's own, cut back. The user's line
+  drawing stays the only art asset that ships.
+
+  Everything else is gb_cart_detail.svg unchanged: the lettering plate, the grooves down both
+  sides, the arrow, and the black-is-shadow white-is-light convention that
+  `silhouette::rasterise_detail` splits the file on. See that file for the reasoning.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 253">
+  <defs>
+    <!-- Standing proud of the shell: the lettering plate, and the five short edge ridges a side
+         that are all a class C shoulder carries. They reach 7 px in from the body edge against
+         the class A/B rib's 29, which is the proportion the shell photographs at. -->
+    <g id="ridges">
+      <path fill-rule="evenodd" d="M 6.5 20.7 L 13.5 20.7 L 13.5 26.65 L 6.5 26.65 Z M 8.75 22.89 L 11.25 22.89 L 11.25 24.46 L 8.75 24.46 Z"/>
+      <path fill-rule="evenodd" d="M 233.5 20.7 L 226.5 20.7 L 226.5 26.65 L 233.5 26.65 Z M 231.25 22.89 L 228.75 22.89 L 228.75 24.46 L 231.25 24.46 Z"/>
+      <path fill-rule="evenodd" d="M 6.5 28.48 L 13.5 28.48 L 13.5 34.43 L 6.5 34.43 Z M 8.75 30.67 L 11.25 30.67 L 11.25 32.24 L 8.75 32.24 Z"/>
+      <path fill-rule="evenodd" d="M 233.5 28.48 L 226.5 28.48 L 226.5 34.43 L 233.5 34.43 Z M 231.25 30.67 L 228.75 30.67 L 228.75 32.24 L 231.25 32.24 Z"/>
+      <path fill-rule="evenodd" d="M 6.5 36.25 L 13.5 36.25 L 13.5 42.2 L 6.5 42.2 Z M 8.75 38.44 L 11.25 38.44 L 11.25 40.01 L 8.75 40.01 Z"/>
+      <path fill-rule="evenodd" d="M 233.5 36.25 L 226.5 36.25 L 226.5 42.2 L 233.5 42.2 Z M 231.25 38.44 L 228.75 38.44 L 228.75 40.01 L 231.25 40.01 Z"/>
+      <path fill-rule="evenodd" d="M 6.5 44.03 L 13.5 44.03 L 13.5 49.98 L 6.5 49.98 Z M 8.75 46.22 L 11.25 46.22 L 11.25 47.79 L 8.75 47.79 Z"/>
+      <path fill-rule="evenodd" d="M 233.5 44.03 L 226.5 44.03 L 226.5 49.98 L 233.5 49.98 Z M 231.25 46.22 L 228.75 46.22 L 228.75 47.79 L 231.25 47.79 Z"/>
+      <path fill-rule="evenodd" d="M 6.5 51.8 L 13.5 51.8 L 13.5 57.75 L 6.5 57.75 Z M 8.75 53.99 L 11.25 53.99 L 11.25 55.56 L 8.75 55.56 Z"/>
+      <path fill-rule="evenodd" d="M 233.5 51.8 L 226.5 51.8 L 226.5 57.75 L 233.5 57.75 Z M 231.25 53.99 L 228.75 53.99 L 228.75 55.56 L 231.25 55.56 Z"/>
+      <path fill-rule="evenodd" d="M 57.2 16 L 182.8 16 A 24 24 0 0 1 182.8 64 L 57.2 64 A 24 24 0 0 1 57.2 16 Z M 57.2 18.2 L 182.8 18.2 A 21.8 21.8 0 0 1 182.8 61.8 L 57.2 61.8 A 21.8 21.8 0 0 1 57.2 18.2 Z"/>
+    </g>
+    <!-- Cut into the shell: the grooves down both sides, and the arrow that says which way up
+         the pak goes in. Both moulds carry these. -->
+    <g id="cuts">
+      <rect x="12.82" y="105.3" width="2.25" height="146.5" rx="1.12"/>
+      <rect x="224.93" y="105.3" width="2.25" height="146.5" rx="1.12"/>
+      <path fill-rule="evenodd" d="M 101.54 224.29 L 138.46 224.29 L 120 245.76 Z M 104.59 226.49 L 135.41 226.49 L 120 243.04 Z"/>
+    </g>
+  </defs>
+  <g fill="#fff">
+    <use href="#ridges" x="-1.1" y="-1.1"/>
+    <use href="#cuts" x="1.1" y="1.1"/>
+  </g>
+  <g fill="#000">
+    <use href="#ridges"/>
+    <use href="#cuts"/>
+  </g>
+</svg>

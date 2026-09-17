@@ -11,11 +11,11 @@ use slot_store::{
 };
 use slot_ui::{
     board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
-    lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, Hud, HudKind,
-    Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
-    QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U,
-    CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V,
-    SOCKET_W, TURN_PAD,
+    lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, GbShell, Hud,
+    HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces,
+    QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H,
+    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -947,13 +947,15 @@ impl App {
     /// the GBA shadow to hand draws no black at all, so a dimmed pak would read as a ghost over
     /// the wallpaper.
     ///
-    /// Every shelf gets it, the same as the GBA one does. There are three shelves and two cart
-    /// shapes, so no shelf can be picked out as "the Game Boy one" to give it to; the shelf that
-    /// is drawing chooses between the two shadows per cart, and it can only choose from what it
-    /// has been handed.
-    pub fn set_gb_cart_shadow(&mut self, face: TexId) {
+    /// One per Game Pak mould, because the two disagree at their top corners and a shadow of the
+    /// wrong outline is visible either way round — see `slot_ui::gb_cart_shadow`. Every shelf
+    /// gets both, the same as it gets the GBA one. There are three shelves and three moulds and
+    /// they do not line up, so no shelf can be picked out as "the Game Boy one" to give one to;
+    /// the shelf that is drawing chooses per cart, and it can only choose from what it has.
+    pub fn set_gb_cart_shadows(&mut self, notched: TexId, rounded: TexId) {
         for (_, shelf) in &mut self.shelves {
-            shelf.set_gb_shadow(face);
+            shelf.set_gb_shadow(GbShell::Notched, notched);
+            shelf.set_gb_shadow(GbShell::Rounded, rounded);
         }
     }
 

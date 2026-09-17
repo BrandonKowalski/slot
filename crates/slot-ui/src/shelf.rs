@@ -1,8 +1,9 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
-use slot_store::{Cart, Platform};
+use slot_store::Cart;
 
-use crate::cart::{cart_box, label_colour, label_text, CART_H, CART_W};
+use crate::cart::{cart_box, gb_shell_of, label_colour, label_text, CART_W};
 use crate::hud::Millis;
+use crate::silhouette::GbShell;
 use crate::slot_chrome::draw_empty_slot;
 
 /// Distance between cart centres. Wider than a cart so the neighbours peek in at both
@@ -12,13 +13,26 @@ use crate::slot_chrome::draw_empty_slot;
 const PITCH: f32 = 240.0;
 const SIDE_SCALE: f32 = 0.78;
 const SIDE_ALPHA: f32 = 0.55;
-/// The one line every cart stands on, whatever platform it is for: carts stand on the row
-/// rather than float, so the foot stays put as a cart shrinks away and each platform's rest
-/// position is this less its own height. The value is where the floor has to be for a GBA cart
-/// to sit centred on the screen, which is where the row has always been; it is not a second
-/// name for that cart's top edge, and a 253 px Game Boy pak measured from the screen's centre
-/// instead would float 118 px above the row.
-pub const FOOT_Y: f32 = (OUT_H + CART_H) as f32 / 2.0;
+/// Where a cartridge of this height stands on the row: centred on the screen. Every shelf holds
+/// one platform — the card is one folder per system — so a row never mixes heights, and what the
+/// eye reads on the carousel is where the selected cartridge sits in the frame. A GBA cart has
+/// always been centred; a Game Boy pak measured from a shared floor instead sat 59 px higher,
+/// crowding the top of the screen and leaving a gap above the slot, which is what the user
+/// objected to. The two now share a centre rather than a floor.
+///
+/// This is where the *full size* cartridge rests. A side cart is smaller, and it keeps its foot
+/// on the line the selection's foot is on rather than shrinking about the middle, so the row
+/// still reads as objects standing on a shelf: see `foot_y`.
+pub fn rest_y(h: f32) -> f32 {
+    (OUT_H as f32 - h) / 2.0
+}
+
+/// The line this platform's cartridges stand on, which is `rest_y` plus that cartridge's own
+/// height. Asked with the cart's full height even for a shrunken neighbour: the foot stays put
+/// as a cart shrinks away, which is what stops the row reading as carts floating.
+pub fn foot_y(h: f32) -> f32 {
+    rest_y(h) + h
+}
 /// Critically damped, so a flick lands on a cart instead of bouncing past and returning.
 const OMEGA: f32 = 16.0;
 /// How far the cart next to the selection is pushed aside as the chosen one goes in. Enough
@@ -40,11 +54,18 @@ pub struct Shelf {
     pub index: usize,
     pub scroll: f32,
     faces: Vec<TexId>,
-    /// The cart silhouette in black, drawn under a dimmed cart. One texture per shape rather
-    /// than one for the row: a row can hold GBA carts or Game Boy paks, and the two outlines
-    /// are different objects.
+    /// The cart silhouette in black, drawn under a dimmed cart. One texture per *mould* rather
+    /// than one for the row: a row can hold GBA carts or Game Boy paks, the two Game Pak shells
+    /// differ at their top corners, and all three are different objects. Backing of the wrong
+    /// outline either draws black over the wallpaper beside the cart or leaves part of the
+    /// dimmed face with nothing behind it, and both of those are visible.
     shadow: Option<TexId>,
     gb_shadow: Option<TexId>,
+    gbc_shadow: Option<TexId>,
+    /// Which mould each cart in `carts` came out of, `None` for a GBA cart. Worked out once
+    /// here because the answer is in the rom's header: asking it while drawing would open a
+    /// file on every cart of every frame.
+    shells: Vec<Option<GbShell>>,
     vel: f32,
     /// The direction being held and when it next repeats. Repeat lives here rather than in
     /// the gesture layer so nothing in game starts auto firing.
@@ -54,12 +75,14 @@ pub struct Shelf {
 impl Shelf {
     pub fn new(carts: Vec<Cart>) -> Self {
         Shelf {
+            shells: carts.iter().map(gb_shell_of).collect(),
             carts,
             index: 0,
             scroll: 0.0,
             faces: Vec::new(),
             shadow: None,
             gb_shadow: None,
+            gbc_shadow: None,
             vel: 0.0,
             held: None,
         }
@@ -71,11 +94,14 @@ impl Shelf {
         self.shadow = Some(face);
     }
 
-    /// The Game Boy pak's outline in black. A row whose carts are paks and whose only uploaded
-    /// shadow is the GBA one draws no black at all rather than a tapered shape stretched under
-    /// a straight sided cart.
-    pub fn set_gb_shadow(&mut self, face: TexId) {
-        self.gb_shadow = Some(face);
+    /// The Game Boy pak's outline in black, one per shell mould. A row whose carts are paks and
+    /// whose only uploaded shadow is the GBA one draws no black at all rather than a tapered
+    /// shape stretched under a straight sided cart.
+    pub fn set_gb_shadow(&mut self, shell: GbShell, face: TexId) {
+        match shell {
+            GbShell::Notched => self.gb_shadow = Some(face),
+            GbShell::Rounded => self.gbc_shadow = Some(face),
+        }
     }
 
     pub fn set_faces(&mut self, faces: Vec<TexId>) {
@@ -277,15 +303,19 @@ impl Shelf {
                 continue;
             }
             let x = x + shake;
-            let y = FOOT_Y - h;
+            // The floor is this platform's, asked of the cartridge's own full height rather than
+            // of the scaled one: a neighbour shrinks upward off a floor it shares with the
+            // selection instead of shrinking about its own middle.
+            let y = foot_y(ch as f32) - h;
             // Black in the cart's own shape, under the dimmed face. Without it the dimming is
             // transparency, and over a wallpaper the row reads as ghosts of carts.
             if alpha < 1.0 {
-                // Two shadows for three shelves: the backing is the cart's own outline, and a
-                // Game Boy pak and a Colour one are the same outline. See `cart::spec`.
-                let backing = match cart.platform {
-                    Platform::Gba => self.shadow,
-                    Platform::Gb | Platform::Gbc => self.gb_shadow,
+                // Three backings for three moulds: it is the cart's own outline, and a class C
+                // pak's corners are not a class A/B pak's. See `cart::gb_cart_shadow`.
+                let backing = match self.shells[i] {
+                    None => self.shadow,
+                    Some(GbShell::Notched) => self.gb_shadow,
+                    Some(GbShell::Rounded) => self.gbc_shadow,
                 };
                 if let Some(tex) = backing {
                     out.push(Draw::Tex {

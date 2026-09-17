@@ -1,7 +1,8 @@
 use slot_power::{Battery, Charge};
 use slot_store::{Cart, Platform};
 use slot_ui::{
-    draw_footer, label_colour, Draw, Printed, Shelf, TexId, CART_W, FOOT_Y, GB_CART_H, OUT_W,
+    draw_footer, label_colour, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W, GB_CART_H,
+    OUT_W,
 };
 
 fn shelf_with(n: usize) -> Shelf {
@@ -589,8 +590,9 @@ fn gb_shelf_with(n: usize) -> Shelf {
 }
 
 /// A Game Boy Game Pak is the same width as a GBA cart and 1.87x as tall, so a row that drew
-/// every cart at one size would squash it. It stands on the same floor as a GBA cart — the row
-/// is a shelf, and both objects have their feet on it — which puts its top edge higher.
+/// every cart at one size would squash it. It is centred on the carousel exactly as a GBA cart
+/// is — the two share a centre, not a floor — so its own floor is 59 px lower than the GBA
+/// shelf's and its top edge is 59 px lower too.
 #[test]
 fn the_row_draws_a_game_boy_pak_at_its_own_height() {
     let mut s = gb_shelf_with(3);
@@ -606,7 +608,11 @@ fn the_row_draws_a_game_boy_pak_at_its_own_height() {
         })
         .expect("no cart is drawn at full size");
     assert_eq!(h, GB_CART_H as f32, "the pak was drawn at the GBA height");
-    assert_eq!(y, FOOT_Y - GB_CART_H as f32, "the pak is off the row floor");
+    assert_eq!(
+        y,
+        rest_y(GB_CART_H as f32),
+        "the pak is not centred on the carousel"
+    );
 }
 
 /// The black backing under a dimmed cart is the cart's own outline. A Game Boy shelf that has
@@ -631,11 +637,71 @@ fn a_game_boy_row_backs_its_carts_with_the_game_boy_shadow() {
         "the GBA silhouette was stretched under a Game Boy pak"
     );
     let gb = TexId::from_raw(97);
-    s.set_gb_shadow(gb);
+    s.set_gb_shadow(GbShell::Notched, gb);
     assert!(
         drawn(&s)
             .iter()
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gb)),
         "nothing backs the dimmed paks once their own shadow is uploaded"
     );
+}
+
+/// There are three moulds, not two, and the backing is one per mould. A class C pak's top
+/// corners are rounded where a class A/B pak's are stepped, so backing one with the other's
+/// outline either paints black beside the cart or leaves a corner of the dimmed face with
+/// nothing behind it — and over a light wallpaper that corner reads as a bite out of the cart.
+///
+/// The shell is read off the rom's CGB flag, so these are real files on a real temporary card:
+/// what is being checked is that the row picks between the two backings by what the cartridge
+/// actually is, and that it does it without opening anything while drawing.
+#[test]
+fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
+    let d = tempfile::tempdir().expect("tempdir");
+    let games = d.path().join("Games/GB");
+    std::fs::create_dir_all(&games).expect("create games dir");
+    let carts: Vec<Cart> = [("Grey", 0x00u8), ("Clear", 0xc0)]
+        .iter()
+        .map(|(stem, cgb)| {
+            let mut rom = vec![0u8; 0x150];
+            rom[0x143] = *cgb;
+            let path = games.join(format!("{stem}.gb"));
+            std::fs::write(&path, rom).expect("write rom");
+            Cart {
+                platform: Platform::Gb,
+                stem: (*stem).into(),
+                rom: path,
+                label: None,
+                code: String::new(),
+                title: (*stem).to_uppercase(),
+            }
+        })
+        .collect();
+
+    let notched = TexId::from_raw(90);
+    let rounded = TexId::from_raw(91);
+    // Only a dimmed cart is backed, and the selection is not dimmed — so whichever backing the
+    // row draws belongs to the *neighbour*, which is what makes the answer unambiguous.
+    for (selected, neighbour_shell) in [(0usize, rounded), (1, notched)] {
+        let mut s = Shelf::new(carts.clone());
+        s.index = selected;
+        settle(&mut s);
+        s.set_faces(vec![TexId::from_raw(20), TexId::from_raw(21)]);
+        s.set_gb_shadow(GbShell::Notched, notched);
+        s.set_gb_shadow(GbShell::Rounded, rounded);
+        let mut out = Vec::new();
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        let backings: Vec<TexId> = out
+            .iter()
+            .filter_map(|d| match *d {
+                Draw::Tex { tex, .. } if tex == notched || tex == rounded => Some(tex),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            backings,
+            vec![neighbour_shell],
+            "with the {} pak selected, its neighbour was backed by the wrong shell",
+            carts[selected].stem
+        );
+    }
 }

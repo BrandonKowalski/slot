@@ -7,6 +7,7 @@ const DETAIL_SVG: &str = include_str!("../assets/cart_detail.svg");
 const GB_CART_SVG: &str = include_str!("../assets/gb_cart.svg");
 const GBC_CART_SVG: &str = include_str!("../assets/gbc_cart.svg");
 const GB_DETAIL_SVG: &str = include_str!("../assets/gb_cart_detail.svg");
+const GBC_DETAIL_SVG: &str = include_str!("../assets/gbc_cart_detail.svg");
 
 /// Which of the two Game Pak shell moulds a cart came out of. Nintendo's typology names three
 /// classes and slot draws three plastics, but there are only two shells: a grey 0x00 pak and a
@@ -53,23 +54,6 @@ pub(crate) fn gb_cart_mask(shell: GbShell) -> &'static [u8] {
         GbShell::Rounded => &ROUNDED,
     };
     lock.get_or_init(|| gb_silhouette(shell, GB_CART_W, GB_CART_H))
-}
-
-/// The shape both Game Pak shells agree on: every pixel inside one and inside the other. A
-/// side cart is dimmed over a black backing in the cart's own shape, and one backing is
-/// uploaded for the whole Game Boy shelf rather than one per cart. Backing that is *larger*
-/// than the cart draws black over the wallpaper beside it, which is a visible fault; backing
-/// that is smaller only leaves a few pixels of the dimmed face unbacked, which is not. So the
-/// two shells are met in the middle rather than unioned.
-pub(crate) fn gb_shadow_mask() -> &'static [u8] {
-    static MASK: OnceLock<Vec<u8>> = OnceLock::new();
-    MASK.get_or_init(|| {
-        gb_cart_mask(GbShell::Notched)
-            .iter()
-            .zip(gb_cart_mask(GbShell::Rounded))
-            .map(|(a, b)| *a.min(b))
-            .collect()
-    })
 }
 
 /// How far inside the outline each pixel sits, in city block steps, saturating at 255. A
@@ -156,16 +140,27 @@ pub(crate) fn detail_mask() -> &'static Detail {
     })
 }
 
-/// The Game Boy pak's own moulding, which is a different object's: five ribs on each shoulder,
+/// The Game Boy pak's own moulding, which is a different object's: the ribbing on each shoulder,
 /// the lettering plate above the label, the grooves down both sides and the arrow that says
 /// which way up it goes. The GBA cart's ridge and thumb notch are nowhere on it.
 ///
-/// One mask for both shells. The two differ only at the top corners and the notch, and nothing
-/// drawn here reaches either, so a shared moulding is what keeps the pair from drifting apart.
-pub(crate) fn gb_detail_mask() -> &'static Detail {
-    static MASK: OnceLock<Detail> = OnceLock::new();
-    MASK.get_or_init(|| {
-        rasterise_detail(GB_DETAIL_SVG, GB_CART_W, GB_CART_H)
+/// One mask per shell, where there used to be one for both. The two moulds were thought to
+/// differ only at the top corners and the notch, neither of which any moulding reaches — but the
+/// user, looking at the rendered shelf, said the class C shoulder has no lines across it, and a
+/// square-on photograph of that shell agrees: its header panel is completely smooth and its
+/// ribbing survives only as short ridges on the outer side edges. So the shells differ in their
+/// moulding too, and this is what forces the two assets apart. They are still one drawing with
+/// one feature cut back rather than two drawings: see the note at the top of
+/// `gbc_cart_detail.svg`.
+pub(crate) fn gb_detail_mask(shell: GbShell) -> &'static Detail {
+    static NOTCHED: OnceLock<Detail> = OnceLock::new();
+    static ROUNDED: OnceLock<Detail> = OnceLock::new();
+    let (lock, svg) = match shell {
+        GbShell::Notched => (&NOTCHED, GB_DETAIL_SVG),
+        GbShell::Rounded => (&ROUNDED, GBC_DETAIL_SVG),
+    };
+    lock.get_or_init(|| {
+        rasterise_detail(svg, GB_CART_W, GB_CART_H)
             .unwrap_or_else(|| Detail::blank(GB_CART_W, GB_CART_H))
     })
 }

@@ -9,7 +9,7 @@ use slot_store::{Cart, Core};
 
 use crate::art;
 use crate::cart::{clean_label, CartFace, CART_H, CART_W};
-use crate::shelf::FOOT_Y;
+use crate::shelf::rest_y;
 use crate::shell::shell_for;
 use crate::slot_chrome::ease;
 use crate::text;
@@ -257,7 +257,7 @@ pub fn shelf_cart() -> Placed {
 pub fn shelf_cart_at(x: f32) -> Placed {
     Placed {
         x,
-        y: FOOT_Y - CART_H as f32,
+        y: rest_y(CART_H as f32),
         w: CART_W as f32,
         h: CART_H as f32,
     }
