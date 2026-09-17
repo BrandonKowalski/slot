@@ -2,7 +2,7 @@ mod common;
 
 use common::tmp_root_with_carts;
 use slot::app::{INSERT_S, SEATED_AT};
-use slot::audio::{ring_capacity, Ring, Sfx};
+use slot::audio::{ring_capacity, Ring, Sfx, GBA_HZ};
 use slot::session::Session;
 
 /// The clip is started early enough that the contacts in it land on the frame the cart does.
@@ -108,6 +108,77 @@ fn a_clip_is_mixed_into_queued_game_audio_rather_than_played_after_it() {
     let mut out = vec![0i16; c.len()];
     r.fill(&mut out);
     assert_eq!(out[0], 1_000i16.saturating_add(c[0]));
+}
+
+/// Both clips are longer than the ring is: 240 ms and 315 ms against the 133 ms the ring holds
+/// at every rate it has ever opened at. Mixing wrote what fitted and dropped the rest, so 45%
+/// of every insert and 58% of every eject has never been played — cut at whatever sample 133 ms
+/// landed on rather than at a zero crossing, and taking the whole of the tail `Sfx::tail`
+/// exists to keep the picture off with it.
+#[test]
+fn the_whole_of_a_cart_sound_reaches_the_device() {
+    for rate in [48_000, GBA_HZ] {
+        for s in [Sfx::Insert, Sfx::Eject] {
+            let clip = s.render(rate);
+            assert!(
+                clip.len() > ring_capacity(rate) * 2,
+                "{s:?} now fits the ring at {rate} Hz, so this no longer exercises anything"
+            );
+            let r = Ring::new(ring_capacity(rate));
+            r.reopen(rate);
+            r.mix(&clip);
+            // Read it back the way the device does: a period at a time, for as long as it
+            // takes. The ring opens on a cushion of silence, so what comes out is the clip.
+            let mut got: Vec<i16> = Vec::new();
+            while got.len() < clip.len() {
+                let mut out = vec![0i16; 512 * 2];
+                r.fill(&mut out);
+                got.extend_from_slice(&out);
+            }
+            let first = got
+                .iter()
+                .zip(&clip)
+                .position(|(a, b)| a != b)
+                .unwrap_or(clip.len());
+            assert_eq!(
+                first,
+                clip.len(),
+                "{s:?} at {rate} Hz came apart {:.0} ms in, {:.0} ms short of the {:.0} ms it runs",
+                1000.0 * first as f32 / 2.0 / rate as f32,
+                1000.0 * (clip.len() - first) as f32 / 2.0 / rate as f32,
+                1000.0 * clip.len() as f32 / 2.0 / rate as f32,
+            );
+        }
+    }
+}
+
+/// The game keeps playing underneath the part of a clip that had to wait for room, and the two
+/// are added rather than one replacing the other. A clip that only mixed with what was queued
+/// when it arrived would cut a hole in the game for its own second half.
+#[test]
+fn the_rest_of_a_clip_is_mixed_into_the_game_it_lands_over() {
+    let rate = GBA_HZ;
+    let r = Ring::new(ring_capacity(rate));
+    r.reopen(rate);
+    let clip = Sfx::Insert.render(rate);
+    r.mix(&clip);
+    let mut got: Vec<i16> = Vec::new();
+    while got.len() < clip.len() {
+        // A game running behind it, pushed a period at a time the way the worker does.
+        r.push(&vec![100i16; 512 * 2]);
+        let mut out = vec![0i16; 512 * 2];
+        r.fill(&mut out);
+        got.extend_from_slice(&out);
+    }
+    // Past the ring's own length, so this is the half of the clip that had to wait.
+    let late = ring_capacity(rate) * 2 + 1000;
+    assert!(
+        got[late..clip.len()]
+            .iter()
+            .zip(&clip[late..])
+            .all(|(a, b)| *a == b.saturating_add(100)),
+        "the clip and the game did not add up"
+    );
 }
 
 /// The insert plays while the cart is seating, when no core has started. If the sink still
