@@ -15,7 +15,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot_gfx::{Compositor, HeadlessSurface};
 use slot_store::{Cart, Platform};
-use slot_ui::{cart_face, cart_shadow, Draw, Shelf, TexId, OUT_H, OUT_W};
+use slot_ui::{cart_face, cart_shadow, Draw, Shelf, TexId, CART_W, OUT_H, OUT_W};
 
 /// `gl::load_with` writes global function pointers, so two GL tests must not overlap.
 static GL: Mutex<()> = Mutex::new(());
@@ -164,6 +164,41 @@ fn a_short_row_leaves_no_more_of_the_panel_bare_than_a_long_one() {
             "{n} carts left {left} px bare at the left and {right} at the right against a ten \
              cart row's {lref} and {rref}: the row has a hole in it where a cartridge should be \
              leaving the frame"
+        );
+    }
+}
+
+/// A carousel of one does not turn. The row has no second cart to move to, so a shoulder press
+/// has nothing to answer and the lone cartridge must not so much as twitch.
+///
+/// It did. `ride` counts presses rather than wrapping — which is what lets a wrap go the way the
+/// button asked — and on a ring of one `scroll_target`'s wrap is degenerate, so the target *was*
+/// the press count and the row set off after a cart that is not there. Composited, the only
+/// cartridge on the shelf was thrown a pitch to the right and shrunk, and under a held direction
+/// the 110 ms repeat kicked it out again before it could land: a lone cart shimmying sideways
+/// for as long as the button was down.
+#[test]
+fn a_shelf_of_one_does_not_move_when_a_shoulder_is_held() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let frames = held_scroll(&mut c, 1, 120);
+    shot(&frames[0], "row-1-first");
+    shot(&frames[119], "row-1-last");
+    // The lone cart is 240 wide and centred, so it leaves the same 240 px bare at each edge on
+    // every frame. Read off the first frame rather than typed, and then required of all of them.
+    let want = bare_edges(&frames[0]);
+    assert_eq!(
+        want,
+        ((OUT_W - CART_W) as usize / 2, (OUT_W - CART_W) as usize / 2),
+        "the lone cart is not standing centred at its own width even before the press"
+    );
+    for (f, px) in frames.iter().enumerate() {
+        assert_eq!(
+            bare_edges(px),
+            want,
+            "frame {f}: the lone cart moved to {:?}",
+            bare_edges(px)
         );
     }
 }

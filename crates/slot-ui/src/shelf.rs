@@ -187,9 +187,24 @@ impl Shelf {
         self.held = Some((by, now + REPEAT_MS));
     }
 
+    /// A press, and nothing at all on a row with fewer than two carts. An empty row has nothing
+    /// to select and a row of one has nothing else to select, so neither can answer a shoulder —
+    /// and `cart_at_offset` says as much: a lone cart is drawn in the middle and the row holds no
+    /// other slot to move into.
+    ///
+    /// The one-cart case has to stop here rather than fall through to arithmetic that happens to
+    /// leave `index` alone, because `ride` is not `index`. `ride` counts presses rather than
+    /// wrapping — that is what lets `scroll_target` answer a wrap the way the button asked — and
+    /// on a ring of one the wrap is degenerate: `(index - ride + 0.5).rem_euclid(1.0)` is 0.5 for
+    /// every whole `ride`, so the target *is* `ride`, and a press that added to it would send the
+    /// row a whole pitch after a cart that is not there. Composited, that is the only cartridge
+    /// on the shelf thrown a pitch to the right and shrunk to `SIDE_SCALE` on the press, sliding
+    /// back to the middle over the next third of a second; held, the 110 ms repeat kicks it out
+    /// again before it lands and the lone cart shimmies sideways for as long as the button is
+    /// down. Which is a carousel of one turning, and a carousel of one does not turn.
     fn step(&mut self, by: i32) {
         let n = self.carts.len();
-        if n == 0 {
+        if n < 2 {
             return;
         }
         self.index = (self.index as i32 + by).rem_euclid(n as i32) as usize;
