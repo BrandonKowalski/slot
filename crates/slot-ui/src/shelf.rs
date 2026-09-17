@@ -67,9 +67,8 @@ pub struct Shelf {
     /// file on every cart of every frame.
     shells: Vec<Option<GbShell>>,
     /// The presses added up, in the same continuous coordinate `scroll` lives in, so it counts
-    /// laps rather than wrapping. Only a ring of two reads it — see `scroll_target` — but it is
-    /// kept for every row because `step` is the one place a press is known about, and a row
-    /// never changes how many carts it holds without being built again.
+    /// laps rather than wrapping. This is what the spring aims at — see `scroll_target` — because
+    /// it is the only thing that remembers which button was pressed once the row has wrapped.
     ride: f32,
     vel: f32,
     /// The direction being held and when it next repeats. Repeat lives here rather than in
@@ -197,27 +196,40 @@ impl Shelf {
         self.ride += by as f32;
     }
 
-    /// Where the spring is heading, in the continuous coordinate `scroll` lives in. The row is
-    /// a ring, so the selected cart has an image every `n` slots; this is the one nearest the
-    /// place measured from, which is what stops a wrap unwinding the whole row.
+    /// Where the spring is heading, in the continuous coordinate `scroll` lives in. The row is a
+    /// ring, so the selected cart has an image every `n` slots, and the one to head for is the
+    /// one a single press away in the direction that press asked for — never a lap of the row.
     ///
-    /// A row of three or more measures from where the row already stands. A row of two cannot:
-    /// on a ring of two the selection's two nearest images sit exactly one slot either side, so
-    /// "the nearest" has nothing to choose between them, and a press arriving while the spring
-    /// is still moving lands on the image behind the row and sends it back the way it came. On a
-    /// shelf of two both neighbours are the same cart, so the direction of travel is the only
-    /// thing on screen that says which button was pressed, and a reversal reads as the row
-    /// glitching. It measures from `ride` — the presses added up, laps and all — instead, so a
-    /// second right press carries on rightwards through the wrap.
+    /// This used to measure from `scroll`, taking whichever image stood nearest where the row
+    /// already was. That reads as the short way round and mostly is, but the row is rarely where
+    /// it is heading: under the 110 ms repeat the spring is still up to half a pitch behind its
+    /// target when the next press lands, and that press asks for an image one slot further on
+    /// again. Measured from a row that is `lag` pitches behind, the image the press asked for is
+    /// `lag + 1` away, so once `lag` passes `n / 2 - 1` the image *behind* the row is the nearer
+    /// one and the row sets off against the button being held. That threshold is zero pitches on
+    /// a ring of two, half a pitch on a ring of three — which both a held scroll and a second tap
+    /// inside five frames clear — and a whole pitch or more from four carts up, which nothing the
+    /// shelf can produce reaches. So a row of two reversed on every press; a row of three ran
+    /// backwards for about eight frames out of every twenty eight under a hold, and answered two
+    /// quick right taps by sliding one pitch *left* instead of two right, reaching the correct
+    /// cart by the wrong road; and longer rows were never wrong. That is the report exactly: it
+    /// looks wrong on two and three carts, and the ten cart shelf is fine.
+    ///
+    /// Adding the presses up answers it for every length at once. `ride` counts laps instead of
+    /// wrapping, so one press is one slot the way it was pressed whatever the row is doing at the
+    /// time, and the row still never unwinds: a single step round a ring *is* the short way round.
+    /// Simulated against the old rule frame by frame under a held scroll, this is identical from
+    /// four carts up — which is every row size nobody has reported anything wrong with.
     ///
     /// Wrapping `ride` back onto the ring is what keeps this honest if `index` was moved without
-    /// it: the answer is still an image of the cart that is actually selected.
+    /// it: the answer is still an image of the cart that is actually selected, and it is the image
+    /// nearest where the row was already heading.
     pub fn scroll_target(&self) -> f32 {
         let n = self.carts.len();
         if n == 0 {
             return 0.0;
         }
-        let from = if n == 2 { self.ride } else { self.scroll };
+        let from = self.ride;
         let n = n as f32;
         from + (self.index as f32 - from + n / 2.0).rem_euclid(n) - n / 2.0
     }

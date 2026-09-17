@@ -245,44 +245,92 @@ fn a_press_on_a_row_of_two_slides_the_row_rather_than_swapping_its_carts() {
     }
 }
 
-/// Which way the row goes is the only thing on screen that says which button was pressed, since
-/// both neighbours are the same cart. A ring of two wraps on every press, so the nearest image
-/// of the selection is one slot either side and the spring cannot choose between them on
-/// distance. What settles it is the press, including a press that lands while the row is still
-/// moving from the one before it — which is where measuring from where the row happens to be
-/// picked the image behind it and turned the row round.
+/// Which way the row goes is what says which button was pressed — on a ring of two it is the
+/// only thing on screen that does, since both neighbours are the same cart. The row is a ring, so
+/// the selection has an image every `n` slots, and the spring used to head for whichever image
+/// stood nearest where the row already was. The row is behind its own target whenever it is
+/// moving, though, and a press asks for an image one slot further on again, so past a lag of
+/// `n / 2 - 1` pitches the image *behind* the row was the nearer one and the row set off the
+/// wrong way. That is no pitches at all on a ring of two and half a pitch on a ring of three,
+/// both of which a second press inside five frames clears.
+///
+/// Every length is checked from the cart a press wraps off the end of, because a wrap is where
+/// the two answers differ: anywhere else in the row there is only one image to choose.
 #[test]
-fn a_row_of_two_travels_the_way_it_was_pressed() {
-    for (name, press, way) in [
-        ("right", Shelf::right as fn(&mut Shelf), 1.0f32),
-        ("left", Shelf::left as fn(&mut Shelf), -1.0),
-    ] {
-        let mut s = shelf_with(2);
-        settle(&mut s);
-        let mut aim = s.scroll_target();
-        for tap in 0..4 {
-            press(&mut s);
-            let sent = s.scroll_target();
-            assert!(
-                (sent - aim - way).abs() < 0.01,
-                "tap {tap} {name}: the row was sent {} from {aim}, not one slot {name}",
-                sent - aim
-            );
-            assert_eq!(
-                (sent - s.scroll).signum(),
-                way,
-                "tap {tap} {name}: the row is travelling the other way"
-            );
-            aim = sent;
-            // Part way there, so the next press lands with the spring still moving, which is
-            // where measuring from the row's own place picked the image behind it.
-            for _ in 0..4 {
-                s.update(1.0 / 60.0);
+fn a_row_travels_the_way_it_was_pressed() {
+    for n in [2usize, 3, 4, 5, 10] {
+        for (name, press, way) in [
+            ("right", Shelf::right as fn(&mut Shelf), 1.0f32),
+            ("left", Shelf::left as fn(&mut Shelf), -1.0),
+        ] {
+            let mut s = shelf_with(n);
+            s.select(if way > 0.0 { n - 1 } else { 0 });
+            settle(&mut s);
+            let mut aim = s.scroll_target();
+            for tap in 0..2 * n {
+                press(&mut s);
+                let sent = s.scroll_target();
+                assert!(
+                    (sent - aim - way).abs() < 0.01,
+                    "{n} carts, tap {tap} {name}: the row was sent {} from {aim}, not one slot \
+                     {name}",
+                    sent - aim
+                );
+                assert_eq!(
+                    (sent - s.scroll).signum(),
+                    way,
+                    "{n} carts, tap {tap} {name}: the row is travelling the other way"
+                );
+                aim = sent;
+                // Part way there, so the next press lands with the spring still moving, which is
+                // where measuring from the row's own place picked the image behind it.
+                for _ in 0..4 {
+                    s.update(1.0 / 60.0);
+                }
+                assert_eq!(
+                    s.scroll_target(),
+                    sent,
+                    "{n} carts, tap {tap} {name}: the row changed its mind in mid flight"
+                );
             }
-            assert_eq!(
-                s.scroll_target(),
-                sent,
-                "tap {tap} {name}: the row changed its mind in mid flight"
+        }
+    }
+}
+
+/// A direction held down, which is the shape the fault was actually reported in: the repeat lands
+/// a press every 110 ms, so the row is still travelling when the next one arrives, every time.
+/// On three carts that was enough for the old target to flip to the image a lap behind, and the
+/// row then ran backwards for eight frames out of every twenty eight — a stutter, under a button
+/// held steadily one way, at the ends of the shelf where every press is a wrap.
+///
+/// Driven the way `App::update` drives it, `tick` then `update` once a frame, for two seconds:
+/// the repeat delay and then fifteen repeats, which is five laps of a three cart row.
+#[test]
+fn a_held_scroll_never_travels_against_the_button() {
+    for n in [2usize, 3, 4, 5, 10] {
+        for (name, hold, way) in [
+            ("right", Shelf::hold_right as fn(&mut Shelf, u64), 1.0f32),
+            ("left", Shelf::hold_left as fn(&mut Shelf, u64), -1.0),
+        ] {
+            let mut s = shelf_with(n);
+            s.select(if way > 0.0 { n - 1 } else { 0 });
+            hold(&mut s, 0);
+            let mut was = s.scroll;
+            for f in 1..120u64 {
+                s.tick(f * 1000 / 60);
+                s.update(1.0 / 60.0);
+                assert!(
+                    (s.scroll - was) * way >= -1e-4,
+                    "{n} carts, held {name}: the row travelled {} at frame {f}",
+                    s.scroll - was
+                );
+                was = s.scroll;
+            }
+            // And it got somewhere: fifteen repeats plus the press itself, one pitch each.
+            let gone = (s.scroll - (if way > 0.0 { n - 1 } else { 0 }) as f32) * way;
+            assert!(
+                gone > 14.0,
+                "{n} carts, held {name}: two seconds of holding moved the row {gone} pitches"
             );
         }
     }
@@ -883,7 +931,11 @@ fn a_cart_pushed_onto_the_row_draws_rather_than_stopping_the_device() {
             .filter(|d| matches!(**d, Draw::Tex { tex, .. } if tex == gb || tex == gba))
             .count()
     };
-    assert_eq!(backed(&s), 1, "the neighbour was not backed to begin with");
+    // Twice, not once: a row of two repeats, so its one neighbour stands on both sides of the
+    // selection and is backed under each of its two images. This read 1 until the repeat landed
+    // and was left behind by it — before that a row of two had a hole where the second image now
+    // stands, and only one cart on the row was dimmed.
+    assert_eq!(backed(&s), 2, "the neighbour was not backed to begin with");
 
     // Straight onto the public field, which is the only way the two can come apart. The
     // selection stays where it is, so the new cart stands as a *neighbour* — dimmed, and
