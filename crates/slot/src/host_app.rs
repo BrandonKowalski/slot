@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use slot::frontend::Frontend;
 use slot::input::HostInput;
 use slot_gfx::{Compositor, HostSurface, Surface};
@@ -6,6 +8,30 @@ use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId;
+
+/// The device panel's frame, and the twin of `device_app`'s `FRAME`. That loop has always
+/// timed its own frame on the grounds that "a driver that ignores the swap interval would
+/// spin this loop as fast as the GPU can clear"; this loop never did, because the swap here
+/// is asked for vsync (`slot_gfx::host`) and vsync was assumed to do the waiting.
+///
+/// It does, right up until macOS decides nobody can see the window. An occluded NSOpenGL
+/// surface is not presented at all, so `CGLFlushDrawable` has no vblank to wait for and
+/// returns immediately — measured at 0.22 ms against 7.9 ms visible. With `ControlFlow::Poll`
+/// below and a redraw requested unconditionally after every swap, that leaves nothing at all
+/// pacing the loop, and it free-runs: 1900 frames a second, a whole core, for a window that is
+/// behind something else. Putting Activity Monitor in front of slot to read its CPU is enough
+/// to cause it, which is how it came to be reported.
+///
+/// So the host gets the guard the device already had, for the reason the device already had
+/// it.
+///
+/// On a panel faster than 60 Hz this is a cap and not only a floor: a 120 Hz Mac was drawing
+/// the shelf 120 times a second and now draws it 60. That is the rate the device being
+/// simulated runs at, every animation here is already driven by `dt` rather than by a frame
+/// count, and the emulator worker was never paced from this loop at all — it keeps its own
+/// `PRESENT` deadline (see `emu`), so a game's audio and its rate control do not notice. Half
+/// the presents for the same picture is the point rather than a cost.
+const FRAME: Duration = Duration::from_micros(16_667);
 
 struct Slot {
     gfx: Option<(HostSurface, Compositor)>,
@@ -50,6 +76,9 @@ impl ApplicationHandler for Slot {
             WindowEvent::CloseRequested => events.exit(),
             WindowEvent::Resized(size) => surface.resize(size),
             WindowEvent::RedrawRequested => {
+                // Taken before the render and spent after the advance, so what is timed is the
+                // whole frame rather than the present alone — the same span `device_app` times.
+                let began = Instant::now();
                 self.frontend.render(compositor, surface.window_size());
                 if let Err(e) = surface.swap() {
                     eprintln!("slot: {e}");
@@ -65,6 +94,13 @@ impl ApplicationHandler for Slot {
                 if self.frontend.powering_off() {
                     self.frontend.poweroff();
                     events.exit();
+                    // Before the wait below, as `device_app` returns before its own: a machine
+                    // that has been told to stop does not owe the panel the rest of a frame.
+                    return;
+                }
+                // Last, so what is waited out is whatever the frame did not already spend.
+                if let Some(left) = FRAME.checked_sub(began.elapsed()) {
+                    std::thread::sleep(left);
                 }
             }
             _ => {}
