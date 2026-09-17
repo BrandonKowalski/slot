@@ -77,3 +77,44 @@ from this repo carries the same notice the release zip does.
   the pin and with the build script's stamp. If any one does not, all of them are cleared, and
   the archive is refetched and the binary rebuilt from it in the same run, so nothing here can
   pair a binary from one build with a source recorded by another.
+
+## Artwork
+
+`slot` draws its own cartridges, its own slot and its own wordmark, and the two fonts it sets
+type and glyphs in each ship with their licence beside them in `crates/slot-ui/assets/`. Three
+drawings in that directory are somebody else's, and this is where they are credited.
+
+| File                                    | Drawing               | Creator              | Licence |
+|-----------------------------------------|-----------------------|----------------------|---------|
+| `crates/slot-ui/assets/platform_gba.svg` | Game Boy Advance SP  | O R I M Λ T          | CC BY   |
+| `crates/slot-ui/assets/platform_gb.svg`  | Game Boy (DMG)       | costantino montanari | CC BY   |
+| `crates/slot-ui/assets/platform_gbc.svg` | Game Boy Color       | Ryan Beck            | CC BY   |
+
+They are the marks on the case band that say which shelf the carousel is standing on, one per
+platform. Each is a free download from the Noun Project, whose free tier licenses an icon under
+Creative Commons Attribution in exchange for crediting the person who drew it:
+
+- "Game Boy Advance SP" by O R I M Λ T, from the Noun Project:
+  https://thenounproject.com/icon/game-boy-advance-sp-208211/
+- "Gameboy Color" by costantino montanari, from the Noun Project:
+  https://thenounproject.com/icon/gameboy-color-3633999/
+- "Game Boy Color" by Ryan Beck, from the Noun Project:
+  https://thenounproject.com/icon/game-boy-color-44993/
+
+No version is named because the Noun Project does not name one: its own record of all three
+reads `CREATIVECOMMONS`, and the icon pages above are the authority on the terms. Each icon is
+titled here by the drawing rather than by the upload — costantino montanari's is titled
+"Gameboy Color" on the Noun Project and draws the original Game Boy, which is why the file it
+downloaded as, `noun_GameboyColor_3633999.svg`, is not what it is called in this repository.
+
+**This section is the attribution, and the drawings no longer carry their own.** The free
+download bakes the credit into the file, as two lines of type under the artwork reading
+"Created by … from the Noun Project". They are stripped: the mark is drawn 24 px tall on a
+status bar and cannot carry a sentence, and a credit rasterised down to that would be a smudge
+rather than a credit. Stripping it is only allowed because the credit moved here, where it is
+legible — and this directory ships: `taskfile.yml`'s `dist:device` copies it onto the card
+beside the cores, so a device built from this repo carries this notice as well as the artwork.
+
+Nothing else about the drawings was changed. Every path is the artist's, and the only other
+edit is to the `viewBox`, which had been sized to hold the credit line and is re-fitted to the
+artwork it now holds; each file's own comment says what its bounds were and what they became.

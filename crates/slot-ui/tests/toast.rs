@@ -24,19 +24,28 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
     assert!(f.rgba.chunks(4).any(|p| p[3] > 0), "the banner is blank");
 }
 
-/// The carousel says which system it has just moved to, in the banner everything else the HUD
-/// says already uses. One line per platform, because there is one shelf per platform.
+/// Every banner the HUD can raise answers something the user just did, and none of them merely
+/// describes what is already on screen. The carousel briefly had three that named the shelf it
+/// had moved to; that is the case band's job now — see `slot_ui::mark` — and a banner saying it
+/// as well would be the same fact told twice. So the list is held at six, by name, because the
+/// way a line like that comes back is one variant at a time.
 #[test]
-fn each_shelf_says_which_system_it_holds() {
-    assert_eq!(Toast::GbaShelf.text(), "Game Boy Advance");
-    assert_eq!(Toast::GameBoyShelf.text(), "Game Boy");
-    assert_eq!(Toast::GameBoyColorShelf.text(), "Game Boy Color");
-    for t in [
-        Toast::GbaShelf,
-        Toast::GameBoyShelf,
-        Toast::GameBoyColorShelf,
-    ] {
-        let f = toast_face(t);
+fn the_banner_says_what_happened_and_never_what_is_on_screen() {
+    assert_eq!(
+        Toast::ALL,
+        [
+            Toast::StateSaved,
+            Toast::StateLoaded,
+            Toast::NeedsGpsp,
+            Toast::NoLink,
+            Toast::LinkEnded,
+            Toast::PeerEnded,
+        ],
+        "a banner was added or dropped: every face is uploaded by its place in this list"
+    );
+    for (i, t) in Toast::ALL.iter().enumerate() {
+        assert_eq!(t.index(), i, "{t:?} does not answer to its own place");
+        let f = toast_face(*t);
         assert!(
             f.rgba.chunks(4).any(|p| p[3] > 0),
             "{t:?} rastered to a blank banner"
@@ -82,6 +91,33 @@ fn a_toast_fades_on_the_same_curve_as_the_bar() {
     h.toast(Toast::StateSaved, 1_000);
     assert!(h.toast_visible(2_499));
     assert!(!h.toast_visible(2_500));
+}
+
+/// Saying something twice re-shows the one banner rather than queueing a second behind it: the
+/// HUD holds one line and one clock, and a second call re-stamps that clock. It matters wherever
+/// a button can be worked faster than a banner fades, which is every button that raises one.
+///
+/// Held here rather than through the app, which is where it used to be: the three shelf banners
+/// were what exercised it, and the shelf says which system it is on the case band now.
+#[test]
+fn saying_the_same_thing_twice_re_shows_it_rather_than_stacking() {
+    let mut h = Hud::new();
+    h.toast(Toast::StateSaved, 1_000);
+    h.toast(Toast::StateSaved, 2_400);
+    // Past the first stamp's own fade and short of the second's, so the banner is up here only
+    // because the second call moved the clock forward.
+    assert_eq!(h.said(3_400), Some(Toast::StateSaved), "it did not re-show");
+    assert_eq!(h.said(3_900), None, "it never faded");
+}
+
+/// A different banner replaces the one showing rather than waiting behind it. The same one slot,
+/// read the other way round: what is on screen is always the last thing that happened.
+#[test]
+fn a_second_banner_replaces_the_first() {
+    let mut h = Hud::new();
+    h.toast(Toast::StateSaved, 1_000);
+    h.toast(Toast::LinkEnded, 1_100);
+    assert_eq!(h.said(1_200), Some(Toast::LinkEnded));
 }
 
 #[test]
