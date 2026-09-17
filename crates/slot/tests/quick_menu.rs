@@ -116,6 +116,7 @@ fn up_and_down_move_the_bar_and_stop_at_the_ends() {
     );
     for want in [
         QuickRow::FastForwardSound,
+        QuickRow::ColourCorrection,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::About,
@@ -172,6 +173,8 @@ fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     );
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, true));
+    // Two rows down: Colour Correction now sits between the Fast Forward pair and Rumble.
+    press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, false));
@@ -179,6 +182,63 @@ fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     assert_eq!(a.quick_value(QuickRow::Rumble), Some(QuickValue::Off));
     press(&mut a, Btn::Left);
     assert_eq!(card(&d), (false, true));
+}
+
+/// Colour Correction is a two-value row like the other flags, so either arrow is the other
+/// value, and every press is on the card before the menu closes. The menu is only ever open
+/// with nothing seated, so the card is the whole of where a change has to survive: the next
+/// cart in is what reads it.
+#[test]
+fn colour_correction_flips_on_either_arrow_and_saves() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::ColourCorrection);
+    assert!(
+        !a.colour_correction(),
+        "the row did not open on the default, which is off"
+    );
+    assert_eq!(
+        a.quick_value(QuickRow::ColourCorrection),
+        Some(QuickValue::Off)
+    );
+    for (btn, want) in [
+        (Btn::Right, true),
+        (Btn::Left, false),
+        (Btn::Left, true),
+        (Btn::Right, false),
+    ] {
+        press(&mut a, btn);
+        assert_eq!(a.colour_correction(), want, "{btn:?}");
+        assert_eq!(
+            read_slot_state(d.path()).colour_correction,
+            want,
+            "{btn:?} never reached the card"
+        );
+        assert_eq!(
+            a.quick_value(QuickRow::ColourCorrection),
+            Some(QuickValue::flag(want))
+        );
+    }
+}
+
+/// The row changes the picture and nothing else. Its neighbours are the settings most likely to
+/// be hit by a stray arrow on the way past it, and the fast forward speed in particular shares
+/// the arrows it answers to.
+#[test]
+fn colour_correction_leaves_the_settings_around_it_alone() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::ColourCorrection);
+    press(&mut a, Btn::Right);
+    let s = read_slot_state(d.path());
+    assert!(s.colour_correction, "the row never took");
+    assert_eq!(
+        (s.ff_speed, s.ff_sound, s.rumble),
+        (
+            SlotState::default().ff_speed,
+            SlotState::default().ff_sound,
+            SlotState::default().rumble
+        ),
+        "the row reached a setting that is not its own"
+    );
 }
 
 #[test]
@@ -329,7 +389,9 @@ fn brightness_and_volume_still_answer_over_the_quick_menu() {
 fn fake_faces(a: &mut App) {
     let id = TexId::from_raw;
     a.set_quick_menu_faces(QuickMenuFaces {
-        labels: (0..5).map(|i| (id(100 + i), 200, 40)).collect(),
+        labels: (0..QuickRow::ALL.len())
+            .map(|i| (id(100 + i), 200, 40))
+            .collect(),
         values: (0..QuickValue::ALL.len())
             .map(|i| [(id(200 + i), 60, 40), (id(210 + i), 60, 40)])
             .collect(),
@@ -407,7 +469,7 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
     );
     assert!(drawn(&out, 500), "the date and time is not grey");
 
-    for _ in 0..3 {
+    for _ in 0..QuickRow::DateTime.index() {
         press(&mut a, Btn::Down);
     }
     let out = frame(&a);

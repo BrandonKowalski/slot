@@ -55,7 +55,7 @@ fn gpsp_is_told_its_serial_mode_before_load() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false, false);
     assert_eq!(
         core.option("gpsp_serial"),
         Some("auto".to_string()),
@@ -75,7 +75,7 @@ fn gpsp_is_told_the_serial_mode_it_is_handed() {
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
     for serial in ["rfu", "mul_poke", "mul_aw1", "mul_aw2"] {
-        slot::core::apply_core_options(&mut core, Core::Gpsp, serial, false);
+        slot::core::apply_core_options(&mut core, Core::Gpsp, serial, false, false);
         assert_eq!(
             core.option("gpsp_serial"),
             Some(serial.to_string()),
@@ -102,7 +102,7 @@ fn gpsp_boots_through_the_bios_when_the_card_carries_one() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", true);
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", true, false);
     assert_eq!(
         core.option("gpsp_boot_mode"),
         Some("bios".to_string()),
@@ -133,7 +133,7 @@ fn gpsp_is_left_on_its_own_boot_default_when_the_card_has_no_bios() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false, false);
     assert_eq!(
         core.option("gpsp_boot_mode"),
         None,
@@ -162,7 +162,7 @@ fn mgba_is_given_its_own_frameskip_and_none_of_gpsps() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open mgba");
-    slot::core::apply_core_options(&mut core, Core::Mgba, "rfu", true);
+    slot::core::apply_core_options(&mut core, Core::Mgba, "rfu", true, false);
     assert_eq!(
         core.option("gpsp_serial"),
         None,
@@ -185,6 +185,56 @@ fn mgba_is_given_its_own_frameskip_and_none_of_gpsps() {
     );
 }
 
+/// The quick menu's Colour Correction, on both cores, in each core's own spelling.
+///
+/// Pinned rather than trusted, because nothing in this tree can tell a correct option value
+/// from a typo: `slot-retro` answers `SET_VARIABLES` with a bare `true` and throws the declared
+/// list away, so `Autp` or `mgba_colour_correction` would be accepted in silence and simply
+/// never take — a row that does nothing, with nothing failing anywhere. These four strings were
+/// read off the vendored dylibs by dumping that discarded list; this is what keeps them true.
+///
+/// The two cores disagree about every part of it. mGBA declares `OFF|GBA|GBC|Auto` and gpSP
+/// `disabled|enabled`, under different keys, and only mGBA has an `Auto` — it is the core that
+/// runs Game Boy and Game Boy Color carts as well as GBA ones, so it is the only one with more
+/// than one tint to choose between. Neither core may be handed the other's words.
+#[test]
+fn both_cores_are_told_about_colour_correction_in_their_own_words() {
+    for (which, key, on, off) in [
+        (Core::Mgba, "mgba_color_correction", "Auto", "OFF"),
+        (Core::Gpsp, "gpsp_color_correction", "enabled", "disabled"),
+    ] {
+        let path = dylib_for(which);
+        if !path.exists() {
+            eprintln!("no {} dylib on this host, skipping", which.as_str());
+            continue;
+        }
+        let _g = common::core_lock();
+        let mut core = slot_retro::LibretroCore::open(&path).expect("open the core");
+        for (colour, want) in [(true, on), (false, off)] {
+            // Set in both directions rather than only when the row is on: leaving the option
+            // unset when it is off would put the picture at whatever the core's own default
+            // happens to be that release, which is not the same promise as "off".
+            slot::core::apply_core_options(&mut core, which, "auto", false, colour);
+            assert_eq!(
+                core.option(key).as_deref(),
+                Some(want),
+                "{} was not told {want} for colour correction {colour}",
+                which.as_str()
+            );
+        }
+        let theirs = match which {
+            Core::Mgba => "gpsp_color_correction",
+            Core::Gpsp => "mgba_color_correction",
+        };
+        assert_eq!(
+            core.option(theirs),
+            None,
+            "{} was handed the other core's key",
+            which.as_str()
+        );
+    }
+}
+
 /// gpSP's half of the same contract, and the same reasoning: its own frameskip key, under its
 /// own prefix, and none of mGBA's.
 #[test]
@@ -196,7 +246,7 @@ fn gpsp_is_put_on_auto_frameskip() {
     }
     let _g = common::core_lock();
     let mut core = slot_retro::LibretroCore::open(&path).expect("open gpsp");
-    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false);
+    slot::core::apply_core_options(&mut core, Core::Gpsp, "auto", false, false);
     assert_eq!(
         core.option("gpsp_frameskip").as_deref(),
         Some("auto"),
@@ -230,7 +280,8 @@ fn root_with_bios_and_logo_cart() -> Option<(tempfile::TempDir, std::path::PathB
 /// whether it happened anywhere in that window, not what any single frame holds.
 fn splash_plays(root: &std::path::Path, rom: &std::path::Path) -> bool {
     use slot_retro::ButtonMask;
-    let mut core = slot::core::open_core_for(root, Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]);
+    let mut core =
+        slot::core::open_core_for(root, Core::Gpsp, "auto", false, &[dylib_for(Core::Gpsp)]);
     core.load(rom).expect("gpSP refused the logo rom");
     (0..150).any(|_| {
         core.run_frame(ButtonMask::default());
@@ -308,7 +359,7 @@ fn a_published_frame_is_the_splash(
     });
 
     let emu = EmuHandle::spawn(
-        slot::core::open_core_for(root, Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]),
+        slot::core::open_core_for(root, Core::Gpsp, "auto", false, &[dylib_for(Core::Gpsp)]),
         rom.to_path_buf(),
         sink.ring(),
         None,
@@ -368,8 +419,13 @@ fn the_splash_plays_on_a_fresh_start_and_never_over_a_resume() {
     // anything else opens a core: libretro allows only one live at a time.
     let state = {
         use slot_retro::ButtonMask;
-        let mut core =
-            slot::core::open_core_for(d.path(), Core::Gpsp, "auto", &[dylib_for(Core::Gpsp)]);
+        let mut core = slot::core::open_core_for(
+            d.path(),
+            Core::Gpsp,
+            "auto",
+            false,
+            &[dylib_for(Core::Gpsp)],
+        );
         core.load(&rom).expect("gpSP refused the logo rom");
         for _ in 0..480 {
             core.run_frame(ButtonMask::default());
@@ -715,7 +771,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         .join(slot::core::dylib_name(Core::Gpsp));
     std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
 
-    let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto");
+    let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto", false);
     core.load(&d.path().join("Games/GBA/Probe.gba"))
         .expect("the planted core refused the test rom");
     core.run_frame(ButtonMask::default());

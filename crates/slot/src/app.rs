@@ -914,6 +914,7 @@ impl App {
         match row {
             QuickRow::FastForward => QuickValue::speed(self.state.ff_speed),
             QuickRow::FastForwardSound => Some(QuickValue::flag(self.state.ff_sound)),
+            QuickRow::ColourCorrection => Some(QuickValue::flag(self.state.colour_correction)),
             QuickRow::Rumble => Some(QuickValue::flag(self.state.rumble)),
             QuickRow::DateTime | QuickRow::About => None,
         }
@@ -1367,6 +1368,14 @@ impl App {
         self.state.ff_sound
     }
 
+    /// Whether a core loaded from here on is asked to tint its picture like the console's own
+    /// LCD. Read by `Session::spawn_core` on the way into `open_core`, which is the only moment
+    /// a libretro core reads an option; the quick menu is only open on the shelf, with nothing
+    /// seated, so the next cart in is always the first to see a change made here.
+    pub fn colour_correction(&self) -> bool {
+        self.state.colour_correction
+    }
+
     /// Set by the doze timeout and by a graceful power off. The binary is what acts on it:
     /// everything durable has already been written by the time it is true.
     ///
@@ -1713,7 +1722,10 @@ impl App {
                 self.phase = clock_screen(self.utc_secs(), self.state.utc_offset_min, true);
             }
             QuickRow::About => self.phase = Phase::About,
-            QuickRow::FastForward | QuickRow::FastForwardSound | QuickRow::Rumble => {}
+            QuickRow::FastForward
+            | QuickRow::FastForwardSound
+            | QuickRow::ColourCorrection
+            | QuickRow::Rumble => {}
         }
     }
 
@@ -1732,6 +1744,7 @@ impl App {
             }
             // Two values each, so either arrow is the other one.
             QuickRow::FastForwardSound => s.ff_sound = !s.ff_sound,
+            QuickRow::ColourCorrection => s.colour_correction = !s.colour_correction,
             QuickRow::Rumble => s.rumble = !s.rumble,
             QuickRow::DateTime | QuickRow::About => return,
         }
