@@ -412,13 +412,22 @@ impl Session {
         matches!(self.app.phase(), Phase::Polaroids { .. })
     }
 
-    /// The screens whose buttons belong to them rather than to the game underneath. Both
-    /// pause the core as well (`held`, and `sync_speed`'s own `showing_polaroids`), which is
-    /// what keeps a press landing here from being seen — but a pause is not a mask, and a
+    /// The screens whose buttons belong to them rather than to the game underneath. All of
+    /// them pause the core as well (`held`, and `sync_speed`'s own `showing_polaroids`), which
+    /// is what keeps a press landing here from being seen — but a pause is not a mask, and a
     /// press taken while paused whose release arrives after it is a button the game finds
     /// already down. This is what stops either edge reaching the pad at all.
+    ///
+    /// `held` names every screen that has taken the panel from a seated cart, and this used to
+    /// name only two of the three: the switcher and the in-game menu, but not the power menu or
+    /// the shutdown screen behind it. `App::apply` returns above the phase for the power menu,
+    /// so every press on it is spent there and none of them is the game's — and yet Up, Down and
+    /// the B that dismisses it all reached the pad. The dismissal is the one that bites: B ends
+    /// the menu, the core comes off pause on that same frame, and the game is handed a B it never
+    /// saw pressed and holds until the thumb comes off. There is one set of screens here, so
+    /// there is now one statement of it.
     fn overlaid(&self) -> bool {
-        self.showing_polaroids() || self.app.game_menu_open()
+        self.showing_polaroids() || self.held()
     }
 
     /// Whether the game is live and in charge of the device. Not the phase alone: the power
