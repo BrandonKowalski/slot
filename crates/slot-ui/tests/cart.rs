@@ -1,8 +1,9 @@
 use slot_store::scan;
 use slot_ui::{
     cart_face, clean_label, gb_label_panel, gb_silhouette, label_colour, label_panel, label_text,
-    shell_for, silhouette, Finish, CART_H, CART_W, FOOT_Y, GB_CART_H, GB_CART_W, GB_LABEL_H,
-    GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_X, LABEL_Y, OUT_W, PLATE_H,
+    shell_for, silhouette, Finish, GbShell, CART_H, CART_W, FOOT_Y, GB_CART_H, GB_CART_W,
+    GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_X, LABEL_Y, OUT_W,
+    PLATE_H,
 };
 use tempfile::TempDir;
 
@@ -52,6 +53,12 @@ fn write_label(d: &TempDir, name: &str, w: u32, h: u32, px: impl Fn(u32, u32) ->
 fn pixel(face: &slot_ui::CartFace, x: u32, y: u32) -> [u8; 3] {
     let i = ((y * face.w + x) * 4) as usize;
     [face.rgba[i], face.rgba[i + 1], face.rgba[i + 2]]
+}
+
+/// Whether the cart is there at all at this pixel. The face is clipped to the outline, so a
+/// hole cut in the shell reads as nothing rather than as a different colour.
+fn pixel_alpha(face: &slot_ui::CartFace, x: u32, y: u32) -> u8 {
+    face.rgba[((y * face.w + x) * 4 + 3) as usize]
 }
 
 /// The label sits inset in the shell, so a face pixel is only the label's business inside
@@ -337,41 +344,93 @@ fn the_game_boy_pak_is_the_published_ratio_taller_at_the_same_width() {
 
 /// The GBA cart's canvas spans its grip ridge and its body is inset below that. A Game Boy Game
 /// Pak has no ridge — that ridge is what physically stops a GBA cart entering a Game Boy — so
-/// its sides are parallel, and at the same 57 mm they are the GBA body's own width.
+/// its sides are parallel, and at the same 57 mm they are the GBA body's own width. Both shells
+/// are checked: the two differ at the top corners and nowhere else, so a pak that tapered would
+/// be a mistake in whichever one it appeared in.
 #[test]
 fn the_game_boy_outline_has_parallel_sides_and_no_grip_ears() {
-    let gb = gb_silhouette(GB_CART_W, GB_CART_H);
-    let width_at = |y: u32| {
-        (0..GB_CART_W)
-            .filter(|&x| gb[(y * GB_CART_W + x) as usize] > 128)
-            .count()
-    };
-    // Clear of the corner radii at both ends, so what is compared is the straight run.
-    let (top, middle, bottom) = (
-        width_at(GB_CART_H / 8),
-        width_at(GB_CART_H / 2),
-        width_at(GB_CART_H * 7 / 8),
-    );
-    assert_eq!(top, middle, "the pak is wider at the top than the middle");
-    assert_eq!(middle, bottom, "the pak tapers toward the bottom");
+    for shell in [GbShell::Notched, GbShell::Rounded] {
+        let gb = gb_silhouette(shell, GB_CART_W, GB_CART_H);
+        let width_at = |y: u32| {
+            (0..GB_CART_W)
+                .filter(|&x| gb[(y * GB_CART_W + x) as usize] > 128)
+                .count()
+        };
+        // Clear of the corner radii at both ends, so what is compared is the straight run.
+        let (top, middle, bottom) = (
+            width_at(GB_CART_H / 8),
+            width_at(GB_CART_H / 2),
+            width_at(GB_CART_H * 7 / 8),
+        );
+        assert_eq!(top, middle, "{shell:?}: wider at the top than the middle");
+        assert_eq!(middle, bottom, "{shell:?}: tapers toward the bottom");
 
-    let gba = silhouette(CART_W, CART_H);
-    let gba_body = (0..CART_W)
-        .filter(|&x| gba[((CART_H / 2) * CART_W + x) as usize] > 128)
-        .count();
+        let gba = silhouette(CART_W, CART_H);
+        let gba_body = (0..CART_W)
+            .filter(|&x| gba[((CART_H / 2) * CART_W + x) as usize] > 128)
+            .count();
+        assert!(
+            middle.abs_diff(gba_body) <= 2,
+            "{shell:?}: the pak's body is {middle}px against the GBA body's {gba_body}px, \
+             and both are 57 mm"
+        );
+    }
+}
+
+/// The two shells differ in exactly two places and both are at the top. The notch is a bite out
+/// of the top right corner of the class A/B shell, so at the height of the notch floor the
+/// notched pak is the narrower of the two; the rounded shell's corners are cut back much
+/// further than the older mould's shallow step, so along the very top row it is the narrower.
+/// Below the shoulder they are the same object.
+#[test]
+fn the_colour_only_shell_loses_the_notch_and_rounds_the_corners() {
+    let notched = gb_silhouette(GbShell::Notched, GB_CART_W, GB_CART_H);
+    let rounded = gb_silhouette(GbShell::Rounded, GB_CART_W, GB_CART_H);
+    fn covered(m: &[u8], y: u32) -> Vec<u32> {
+        (0..GB_CART_W)
+            .filter(|&x| m[(y * GB_CART_W + x) as usize] > 128)
+            .collect()
+    }
+    let width_at = |m: &[u8], y: u32| covered(m, y).len();
+    let left_at = |m: &[u8], y: u32| covered(m, y)[0];
+    let right_at = |m: &[u8], y: u32| *covered(m, y).last().expect("an empty row");
+
+    // Inside the notch, which runs about eleven rows down from the top edge. The clear shell
+    // has plastic here and the notched one has a hole.
+    let y = 6;
     assert!(
-        middle.abs_diff(gba_body) <= 2,
-        "the pak's body is {middle}px against the GBA body's {gba_body}px, and both are 57 mm"
+        right_at(&rounded, y) > right_at(&notched, y) + 10,
+        "the clear pak ends at {} against the notched {} at row {y}: the notch is not cut",
+        right_at(&rounded, y),
+        right_at(&notched, y)
     );
+    // The top left corner, where no notch confuses the reading: the rounded shell's corner is
+    // cut back much further than the older mould's shallow step.
+    assert!(
+        left_at(&rounded, 0) > left_at(&notched, 0) + 10,
+        "the top row starts at {} against the notched {}: the corners are not rounded",
+        left_at(&rounded, 0),
+        left_at(&notched, 0)
+    );
+    // Everything from the shoulder down is one shape drawn twice.
+    for y in 30..GB_CART_H {
+        assert_eq!(
+            width_at(&notched, y),
+            width_at(&rounded, y),
+            "the shells disagree at row {y}, which is below the shoulder"
+        );
+    }
 }
 
 /// The real label is 42 x 37 mm on a 57 x 65.5 mm face: near square, against the GBA label's
-/// 2.28:1 landscape. It is centred across the pak and sits high, with the larger blank area and
-/// the moulded arrow below it.
+/// 2.28:1 landscape. It is centred across the pak and sits **low**, under the moulded lettering
+/// plate that fills the whole shoulder, with only the arrow below it. That placement is read
+/// off the user's own square-on drawing, which is the authority on it — no published dimension
+/// gives the offset, and the number that used to be here put the label over the plate.
 #[test]
-fn the_game_boy_label_well_is_near_square_and_sits_high() {
+fn the_game_boy_label_well_is_near_square_and_sits_under_the_lettering_plate() {
     let (x0, y0, x1, y1) = gb_label_panel(GB_CART_W, GB_CART_H);
-    assert_eq!((x1 - x0, y1 - y0), (168, 143));
+    assert_eq!((x1 - x0, y1 - y0), (176, 150));
     let aspect = (x1 - x0) as f32 / (y1 - y0) as f32;
     assert!(
         (aspect - 1.17).abs() < 0.02,
@@ -380,8 +439,8 @@ fn the_game_boy_label_well_is_near_square_and_sits_high() {
     assert_eq!(x0, GB_CART_W - x1, "the well is not centred across the pak");
     let (above, below) = (y0, GB_CART_H - y1);
     assert!(
-        below > above * 2,
-        "{above}px above the label and {below}px below: it is not sitting high"
+        above > below * 2,
+        "{above}px above the label and {below}px below: the shoulder has lost its plate"
     );
 }
 
@@ -411,10 +470,13 @@ fn a_game_boy_pak_stands_on_the_same_row_floor_and_clears_the_hud_plate() {
 }
 
 /// A Game Boy cart carries no four character game code, so the shell table has nothing to key
-/// on. The CGB flag is what the header does say about the plastic: both Colour values get the
-/// clear shell and everything else is a plain Game Boy pak.
+/// on. The CGB flag is what the header does say about the plastic, and it says three things,
+/// not two: 0x00 is grey, 0x80 is **black**, 0xc0 is clear. slot used to draw 0x80 translucent
+/// on the reasoning that a Colour-enhanced cart shipped in the same plastic as a Colour-only
+/// one. It did not — a 0x80 cart runs on original hardware and was sold in a black shell — so
+/// the three are pinned apart here rather than left to collapse back onto two.
 #[test]
-fn a_colour_flagged_pak_wears_clear_plastic_and_a_plain_one_does_not() {
+fn each_of_the_three_cgb_flags_gets_its_own_plastic() {
     let d = tmp_root();
     write_gb_rom(&d, "GB", "Tetris.gb", 0x00);
     write_gb_rom(&d, "GBC", "Colour Enhanced.gbc", 0x80);
@@ -427,18 +489,57 @@ fn a_colour_flagged_pak_wears_clear_plastic_and_a_plain_one_does_not() {
             .unwrap_or_else(|| panic!("{stem} was not scanned"))
     };
 
-    assert_eq!(shell_for(by_stem("Tetris")).finish, Finish::Solid);
-    for stem in ["Colour Enhanced", "Colour Only"] {
-        assert_eq!(
-            shell_for(by_stem(stem)).finish,
-            Finish::Translucent,
-            "{stem} was drawn in solid plastic"
+    let grey = shell_for(by_stem("Tetris"));
+    let black = shell_for(by_stem("Colour Enhanced"));
+    let clear = shell_for(by_stem("Colour Only"));
+
+    assert_eq!(grey.finish, Finish::Solid);
+    assert_eq!(
+        black.finish,
+        Finish::Solid,
+        "the 0x80 pak is black plastic, not clear"
+    );
+    assert_eq!(clear.finish, Finish::Translucent);
+
+    let luma = |s: slot_ui::Shell| s.colour.iter().map(|c| *c as u32).sum::<u32>();
+    assert!(
+        luma(black) + 120 < luma(grey),
+        "the black pak at {} is not darker than the grey one at {}",
+        luma(black),
+        luma(grey)
+    );
+    for (a, b) in [(grey, black), (black, clear), (grey, clear)] {
+        assert_ne!(
+            a.colour, b.colour,
+            "two of the three plastics are one colour"
         );
     }
-    assert_ne!(
-        shell_for(by_stem("Tetris")).colour,
-        shell_for(by_stem("Colour Only")).colour,
-        "the two shells are the same colour, so the finish is all that tells them apart"
+}
+
+/// The shape follows the flag too, and not the folder. A `.gb` file is routinely Colour-only
+/// and a `.gbc` file routinely DMG-compatible — the extension is a dumping convention and the
+/// flag is the cart — so a misfiled rom must still be drawn as the object Nintendo made. Read
+/// off the drawn face rather than the table: the notch is a hole in the top right corner, so
+/// the pixel there is the shell on one cart and nothing at all on the other.
+#[test]
+fn the_notch_follows_the_cgb_flag_and_not_the_folder() {
+    let d = tmp_root();
+    write_gb_rom(&d, "GB", "Filed As Mono.gb", 0xc0);
+    write_gb_rom(&d, "GBC", "Filed As Colour.gbc", 0x80);
+    let carts = scan(d.path()).unwrap();
+    // Inside the notch of the class A/B shell, and clear of the rounded shell's own corner:
+    // twenty pixels in from the right edge, eight rows down.
+    let notched_away = |stem: &str| {
+        let cart = carts.iter().find(|c| c.stem == stem).expect("scanned");
+        pixel_alpha(&cart_face(cart), GB_CART_W - 20, 8) < 8
+    };
+    assert!(
+        !notched_away("Filed As Mono"),
+        "a 0xc0 rom in the GB folder was drawn with a notch it never had"
+    );
+    assert!(
+        notched_away("Filed As Colour"),
+        "a 0x80 rom in the GBC folder lost the notch its shell was moulded with"
     );
 }
 
@@ -528,16 +629,32 @@ fn the_cart_shadow_is_the_cart_in_black() {
 
 /// The same black backing in the Game Boy pak's own shape. Stretching the GBA one to a taller
 /// box would put a tapered shadow under a straight sided cart.
+///
+/// One texture serves both shells, because the shelf uploads a backing per shelf rather than
+/// per cart, and the two shells are not the same shape at the top. It is their intersection:
+/// backing wider than the cart would paint black over the wallpaper beside it, which is the
+/// fault worth avoiding, where backing narrower only leaves a few pixels of a dimmed face
+/// unbacked. So it may be smaller than either outline and must never be larger than one.
 #[test]
-fn the_game_boy_shadow_is_the_pak_in_black() {
+fn the_game_boy_shadow_is_black_and_inside_both_shells() {
     let s = slot_ui::gb_cart_shadow();
     assert_eq!((s.w, s.h), (GB_CART_W, GB_CART_H));
-    for (px, cover) in s
-        .rgba
-        .chunks_exact(4)
-        .zip(gb_silhouette(GB_CART_W, GB_CART_H))
-    {
+    let notched = gb_silhouette(GbShell::Notched, GB_CART_W, GB_CART_H);
+    let rounded = gb_silhouette(GbShell::Rounded, GB_CART_W, GB_CART_H);
+    let mut inside_both = 0usize;
+    for (i, px) in s.rgba.chunks_exact(4).enumerate() {
         assert_eq!(&px[..3], &[0, 0, 0], "the shadow is not black");
-        assert_eq!(px[3], cover, "the shadow is not the pak's shape");
+        assert!(
+            px[3] <= notched[i] && px[3] <= rounded[i],
+            "the shadow reaches past a shell at pixel {i}, so it would draw black beside it"
+        );
+        if notched[i] > 250 && rounded[i] > 250 {
+            inside_both += 1;
+            assert!(px[3] > 250, "a pixel both shells cover is unbacked at {i}");
+        }
     }
+    assert!(
+        inside_both > (GB_CART_W * GB_CART_H) as usize / 2,
+        "the shadow backs almost none of the cart"
+    );
 }

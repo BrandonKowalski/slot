@@ -66,9 +66,9 @@ pub use refusal::Refusal;
 pub use shelf::{Shelf, FOOT_Y};
 pub use shell::{
     gba_shell_for, lookup_order_is_exact_then_family_then_default, shell_for, table_keys, Finish,
-    Shell, DEFAULT_SHELL, DMG_SHELL, GB_CLEAR_SHELL,
+    Shell, DEFAULT_SHELL, DMG_SHELL, DUAL_MODE_SHELL, GB_CLEAR_SHELL,
 };
-pub use silhouette::{gb_silhouette, silhouette};
+pub use silhouette::{gb_silhouette, silhouette, GbShell};
 pub use slot_chrome::{
     draw_empty_slot, ease, edge, housing, opening, recess, set_theme, SlotChrome, ALERT_PX, LIP_H,
     MOUTH_H, MOUTH_W,
