@@ -149,6 +149,17 @@ fn the_rewind_bar_is_up_while_l2_is_held_and_gone_once_it_is_let_go() {
         step(&mut s, &mut now, None);
         std::thread::sleep(Duration::from_millis(1));
     }
+    // And then wait for the game layer itself, which is a separate event: it starts drawing
+    // once the emulator thread has published its first frame, and that is wall clock rather
+    // than anything this test does. Waited on rather than left to chance, so `drawn` below is
+    // always read over a game that *is* drawing — which is the state the filter in it has to
+    // hold for, and the one a loaded machine reaches while an idle one does not.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !s.game_visible() {
+        assert!(Instant::now() < deadline, "the game layer never came up");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
 
     step(&mut s, &mut now, Some(RawEvent::Down(Btn::L2)));
     for _ in 0..200 {
@@ -190,6 +201,17 @@ fn a_live_link_session_refuses_to_actually_rewind() {
         step(&mut s, &mut now, None);
         std::thread::sleep(Duration::from_millis(1));
     }
+    // And then wait for the game layer itself, which is a separate event: it starts drawing
+    // once the emulator thread has published its first frame, and that is wall clock rather
+    // than anything this test does. Waited on rather than left to chance, so `drawn` below is
+    // always read over a game that *is* drawing — which is the state the filter in it has to
+    // hold for, and the one a loaded machine reaches while an idle one does not.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !s.game_visible() {
+        assert!(Instant::now() < deadline, "the game layer never came up");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
     s.app_mut().begin_link(0);
 
     step(&mut s, &mut now, Some(RawEvent::Down(Btn::L2)));
@@ -209,10 +231,18 @@ fn step(s: &mut Session, now: &mut Millis, ev: Option<RawEvent>) {
     s.update(1.0 / 60.0);
 }
 
-/// Nothing but the HUD draws over a playing game, so the list is the bar.
+/// The HUD over a playing game, which here is the rewind bar and nothing else.
+///
+/// The game layer is dropped rather than counted. It is one item, `Draw::Game`, and it is in
+/// the list from the moment the emulator thread publishes its first frame — which is a
+/// wall-clock event, not one any step here causes. Without this filter these tests are not
+/// asking whether the bar is up at all: they are asking whether the worker has got as far as
+/// a frame yet, and they pass on a quiet machine because it has not. Load is what decides it,
+/// and both `drawn(&s).is_empty()` assertions below flip the moment the worker wins that race.
 fn drawn(s: &Session) -> Vec<Draw> {
     let mut out = Vec::new();
     s.app().draw(&mut out);
+    out.retain(|d| !matches!(d, Draw::Game));
     out
 }
 

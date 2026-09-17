@@ -289,7 +289,7 @@ fn a_cancelled_link_says_nothing_and_returns_to_the_game() {
 fn a_link_that_comes_up_holds_linked_for_a_second_then_hands_the_game_back() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.apply(Action::GameMenu);
-    let port = 45907;
+    let port = common::free_port();
     let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     app.start_link(
@@ -338,7 +338,7 @@ fn a_link_that_comes_up_holds_linked_for_a_second_then_hands_the_game_back() {
 fn a_peer_lost_during_the_hold_closes_the_screen_and_breaks_the_badge() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.apply(Action::GameMenu);
-    let port = 45912;
+    let port = common::free_port();
     let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     app.start_link(
@@ -658,7 +658,7 @@ fn the_open_menu_pauses_the_game_underneath_it() {
 #[test]
 fn a_started_link_reaches_the_emulator_thread_with_its_transport() {
     let (mut s, _d, mut now) = session_playing_on_gpsp();
-    let port = 45911;
+    let port = common::free_port();
     let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     s.app_mut().start_link(
@@ -719,7 +719,7 @@ fn a_button_the_menu_is_using_never_reaches_the_game() {
 #[test]
 fn a_dropped_peer_breaks_the_badge_and_ends_the_session_end_to_end() {
     let (mut s, _d, mut now) = session_playing_on_gpsp();
-    let port = 45913;
+    let port = common::free_port();
     let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     s.app_mut().start_link(
@@ -794,7 +794,7 @@ fn a_dropped_peer_breaks_the_badge_and_ends_the_session_end_to_end() {
 #[test]
 fn a_peer_that_ends_the_link_ends_this_session_without_waiting_out_the_timeout() {
     let (mut s, _d, mut now) = session_playing_on_gpsp();
-    let port = 45914;
+    let port = common::free_port();
     let far = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     s.app_mut().start_link(
@@ -1086,6 +1086,9 @@ fn select_on_pick_switches_the_hardware_and_the_cart_keeps_it() {
 /// reload and A starts the link exactly as it always has.
 #[test]
 fn a_in_the_mode_the_game_already_runs_starts_the_link_straight_away() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.apply(Action::GameMenu);
     app.apply(Action::GbaDown(Btn::Right));
@@ -1107,6 +1110,9 @@ fn a_in_the_mode_the_game_already_runs_starts_the_link_straight_away() {
 /// reload would bring a link up over a game still in the old mode.
 #[test]
 fn a_in_a_switched_mode_asks_for_the_game_to_reload_first() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     assert_eq!(
         app.take_link_reload(),
@@ -1148,6 +1154,9 @@ fn a_in_a_switched_mode_asks_for_the_game_to_reload_first() {
 /// from the step it has been showing since A rather than starting its animation again.
 #[test]
 fn the_reload_finishing_starts_the_link() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     let Some(GameMenu::Working { since, .. }) = app.game_menu() else {
         panic!("A did not start working: {:?}", app.game_menu());
@@ -1176,6 +1185,9 @@ fn the_reload_finishing_starts_the_link() {
 /// instead of linking, the way a cancelled start does.
 #[test]
 fn b_during_the_reload_hands_the_game_back_once_it_finishes() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     app.take_link_reload().expect("no reload asked for");
     app.apply(Action::GbaDown(Btn::B));
@@ -1197,6 +1209,9 @@ fn b_during_the_reload_hands_the_game_back_once_it_finishes() {
 /// choice with it, and the game is handed back with the shake every refusal gets.
 #[test]
 fn a_reload_that_fails_goes_back_to_the_mode_the_game_came_from() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     app.set_link_sprites(fake_link_sprites());
     assert_eq!(app.take_link_reload(), Some(("Emerald".to_string(), "rfu")));
@@ -1236,6 +1251,9 @@ fn a_reload_that_fails_goes_back_to_the_mode_the_game_came_from() {
 /// sitting seated with no core behind it.
 #[test]
 fn a_game_that_loads_in_neither_mode_comes_back_out_refused() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     app.take_link_reload().expect("no reload asked for");
     app.link_reload_failed();
@@ -1263,6 +1281,9 @@ fn a_game_that_loads_in_neither_mode_comes_back_out_refused() {
 /// seated cart with no core behind it.
 #[test]
 fn a_lid_shut_over_a_game_that_loads_in_neither_mode_opens_onto_the_shelf() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = switched_and_picked();
     app.take_link_reload().expect("no reload asked for");
     app.apply(Action::LidClose);
@@ -1287,6 +1308,9 @@ fn a_lid_shut_over_a_game_that_loads_in_neither_mode_opens_onto_the_shelf() {
 /// never runs. SELECT is refused with the shake, the adapter stays, and A links straight away.
 #[test]
 fn select_is_refused_where_gpsp_would_link_the_same_either_way() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let d = common::tmp_root_with_carts(&["Zzz"]);
     // "Mario Golf" sorts before "Zzz", so `Action::Insert` seats it.
     common::write_retail_header(&d, "Mario Golf", "MARIO GOLF", "BMGE");
@@ -1318,6 +1342,9 @@ fn select_is_refused_where_gpsp_would_link_the_same_either_way() {
 /// away, and has to be loaded again to link by cable.
 #[test]
 fn a_reloads_only_for_a_serial_the_core_was_not_loaded_with() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.set_link_loaded("rfu");
     app.apply(Action::GameMenu);
@@ -1372,6 +1399,9 @@ impl Snapshot for RefusedResume {
 /// stays on Pick, and the mode the game already runs still links.
 #[test]
 fn a_switch_is_refused_over_a_resume_the_core_would_not_take() {
+    // Only one test in this process may have a live link at a time: they all share the
+    // one port the product reads, so a host here and a joiner there connect to each other.
+    let _link = common::link_port_lock();
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.set_snapshot(Box::new(RefusedResume));
     app.apply(Action::GameMenu);

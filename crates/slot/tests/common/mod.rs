@@ -32,6 +32,48 @@ pub fn core_lock() -> MutexGuard<'static, ()> {
     CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// A TCP port on loopback that nothing is using, for a test that stands its own host up.
+///
+/// The ports here used to be a hand-kept table of numbers — 45881 upwards, one per test — and
+/// a table is only unique within the file that holds it. Two runs of this suite at once, which
+/// is several worktrees of it on one machine, bind the same number and the loser dies on
+/// `AddrInUse` inside the thread it was hosting from: a panic in a test that has nothing to do
+/// with ports, and the single most expensive false failure this suite produces. `SLOT_LINK_PORT`
+/// does not help, because these tests name the port themselves rather than asking the product
+/// for one.
+///
+/// Asking the OS removes the table. Binding and letting go leaves a window where something else
+/// could take the number, but the kernel walks its ephemeral range rather than handing the same
+/// port straight back, so the window is nothing next to two runs agreeing on 45881 in advance.
+/// A listener the caller could keep is not an option: `TcpLink::host` binds for itself, which is
+/// the thing under test.
+pub fn free_port() -> u16 {
+    std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("loopback would not give out a port")
+        .local_addr()
+        .expect("a bound listener with no address")
+        .port()
+}
+
+/// One live link session at a time, across every test in a binary.
+///
+/// The product reads one port for a session (`slot::link_start::link_port`) because two
+/// handhelds have no way to negotiate one. Every test in a process therefore shares it, and a
+/// host started by one test and a joiner started by another meet on it and connect — handing a
+/// test a live session it never asked for, whose `link_active()` then changes what the next
+/// button does. That is the whole of the
+/// `a_reloads_only_for_a_serial_the_core_was_not_loaded_with` flake: it fails when another
+/// test's worker happens to be listening, and passes under `--test-threads=1` every time.
+///
+/// Held for the length of the test rather than around the press, because the worker outlives
+/// the press: it keeps its port until the `LinkStarter` is dropped, which is when the `App`
+/// holding it goes.
+static LINK_PORT_LOCK: Mutex<()> = Mutex::new(());
+
+pub fn link_port_lock() -> MutexGuard<'static, ()> {
+    LINK_PORT_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn tmp_root_with_carts(stems: &[&str]) -> TempDir {
     let d = tmp_root();
     for stem in stems {

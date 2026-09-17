@@ -343,6 +343,29 @@ impl LinkStarter {
     }
 }
 
+impl Drop for LinkStarter {
+    /// Letting go of a starter is giving up on it, so say so.
+    ///
+    /// Without this a dropped starter keeps working for its whole thirty second bound with
+    /// nobody left to hand the result to: a host sits on its access point and its bound port,
+    /// and a joiner keeps reaching out every 50 ms, both behind a screen that has already
+    /// gone. Worse, the radio goes down when that eventually finishes — half a minute later,
+    /// under whatever session has started in the meantime.
+    ///
+    /// `App` already cancels at every site it knows about (`close_game_menu`, and
+    /// `start_link_from` replacing one), and three separate comments there exist only to say
+    /// that this had to be remembered. Doing it here is what makes it true for the fourth
+    /// site as well — an `App` dropped outright, which is what a test ending and a process
+    /// exiting both are.
+    ///
+    /// Idempotent with those explicit calls: `Cancel` is one flag and setting it twice is
+    /// setting it once. Nothing here waits for the worker — it is detached, and the whole
+    /// point of the flag is that it is the only thing this side has to do.
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
 #[cfg(test)]
 mod port_tests {
     use super::*;

@@ -21,7 +21,7 @@ use slot_ui::{LinkBadge, Toast};
 /// the threading, which is everything the transport is responsible for.
 #[test]
 fn a_packet_survives_the_wire_intact() {
-    let port = 45881;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -49,7 +49,7 @@ fn a_packet_survives_the_wire_intact() {
 /// than the game reads them", the exact gpSP behaviour this framing exists for.
 #[test]
 fn batched_writes_keep_their_boundaries() {
-    let port = 45882;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut raw = TcpStream::connect(("127.0.0.1", port)).expect("connect");
@@ -68,7 +68,7 @@ fn batched_writes_keep_their_boundaries() {
 
 #[test]
 fn try_recv_never_blocks_on_an_idle_link() {
-    let port = 45883;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(std::time::Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -94,7 +94,7 @@ fn try_recv_never_blocks_on_an_idle_link() {
 /// wire — an actual FIN, not a no-op.
 #[test]
 fn peer_disconnecting_does_not_panic_or_hang() {
-    let port = 45884;
+    let port = common::free_port();
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
     let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -129,7 +129,7 @@ fn peer_disconnecting_does_not_panic_or_hang() {
 /// close the connection, this test fails on its own timeout instead of hanging the suite.
 #[test]
 fn dropping_the_link_closes_the_wire() {
-    let port = 45885;
+    let port = common::free_port();
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
     let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
     let client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -164,7 +164,7 @@ fn dropping_the_link_closes_the_wire() {
 /// suite, a bound failure is strictly better than an unbounded one.
 #[test]
 fn send_never_blocks_on_a_peer_that_stopped_reading() {
-    let port = 45886;
+    let port = common::free_port();
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
     let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -198,7 +198,7 @@ fn send_never_blocks_on_a_peer_that_stopped_reading() {
 /// wirings the reviewer's mutation run found nothing covering.
 #[test]
 fn wrap_disables_nagle_on_both_sockets() {
-    let port = 45887;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     let client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -1027,7 +1027,7 @@ fn a_joiner_can_be_cancelled_while_it_is_retrying() {
 /// to be able to say so, rather than looking like a peer that is only thinking.
 #[test]
 fn a_link_whose_peer_goes_away_reports_itself_closed() {
-    let port = 45889;
+    let port = common::free_port();
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
     let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
     let client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -1046,7 +1046,7 @@ fn a_link_whose_peer_goes_away_reports_itself_closed() {
 
 #[test]
 fn a_quiet_link_is_not_closed() {
-    let port = 45890;
+    let port = common::free_port();
     let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind");
     let acceptor = std::thread::spawn(move || listener.accept().expect("accept").0);
     let client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -1073,7 +1073,7 @@ fn a_quiet_link_is_not_closed() {
 /// traffic, and a gpSP handed it would be handed a byte its partner never sent.
 #[test]
 fn ending_a_link_tells_the_peer_rather_than_only_dropping_the_socket() {
-    let port = 45896;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
@@ -1107,7 +1107,7 @@ fn ending_a_link_tells_the_peer_rather_than_only_dropping_the_socket() {
 /// frame were mistaken for a packet, `after` would arrive as the opcode byte instead.
 #[test]
 fn an_unknown_control_frame_is_ignored_and_the_stream_stays_in_step() {
-    let port = 45897;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     let mut raw = TcpStream::connect(("127.0.0.1", port)).expect("connect");
@@ -1141,7 +1141,7 @@ fn an_unknown_control_frame_is_ignored_and_the_stream_stays_in_step() {
 /// it framed, a core that sent a zero-length packet would silently end its own session.
 #[test]
 fn an_empty_payload_is_refused_rather_than_framed_as_the_control_marker() {
-    let port = 45898;
+    let port = common::free_port();
     let server = std::thread::spawn(move || TcpLink::host("127.0.0.1", port).expect("host"));
     std::thread::sleep(Duration::from_millis(150));
     let mut client = TcpLink::join("127.0.0.1", port).expect("join");
