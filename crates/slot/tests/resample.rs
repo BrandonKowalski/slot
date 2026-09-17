@@ -53,6 +53,38 @@ fn a_starved_ratio_stretches_and_a_full_one_compresses() {
     );
 }
 
+/// `src_hz` is whatever a core put in `retro_system_av_info.timing.sample_rate`, and the only
+/// guard used to be on `dst_hz`. A rate that is not a rate has to come out as a passthrough,
+/// because `process` walks its input by `step` until it reaches the end and every degenerate
+/// value stops it getting there: NaN and infinity fail the comparison and the resampler goes
+/// silent for the rest of the session, while zero and anything negative never advance and the
+/// emulator thread spins inside one call pushing output until the device is out of memory.
+///
+/// The NaN case is asserted first on purpose. It is the one that fails rather than hangs, so a
+/// suite run against a resampler with the guard taken back out stops here instead of at the two
+/// below it.
+#[test]
+fn a_core_rate_that_is_not_a_rate_passes_the_samples_through() {
+    for (name, hz) in [
+        ("nan", f64::NAN),
+        ("infinity", f64::INFINITY),
+        ("zero", 0.0),
+        ("negative", -32768.0),
+    ] {
+        let mut r = Resampler::new(hz, 48_000.0);
+        let mut out = Vec::new();
+        let src = ramp(64);
+        r.process(&src, &mut out);
+        assert_eq!(
+            out.len(),
+            src.len(),
+            "a core rate of {name} produced {} frames from {}",
+            out.len() / 2,
+            src.len() / 2
+        );
+    }
+}
+
 #[test]
 fn the_output_rate_follows_the_device_not_the_core() {
     let mut r = Resampler::new(32768.0, 48000.0);
