@@ -49,9 +49,8 @@ impl From<std::io::Error> for StoreError {
 /// the one place that has to decide that. The only caller is `App::boot`, which does
 /// `scan(root).unwrap_or_default()` — so an `Err` out of here is not an error message anywhere,
 /// it is every cart on the card gone from the shelf. One folder being unreadable says nothing
-/// about the other two, exactly as `migrate_platforms` already argues at length for the sweeps,
-/// so a folder that will not open costs the player that folder and nothing else. Same for a
-/// single directory entry that will not stat: it costs that one cart.
+/// about the other two, so a folder that will not open costs the player that folder and nothing
+/// else. Same for a single directory entry that will not stat: it costs that one cart.
 pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
     let mut carts = Vec::new();
     for platform in Platform::ALL {

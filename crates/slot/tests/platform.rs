@@ -88,3 +88,43 @@ fn a_game_boy_carts_autosave_lands_under_gb_and_never_under_gba() {
          keeps its own"
     );
 }
+
+/// The full circle on a card organised by hand, which is the only kind of card there is now that
+/// nothing is swept into place on boot: the rom in `Games/GB/` is scanned, seated, and its session
+/// written back under `States/GB/` and `Saves/GB/`, and the *next* boot finds all of it and comes
+/// back to the same cart.
+///
+/// The GBA half of this is `e2e.rs`, which walks the same circle against a card built by
+/// `tmp_root_with_real_carts`. This is the Game Boy half, and it is the half worth having twice:
+/// `Platform::default()` is `Gba`, so every path that loses the platform still lands a GBA cart
+/// back in the slot and reads identically to one that kept it. Only a Game Boy cart can tell a
+/// card that remembers its shelf from one that guesses.
+#[test]
+fn a_hand_organised_game_boy_card_scans_seats_saves_and_resumes() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zelda"]);
+
+    seat_and_autosave(d.path());
+
+    // The session is on the card, filed under the cart's own platform.
+    let resume = StateRing::new(d.path(), Platform::Gb, Core::Mgba, "Tetris")
+        .read_resume()
+        .unwrap();
+    assert!(resume.is_some(), "nothing was written back to resume from");
+
+    // And the boot after it walks back in through `scan`, off the same folders, to the same cart.
+    let again = slot::app::App::boot(d.path());
+    let cart = again
+        .seated_cart()
+        .expect("the next boot came up with an empty slot");
+    assert_eq!(
+        cart.platform,
+        Platform::Gb,
+        "the card came back holding a cart for the wrong machine"
+    );
+    assert_eq!(cart.stem, "Tetris");
+    assert!(
+        cart.rom.ends_with("Games/GB/Tetris.gb"),
+        "the rom the slot is holding is {:?}, which is not the one in the Game Boy folder",
+        cart.rom
+    );
+}

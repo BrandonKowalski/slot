@@ -33,8 +33,8 @@ impl StateRing {
     /// another, so offering them together would only produce a confusing failure. Battery
     /// saves under `Saves/` are raw cartridge bytes and stay shared.
     ///
-    /// Platform first, then core: `States/<platform>/<core>/<stem>/`, the shape
-    /// `migrate_platforms`' sweep already produces. A `.gb` and a `.gba` cart can share a stem —
+    /// Platform first, then core: `States/<platform>/<core>/<stem>/`, which is also the shape a
+    /// person organising a card by hand has to build. A `.gb` and a `.gba` cart can share a stem —
     /// two different games, two different carts — so the platform has to separate them before
     /// the core does, or one cart's states would be offered to the other's.
     pub fn new(root: &Path, platform: Platform, core: Core, stem: &str) -> Self {
@@ -122,8 +122,7 @@ impl StateRing {
     ///
     /// Renamed rather than deleted. A state one core refuses is still a real session to the
     /// core that wrote it: put that core back and it is worth having again. So this destroys
-    /// nothing, which is the same choice `migrate_states` makes when it finds a destination
-    /// name already taken, and the same one `write_sav` makes when a save would shrink. What
+    /// nothing, the same choice `write_sav` makes when a save would shrink. What
     /// the move buys is that the next open finds no resume at all — without it the same bytes
     /// are handed to the same core on every boot and refused identically every time, with
     /// nothing the player can do about it but delete the file from a card reader.
