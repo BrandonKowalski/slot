@@ -321,9 +321,9 @@ impl Frontend {
         let bolt_id = compositor.create_texture(bolt.w, bolt.h, &bolt.rgba);
         self.session.app_mut().set_bolt_face(bolt_id);
         // One mark per shelf, in `Platform::ALL` order, beside the bolt because they are the
-        // same kind of thing: a small tinted drawing printed on the case that never changes.
-        // At boot and not on the press that needs one, because each is an SVG through a
-        // rasteriser, which is the one thing this device must never do on a frame.
+        // same kind of thing: a small tinted drawing that never changes. At boot and not on the
+        // press that needs one, because each is an SVG through a rasteriser, which is the one
+        // thing this device must never do on a frame.
         let marks = CartPlatform::ALL
             .iter()
             .map(|p| {

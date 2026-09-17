@@ -11,9 +11,10 @@
        what it draws rather than for what it arrived called.
 
        The free download baked its credit into the drawing as two lines of type below it. A
-       24 px mark on the status bar cannot carry a sentence, so the type is stripped and the
-       attribution is carried in licenses/README.md instead, which is what CC BY asks and is
-       not optional: stripping the credit without attributing elsewhere would breach it.
+       32 px mark in the corner of the status plate cannot carry a sentence, so the type is
+       stripped and the attribution is carried in licenses/README.md instead, which is what
+       CC BY asks and is not optional: stripping the credit without attributing elsewhere
+       would breach it.
 
        Stripping it also moved the drawing's bounds, so the viewBox is re-fitted. It was
        0 0 100 125, sized to hold the credit; the drawing alone spans x 18.9..81.1 by y 0..100.

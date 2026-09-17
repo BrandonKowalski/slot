@@ -10,12 +10,12 @@ use slot_store::{
     StateEntry, StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
-    lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, GbShell, Hud,
-    HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces,
-    QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
-    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H,
-    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    badge_at, board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker,
+    ease, grown, lid_at, lid_from, lift_of, mark_box, on_board, shelf_cart_at, ClockPicker, Draw,
+    FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice,
+    QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast,
+    BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT,
+    SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -562,9 +562,9 @@ pub struct App {
     /// The charging glyph, uploaded once at boot with the other icons rather than whenever
     /// the percent changes: unlike the percent, its face never varies.
     bolt: Option<TexId>,
-    /// One mark per shelf, in `Platform::ALL` order, uploaded at boot beside the bolt. Which
-    /// one is drawn is the only thing on the case band that answers to the shoulders, and it is
-    /// what replaced the banner that used to name the shelf over the carts.
+    /// One mark per shelf, in `Platform::ALL` order, uploaded at boot beside the bolt. Which one
+    /// is drawn is the only thing in the top plate's corner that answers to the shoulders, and it
+    /// is what replaced the banner that used to name the shelf over the carts.
     mark_faces: Vec<TexId>,
     shelf_clock: slot_ui::Printed,
     hud: Hud,
@@ -794,9 +794,9 @@ impl App {
         self.play_held = None;
         self.shelf_at = to;
         // Nothing is said. Which system the row is showing is the one thing this changes that
-        // the row cannot say for itself, and the case band says it: the shelf's mark is already
-        // drawn there and changes with `shelf_at`, so a banner would be the same fact stated
-        // twice — once permanently and once for a second and a half.
+        // the row cannot say for itself, and the top plate's corner says it: the shelf's mark is
+        // already drawn there and changes with `shelf_at`, so a banner would be the same fact
+        // stated twice — once permanently and once for a second and a half.
     }
 
     /// The shelf `by` steps round the ring from the one showing, passing over every shelf with
@@ -966,12 +966,22 @@ impl App {
         self.mark_faces = faces;
     }
 
-    /// The mark for the shelf on screen. Found by the shelf's own platform rather than by
-    /// `shelf_at` directly: the two happen to agree today, since `shelves_of` builds one shelf
-    /// per `Platform::ALL` entry in that order, but a shelf list that ever stopped mirroring
-    /// `ALL` would otherwise start drawing the wrong machine on the case with nothing to say it
-    /// had.
+    /// The mark for the shelf on screen, and nothing at all when there is no other shelf to be
+    /// on. A card whose library is all Game Boy Advance has one stop on the ring, so naming the
+    /// platform tells the player nothing they can act on — the same reason L1 and R1 do nothing
+    /// there rather than refusing.
+    ///
+    /// That is `next_shelf`, asked exactly as `switch_shelf` asks it before it moves, so a dead
+    /// pair of shoulders and an absent mark cannot come apart: one rule, stated once. One
+    /// direction is enough, since it is the same ring both ways round — if R1 has somewhere to
+    /// go then so does L1.
+    ///
+    /// Found by the shelf's own platform rather than by `shelf_at` directly: the two happen to
+    /// agree today, since `shelves_of` builds one shelf per `Platform::ALL` entry in that order,
+    /// but a shelf list that ever stopped mirroring `ALL` would otherwise start drawing the
+    /// wrong machine in the corner with nothing to say it had.
     fn shelf_mark(&self) -> Option<TexId> {
+        self.next_shelf(1)?;
         let platform = self.shelves[self.shelf_at].0;
         let at = Platform::ALL.iter().position(|p| *p == platform)?;
         self.mark_faces.get(at).copied()
@@ -2219,17 +2229,10 @@ impl App {
                     }
                     _ => self.shelf().draw(self.shelf_shake(), out),
                 }
-                // The mark is drawn here and nowhere else. It answers "which shelf is this",
-                // which is a question only the carousel can be asked: once a cart is seated the
-                // shelf is off screen, the cartridge in the slot is the answer, and the game
-                // over it is a louder one. The switcher's band has no use for it either — the
-                // paused game's platform cannot change while it is up, so a mark there would
-                // never move.
                 draw_footer(
                     self.battery,
                     self.battery_percent,
                     self.bolt,
-                    self.shelf_mark(),
                     self.shelf_clock,
                     out,
                 );
@@ -2310,6 +2313,33 @@ impl App {
         }
         // Over everything, in every phase. The bar is never what the user is looking at.
         self.hud.draw(self.now(), out);
+        // And the shelf's mark on top of that, in the corner the link badge takes and at the
+        // same measurement. It answers "which shelf is this", which is a question only the
+        // carousel can be asked: once a cart is seated the shelf is off screen, the cartridge in
+        // the slot is the answer, and the game over it is a louder one. The switcher's band has
+        // no use for it either — the paused game's platform cannot change while it is up, so a
+        // mark there would never move. That is also why it can share the badge's corner: a badge
+        // belongs to a live session and this belongs to the carousel, so the two are never both
+        // on screen.
+        //
+        // After the HUD rather than before it, because the HUD's plate is 72% black across the
+        // whole width: under it the mark would dim every time the brightness was nudged, while
+        // the badge it stands in for sits over that plate rather than beneath it.
+        if matches!(self.phase, Phase::Shelf) {
+            if let Some(tex) = self.shelf_mark() {
+                let (w, h) = mark_box();
+                let (w, h) = (w as f32, h as f32);
+                let (x, y) = badge_at(w, h);
+                out.push(Draw::Tex {
+                    x,
+                    y,
+                    w,
+                    h,
+                    tex,
+                    alpha: 1.0,
+                });
+            }
+        }
     }
 
     pub fn screen_shake(&self) -> f32 {

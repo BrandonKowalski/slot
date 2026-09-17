@@ -12,8 +12,8 @@ use crate::CartFace;
 /// it.
 ///
 /// Three more used to name the shelf the shoulders had just moved to. They are gone: the shelf
-/// is now said by the platform's mark on the case band, which is always there rather than fading
-/// after a moment — see `slot_ui::mark`.
+/// is now said by the platform's mark in the top plate's corner, which is always there rather
+/// than fading after a moment — see `slot_ui::mark`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
     StateSaved,

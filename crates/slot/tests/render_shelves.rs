@@ -22,9 +22,9 @@ use slot_power::SimPlatform;
 // this runs on and is already spoken for, and this one is the console a cart is for.
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    cart_box, cart_face, clean_label, edge, housing, label_colour, mark_box, opening, recess,
-    rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, HINT_H, LABEL_H, LABEL_Y,
-    MOUTH_H, PLATE_H,
+    badge_at, cart_box, cart_face, clean_label, edge, housing, label_colour, mark_box, opening,
+    recess, rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y,
+    PLATE_H,
 };
 
 /// One batch of events per poll, and nothing once they run out.
@@ -72,8 +72,9 @@ fn apart(a: [u32; 3], b: [u32; 3]) -> u32 {
 }
 
 /// Lit pixels across the middle of the top plate, where the shelf's name used to be banner'd
-/// over the carts. Nothing is drawn there now — the case band's mark says which shelf this is —
-/// so this exists to catch the banner coming back, not to find it.
+/// over the carts. Nothing is drawn there now — the plate's right corner carries a mark that says
+/// which shelf this is — so this exists to catch the banner coming back, not to find it. The span
+/// stops well short of the corner the mark is in: a banner was 320 px of type across the middle.
 fn banner_ink(px: &[u8]) -> usize {
     (0..PLATE_H as usize)
         .flat_map(|y| (200..520).map(move |x| (x, y)))
@@ -81,14 +82,13 @@ fn banner_ink(px: &[u8]) -> usize {
         .count()
 }
 
-/// The mark's own box on the case band: `FOOTER_MARGIN` in from the left, `mark_box` across,
-/// centred in the `HINT_H` row that starts `FOOTER_Y` down. Named from the layout rather than
-/// typed as four numbers, so moving the band moves the reading with it.
+/// The mark's own box in the top plate's right corner, which is the corner a live session's link
+/// badge takes. Read out of `badge_at` and `mark_box` rather than typed as four numbers, so
+/// moving either moves the reading with it.
 fn mark_window() -> (usize, usize, usize, usize) {
     let (w, h) = mark_box();
-    let row_y = OUT_H as f32 - MOUTH_H + (MOUTH_H - HINT_H as f32) / 2.0;
-    let y = row_y + (HINT_H as f32 - h as f32) / 2.0;
-    (24, y as usize, w as usize, h as usize)
+    let (x, y) = badge_at(w as f32, h as f32);
+    (x as usize, y as usize, w as usize, h as usize)
 }
 
 /// Every pixel of the mark, as it reached the panel. Two shelves' marks compare equal only if
@@ -103,13 +103,12 @@ fn mark_pixels(px: &[u8]) -> Vec<[u8; 3]> {
         .collect()
 }
 
-/// How much of the mark's box is lit above the band it is printed on. The band is a flat
-/// housing colour, so anything appreciably lighter is the mark's own ink.
+/// How much of the mark's box is lit above what is behind it. The corner is over the shelf's own
+/// ground here — this card has no wallpaper — so anything appreciably lighter is the mark's ink.
 fn mark_ink(px: &[u8]) -> usize {
-    let ground = (housing()[0] * 255.0) as u8;
     mark_pixels(px)
         .iter()
-        .filter(|c| c[0] > ground + 0x20)
+        .filter(|c| u32::from(c[0]) > GROUND[0] + 0x30)
         .count()
 }
 
@@ -207,7 +206,7 @@ const EDGE_RIGHT: (usize, usize) = (680, 250);
 const GROUND: [u32; 3] = [0x05, 0x05, 0x08];
 
 /// The shoulders ring over one shelf per platform, and each one says which system it is — on the
-/// case band, as the machine that shelf's cartridges were made for, rather than as a name
+/// plate's corner, as the machine that shelf's cartridges were made for, rather than as a name
 /// banner'd over the carts for a second and a half. Read off the panel rather than the draw
 /// list: what is being checked is that the band is showing a different drawing on each shelf,
 /// which a list of rectangles cannot answer — a draw list would agree three times over that a
@@ -239,7 +238,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     );
     assert!(
         mark_ink(&gba) > 20,
-        "the case band came up with no mark on it at all: {} lit pixels",
+        "the plate corner came up with no mark in it at all: {} lit pixels",
         mark_ink(&gba)
     );
     let left = patch(&gba, PAIR_LEFT.0, PAIR_LEFT.1);
@@ -317,6 +316,65 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         mark_pixels(&back),
         marks[0],
         "the ring came back to the Game Boy Advance shelf under another system's mark"
+    );
+}
+
+/// A card whose carts are all Game Boy Advance gets a bare corner. The shoulders have nowhere to
+/// go on it, so naming the platform would be the device stating, permanently, the one thing about
+/// the card that cannot change — and the same rule that makes L1 and R1 inert makes the mark
+/// absent.
+///
+/// Rendered rather than asserted off the draw list, because "no mark" is exactly the claim a draw
+/// list is worst at: a list with no `Draw::Tex` in it looks identical whether the corner is empty
+/// because the rule held or because the faces never arrived, and the panel is where the
+/// difference shows. The shelf beside it, which does have two platforms, is composed from the
+/// same fixture path for contrast — one of these two frames has a machine in the corner and the
+/// other does not, and both are written out to be looked at.
+#[test]
+fn a_card_on_one_shelf_leaves_the_corner_empty() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+
+    let one = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(one.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(one.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    f.advance(&mut input);
+    let bare = composed(&mut f, &mut c, "one-shelf");
+    assert_eq!(
+        mark_ink(&bare),
+        0,
+        "a card with one shelf put a machine in the corner: {} lit pixels",
+        mark_ink(&bare)
+    );
+    // And the shoulders leave it that way, which is the same statement from the other side: a
+    // mark that appeared on the first press would be a control that is dead and says so late.
+    tap(&mut f, &mut input, Btn::R1);
+    let pressed = composed(&mut f, &mut c, "one-shelf-after-r1");
+    assert_eq!(
+        mark_ink(&pressed),
+        0,
+        "R1 put a mark in the corner of a card that has one shelf"
+    );
+
+    // The same fixture with a Game Boy cart added, so the only thing that differs between the
+    // two frames is whether there is anywhere to switch to.
+    let two = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    put_game_boy_carts(two.path());
+    clocked(two.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(two.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.advance(&mut input);
+    let marked = composed(&mut f, &mut c, "two-shelves");
+    assert!(
+        mark_ink(&marked) > 20,
+        "a card with two shelves did not say which one it was on: {} lit pixels",
+        mark_ink(&marked)
     );
 }
 

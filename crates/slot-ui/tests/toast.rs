@@ -26,7 +26,7 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 
 /// Every banner the HUD can raise answers something the user just did, and none of them merely
 /// describes what is already on screen. The carousel briefly had three that named the shelf it
-/// had moved to; that is the case band's job now — see `slot_ui::mark` — and a banner saying it
+/// had moved to; that is the plate corner's job now — see `slot_ui::mark` — and a banner saying it
 /// as well would be the same fact told twice. So the list is held at six, by name, because the
 /// way a line like that comes back is one variant at a time.
 #[test]
@@ -98,7 +98,7 @@ fn a_toast_fades_on_the_same_curve_as_the_bar() {
 /// a button can be worked faster than a banner fades, which is every button that raises one.
 ///
 /// Held here rather than through the app, which is where it used to be: the three shelf banners
-/// were what exercised it, and the shelf says which system it is on the case band now.
+/// were what exercised it, and the shelf says which system it is in the plate's corner now.
 #[test]
 fn saying_the_same_thing_twice_re_shows_it_rather_than_stacking() {
     let mut h = Hud::new();

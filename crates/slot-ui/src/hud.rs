@@ -28,6 +28,19 @@ const ICON_GAP: f32 = 10.0;
 /// The badge sits in the corner the bar never reaches, so the two never have to negotiate.
 const BADGE_MARGIN: f32 = 12.0;
 
+/// Where something of this size goes when it goes in that corner: hard against the right
+/// margin, centred in the plate's own height.
+///
+/// Public because the link badge is not the only thing that takes it. The shelf's platform mark
+/// sits there too, and the two can never be on screen at once — a link badge only exists inside
+/// a live session, and the mark is only drawn on the carousel — so the corner ends up being one
+/// place that says the single thing worth knowing about where you are. Shared rather than
+/// copied: two statements of one measurement drift, and a badge and a mark half a pixel apart in
+/// the same corner would read as two corners.
+pub fn badge_at(w: f32, h: f32) -> (f32, f32) {
+    (OUT_W as f32 - BADGE_MARGIN - w, (PLATE_H - h) / 2.0)
+}
+
 const BAR_W: f32 = 320.0;
 const BAR_H: f32 = 6.0;
 const BAR_Y: f32 = (PLATE_H - BAR_H) / 2.0;
@@ -314,9 +327,10 @@ impl Hud {
     fn place_badge(&self, tex: TexId, out: &mut Vec<Draw>) {
         let (w, h) = icon_box(HUD_ICON_PX);
         let (w, h) = (w as f32, h as f32);
+        let (x, y) = badge_at(w, h);
         out.push(Draw::Tex {
-            x: OUT_W as f32 - BADGE_MARGIN - w,
-            y: (PLATE_H - h) / 2.0,
+            x,
+            y,
             w,
             h,
             tex,

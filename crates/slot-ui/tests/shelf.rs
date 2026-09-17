@@ -1,8 +1,8 @@
 use slot_power::{Battery, Charge};
 use slot_store::{Cart, Platform};
 use slot_ui::{
-    draw_footer, label_colour, mark_box, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W,
-    GB_CART_H, OUT_W,
+    badge_at, draw_footer, label_colour, mark_box, rest_y, Draw, GbShell, Printed, Shelf, TexId,
+    CART_W, GB_CART_H, OUT_W, PLATE_H,
 };
 
 fn shelf_with(n: usize) -> Shelf {
@@ -304,13 +304,16 @@ fn the_other_direction_letting_go_does_not_stop_the_repeat() {
     assert_eq!(s.index, 2, "releasing left stopped a held right");
 }
 
-/// The shelf's mark takes the left of the case band, at the same margin the wordmark had and
-/// the gauge held after it, so what is printed on the case still lines up with the row above
-/// it. Charging, with a bolt supplied, because the gauge's own leftmost piece is the bolt's
-/// reserved slot and only a charging device fills it — which is what would otherwise make this
-/// reading about the gauge rather than about the margin.
+/// The gauge starts at the case margin, where the wordmark used to be. It briefly did not: the
+/// shelf's mark stood there and held the gauge one mark and one gap further in. The mark has gone
+/// to the top plate's corner and the band is the readout again, so nothing is reserved at this
+/// end for anything.
+///
+/// Charging, with a bolt supplied, because the gauge's own leftmost piece is the bolt's reserved
+/// slot and only a charging device fills it — which is what would otherwise make this reading
+/// about the capsule rather than about the margin.
 #[test]
-fn the_mark_sits_where_the_wordmark_did() {
+fn the_gauge_starts_at_the_case_margin() {
     let mut out = Vec::new();
     draw_footer(
         Some(Battery {
@@ -319,7 +322,6 @@ fn the_mark_sits_where_the_wordmark_did() {
         }),
         Printed { face: None, w: 30 },
         Some(TexId::from_raw(1)),
-        Some(TexId::from_raw(9)),
         Printed { face: None, w: 40 },
         &mut out,
     );
@@ -331,79 +333,50 @@ fn the_mark_sits_where_the_wordmark_did() {
         })
         .fold(f32::MAX, f32::min);
     assert_eq!(leftmost, 24.0, "the case margin is the case margin");
-    let (w, h) = mark_box();
     assert!(
         out.contains(&Draw::Tex {
             x: 24.0,
-            y: 438.0,
-            w: w as f32,
-            h: h as f32,
-            tex: TexId::from_raw(9),
+            y: 444.0,
+            w: 14.0,
+            h: 14.0,
+            tex: TexId::from_raw(1),
             alpha: 1.0,
         }),
-        "the thing at the margin is not the mark, at its own size: {out:?}"
+        "the thing at the margin is not the bolt's own slot: {out:?}"
     );
 }
 
-/// The mark's place on the band is held whether or not there is a mark to put in it. Faces are
-/// uploaded after boot, so the first frames of a run have none, and a gauge that started at the
-/// margin and jumped right the moment three textures arrived would be visible — the same reason
-/// the bolt's slot inside the gauge is reserved unconditionally.
+/// And the mark it lost is somewhere else entirely: the corner `badge_at` hands out, which is
+/// where a live session puts its link badge. Read from `mark_box` and `badge_at` together rather
+/// than from four numbers, so moving either moves this with it.
+///
+/// What this is really holding is that a mark is placed by the same rule a badge is. The two are
+/// never on screen at once — a badge belongs to a session, a mark to the carousel — so if they
+/// ever drifted apart nothing would look wrong on any one frame, and the corner would simply be
+/// in two places depending on what was in it.
 #[test]
-fn the_band_reserves_exactly_the_mark_it_draws() {
-    // Charging, with a bolt, for the reason `the_mark_sits_where_the_wordmark_did` is: the
-    // gauge's leading piece is the bolt's reserved slot, and a discharging gauge leaves it empty
-    // so its leftmost quad is the capsule inset from where the group actually starts.
-    let band = |mark| {
-        let mut out = Vec::new();
-        draw_footer(
-            Some(Battery {
-                percent: 68,
-                charge: Charge::Charging,
-            }),
-            Printed { face: None, w: 30 },
-            Some(TexId::from_raw(2)),
-            mark,
-            Printed { face: None, w: 40 },
-            &mut out,
-        );
-        out
-    };
-    let bare = band(None);
-    let marked = band(Some(TexId::from_raw(9)));
-    for d in &bare {
-        assert!(
-            marked.contains(d),
-            "{d:?} moved or vanished when the mark arrived"
-        );
-    }
+fn a_mark_lands_in_the_corner_a_badge_would_have_taken() {
+    let (w, h) = mark_box();
+    let (x, y) = badge_at(w as f32, h as f32);
     assert_eq!(
-        marked.len(),
-        bare.len() + 1,
-        "the mark drew something other than itself"
+        x + w as f32,
+        OUT_W as f32 - 12.0,
+        "the mark's right edge is not on the badge margin"
     );
-    // And it reserves the mark's own width and no other: the layout works from a constant and
-    // the raster from the drawings, so the two are read from opposite ends here. A slot narrower
-    // than the box would put a machine through the battery; a wider one would leave a hole on
-    // the case with nothing in it.
-    let (w, _) = mark_box();
-    let gauge = bare
-        .iter()
-        .map(|d| match *d {
-            Draw::Rect { x, .. } | Draw::Tex { x, .. } => x,
-            _ => f32::MAX,
-        })
-        .fold(f32::MAX, f32::min);
     assert_eq!(
-        gauge - (24.0 + w as f32),
-        12.0,
-        "the gauge starts at {gauge}, which is not one {w} px mark and one printed gap in from \
-         the 24 px margin"
+        y,
+        (PLATE_H - h as f32) / 2.0,
+        "the mark is not centred in the plate's depth"
+    );
+    assert!(
+        y > 0.0 && y + h as f32 <= PLATE_H,
+        "a {w}x{h} mark does not fit inside the {PLATE_H} px plate: {y}..{}",
+        y + h as f32
     );
 }
 
-/// `draw_gauge`'s own suite proves the capsule holds still in isolation; `the_mark_sits_where_
-/// the_wordmark_did` above only ever calls `draw_footer` while charging, so nothing here was
+/// `draw_gauge`'s own suite proves the capsule holds still in isolation; `the_gauge_starts_at_
+/// the_case_margin` above only ever calls `draw_footer` while charging, so nothing here was
 /// exercising the discharging path through the call the app actually makes. This is that path,
 /// at both charge states, at the same percent: everything but the bolt itself has to come back
 /// identical.
@@ -417,7 +390,6 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
         }),
         Printed { face: None, w: 30 },
         None,
-        Some(TexId::from_raw(9)),
         Printed { face: None, w: 40 },
         &mut idle,
     );
@@ -429,7 +401,6 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
         }),
         Printed { face: None, w: 30 },
         Some(TexId::from_raw(2)),
-        Some(TexId::from_raw(9)),
         Printed { face: None, w: 40 },
         &mut charging,
     );
@@ -441,8 +412,8 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     }
 }
 
-/// The clock is the one thing on this band that never changed: the mark went in at the other
-/// end of it, and this end is where it was.
+/// The clock is the one thing on this band that never changed: a mark arrived at the other end
+/// of it and left again, and this end is where it was throughout.
 #[test]
 fn the_clock_stays_at_the_right_margin() {
     let mut out = Vec::new();
@@ -450,7 +421,6 @@ fn the_clock_stays_at_the_right_margin() {
         None,
         Printed::default(),
         None,
-        Some(TexId::from_raw(9)),
         Printed { face: None, w: 40 },
         &mut out,
     );
@@ -464,16 +434,13 @@ fn the_clock_stays_at_the_right_margin() {
     assert_eq!(rightmost, OUT_W as f32 - 24.0);
 }
 
-/// A device with no gauge shows a band with a clock on it, not a band with a hole in it. Nor
-/// does a missing mark leave one: before the faces are uploaded the band is a clock and nothing
-/// else, exactly as it was before there were marks at all.
+/// A device with no gauge shows a band with a clock on it, not a band with a hole in it.
 #[test]
 fn a_band_with_no_gauge_still_draws_its_clock() {
     let mut out = Vec::new();
     draw_footer(
         None,
         Printed::default(),
-        None,
         None,
         Printed { face: None, w: 40 },
         &mut out,

@@ -90,9 +90,9 @@ drawings in that directory are somebody else's, and this is where they are credi
 | `crates/slot-ui/assets/platform_gb.svg`  | Game Boy (DMG)       | costantino montanari | CC BY   |
 | `crates/slot-ui/assets/platform_gbc.svg` | Game Boy Color       | Ryan Beck            | CC BY   |
 
-They are the marks on the case band that say which shelf the carousel is standing on, one per
-platform. Each is a free download from the Noun Project, whose free tier licenses an icon under
-Creative Commons Attribution in exchange for crediting the person who drew it:
+They are the marks in the top plate's right corner that say which shelf the carousel is standing
+on, one per platform. Each is a free download from the Noun Project, whose free tier licenses an
+icon under Creative Commons Attribution in exchange for crediting the person who drew it:
 
 - "Game Boy Advance SP" by O R I M Λ T, from the Noun Project:
   https://thenounproject.com/icon/game-boy-advance-sp-208211/
@@ -109,12 +109,20 @@ downloaded as, `noun_GameboyColor_3633999.svg`, is not what it is called in this
 
 **This section is the attribution, and the drawings no longer carry their own.** The free
 download bakes the credit into the file, as two lines of type under the artwork reading
-"Created by … from the Noun Project". They are stripped: the mark is drawn 24 px tall on a
-status bar and cannot carry a sentence, and a credit rasterised down to that would be a smudge
-rather than a credit. Stripping it is only allowed because the credit moved here, where it is
-legible — and this directory ships: `taskfile.yml`'s `dist:device` copies it onto the card
-beside the cores, so a device built from this repo carries this notice as well as the artwork.
+"Created by … from the Noun Project". They are stripped: the mark is drawn 32 px tall in the
+corner of a status plate and cannot carry a sentence, and a credit rasterised down to that would
+be a smudge rather than a credit. Stripping it is only allowed because the credit moved here,
+where it is legible — and this directory ships: `taskfile.yml`'s `dist:device` copies it onto the
+card beside the cores, so a device built from this repo carries this notice as well as the
+artwork.
 
 Nothing else about the drawings was changed. Every path is the artist's, and the only other
 edit is to the `viewBox`, which had been sized to hold the credit line and is re-fitted to the
 artwork it now holds; each file's own comment says what its bounds were and what they became.
+
+Two things slot does to them at draw time, stated here because CC BY asks for changes to be
+indicated and neither is visible in the files: the artist's black is replaced by the interface's
+own near-white, since the mark is drawn over a dark plate and black would be a hole in it, and
+the coverage the rasteriser reports is raised by a gamma before that ink goes through it, because
+these strokes are thinner than a pixel at this size and would otherwise render grey. Both are
+presentation, and `crates/slot-ui/src/mark.rs` is where they live.
