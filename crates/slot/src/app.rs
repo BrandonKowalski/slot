@@ -770,7 +770,19 @@ impl App {
             }
             // A cart the library no longer has is an empty slot. Left uncorrected on disk:
             // the next seat rewrites it, and a boot is the worst moment to need a write.
-            None => self.state.cart = None,
+            //
+            // Both lines, because the two are one fact — which cartridge is in the slot — and
+            // every other place that empties the slot clears them together. Clearing only the
+            // stem left the platform standing, and the next setting the player changed wrote
+            // `cart=` with a `cart_platform=gbc` beside it: a card naming a shelf next to a line
+            // that names no cart, describing a session that never happened. Nothing reads the
+            // platform without the stem today, so this cost nobody a boot; it is the invariant
+            // `an_empty_slot_writes_an_empty_platform` exists to hold, reached by the one path
+            // that did not hold it.
+            None => {
+                self.state.cart = None;
+                self.state.cart_platform = None;
+            }
         }
     }
 

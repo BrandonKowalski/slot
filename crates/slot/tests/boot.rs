@@ -84,6 +84,39 @@ fn a_seated_cart_is_recorded_so_the_next_boot_can_resume_it() {
     assert_eq!(read_slot_state(d.path()).cart, Some("Emerald".into()));
 }
 
+/// The stem and the shelf are one fact — which cartridge is in the slot — so a boot that gives
+/// up on the stem has to give up the shelf with it. It did not: the platform stayed standing in
+/// memory, and the next setting the player changed wrote `cart=` with `cart_platform=gbc` beside
+/// it, a card naming a shelf next to a line that names no cart.
+///
+/// Reached by taking a Game Boy Color cart off the card while it was the seated one, which is a
+/// USB cable and a delete. Nothing reads the platform without the stem today, so the pair cost
+/// nobody a boot; it is the same invariant `an_empty_slot_writes_an_empty_platform` holds for
+/// every other path that empties the slot.
+#[test]
+fn a_cart_that_is_gone_takes_its_shelf_out_of_the_slot_with_it() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Deleted".into()),
+            cart_platform: Some(Platform::Gbc),
+            clock_set: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut a = App::boot(d.path());
+    // Any setting at all, because every one of them writes the whole file back.
+    a.apply(Action::MuteToggle);
+    let s = read_slot_state(d.path());
+    assert_eq!(s.cart, None);
+    assert_eq!(
+        s.cart_platform, None,
+        "the card names a shelf beside a line that names no cart"
+    );
+}
+
 /// A refusal must not leave the slot claiming a cart that never went in.
 #[test]
 fn a_cart_that_fails_to_load_leaves_the_slot_empty() {

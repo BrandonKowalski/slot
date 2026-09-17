@@ -22,6 +22,54 @@ fn atomic_write_leaves_no_partial_file_and_no_temp_behind() {
     assert!(strays.is_empty(), "temp files left behind: {strays:?}");
 }
 
+/// A name the card accepts must be a name this can write. The temp file is longer than the
+/// name it stands in for — a dot, the process id, a sequence and `.tmp` — so a cart named up to
+/// the filesystem's limit used to be listed, inserted and played while every write of its
+/// battery save failed with `File name too long`, silently, every session. The state ring was
+/// untouched, because only the directory there carries the stem, so such a cart resumed
+/// perfectly and never once saved.
+///
+/// Walked up to the limit rather than tested at it, because the exact length that first failed
+/// is the filesystem's business and the property is that none of them does.
+#[test]
+fn a_name_the_card_accepts_is_a_name_that_can_be_written() {
+    let d = tempdir().unwrap();
+    for len in [8usize, 100, 200, 239, 240, 245, 250, 251] {
+        let p = d.path().join(format!("{}.sav", "a".repeat(len)));
+        // The control: a plain write proves the filesystem really takes this name, so a
+        // failure below is this function's and not the limit moving under the test.
+        if std::fs::write(&p, b"control").is_err() {
+            continue;
+        }
+        atomic_write(&p, b"save")
+            .unwrap_or_else(|e| panic!("{len} character name: {e}, and a plain write took it"));
+        assert_eq!(std::fs::read(&p).unwrap(), b"save");
+    }
+}
+
+/// A multi-byte name is cut on a character boundary or not at all. Slicing one in half is a
+/// panic, and the name reaching here is whatever the card spells — a Japanese rom title is three
+/// bytes a character, so a legal name is a long one in bytes.
+///
+/// Three paddings, because where the cut falls depends on how many digits this process's own id
+/// has. Shifting the run of three-byte characters by one and then two bytes puts the cut inside
+/// one of them for at least one of the three, whatever that id turns out to be.
+#[test]
+fn a_long_multibyte_name_is_written_rather_than_panicking() {
+    let d = tempdir().unwrap();
+    for pad in 0..3 {
+        let p = d
+            .path()
+            .join(format!("{}{}.sav", "x".repeat(pad), "ポ".repeat(82)));
+        if std::fs::write(&p, b"control").is_err() {
+            continue;
+        }
+        atomic_write(&p, b"save")
+            .unwrap_or_else(|e| panic!("a Japanese cart name, pad {pad}: {e}"));
+        assert_eq!(std::fs::read(&p).unwrap(), b"save");
+    }
+}
+
 #[test]
 fn corrupt_slot_state_reads_as_default_rather_than_panicking() {
     let d = tmp_root();
