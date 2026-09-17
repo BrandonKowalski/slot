@@ -44,6 +44,14 @@ impl From<std::io::Error> for StoreError {
 /// An unmounted card or a card with no library is an empty shelf, not a boot failure — and so
 /// is a platform folder that does not exist, which is the normal state of a card with no
 /// Colour carts.
+///
+/// A platform folder that exists and cannot be read is not a boot failure either, and this is
+/// the one place that has to decide that. The only caller is `App::boot`, which does
+/// `scan(root).unwrap_or_default()` — so an `Err` out of here is not an error message anywhere,
+/// it is every cart on the card gone from the shelf. One folder being unreadable says nothing
+/// about the other two, exactly as `migrate_platforms` already argues at length for the sweeps,
+/// so a folder that will not open costs the player that folder and nothing else. Same for a
+/// single directory entry that will not stat: it costs that one cart.
 pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
     let mut carts = Vec::new();
     for platform in Platform::ALL {
@@ -51,10 +59,16 @@ pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
         let entries = match std::fs::read_dir(&dir) {
             Ok(d) => d,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                eprintln!("slot: scan: {}: {e}", dir.display());
+                continue;
+            }
         };
         for entry in entries {
-            let rom = entry?.path();
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let rom = entry.path();
             // The folder decides the platform; the extension decides whether this is a cart at
             // all. A `.gba` under `GB/` is neither, and is passed over in silence.
             if is_hidden(&rom) || !rom.is_file() || !platform.accepts(&rom) {

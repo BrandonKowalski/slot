@@ -67,6 +67,14 @@ pub fn migrate_states(root: &Path) -> std::io::Result<MigrationReport> {
             continue;
         }
         let name = entry.file_name();
+        // A leading dot is card metadata rather than content, the same rule `sweep_files`
+        // reads every other folder on the card through. Without it a volume's own
+        // `.Trashes` or `.Spotlight-V100`, both of which are directories sitting at exactly
+        // this level, are taken for pre-namespacing carts and raked into the player's state
+        // tree — where they then look like a cart nobody can account for.
+        if crate::is_hidden(Path::new(&name)) {
+            continue;
+        }
         let Some(name) = name.to_str() else {
             report.failed += 1;
             continue;
@@ -108,9 +116,10 @@ impl MigrationReport {
 /// `States/` holds platform directories each holding the core directories that used to sit at
 /// its top level.
 ///
-/// No per-file classification, no header sniffing, no matching of saves to ROMs: every card
-/// written before Game Boy support is entirely loose and entirely GBA, because no shipped build
-/// of slot could run anything else. Loose goes to `GBA/`, and that is the whole rule.
+/// No header sniffing and no matching of saves to ROMs: every card written before Game Boy
+/// support is entirely loose and entirely GBA, because no shipped build of slot could run
+/// anything else. Loose goes to `GBA/`, and that is very nearly the whole rule — the one
+/// exception is a loose rom whose own extension contradicts it, which `sweep_files` explains.
 ///
 /// **Must run after `migrate_states`.** Reversed, this would sweep a pre-namespacing
 /// `States/<stem>/` into `States/GBA/<stem>/`, where it is a cart folder sitting where a core
@@ -121,26 +130,51 @@ impl MigrationReport {
 /// interrupted run too — `rename` within a filesystem either moves an entry or does not, so
 /// there is no state in which a save is half-moved.
 ///
-/// The four directories are independent, so one sweep's failure does not stop the other three:
-/// unlike `migrate_states`, which walks a single directory where a hard error really does mean
-/// there is nothing left to do, `Saves/` being unreadable says nothing about whether `Games/`,
-/// `Labels/` or `States/` are. Letting it abort the others is also the one failure mode that
-/// reads exactly like lost saves — a ROM reaching `Games/GBA/` while its save stays behind in
-/// `Saves/`, where Task 3's platform-aware reader never looks. `sweep_files` and
+/// One sweep's failure does not abort the others: unlike `migrate_states`, which walks a single
+/// directory where a hard error really does mean there is nothing left to do, `Saves/` being
+/// unreadable says nothing about whether `Games/`, `Labels/` or `States/` are. `sweep_files` and
 /// `sweep_state_cores` are infallible for this reason: every failure they can hit is folded
 /// into their own returned `failed` count rather than aborting the sweep that called them.
+///
+/// What a failure does do is hold the roms back — see the body for why a rom moving ahead of the
+/// player's saves is the one failure mode that reads exactly like lost saves.
 pub fn migrate_platforms(root: &Path) -> std::io::Result<MigrationReport> {
     let mut report = MigrationReport::default();
-    for dir in ["Games", "Saves", "Labels"] {
-        report.add(sweep_files(&root.join(dir)));
+    // The player's own data moves first, and the roms only move after it has all arrived.
+    //
+    // The four directories are independent, so a stuck `Saves/` does not stop `States/` or
+    // `Labels/` — but a rom is not merely a fourth peer here, because a rom is the one thing on
+    // this card that `scan` reads and therefore the one thing that puts a cart on the shelf. Move
+    // it while `Saves/` is stuck and the cart is playable with its battery save still sitting
+    // loose in `Saves/`, where `read_sav` does not look: the game opens on a blank battery, says
+    // the save file is corrupt, and writes a fresh one to `Saves/GBA/`. That fresh save then
+    // shadows the real one on every read after, and the next sweep — finding the destination
+    // taken — leaves the original loose forever under the never-clobber rule. The player's save
+    // is still on the card and permanently out of reach.
+    //
+    // Holding the roms back turns that into a card whose games have not appeared yet, which is
+    // the same thing the player saw a moment before the migration started and is undone by the
+    // next boot that gets a clean sweep. It costs a healthy card nothing: a card that has already
+    // migrated has nothing loose left to sweep, so `failed` is zero and the gate never closes.
+    let mut data = MigrationReport::default();
+    data.add(sweep_files(&root.join("Saves"), false));
+    data.add(sweep_state_cores(&root.join("States")));
+    report.add(data);
+    // Not gated on: a label is the picture on a cart, not the player's save, and a cart with no
+    // picture is a cart slot draws its own face for.
+    report.add(sweep_files(&root.join("Labels"), false));
+    if data.failed == 0 {
+        report.add(sweep_files(&root.join("Games"), true));
     }
-    report.add(sweep_state_cores(&root.join("States")));
     Ok(report)
 }
 
 /// Loose files in one directory into its `GBA/` subdirectory. Directories at this level are the
 /// platform folders themselves and are left alone.
-fn sweep_files(dir: &Path) -> MigrationReport {
+///
+/// `roms` says whether this directory is `Games/`, and so whether a file's extension is allowed
+/// to overrule the loose-is-GBA rule: see the skip in the loop.
+fn sweep_files(dir: &Path, roms: bool) -> MigrationReport {
     let mut report = MigrationReport::default();
     let entries = match std::fs::read_dir(dir) {
         Ok(d) => match d.collect::<Result<Vec<_>, _>>() {
@@ -175,6 +209,24 @@ fn sweep_files(dir: &Path) -> MigrationReport {
         // A leading dot is card metadata rather than content, and every folder on the card is
         // read through this rule already.
         if crate::is_hidden(Path::new(&name)) {
+            continue;
+        }
+        // A loose rom that says on its face it is not a GBA cart is the one thing the
+        // loose-is-GBA rule cannot claim. It cannot have come from a pre-Game-Boy card, because
+        // no shipped build could run one; somebody dropped `Tetris.gb` at the top of `Games/`
+        // afterwards, which is exactly what the old layout taught them to do. Sweeping it into
+        // `Games/GBA/` moves their file into the one folder `scan` refuses to read a `.gb` out
+        // of, so the game does not appear and the file is no longer where they put it either —
+        // two wrongs for the price of one. Left alone it is at least still findable over USB,
+        // and the next drop into `Games/GB/` works.
+        //
+        // Deliberately only in `Games/`. A battery save carries no such signal — `Tetris.sav`
+        // could belong to either cart — so `Saves/` and `Labels/` keep the plain rule.
+        if roms
+            && Platform::ALL
+                .into_iter()
+                .any(|p| p != Platform::Gba && p.accepts(Path::new(&name)))
+        {
             continue;
         }
         let dest = dest_dir.join(&name);

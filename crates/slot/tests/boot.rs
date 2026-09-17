@@ -210,6 +210,39 @@ fn boot_migrates_a_pre_namespacing_state_shelf() {
     );
 }
 
+/// The whole loss, end to end and through the real boot: a pre-namespacing card whose `Saves/`
+/// sweep cannot run must not put the rom on the shelf. If it does, the cart is playable, the
+/// battery save is still loose in `Saves/` where `read_sav` does not look, and the game opens on
+/// a blank battery and writes a fresh save over the reader's path — which then shadows the real
+/// one forever, because the next sweep finds the destination taken and leaves the original where
+/// it is under the never-clobber rule.
+#[test]
+fn a_boot_that_cannot_move_a_save_does_not_shelve_the_cart_without_it() {
+    let d = tempfile::tempdir().unwrap();
+    for sub in ["Games", "Saves"] {
+        std::fs::create_dir_all(d.path().join(sub)).unwrap();
+    }
+    std::fs::write(d.path().join("Games/Emerald.gba"), vec![0u8; 0x100]).unwrap();
+    std::fs::write(d.path().join("Saves/Emerald.sav"), vec![7u8; 0x10000]).unwrap();
+    // A corrupted card: `Saves/GBA` cannot be created, so nothing loose in `Saves/` can move.
+    std::fs::write(d.path().join("Saves/GBA"), b"not a directory").unwrap();
+
+    let a = App::boot(d.path());
+
+    assert_eq!(
+        a.carts().count(),
+        0,
+        "a cart reached the shelf with its save stranded loose in Saves/"
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Saves/Emerald.sav"))
+            .unwrap()
+            .len(),
+        0x10000,
+        "the stranded save was disturbed"
+    );
+}
+
 /// A card holding both Tetrises: `Games/GBA/Tetris.gba` and `Games/GB/Tetris.gb`, which is the
 /// only shape of card `cart_platform` exists for. `Emerald` is there so the GBA shelf is not a
 /// single cart library, which boots past the shelf entirely.
