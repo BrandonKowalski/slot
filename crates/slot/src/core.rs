@@ -51,6 +51,21 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
     paths
 }
 
+/// What `open_core` opened: the core to run, and whether it is the one that was asked for.
+///
+/// The second half is not a line for the log. A card whose dylib is missing runs the mock, and
+/// the mock refuses every state it did not write itself — so a refusal from it says the
+/// emulator is absent, not that the state on the card is bad. Anything that acts on a refusal
+/// has to be able to tell those two apart, and this is the only moment either is knowable:
+/// `Box<dyn RetroCore>` is the same type whichever opened. `App::set_named_core` is where the
+/// answer goes, and `App::retire_refused_resume` is what it protects.
+pub struct Opened {
+    pub core: Box<dyn RetroCore>,
+    /// `true` when one of the candidate dylibs really opened, `false` when every one of them
+    /// was missing or would not load and `MockCore` is standing in for it.
+    pub named: bool,
+}
+
 /// The one place a cart's `Core` becomes a dylib path. Callers that already know which core
 /// they want — `session.rs` resolves it once per insert — pass it straight through, which is
 /// what keeps this call from disagreeing with the caller's own choice. It says nothing about
@@ -59,8 +74,18 @@ fn candidates(root: &Path, core: Core) -> Vec<PathBuf> {
 /// asking again.
 ///
 /// `serial` is the `gpsp_serial` a gpSP core loads with. See `apply_core_options`.
-pub fn open_core(root: &Path, core: Core, serial: &str) -> Box<dyn RetroCore> {
-    open_core_for(root, core, serial, &candidates(root, core))
+pub fn open_core(root: &Path, core: Core, serial: &str) -> Opened {
+    let paths = candidates(root, core);
+    match open_named(root, core, serial, &paths) {
+        Some(core) => Opened { core, named: true },
+        None => {
+            report_missing(core, &paths);
+            Opened {
+                core: Box::new(MockCore::new()),
+                named: false,
+            }
+        }
+    }
 }
 
 /// The named core if one of these opens, the mock if none of them do. A missing core is not
@@ -83,6 +108,22 @@ pub fn open_core_for(
     serial: &str,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
+    open_named(root, core, serial, paths).unwrap_or_else(|| {
+        report_missing(core, paths);
+        Box::new(MockCore::new())
+    })
+}
+
+/// The search itself, with no fallback of its own: `None` means every candidate was missing or
+/// would not load. Split out so `open_core` can say which of the two happened without deriving
+/// it a second time — a stat of the candidate paths from outside would be a second opinion, and
+/// free to disagree with this one about a dylib that exists but will not open.
+fn open_named(
+    root: &Path,
+    core: Core,
+    serial: &str,
+    paths: &[PathBuf],
+) -> Option<Box<dyn RetroCore>> {
     let bios = root::bios_dir(root);
     let saves = root::saves_dir(root);
     for path in paths {
@@ -93,15 +134,19 @@ pub fn open_core_for(
             Ok(mut opened) => {
                 apply_core_options(&mut opened, core, serial, root::has_real_bios(root));
                 eprintln!("slot: core {}", path.display());
-                return Box::new(opened);
+                return Some(Box::new(opened));
             }
             Err(e) => eprintln!("slot: {}: {e}", path.display()),
         }
     }
-    // Name the core and every path that was tried. The mock renders a rainbow test pattern
-    // and a sine tone, which on screen reads as "this core is broken" rather than "this core
-    // is missing" — the one time that happened it cost an afternoon, so the log says which
-    // file was wanted and where it was looked for.
+    None
+}
+
+/// Name the core and every path that was tried. The mock renders a rainbow test pattern and a
+/// sine tone, which on screen reads as "this core is broken" rather than "this core is
+/// missing" — the one time that happened it cost an afternoon, so the log says which file was
+/// wanted and where it was looked for.
+fn report_missing(core: Core, paths: &[PathBuf]) {
     eprintln!(
         "slot: no {} core found, running the mock test pattern instead. Looked in: {}",
         core.as_str(),
@@ -111,7 +156,6 @@ pub fn open_core_for(
             .collect::<Vec<_>>()
             .join(", ")
     );
-    Box::new(MockCore::new())
 }
 
 /// Options a core needs before `load`, because libretro cores read them during

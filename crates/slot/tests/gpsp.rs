@@ -715,7 +715,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         .join(slot::core::dylib_name(Core::Gpsp));
     std::fs::copy(&mgba, &planted).expect("plant a dylib under gpSP's name");
 
-    let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto");
+    let mut core = slot::core::open_core(d.path(), Core::Gpsp, "auto").core;
     core.load(&d.path().join("Games/GBA/Probe.gba"))
         .expect("the planted core refused the test rom");
     core.run_frame(ButtonMask::default());

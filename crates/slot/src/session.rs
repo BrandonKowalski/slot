@@ -551,8 +551,15 @@ impl Session {
         let resume = (!self.app.starting_clean())
             .then(|| persist::read_resume(&self.root, platform, core, stem))
             .flatten();
+        let opened = open_core(&self.root, core, serial);
+        // Whether the emulator about to run is the one the state directory is named after.
+        // Only this line knows: everything downstream sees a `Box<dyn RetroCore>` that looks
+        // the same either way. `App` needs it because it is about to be told whether the core
+        // refused the resume above, and a refusal from the mock standing in for a missing dylib
+        // means something entirely different from a refusal by the cart's own core.
+        self.app.set_named_core(opened.named);
         let emu = EmuHandle::spawn(
-            open_core(&self.root, core, serial),
+            opened.core,
             rom,
             self.sink.ring(),
             persist::read_sav(&self.root, platform, stem),

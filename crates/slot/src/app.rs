@@ -521,6 +521,15 @@ pub struct App {
     /// `core` — see `set_platform`. Saves and states are filed under it, so a `.gb` and a `.gba`
     /// cart sharing a stem never share a save or a ring either.
     platform: Platform,
+    /// Whether the emulator actually running is the one `core` names, or the mock standing in
+    /// for a dylib that is not on this card. Set in the same breath as `core` and `platform`
+    /// by whoever opened it — see `set_named_core` — because it is knowable at exactly that
+    /// moment and nowhere else.
+    ///
+    /// `false` until told otherwise, which is the reading that acts on nothing: the one thing
+    /// this gates is `retire_refused_resume`, and a caller that has not said which emulator it
+    /// opened has not established that a refusal means the state is at fault.
+    named_core: bool,
     /// How the seated cart's picture is drawn, off the card and stored the same way `core` and
     /// `platform` are. Only a Game Boy cart can move it — see `video_mode` — so on a GBA cart
     /// this is read but never acted on, and `source_rect` is the one place that decides.
@@ -674,6 +683,7 @@ impl App {
             snapshot: None,
             core: Core::default(),
             platform: Platform::default(),
+            named_core: false,
             video_mode: VideoMode::default(),
             link: None,
             sfx: None,
@@ -1045,6 +1055,17 @@ impl App {
     /// cart sharing a stem could end up sharing a save.
     pub fn set_platform(&mut self, platform: Platform) {
         self.platform = platform;
+    }
+
+    /// Whether the dylib `core` names is what actually opened. Handed over alongside `set_core`
+    /// by `session.rs`, which is the only caller that can know — see `crate::core::Opened`.
+    ///
+    /// Worth a field of its own rather than folding into `set_core` because it is a different
+    /// kind of fact: `core` is what the card says this cart should run, and this is whether
+    /// that turned out to be there. `retire_refused_resume` is the one thing that reads it, and
+    /// it is what stops a card with a missing core file from filing away every cart's session.
+    pub fn set_named_core(&mut self, named: bool) {
+        self.named_core = named;
     }
 
     /// The seated cart's picture mode, off the card, handed over in the same breath as `core`
@@ -2096,8 +2117,67 @@ impl App {
     }
 
     pub fn on_core_ready(&mut self) {
-        if let Phase::Inserting { core_ready, .. } = &mut self.phase {
-            *core_ready = true;
+        let Phase::Inserting {
+            cart, core_ready, ..
+        } = &mut self.phase
+        else {
+            return;
+        };
+        *core_ready = true;
+        // The cart's name is only here during the insert — `seated` answers `None` until the
+        // slot reaches `Playing` — and this is the first moment the core has settled far enough
+        // to have accepted or refused what it was handed.
+        let cart = cart.clone();
+        self.retire_refused_resume(&cart);
+    }
+
+    /// Moves a resume the core would not read out of the way, so the next open does not hand
+    /// the same bytes to the same core and collect the same refusal. Without this a state one
+    /// core cannot read is offered forever: silently, on every boot, with no gesture on the
+    /// device that can clear it and no file manager to delete it with.
+    ///
+    /// Done as the cart settles rather than at the next flush, so a player who powers off
+    /// straight away still gets a clean start next time. `on_core_ready` runs on every frame of
+    /// the insert, so this runs several times per cart; the second call finds no `resume.state`
+    /// and does nothing, which is why it needs no latch of its own.
+    ///
+    /// Moved, not deleted: see `StateRing::retire_resume` for why, and for why the name it
+    /// lands under can never be read back as a ring entry.
+    fn retire_refused_resume(&mut self, stem: &str) {
+        let Some(snapshot) = &self.snapshot else {
+            return;
+        };
+        // The overwhelmingly common case, and the reason this check comes first: a core that
+        // took its resume has nothing to move, and answering that costs one atomic load rather
+        // than a stat of the card on every frame of every insert.
+        if snapshot.resume_trusted() {
+            return;
+        }
+        // A refusal is only evidence about the state when the emulator that refused it is the
+        // one the state was filed under. With the dylib missing, `open_core` runs the mock, and
+        // the mock refuses every state it did not write itself — so its refusal says the core
+        // is absent, not that the player's session is unreadable. Filing the state away on that
+        // would take a perfectly good session off someone whose only real problem was a file
+        // they could put back. Nothing is said here about it: `open_core` has already logged
+        // which core was wanted and where it looked, which is the fact worth acting on.
+        //
+        // `resume_trusted` stays false either way, so the mock still never writes over the
+        // state it could not read.
+        if !self.named_core {
+            return;
+        }
+        let Some(root) = &self.root else {
+            return;
+        };
+        let ring = StateRing::new(root, self.platform, self.core, stem);
+        match ring.retire_resume(&format_stamp(self.wall_secs())) {
+            Ok(Some(to)) => eprintln!(
+                "slot: resume: {} refused this state, moved it to {}",
+                self.core.as_str(),
+                to.display()
+            ),
+            Ok(None) => {}
+            Err(e) => eprintln!("slot: resume: could not move the refused state aside: {e}"),
         }
     }
 

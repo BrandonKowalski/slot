@@ -208,3 +208,74 @@ fn each_platform_keeps_its_own_states() {
     assert!(d.path().join("States/GBA/mgba/Tetris").is_dir());
     assert!(!d.path().join("States/GB/mgba/Tetris").exists());
 }
+
+/// The move that ends "offered forever": after it, `read_resume` has nothing to hand the core,
+/// so the next open starts the cart rather than failing on the same bytes again.
+///
+/// The retired file is still on the card and still exactly what was refused, because a state
+/// one core will not read is a real session to the core that wrote it.
+#[test]
+fn a_retired_resume_stops_being_read_back_but_is_still_there() {
+    let d = tempdir().unwrap();
+    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
+    r.write_resume(&[7u8; 64]).unwrap();
+
+    let to = r
+        .retire_resume("2026-09-16_23-30-00")
+        .unwrap()
+        .expect("nothing was moved");
+
+    assert!(r.read_resume().unwrap().is_none(), "still offered");
+    assert_eq!(std::fs::read(&to).unwrap(), [7u8; 64], "the bytes changed");
+    assert_eq!(
+        to.file_name().unwrap().to_str().unwrap(),
+        "resume-refused-2026-09-16_23-30-00.state"
+    );
+    assert_eq!(
+        to.parent().unwrap(),
+        d.path().join("States/GBA/mgba/Emerald"),
+        "the retired state left the cart's own directory"
+    );
+}
+
+/// A cart with nothing to retire is the ordinary case on every open after the first, since
+/// `App` calls this on every frame of the insert and only the first one finds a file.
+#[test]
+fn retiring_a_cart_with_no_resume_does_nothing() {
+    let d = tempdir().unwrap();
+    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
+    assert!(r.retire_resume("2026-09-16_23-30-00").unwrap().is_none());
+}
+
+/// The retired name must never come back as something the player can be offered or the ring
+/// can evict. `list` is what the switcher, `load_newest` and `evict` all read.
+#[test]
+fn a_retired_resume_is_not_a_ring_entry() {
+    let d = tempdir().unwrap();
+    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
+    r.push(b"state", b"png", "2026-08-09_00-00-01").unwrap();
+    r.write_resume(&[7u8; 64]).unwrap();
+    r.retire_resume("2026-09-16_23-30-00").unwrap();
+
+    let l = r.list().unwrap();
+    assert_eq!(l.len(), 1, "the retired state was listed as a save state");
+    assert_eq!(l[0].stamp, "2026-08-09_00-00-01");
+}
+
+/// Moving rather than deleting is worth nothing if the second move overwrites what the first
+/// one saved. Two retirements inside one wall-clock second is not a thing a player can
+/// produce, but the whole point of the rename is that no state is ever destroyed.
+#[test]
+fn a_second_retirement_in_the_same_second_does_not_overwrite_the_first() {
+    let d = tempdir().unwrap();
+    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
+
+    r.write_resume(&[1u8; 8]).unwrap();
+    let first = r.retire_resume("2026-09-16_23-30-00").unwrap().unwrap();
+    r.write_resume(&[2u8; 8]).unwrap();
+    let second = r.retire_resume("2026-09-16_23-30-00").unwrap().unwrap();
+
+    assert_ne!(first, second, "the second retirement took the same name");
+    assert_eq!(std::fs::read(&first).unwrap(), [1u8; 8], "the first went");
+    assert_eq!(std::fs::read(&second).unwrap(), [2u8; 8]);
+}

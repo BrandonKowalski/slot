@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::atomic::atomic_write;
+use crate::atomic::{atomic_write, sync_dir};
 use crate::core::Core;
 use crate::platform::Platform;
 
@@ -9,6 +9,9 @@ pub const RING_MAX: usize = 10;
 const STATE_EXT: &str = "state";
 const THUMB_EXT: &str = "png";
 const RESUME: &str = "resume";
+/// What a resume the core would not read is renamed to, before the stamp: see
+/// `StateRing::retire_resume`.
+const REFUSED: &str = "resume-refused";
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StateEntry {
@@ -111,6 +114,59 @@ impl StateRing {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// Moves `resume.state` out of the way, because the core that was handed it would not read
+    /// it. Answers where it went, or `None` when there was no resume to move — which is what a
+    /// cart that has already been retired looks like on every call after the first.
+    ///
+    /// Renamed rather than deleted. A state one core refuses is still a real session to the
+    /// core that wrote it: put that core back and it is worth having again. So this destroys
+    /// nothing, which is the same choice `migrate_states` makes when it finds a destination
+    /// name already taken, and the same one `write_sav` makes when a save would shrink. What
+    /// the move buys is that the next open finds no resume at all — without it the same bytes
+    /// are handed to the same core on every boot and refused identically every time, with
+    /// nothing the player can do about it but delete the file from a card reader.
+    ///
+    /// The new name keeps the `.state` extension so it still reads as a save state to whoever
+    /// is looking at the card, and `list` still passes over it: its file stem is not a stamp,
+    /// which is the same test that already keeps `resume.state` itself out of the ring. So it
+    /// can never be offered as an entry, and `evict` — which only ever deletes what `list`
+    /// returns — can never delete it either.
+    ///
+    /// `stamp` is the caller's wall clock, taken as an argument for the same reason `push`
+    /// takes one rather than reading a clock of its own.
+    pub fn retire_resume(&self, stamp: &str) -> std::io::Result<Option<PathBuf>> {
+        let from = self.path(RESUME, STATE_EXT);
+        if !from.exists() {
+            return Ok(None);
+        }
+        let to = self.free_refused(stamp);
+        std::fs::rename(&from, &to)?;
+        // A rename is already atomic, so unlike `atomic_write` there is nothing to write first.
+        // The directory entry still has to reach the card, or a power cut here leaves the state
+        // back under its old name and the next boot hands it to the core again.
+        sync_dir(&to);
+        Ok(Some(to))
+    }
+
+    /// A `resume-refused-<stamp>.state` nothing is using yet.
+    ///
+    /// Two retirements of one cart inside the same wall-clock second is not something a player
+    /// can produce — the second one needs a whole session in between to write a new resume for
+    /// a later core to refuse — but the counter costs three lines, and the alternative is
+    /// overwriting a state that is still somebody's, which is the one thing moving rather than
+    /// deleting exists to avoid.
+    fn free_refused(&self, stamp: &str) -> PathBuf {
+        let base = format!("{REFUSED}-{stamp}");
+        let first = self.path(&base, STATE_EXT);
+        if !first.exists() {
+            return first;
+        }
+        (2u32..)
+            .map(|n| self.path(&format!("{base}-{n}"), STATE_EXT))
+            .find(|p| !p.exists())
+            .unwrap_or(first)
     }
 
     fn evict(&self) -> std::io::Result<()> {
