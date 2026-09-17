@@ -1,0 +1,71 @@
+diff --git a/include/mgba/internal/gb/audio.h b/include/mgba/internal/gb/audio.h
+index 8b9b775..b3dcffc 100644
+--- a/include/mgba/internal/gb/audio.h
++++ b/include/mgba/internal/gb/audio.h
+@@ -210,6 +210,7 @@ struct GBAudio {
+ void GBAudioInit(struct GBAudio* audio, size_t samples, uint8_t* nr52, enum GBAudioStyle style);
+ void GBAudioDeinit(struct GBAudio* audio);
+ void GBAudioReset(struct GBAudio* audio);
++void GBAudioSettleCapacitors(struct GBAudio* audio);
+ 
+ void GBAudioResizeBuffer(struct GBAudio* audio, size_t samples);
+ 
+diff --git a/src/gb/audio.c b/src/gb/audio.c
+index 6a97d8b..12a7ba8 100644
+--- a/src/gb/audio.c
++++ b/src/gb/audio.c
+@@ -131,6 +131,36 @@ void GBAudioReset(struct GBAudio* audio) {
+ 	}
+ }
+ 
++// Charges the emulated output coupling capacitor to whatever DC the PSG is sitting at right
++// now, so that the high-pass below has nothing left to remove and its next output is silence.
++//
++// GBAudioReset above leaves the capacitor discharged, which is the honest state of a console
++// the instant its power switch is flicked. A DMG or CGB idles its channel sum at a -0x8 DC
++// offset (GBAudioSamplePSG; a GBA idles at 0), so the first sample after such a reset puts the
++// whole of that bias through the filter in one step and the speaker clicks. A real Game Boy
++// does exactly that once, at power-on, while the boot ROM is still scrolling its logo -- and by
++// the time the cartridge gets the CPU the capacitor has long since charged. GBSkipBIOS, which
++// fabricates the register state that boot ROM would have left behind, is therefore missing a
++// piece of that state; this supplies it.
++//
++// The value is the filter's own fixed point, not a number chosen to silence anything. For a
++// constant input S, GBAudioSample computes degraded = S - (cap >> 16) and then
++// cap = (S << 16) - degraded * FILTER. Substituting cap = S << 16 gives degraded = S - S = 0
++// and cap = (S << 16) - 0 = S << 16, so S << 16 is the charge a capacitor that has been held at
++// S forever carries, and it is a fixed point for any FILTER. A machine whose idle DC is already
++// zero -- every GBA -- is seeded with zero and behaves exactly as it did before.
++void GBAudioSettleCapacitors(struct GBAudio* audio) {
++	int16_t sampleLeft = 0;
++	int16_t sampleRight = 0;
++	GBAudioSamplePSG(audio, &sampleLeft, &sampleRight);
++	// The same master volume scaling GBAudioSample applies before the filter, so the seed is
++	// in the units the capacitor is kept in.
++	sampleLeft = (sampleLeft * audio->masterVolume * 6) >> 7;
++	sampleRight = (sampleRight * audio->masterVolume * 6) >> 7;
++	audio->capLeft = sampleLeft << 16;
++	audio->capRight = sampleRight << 16;
++}
++
+ void GBAudioResizeBuffer(struct GBAudio* audio, size_t samples) {
+ 	mCoreSyncLockAudio(audio->p->sync);
+ 	audio->samples = samples;
+diff --git a/src/gb/gb.c b/src/gb/gb.c
+index 3e8457c..56278c4 100644
+--- a/src/gb/gb.c
++++ b/src/gb/gb.c
+@@ -866,6 +866,13 @@ void GBSkipBIOS(struct GB* gb) {
+ 	GBIOWrite(gb, GB_REG_LCDC, 0x91);
+ 	gb->memory.io[GB_REG_BANK] = 0x1;
+ 	GBVideoSkipBIOS(&gb->video);
++	// The audio registers written just above are the state the boot ROM would have left, and so
++	// is the charge on the output coupling capacitor: on hardware it has had the whole boot
++	// sequence to follow the DC bias NR50 and NR51 select. Settle it here, once those writes
++	// have happened, because GBAudioReset runs before them and cannot know what bias to settle
++	// at. Without this the first sample steps the bias through the high-pass and a Game Boy
++	// clicks every time a cartridge starts.
++	GBAudioSettleCapacitors(&gb->audio);
+ }
+ 
+ void GBMapBIOS(struct GB* gb) {
