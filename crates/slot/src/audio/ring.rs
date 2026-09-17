@@ -2,6 +2,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering}
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::drc::drc_target;
+
 /// About eight video frames of audio. Four left the device one late emulator frame from
 /// empty and the emulator one late callback from full, and both ends click.
 pub fn ring_capacity(sample_rate: u32) -> usize {
@@ -72,7 +74,12 @@ impl Ring {
         let mut i = self.lock();
         i.buf = vec![0; frames * 2];
         i.head = 0;
-        i.len = frames;
+        // `len` counts samples and a stereo frame is two of them, so the cushion has to be an
+        // even number: an odd one leaves every sample pushed afterwards one slot out, and the
+        // ring never recovers because `fill` only ever drains whole periods. The device opens
+        // at 32768 Hz, where `ring_capacity` is 4369 — odd — so the whole session played with
+        // its channels swapped; a host at 48000 gets 6400 and could never show it.
+        i.len = drc_target(frames) * 2;
         self.queued.store(i.len, Ordering::Relaxed);
         self.capacity.store(frames, Ordering::Relaxed);
         self.rate.store(sample_rate, Ordering::Relaxed);

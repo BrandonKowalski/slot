@@ -1,4 +1,4 @@
-use slot::audio::{ring_capacity, AudioSink, Ring, StubSink};
+use slot::audio::{ring_capacity, AudioSink, Ring, StubSink, GBA_HZ};
 
 fn ramp(frames: usize, from: i16) -> Vec<i16> {
     (0..frames * 2)
@@ -242,5 +242,38 @@ fn a_cart_sound_is_not_held_back_by_the_cushion() {
     assert!(
         out.iter().any(|s| *s != 0),
         "the cart sound was swallowed by the cushion"
+    );
+}
+
+/// `reopen` counts its cushion in samples, so it has to land on a whole stereo frame. At the
+/// device's own 32768 Hz `ring_capacity` is 4369 — odd — and an odd cushion leaves every sample
+/// pushed after it one slot out of place, which the device plays as left and right swapped for
+/// the rest of the session. A host opens at 48000, where the capacity is even, so this has to
+/// name the device's rate or it passes without testing anything.
+#[test]
+fn the_cushion_at_an_odd_capacity_still_ends_on_a_frame() {
+    assert_eq!(
+        ring_capacity(GBA_HZ) % 2,
+        1,
+        "this rate no longer has an odd capacity, so it no longer exercises the bug"
+    );
+    let r = Ring::new(ring_capacity(GBA_HZ));
+    r.reopen(GBA_HZ);
+
+    // Drain the cushion the way the device does, then push a block whose two channels can be
+    // told apart and read it straight back.
+    let mut cushion = vec![1i16; r.queued_frames() * 2];
+    r.fill(&mut cushion);
+    assert!(
+        cushion.iter().all(|s| *s == 0),
+        "the cushion was not silence"
+    );
+    let block: Vec<i16> = (0..64i16).flat_map(|k| [1000 + k, -1000 - k]).collect();
+    r.push(&block);
+    let mut out = vec![0i16; block.len()];
+    r.fill(&mut out);
+    assert_eq!(
+        out, block,
+        "the cushion ended mid frame, so left and right came back swapped"
     );
 }
