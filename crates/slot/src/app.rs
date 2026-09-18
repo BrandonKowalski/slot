@@ -1033,11 +1033,14 @@ impl App {
     /// agree today, since `shelves_of` builds one shelf per `Platform::ALL` entry in that order,
     /// but a shelf list that ever stopped mirroring `ALL` would otherwise start drawing the
     /// wrong machine in the corner with nothing to say it had.
-    fn shelf_mark(&self) -> Option<TexId> {
+    /// The face and the platform it was drawn for, together. Apart, the box came off the seated
+    /// cart while the face came off the shelf on screen, and a Game Boy mark was drawn squashed
+    /// into the wide Advance box whenever the two differed.
+    fn shelf_mark(&self) -> Option<(TexId, Platform)> {
         self.next_shelf(1)?;
         let platform = self.shelves[self.shelf_at].0;
         let at = Platform::ALL.iter().position(|p| *p == platform)?;
-        self.mark_faces.get(at).copied()
+        Some((self.mark_faces.get(at).copied()?, platform))
     }
 
     pub fn set_battery_percent_face(&mut self, face: TexId, w: u32) {
@@ -2577,8 +2580,8 @@ impl App {
         // taller than the plate is deep now, so on the frames where a bar or a toast is up the
         // plate's lower edge passes behind it.
         if matches!(self.phase, Phase::Shelf) {
-            if let Some(tex) = self.shelf_mark() {
-                let (w, h) = mark_box();
+            if let Some((tex, platform)) = self.shelf_mark() {
+                let (w, h) = mark_box(platform);
                 let (w, h) = (w as f32, h as f32);
                 let (x, y) = mark_at(w);
                 out.push(Draw::Tex {

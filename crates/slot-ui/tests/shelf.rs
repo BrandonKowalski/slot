@@ -630,14 +630,25 @@ fn the_gauge_starts_at_the_case_margin() {
 /// the reasoning in `mark_at` and in `badge_at` about why the two came apart is stale.
 #[test]
 fn a_mark_is_held_off_the_screen_edges_by_the_case_margin() {
-    let (w, h) = mark_box();
-    let (x, y) = mark_at(w as f32);
-    assert_eq!(
-        x + w as f32,
-        OUT_W as f32 - 24.0,
-        "the mark's right edge is not on the case margin the clock is printed at"
-    );
-    assert_eq!(y, 16.0, "the mark is not held off the top of the screen");
+    // Every shelf, because the marks are no longer one size: the wide Advance mark reaches
+    // further in than the two upright ones, and it is the right edge they have to share.
+    for platform in [Platform::Gba, Platform::Gb, Platform::Gbc] {
+        let (w, h) = mark_box(platform);
+        let (x, y) = mark_at(w as f32);
+        assert_eq!(
+            x + w as f32,
+            OUT_W as f32 - 24.0,
+            "{platform:?}: the mark's right edge is not on the case margin the clock is printed at"
+        );
+        assert_eq!(
+            y, 16.0,
+            "{platform:?}: the mark is not held off the top of the screen"
+        );
+    }
+    // The upright marks are the tall ones, so they are what has to still stand clear of the
+    // plate. The wide Advance mark is shorter and would pass a weaker test than this one.
+    let (w, h) = mark_box(Platform::Gb);
+    let (_, y) = mark_at(w as f32);
     assert!(
         y + h as f32 > PLATE_H,
         "a {w}x{h} mark at {y} fits inside the {PLATE_H} px plate again, which is not what \

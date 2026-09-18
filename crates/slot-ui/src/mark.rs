@@ -92,16 +92,57 @@ const INK_GAMMA: f32 = 0.5;
 
 /// 5 to 8, which is what all three drawings' viewBoxes were re-fitted to. Their machines are
 /// not the same shape — a DMG is 0.622 wide for its height, an SP 0.563, a Colour 0.598 — so
-/// each viewBox was widened about the drawing's own centre to the widest of the three, rounded
-/// to 5:8 so the box is whole pixels. That is what lets one box hold all three: every mark
-/// draws at one height, in its own proportions, and ringing the shoulders through the shelves
-/// moves nothing else in the corner.
+/// The square a mark is fitted inside, whichever way it is long.
+///
+/// The three marks used to share one 5:8 box, each drawing's viewBox padded out about its own
+/// centre to the widest of them, so that ringing through the shelves moved nothing in the corner.
+/// That held while all three were upright handhelds. The Advance's mark is the wide model now, at
+/// 1.76:1, and padding a landscape drawing into an upright box leaves it either squashed or
+/// drawn at a third the height of the others.
+///
+/// So the box is the mark's own, fitted inside a square: an upright drawing is limited by its
+/// height and comes out exactly the 30x48 all three were before, and a wide one is limited by its
+/// width. `mark_at` places a mark by its right edge, so the two upright marks do not move at all
+/// and only the wide one reaches further in.
+pub const MARK_BOX: u32 = MARK_H;
+
+/// Kept as the width of an upright mark, which is what every caller that asks for one number
+/// wants and what the two Game Boy marks still measure.
 pub const MARK_W: u32 = MARK_H * 5 / 8;
 
-/// The box a mark is rastered into, halo included, for callers placing one in the corner before
-/// they know which shelf is showing.
-pub fn mark_box() -> (u32, u32) {
-    (MARK_W + 2 * HALO_PX, MARK_H + 2 * HALO_PX)
+/// How wide and tall this shelf's mark is drawn, from the drawing's own proportions.
+pub fn mark_size(platform: Platform) -> (u32, u32) {
+    let a = aspect(svg_for(platform));
+    match a >= 1.0 {
+        true => (MARK_BOX, (MARK_BOX as f32 / a).round().max(1.0) as u32),
+        false => ((MARK_BOX as f32 * a).round().max(1.0) as u32, MARK_BOX),
+    }
+}
+
+/// The drawing's width over its height, read off the file rather than written down twice.
+fn aspect(svg: &str) -> f32 {
+    let attr = |name: &str| -> Option<f32> {
+        let at = svg.find(&format!("{name}=\""))? + name.len() + 2;
+        svg[at..].split('"').next()?.parse().ok()
+    };
+    match (attr("width"), attr("height")) {
+        (Some(w), Some(h)) if h > 0.0 => w / h,
+        _ => MARK_W as f32 / MARK_H as f32,
+    }
+}
+
+fn svg_for(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Gba => GBA_SVG,
+        Platform::Gb => GB_SVG,
+        Platform::Gbc => GBC_SVG,
+    }
+}
+
+/// The box a mark is rastered into, halo included, for callers placing one in the corner.
+pub fn mark_box(platform: Platform) -> (u32, u32) {
+    let (w, h) = mark_size(platform);
+    (w + 2 * HALO_PX, h + 2 * HALO_PX)
 }
 
 /// The mark for a shelf, tinted and haloed exactly as the link badge that shares its corner is.
@@ -116,12 +157,8 @@ pub fn mark_box() -> (u32, u32) {
 /// coming out darker than the grey it was meant to replace. The plate is monochrome and this
 /// stays monochrome with it.
 pub fn mark_face(platform: Platform) -> CartFace {
-    let svg = match platform {
-        Platform::Gba => GBA_SVG,
-        Platform::Gb => GB_SVG,
-        Platform::Gbc => GBC_SVG,
-    };
-    let Some(rgba) = render_svg(svg, MARK_W, MARK_H) else {
+    let (w, h) = mark_size(platform);
+    let Some(rgba) = render_svg(svg_for(platform), w, h) else {
         return CartFace {
             rgba: Vec::new(),
             w: 0,
@@ -129,7 +166,7 @@ pub fn mark_face(platform: Platform) -> CartFace {
         };
     };
     let cov: Vec<u8> = rgba.chunks_exact(4).map(|px| boosted(px[3])).collect();
-    haloed(&cov, MARK_W, MARK_H, HUD_INK)
+    haloed(&cov, w, h, HUD_INK)
 }
 
 /// One coverage byte through `INK_GAMMA`. Kept apart from the loop so a test can hold the curve
@@ -146,13 +183,17 @@ fn boosted(cov: u8) -> u8 {
 mod tests {
     use super::*;
 
-    /// Every shelf gets a mark, every mark lands in the one box, and every one of them has ink
-    /// in it. A drawing that failed to parse comes back as an empty face rather than as a
-    /// panic, which on the band would be a shelf that silently stopped saying what it was.
+    /// Every shelf gets a mark, every mark is the size the corner reserves for that shelf, and
+    /// every one has ink in it. A drawing that failed to parse comes back as an empty face rather
+    /// than as a panic, which on the band would be a shelf that silently stopped saying what it
+    /// was.
+    ///
+    /// The three used to be one size. They are not now: the Advance's is the wide model, so its
+    /// mark is limited by width where the two upright ones are limited by height.
     #[test]
-    fn every_shelf_has_a_mark_and_they_all_share_one_box() {
-        let (w, h) = mark_box();
+    fn every_shelf_has_a_mark_the_size_its_corner_reserves() {
         for p in Platform::ALL {
+            let (w, h) = mark_box(p);
             let face = mark_face(p);
             assert_eq!(
                 (face.w, face.h),
@@ -161,7 +202,24 @@ mod tests {
             );
             let inked = face.rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
             assert!(inked > 0, "{p:?}'s mark rastered to nothing at all");
+            let (mw, mh) = mark_size(p);
+            assert!(
+                mw <= MARK_BOX && mh <= MARK_BOX,
+                "{p:?}'s mark is {mw}x{mh}, outside the {MARK_BOX} square every mark fits"
+            );
+            assert!(
+                mw == MARK_BOX || mh == MARK_BOX,
+                "{p:?}'s mark is {mw}x{mh}, not touching either side of the square it fits"
+            );
         }
+    }
+
+    /// The two upright marks are exactly the size all three used to be, so switching the Advance
+    /// to the wide model moved nothing else in the corner.
+    #[test]
+    fn the_upright_marks_are_the_size_they_always_were() {
+        assert_eq!(mark_size(Platform::Gb), (MARK_W, MARK_H));
+        assert_eq!(mark_size(Platform::Gbc), (MARK_W, MARK_H));
     }
 
     /// The box is the 5:8 the three viewBoxes were re-fitted to, exactly, with no rounding left

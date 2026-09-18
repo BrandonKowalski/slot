@@ -95,8 +95,8 @@ fn hud_ink(px: &[u8]) -> usize {
 /// The mark's own box in the screen's top right corner, which is the corner a live session's link
 /// badge takes. Read out of `mark_at` and `mark_box` rather than typed as four numbers, so moving
 /// either moves the reading with it.
-fn mark_window() -> (usize, usize, usize, usize) {
-    let (w, h) = mark_box();
+fn mark_window(platform: CartPlatform) -> (usize, usize, usize, usize) {
+    let (w, h) = mark_box(platform);
     let (x, y) = mark_at(w as f32);
     (x as usize, y as usize, w as usize, h as usize)
 }
@@ -105,8 +105,8 @@ fn mark_window() -> (usize, usize, usize, usize) {
 /// they are the same drawing — which is what "the mark changed when the shoulder was pressed"
 /// actually means, and what a count of lit pixels could agree on while showing one picture
 /// three times.
-fn mark_pixels(px: &[u8]) -> Vec<[u8; 3]> {
-    let (x0, y0, w, h) = mark_window();
+fn mark_pixels(px: &[u8], platform: CartPlatform) -> Vec<[u8; 3]> {
+    let (x0, y0, w, h) = mark_window(platform);
     (y0..y0 + h)
         .flat_map(|y| (x0..x0 + w).map(move |x| (x, y)))
         .map(|(x, y)| at(px, x, y))
@@ -115,8 +115,8 @@ fn mark_pixels(px: &[u8]) -> Vec<[u8; 3]> {
 
 /// How much of the mark's box is lit above what is behind it. The corner is over the shelf's own
 /// ground here — this card has no wallpaper — so anything appreciably lighter is the mark's ink.
-fn mark_ink(px: &[u8]) -> usize {
-    mark_pixels(px)
+fn mark_ink(px: &[u8], platform: CartPlatform) -> usize {
+    mark_pixels(px, platform)
         .iter()
         .filter(|c| u32::from(c[0]) > GROUND[0] + 0x30)
         .count()
@@ -252,9 +252,9 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         "the carousel named a system nobody had switched to"
     );
     assert!(
-        mark_ink(&gba) > 20,
+        mark_ink(&gba, CartPlatform::Gba) > 20,
         "the plate corner came up with no mark in it at all: {} lit pixels",
-        mark_ink(&gba)
+        mark_ink(&gba, CartPlatform::Gba)
     );
     // Two carts now fill all three slots by repeating around the ring, so the old centred-pair
     // check — which asserted the outer slots were bare — asserts the opposite of what ships.
@@ -282,10 +282,10 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     // One shelf per platform, so the Colour cart is not on the Game Boy shelf: each stands
     // alone in the middle of its own.
     let mut seen = Vec::new();
-    let mut marks = vec![mark_pixels(&gba)];
-    for (name, banner) in [
-        ("game-boy", "Game Boy"),
-        ("game-boy-color", "Game Boy Color"),
+    let mut marks = vec![mark_pixels(&gba, CartPlatform::Gba)];
+    for (name, banner, platform) in [
+        ("game-boy", "Game Boy", CartPlatform::Gb),
+        ("game-boy-color", "Game Boy Color", CartPlatform::Gbc),
     ] {
         tap(&mut f, &mut input, Btn::R1);
         let px = composed(&mut f, &mut c, name);
@@ -309,12 +309,12 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
             0,
             "the {banner} shelf banner'd its name over the carts"
         );
-        let ink = mark_ink(&px);
+        let ink = mark_ink(&px, platform);
         assert!(
             ink > 20,
             "the {banner} shelf came up with no mark on the case: {ink} lit pixels"
         );
-        let mark = mark_pixels(&px);
+        let mark = mark_pixels(&px, platform);
         assert!(
             !marks.contains(&mark),
             "the {banner} shelf is showing a mark another shelf already showed"
@@ -337,7 +337,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     );
     assert_eq!(banner_ink(&back), 0, "the way back put a banner up");
     assert_eq!(
-        mark_pixels(&back),
+        mark_pixels(&back, CartPlatform::Gba),
         marks[0],
         "the ring came back to the Game Boy Advance shelf under another system's mark"
     );
@@ -475,17 +475,17 @@ fn a_card_on_one_shelf_leaves_the_corner_empty() {
     f.advance(&mut input);
     let bare = composed(&mut f, &mut c, "one-shelf");
     assert_eq!(
-        mark_ink(&bare),
+        mark_ink(&bare, CartPlatform::Gba),
         0,
         "a card with one shelf put a machine in the corner: {} lit pixels",
-        mark_ink(&bare)
+        mark_ink(&bare, CartPlatform::Gba)
     );
     // And the shoulders leave it that way, which is the same statement from the other side: a
     // mark that appeared on the first press would be a control that is dead and says so late.
     tap(&mut f, &mut input, Btn::R1);
     let pressed = composed(&mut f, &mut c, "one-shelf-after-r1");
     assert_eq!(
-        mark_ink(&pressed),
+        mark_ink(&pressed, CartPlatform::Gba),
         0,
         "R1 put a mark in the corner of a card that has one shelf"
     );
@@ -500,9 +500,9 @@ fn a_card_on_one_shelf_leaves_the_corner_empty() {
     f.advance(&mut input);
     let marked = composed(&mut f, &mut c, "two-shelves");
     assert!(
-        mark_ink(&marked) > 20,
+        mark_ink(&marked, CartPlatform::Gba) > 20,
         "a card with two shelves did not say which one it was on: {} lit pixels",
-        mark_ink(&marked)
+        mark_ink(&marked, CartPlatform::Gba)
     );
 }
 
