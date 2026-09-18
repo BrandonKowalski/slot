@@ -43,8 +43,6 @@ pub struct Cable {
     player: u8,
     /// The frame `step` will run next.
     frame: u64,
-    /// The frame the next sampled mask is stamped with.
-    next: u64,
     local: BTreeMap<u64, ButtonMask>,
     remote: BTreeMap<u64, ButtonMask>,
     /// Frames asked for and not run because the peer's mask had not arrived.
@@ -58,7 +56,6 @@ impl Cable {
         Cable {
             player,
             frame: 0,
-            next: DELAY,
             local: seed.clone(),
             remote: seed,
             stalled: 0,
@@ -69,16 +66,26 @@ impl Cable {
         self.player
     }
 
+    /// The frame about to run. Read by tests holding the delay to a constant.
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
     pub fn stalled(&self) -> u32 {
         self.stalled
     }
 
-    /// Stamps this present's buttons for a frame `DELAY` ahead. The bytes go on the wire as they
-    /// are; nothing else sends.
+    /// This device's buttons for the frame `DELAY` ahead of the one about to run.
+    ///
+    /// Decided once and never revised. Asking twice for the same frame, which is what a stalled
+    /// present does, returns the mask already decided rather than replacing it. Two reasons, and
+    /// the second is the serious one: stamping a new frame per present would add a frame of input
+    /// delay for every stall, without bound and worst on whichever device stalls more; and
+    /// revising a mask the peer may already have run that frame with would desync the pair
+    /// outright.
     pub fn sample(&mut self, mask: ButtonMask) -> [u8; PACKET] {
-        let frame = self.next;
-        self.local.insert(frame, mask);
-        self.next += 1;
+        let frame = self.frame + DELAY;
+        let mask = *self.local.entry(frame).or_insert(mask);
         encode(frame, mask)
     }
 

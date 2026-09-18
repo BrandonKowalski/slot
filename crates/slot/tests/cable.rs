@@ -36,14 +36,16 @@ fn a_sampled_mask_is_stamped_for_a_later_frame() {
 fn each_end_reports_the_pair_in_port_order() {
     let mut p0 = Cable::new(0);
     let mut p1 = Cable::new(1);
+    // Sample, exchange, advance: the order the worker uses, until the seeded frames run out and
+    // the next frame is one whose masks both ends actually sent each other.
     for _ in 0..DELAY {
+        let a = p0.sample(A);
+        let b = p1.sample(B);
+        assert!(p0.accept(&b));
+        assert!(p1.accept(&a));
         p0.advance();
         p1.advance();
     }
-    let from_p0 = p0.sample(A);
-    let from_p1 = p1.sample(B);
-    assert!(p0.accept(&from_p1));
-    assert!(p1.accept(&from_p0));
 
     assert_eq!(p0.ready(), Some((A, B)), "player 0 read the pair swapped");
     assert_eq!(
@@ -59,6 +61,7 @@ fn each_end_reports_the_pair_in_port_order() {
 fn a_frame_waits_rather_than_guessing_a_missing_mask() {
     let mut c = Cable::new(0);
     for _ in 0..DELAY {
+        c.sample(A);
         c.advance();
     }
     c.sample(A);
@@ -108,6 +111,7 @@ fn junk_and_duplicates_are_dropped_rather_than_raised() {
     assert!(!c.accept(&[1, 2, 3]), "a short packet was taken");
     assert!(!c.accept(&[]), "an empty packet was taken");
     for _ in 0..DELAY {
+        c.sample(B);
         c.advance();
     }
     assert!(c.accept(&encode(DELAY, A)));
@@ -117,5 +121,38 @@ fn junk_and_duplicates_are_dropped_rather_than_raised() {
     assert!(
         !c.accept(&encode(DELAY, A)),
         "a mask for a frame already run was taken back in"
+    );
+}
+
+/// The input delay stays what it was however much the peer stalls, even when `sample` is called
+/// on every present the way the worker does. It used to grow by a frame per stalled present,
+/// without bound, and was felt worst on whichever device stalled more. The invariant lives in
+/// `sample` now rather than in the caller remembering to ask only once per frame.
+#[test]
+fn a_stall_does_not_add_to_the_input_delay() {
+    let mut c = Cable::new(0);
+    for _ in 0..DELAY {
+        c.sample(A);
+        c.advance();
+    }
+    let (stamped, _) = decode(&c.sample(B)).expect("packet");
+    let ahead = stamped - c.frame();
+
+    // Twenty presents with nothing from the peer, each sampling exactly as the worker does.
+    for _ in 0..20 {
+        c.sample(ButtonMask::default());
+        c.stall();
+    }
+    assert_eq!(c.stalled(), 20);
+
+    let (stamped, mask) = decode(&c.sample(ButtonMask::default())).expect("packet");
+    assert_eq!(
+        stamped - c.frame(),
+        ahead,
+        "the input delay grew across a stall: masks are being stamped per present again"
+    );
+    assert_eq!(
+        mask, B,
+        "a decided mask was revised, which desyncs the pair"
     );
 }

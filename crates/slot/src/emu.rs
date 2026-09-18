@@ -623,6 +623,11 @@ impl Worker {
         // `Some` only on the in-core route. Netpacket sessions leave this `None` and keep the
         // frame clock they always had.
         let mut cable: Option<Cable> = None;
+        // Cable diagnostics, printed rarely. A link that is slow and a link that is stalling look
+        // identical from the outside, and the card's own log is the only way to ask on hardware.
+        let mut cable_presents = 0u32;
+        let mut cable_stalls = 0u32;
+        let mut cable_said = Instant::now();
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
@@ -761,18 +766,42 @@ impl Worker {
                         // present rather than being guessed at, because a stepped frame is not
                         // something either device can take back.
                         Some(c) => {
-                            // Sent here rather than with the drain above, so this frame's buttons
-                            // leave on the frame that sampled them. Receiving is the drain's job.
+                            // Before the wait, so the frame this present is about to run has
+                            // already offered its buttons. `sample` decides a frame once, so
+                            // asking every present costs nothing and a stalled present cannot
+                            // add to the input delay.
                             if let Some(t) = transport.as_deref_mut() {
                                 t.send(NETPACKET_RELIABLE, &c.sample(input));
                             }
-                            match c.ready() {
+                            // Waited for inside this present rather than by giving the present
+                            // up. The two devices' loops are not in phase, so a mask landing a
+                            // moment after the drain at the top of the loop would otherwise cost
+                            // a whole 16.7 ms, and a steady offset would halve the frame rate
+                            // outright while both devices sat well inside their own budget.
+                            // Bounded by what is left of the present, so a peer that really has
+                            // gone still stalls rather than holding the frame open.
+                            let ready = loop {
+                                if let Some(pair) = c.ready() {
+                                    break Some(pair);
+                                }
+                                if began.elapsed() + frame_peak > budget {
+                                    break None;
+                                }
+                                if let Some(t) = transport.as_deref_mut() {
+                                    while let Some(buf) = t.try_recv() {
+                                        c.accept(&buf);
+                                    }
+                                }
+                                std::thread::sleep(Duration::from_micros(250));
+                            };
+                            match ready {
                                 Some((p0, p1)) => {
                                     core.run_frame_linked(p0, p1);
                                     c.advance();
                                     self.shared.linked.fetch_add(1, Ordering::Relaxed);
                                 }
                                 None => {
+                                    cable_stalls += 1;
                                     c.stall();
                                     self.shared.link_lost.store(
                                         c.stalled() >= cable::QUIET_FRAMES,
@@ -798,6 +827,22 @@ impl Worker {
                 } else {
                     blend(frame_peak, worst)
                 };
+                if cable.is_some() {
+                    cable_presents += 1;
+                    if cable_said.elapsed() >= Duration::from_secs(5) {
+                        eprintln!(
+                            "slot: cable: {} presents, {} stalled, {:.1} fps over {:.1}s",
+                            cable_presents,
+                            cable_stalls,
+                            (cable_presents - cable_stalls) as f32
+                                / cable_said.elapsed().as_secs_f32(),
+                            cable_said.elapsed().as_secs_f32(),
+                        );
+                        cable_presents = 0;
+                        cable_stalls = 0;
+                        cable_said = Instant::now();
+                    }
+                }
                 fast_span = Some((began, core_time));
                 // Immediately, and this is the one that decides whether a link is playable.
                 // The emulated serial hardware only executes inside `run_frame`, so every
