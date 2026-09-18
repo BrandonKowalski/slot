@@ -146,3 +146,49 @@ fn both_cores_declare_a_colour_correction_option() {
         );
     }
 }
+
+/// A cable session pins the one option mGBA would otherwise decide from the card: whether there
+/// is a real BIOS beside it. Two cards need not agree about that, and in a session each device
+/// runs both consoles, so a pair booted on different BIOSes is a pair of different machines. On
+/// hardware this showed as the joiner refusing the state swap outright.
+#[test]
+fn a_cable_session_pins_the_bios_so_both_devices_agree() {
+    let _g = common::core_lock();
+    let path = dylib_for(Core::Mgba);
+    if !path.exists() {
+        eprintln!("no mgba dylib on this host, skipping");
+        return;
+    }
+    let mut core = LibretroCore::open(&path).expect("open core");
+    slot::core::apply_link_options(&mut core, Core::Mgba, 1);
+    let set: std::collections::HashMap<String, String> = core.options().into_iter().collect();
+    assert_eq!(
+        set.get("mgba_use_bios").map(String::as_str),
+        Some("OFF"),
+        "a session left the BIOS to whatever each card happened to carry"
+    );
+    assert_eq!(set.get("mgba_link").map(String::as_str), Some("on"));
+    assert_eq!(
+        set.get("mgba_link_player").map(String::as_str),
+        Some("1"),
+        "the port this device drives did not reach the core"
+    );
+    every_option_is_one_the_core_has(&core, "mgba cable session");
+}
+
+/// And it is mGBA's alone: gpSP has no such mode, and a cable session never runs on it.
+#[test]
+fn a_cable_session_sets_nothing_on_gpsp() {
+    let _g = common::core_lock();
+    let path = dylib_for(Core::Gpsp);
+    if !path.exists() {
+        eprintln!("no gpsp dylib on this host, skipping");
+        return;
+    }
+    let mut core = LibretroCore::open(&path).expect("open core");
+    slot::core::apply_link_options(&mut core, Core::Gpsp, 0);
+    assert!(
+        core.options().is_empty(),
+        "a cable session reached into gpSP, which has no cable to offer"
+    );
+}

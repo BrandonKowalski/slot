@@ -1220,3 +1220,41 @@ fn a_single_core_refuses_a_link_state() {
         "a single GBA took a state holding two"
     );
 }
+
+/// The swap against a real commercial cart with a real save, which is where it failed on
+/// hardware. `a_link_states_travels_between_two_link_mode_cores` proves the same thing on a
+/// synthetic rom; this proves the cart and its save are not what made the difference. The BIOS
+/// was, and `apply_link_options` pins it now.
+#[test]
+fn the_card_cart_link_state_travels_between_two_link_mode_cores() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let card = common::repo_root().join("sdcard/Games/GBA/Advance Wars.gba");
+    let sav = common::repo_root().join("sdcard/Saves/GBA/Advance Wars.sav");
+    if !card.exists() {
+        eprintln!("no card cart on this machine, skipping");
+        return;
+    }
+    let save = std::fs::read(&sav).ok();
+
+    let mut host = link_core(&dylib, 0);
+    host.load(&card).expect("link mode refused the cart");
+    if let Some(s) = &save {
+        host.load_save_ram(s)
+            .expect("the host refused its own save");
+    }
+    let state = host.serialize().expect("the host would not serialize");
+    eprintln!("host state {} bytes", state.len());
+    drop(host);
+
+    let mut joiner = link_core(&dylib, 1);
+    joiner.load(&card).expect("link mode refused the cart");
+    if let Some(s) = &save {
+        joiner
+            .load_save_ram(s)
+            .expect("the joiner refused its own save");
+    }
+    joiner
+        .unserialize(&state)
+        .expect("the joiner refused the host's link state");
+}

@@ -245,13 +245,31 @@ pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static st
 /// was assumed for a while that only mGBA did. Each spells it its own way; see below.
 /// The in-core cable, on a core that has one. mGBA runs both consoles itself and `mgba_link_player`
 /// says which of them this device drives; every other core has no such mode and is left alone.
+///
+/// `mgba_use_bios` is forced off, and it is the one option here that is about the *other* device.
+/// Nothing above sets it, so mGBA decides for itself: it uses `gba_bios.bin` when the card has
+/// one and its own replacement when it does not. Two cards need not agree about that, and two
+/// devices in a session are not running one game each, they are each running both. A pair booted
+/// on different BIOSes is a pair of different machines, so they drift apart from the first frame
+/// even if nothing complains.
+///
+/// It failed louder than drift, which is how it was found: the host serializes the moment a
+/// session begins, while a real BIOS is still booting, so the saved PC is inside the BIOS. A
+/// state whose BIOS checksum differs is refused outright in exactly that case, and only in that
+/// case (`src/gba/serialize.c`, GBADeserialize). One card had `gba_bios.bin` and the other did
+/// not, and the joiner answered the swap with "unserialize refused".
+///
+/// Off rather than on, because off is the only answer both devices can always give: the image is
+/// Nintendo's and a card without one cannot be made to have one. The cost is the boot logo and
+/// chime for a session, on a screen the players are about to leave anyway.
 pub fn apply_link_options(core: &mut LibretroCore, which: Core, player: u8) {
     if which != Core::Mgba {
         return;
     }
     core.set_option("mgba_link", "on");
     core.set_option("mgba_link_player", &player.to_string());
-    eprintln!("slot: core: link mode on, player {player}");
+    core.set_option("mgba_use_bios", "OFF");
+    eprintln!("slot: core: link mode on, player {player}, built-in bios");
 }
 
 pub fn apply_core_options(
