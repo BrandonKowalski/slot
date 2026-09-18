@@ -192,13 +192,16 @@ fn every_platform_defaults_to_mgba() {
     );
 }
 
+/// The ini escape hatch, read with the platform known: a cart naming a core that is not its
+/// platform's default gets the one it asked for.
 #[test]
-fn a_game_boy_cart_can_ask_for_tgb_dual_by_hand() {
+fn a_cart_can_ask_for_a_non_default_core_by_hand() {
     let d = tempfile::tempdir().unwrap();
-    write_selected_core(d.path(), "Tetris", Core::TgbDual).unwrap();
+    write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
+    assert_ne!(Core::default_for(Platform::Gba), Core::Gpsp);
     assert_eq!(
-        core_for_platform(d.path(), "Tetris", Platform::Gb),
-        Core::TgbDual
+        core_for_platform(d.path(), "Emerald", Platform::Gba),
+        Core::Gpsp
     );
 }
 
@@ -211,27 +214,15 @@ fn a_line_naming_a_core_the_platform_cannot_run_is_dropped() {
         core_for_platform(d.path(), "Tetris", Platform::Gb),
         Core::Mgba
     );
-
-    // And the mirror image: TGB Dual has no GBA in it, so a GBA cart asking for it gets mGBA.
-    write_selected_core(d.path(), "Emerald", Core::TgbDual).unwrap();
     assert_eq!(
-        core_for_platform(d.path(), "Emerald", Platform::Gba),
+        core_for_platform(d.path(), "Tetris", Platform::Gbc),
         Core::Mgba
     );
 }
 
 #[test]
-fn tgb_dual_is_not_a_socket_on_the_picker_board() {
-    // The picker is drawn as a two-socket GBA cartridge PCB traced from real hardware. A third
-    // socket would be a liberty taken with the drawing to express a choice nobody makes on the
-    // panel, so `ALL` stays at two and TGB Dual is reached by platform instead.
+fn the_picker_board_has_exactly_two_sockets() {
+    // The picker is drawn as a two-socket GBA cartridge PCB traced from real hardware, so a
+    // third socket would be a liberty taken with the drawing.
     assert_eq!(Core::ALL.len(), 2);
-    assert!(!Core::ALL.contains(&Core::TgbDual));
-}
-
-#[test]
-fn every_core_round_trips_through_the_ini_spelling() {
-    for core in [Core::Mgba, Core::Gpsp, Core::TgbDual] {
-        assert_eq!(Core::parse(core.as_str()), Some(core));
-    }
 }

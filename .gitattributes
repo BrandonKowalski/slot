@@ -1,6 +1,4 @@
 # Core patches are applied to a source tree byte for byte, so git must not touch their line
-# endings. TGB Dual ships some sources with CRLF, so its patch carries CRLF in those hunks'
-# context lines; normalised to LF on checkout it would no longer match the file it patches.
-# The build refuses a patch set that changed nothing (cores/tgbdual/build.sh), so this failing
-# would be loud rather than silent, but the point is for it not to fail.
+# endings: a hunk whose context lines were normalised on checkout no longer matches the file
+# it patches, and a core that ships any source with CRLF would stop applying.
 cores/**/*.patch -text

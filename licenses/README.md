@@ -15,7 +15,6 @@ The release also distributes compiled libretro cores `slot` did not write:
 |---------------------|----------------------------------------------------|----------------------|----------------------------|
 | `gpsp_libretro`     | https://github.com/libretro/gpsp                   | GPL-2.0-or-later     | `gpsp-GPL-2.0.txt`         |
 | `mgba_libretro`     | https://github.com/libretro/mgba                   | MPL-2.0              | `mgba-MPL-2.0.txt`         |
-| `tgbdual_libretro`  | https://github.com/libretro/tgbdual-libretro       | GPL-2.0-or-later     | `tgbdual-GPL-2.0.txt`      |
 
 **Every one of those is why GPL-3.0 was available to take, and it was checked rather than
 assumed.** gpSP carries the "either version 2 of the License, or (at your option) any later
@@ -28,15 +27,7 @@ cannot be used here rather than anything about how it performs.
 
 gpSP was originally written by Gilead "Exophase" Kutnick; the libretro core above is the
 actively maintained fork slot's fetch script pulls from. mGBA is by Jeffrey "endrift" Pfau.
-libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba. TGB Dual was written by
-Hii in 2001 and is the reason Game Boy link play works at all: it emulates two Game Boys in one
-process with a cable between them, which is what a linked pair on two handhelds needs.
-
-`tgbdual-GPL-2.0.txt` is the FSF's current printing of GPL-2.0, the same file as gpSP's. TGB
-Dual's own tree carries an older printing of the same licence at `docs/COPYING-2.0.txt`, from
-before the FSF moved offices: 280 lines against 339, differing in the FSF's postal address and
-in calling the LGPL the "Library" General Public License. It is the same licence and the current
-text is the clearer thing to hand somebody.
+libretro/mgba is libretro's fork of https://github.com/mgba-emu/mgba.
 
 Both cores are built by this repo, and both are patched. `cores/gpsp/build.sh`, run by
 `taskfile.yml`'s `core:gpsp`, builds libretro/gpsp at a pinned commit from the source archive
@@ -103,43 +94,6 @@ from this repo carries the same notice the release zip does.
   the pin and with the build script's stamp. If any one does not, all of them are cleared, and
   the archive is refetched and the binary rebuilt from it in the same run, so nothing here can
   pair a binary from one build with a source recorded by another.
-
-- **GPL-2.0-or-later (TGB Dual): the corresponding source ships in this directory, under section
-  3(a), on exactly the terms gpSP's does above.** `taskfile.yml`'s `core:tgbdual` downloads the
-  source archive of the commit pinned as `TGBDUAL_COMMIT`, compiles the binary from that archive
-  with `cores/tgbdual/build.sh`, and checks the archive, the sha, the binary and both `.meta`
-  files as one set, so a binary from one build can never sit beside a source recorded by another.
-  `dist:device` and `deploy:device` carry the result here, as:
-
-  ```
-  licenses/tgbdual-<commit>.tar.gz
-  licenses/tgbdual-<commit>.meta
-  ```
-
-  **This build is modified, and this is the modification**, which is what GPL-2.0 section 2(a)
-  asks be carried in the changed files. The patch ships here beside the archive, its file name
-  prefixed `tgbdual-`, the way gpSP's does.
-
-  `color-correction.patch` adds a `tgbdual_color_correction` core option, off by default, which
-  simulates the Game Boy Color's own screen. A CGB game writes palette values meant for that
-  screen, which is dimmer and far less saturated than the panel in an SP; shown literally they
-  come out harsh. Upstream declares five options and not one of them is about colour, so before
-  this the quick menu's Colour Correction row was inert for every Game Boy and Colour cart.
-
-  Where the correction is applied is the whole of the design, and it is deliberately not where it
-  first looks like it belongs. `map_color` has an inverse, `unmap_color`, which a game reads its
-  own palette back through (`gb_core/cpu.cpp`, the BCPD register). Correcting there would stop the
-  pair being inverses and hand a game colours it never wrote, which is a change to emulated
-  behaviour rather than to how a result is displayed. The patch works on the finished framebuffer
-  instead, in `render_screen`, immediately before it is handed to the frontend, so nothing the
-  emulated console can observe is touched. The cost is one lookup per pixel in a table rebuilt
-  only when the option changes.
-
-  The other thing `cores/tgbdual/build.sh` adds to upstream's recipe is `-flto=auto`, which the
-  `.meta` records as `device_cflags`. That one changes how the core is compiled rather than what
-  it computes, and both builds produce byte-identical framebuffers. The colour patch is the
-  opposite: with the option on it changes computed pixels on purpose, which is worth knowing for
-  anything that compares two devices' framebuffers rather than their emulated state.
 
 ## Artwork
 

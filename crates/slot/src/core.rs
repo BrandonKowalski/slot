@@ -188,20 +188,13 @@ fn report_missing(core: Core, paths: &[PathBuf]) {
 /// right one. gpSP declares its own as `disabled|enabled`, a different key and a different pair of
 /// words, and only ever runs GBA carts so it has no console to choose between.
 ///
-/// TGB Dual had no such option at all until slot gave it one: upstream declares five options and
-/// not one of them is about colour, which left the row inert for every Game Boy and Colour cart.
-/// `cores/tgbdual/color-correction.patch` adds it, so the key here is real, and the `None` arm is
-/// gone. It is still worth keeping the shape: a core with nothing to set is a thing this has had
-/// to express once and may again.
+/// Both shipped cores have the option, so nothing returns `None` today. The shape stays: a core
+/// with nothing to set is a thing this has had to express once and may again.
 pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static str)> {
     match which {
         Core::Mgba => Some(("mgba_color_correction", if on { "Auto" } else { "OFF" })),
         Core::Gpsp => Some((
             "gpsp_color_correction",
-            if on { "enabled" } else { "disabled" },
-        )),
-        Core::TgbDual => Some((
-            "tgbdual_color_correction",
             if on { "enabled" } else { "disabled" },
         )),
     }
@@ -291,16 +284,8 @@ pub fn apply_core_options(
     // invites. The option is the standing arrangement; the callback is the per-frame lever.
     //
     // The key is the core's own name with `_frameskip` after it, which is how mGBA and gpSP
-    // both spell it. TGB Dual has no frameskip option at all: its whole option list is the six
-    // at `libretro/libretro.cpp:19-28`, all of them about the two screens and which one is
-    // heard. Setting a key a core does not have would be ignored rather than harmful, but it
-    // would also be a quiet lie in a function whose whole job is to say what each core was
-    // told, so it is not set. The consequence is that a Game Boy cart's fast forward has no
-    // core frameskip behind it and is capped by emulation speed alone, which for a core that
-    // costs 2 ms of a 16.7 ms frame is not the binding constraint.
-    if matches!(which, Core::Mgba | Core::Gpsp) {
-        core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
-    }
+    // both spell it.
+    core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         // An SGB border makes the picture 256x224, and 256 is wider than the 240 this whole path
         // is built on — `video_refresh` would crop it. The core declares this one as `ON|OFF`
@@ -416,23 +401,6 @@ mod tests {
         assert_eq!(
             colour_option(Core::Gpsp, false),
             Some(("gpsp_color_correction", "disabled"))
-        );
-    }
-
-    /// TGB Dual's option is slot's own, added by `cores/tgbdual/color-correction.patch`, so this
-    /// pins the name the patch declares as well as the one the frontend sends. Those two are in
-    /// different repositories and nothing but this test holds them together: a rename on either
-    /// side would leave the row silently inert again, which is exactly the failure it was in
-    /// before the patch existed.
-    #[test]
-    fn tgb_dual_takes_the_option_slots_own_patch_adds() {
-        assert_eq!(
-            colour_option(Core::TgbDual, true),
-            Some(("tgbdual_color_correction", "enabled"))
-        );
-        assert_eq!(
-            colour_option(Core::TgbDual, false),
-            Some(("tgbdual_color_correction", "disabled"))
         );
     }
 

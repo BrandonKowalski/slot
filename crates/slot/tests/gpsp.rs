@@ -225,10 +225,6 @@ fn both_cores_are_told_about_colour_correction_in_their_own_words() {
         let theirs = match which {
             Core::Mgba => "gpsp_color_correction",
             Core::Gpsp => "mgba_color_correction",
-            // This loop walks `Core::ALL`, which is the core picker's two sockets. TGB Dual is
-            // reached by platform rather than by the picker, is not in `ALL`, and has no colour
-            // correction option of its own to confuse with either of these.
-            Core::TgbDual => unreachable!("Core::ALL holds only the picker's two sockets"),
         };
         assert_eq!(
             core.option(theirs),
@@ -848,9 +844,10 @@ fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_the_platform_default() {
         }
         assert!(
             Instant::now() < deadline,
-            "the ini's `Tetris = gpsp` was honoured for a Game Boy cart: States/GB/tgbdual still \
+            "the ini's `Tetris = gpsp` was honoured for a Game Boy cart: States/GB/{} still \
              reads {:?} and States/GB/gpsp reads {:?}",
-            counter(Core::TgbDual),
+            default.as_str(),
+            counter(default),
             counter(Core::Gpsp)
         );
         now += 16;

@@ -15,14 +15,6 @@ vars:
   # thing and the archive on the card is the source of the binary next to it. The Mac's gpSP
   # (core:gpsp:host) is still the buildbot's.
   GPSP_COMMIT: 7b2dd37394e2822110cacef321e9bb291a305b77
-  # TGB Dual, for Game Boy and Game Boy Color: libretro/tgbdual-libretro at this commit, built
-  # from its own shipped source archive on the same terms as gpSP, because it is GPL-2.0-or-later
-  # too. It is here because it runs two Game Boys in one process on one thread with an emulated
-  # cable between them, and measured on an SP that costs 4.0 ms for a linked Game Boy pair and
-  # 2.0 ms for a linked Colour pair against a 16.743 ms frame, where SameBoy needs 14.5 and 22.4
-  # and so cannot carry Colour at all. See
-  # .superpowers/sdd/2026-09-16-game-boy-support/lighter-core-survey.md.
-  TGBDUAL_COMMIT: 0392c9c469e653205e471114c7949c07c83bfce9
 
 tasks:
   default:
@@ -84,39 +76,12 @@ tasks:
 
   core:
     desc: >-
-      Build mGBA and TGB Dual and fetch gpSP for this host. Every one of them is reachable per
-      game, so a host missing one silently runs the mock instead - a rainbow test pattern and a
-      sine tone, which reads as "that core is broken" rather than "that core is missing"
+      Build mGBA and fetch gpSP for this host. Both are reachable per game, so a host missing one
+      silently runs the mock instead - a rainbow test pattern and a sine tone, which reads as
+      "that core is broken" rather than "that core is missing"
     cmds:
       - task: core:mgba:host
       - task: core:gpsp:host
-      - task: core:tgbdual:host
-
-  core:tgbdual:host:
-    desc: Build tgbdual_libretro for this host from the pinned libretro/tgbdual-libretro commit
-    # Built rather than fetched, like mGBA's host core and unlike gpSP's: TGB Dual's own
-    # Makefile builds it in seconds and the buildbot's binary does not say which commit made it.
-    # No source archive alongside it, unlike core:tgbdual. That task ships its binary to a
-    # device, which is what makes GPL-2.0 section 3(a) apply; this one lands in vendor/, which
-    # is gitignored and never leaves the machine that built it.
-    vars:
-      TGBDUAL_HOST: vendor/tgbdual_libretro.dylib
-    status:
-      - test -f {{.TGBDUAL_HOST}}
-      - test "$(cat {{.TGBDUAL_HOST}}.meta 2>/dev/null)" = "$(sh cores/tgbdual/build.sh stamp {{.TGBDUAL_COMMIT}})"
-    cmds:
-      - |
-        set -euo pipefail
-        mkdir -p vendor target/tgbdual
-        # The same archive core:tgbdual builds from, fetched here too rather than shared, so a
-        # host build never depends on a device build having been run first.
-        if [ ! -f target/tgbdual/src.tar.gz ]; then
-          curl -fsSL -o target/tgbdual/src.tar.gz \
-            "https://github.com/libretro/tgbdual-libretro/archive/{{.TGBDUAL_COMMIT}}.tar.gz"
-        fi
-      - sh cores/tgbdual/build.sh build {{.TGBDUAL_COMMIT}} target/tgbdual/src.tar.gz target/tgbdual/work {{.TGBDUAL_HOST}}
-      - file {{.TGBDUAL_HOST}} | grep -q Mach-O
-      - 'echo "built {{.TGBDUAL_HOST}}"'
 
   core:mgba:host:
     desc: Build mgba_libretro for this host from the pinned libretro/mgba commit and cores/mgba's patches
@@ -292,54 +257,6 @@ tasks:
       - cp vendor/gpsp_libretro.so.meta vendor/gpsp-src.meta
       - 'echo "built vendor/gpsp_libretro.so from vendor/gpsp-src.tar.gz @ {{.GPSP_COMMIT}}"'
 
-  core:tgbdual:
-    desc: >-
-      Build the aarch64 linux TGB Dual core from its pinned source archive, which ships beside it
-      as its GPL-2.0 section 3(a) corresponding source
-    # Deliberately core:gpsp's shape and not core:device's, because TGB Dual carries the same
-    # obligation gpSP does: archive, sha, core and both .meta files are one set, made by one run
-    # and checked together, so a binary and the source shipped next to it can never drift apart.
-    status:
-      - test -f vendor/tgbdual_libretro.so
-      - test -f vendor/tgbdual-src.tar.gz
-      - test "$(cat vendor/tgbdual-src.sha 2>/dev/null)" = "{{.TGBDUAL_COMMIT}}"
-      - test "$(cat vendor/tgbdual_libretro.so.meta 2>/dev/null)" = "$(sh cores/tgbdual/build.sh stamp {{.TGBDUAL_COMMIT}})"
-      - test "$(cat vendor/tgbdual-src.meta 2>/dev/null)" = "$(sh cores/tgbdual/build.sh stamp {{.TGBDUAL_COMMIT}})"
-    cmds:
-      - |
-        set -euo pipefail
-        mkdir -p vendor
-        # Clear the whole set first, so a leftover from a run that was killed part way through
-        # can never be reused as if it belonged to what is built below.
-        rm -f vendor/tgbdual_libretro.so vendor/tgbdual_libretro.so.meta \
-              vendor/tgbdual-src.tar.gz vendor/tgbdual-src.sha vendor/tgbdual-src.meta
-        curl -fsSL -o vendor/tgbdual-src.tar.gz \
-          "https://github.com/libretro/tgbdual-libretro/archive/{{.TGBDUAL_COMMIT}}.tar.gz"
-        # A real TGB Dual checkout, not just a valid tarball. Note the top directory is named
-        # for the *repository*, tgbdual-libretro, not for the project: that is how GitHub names
-        # a source archive, and gpSP's line above gets away with the short form only because
-        # that repository happens to be called gpsp.
-        tar -tzf vendor/tgbdual-src.tar.gz | grep -q "^tgbdual-libretro-{{.TGBDUAL_COMMIT}}/Makefile$"
-      # Built from exactly that archive, in the box the device build uses, so the core links
-      # against the same glibc 2.31 as slot. cores/tgbdual/build.sh has the recipe and the flags.
-      - task: device:sh
-        vars:
-          CMD: >-
-            sh cores/tgbdual/build.sh build {{.TGBDUAL_COMMIT}} vendor/tgbdual-src.tar.gz
-            target-device/tgbdual vendor/tgbdual_libretro.so
-      - file vendor/tgbdual_libretro.so | grep -q aarch64
-      - echo "{{.TGBDUAL_COMMIT}}" > vendor/tgbdual-src.sha
-      - cp vendor/tgbdual_libretro.so.meta vendor/tgbdual-src.meta
-      - 'echo "built vendor/tgbdual_libretro.so from vendor/tgbdual-src.tar.gz @ {{.TGBDUAL_COMMIT}}"'
-
-  core:tgbdual:update:
-    desc: Refetch TGB Dual's source archive and rebuild the core from it, even if the set is current
-    cmds:
-      - >-
-        rm -f vendor/tgbdual_libretro.so vendor/tgbdual_libretro.so.meta vendor/tgbdual-src.tar.gz
-        vendor/tgbdual-src.sha vendor/tgbdual-src.meta
-      - task: core:tgbdual
-
   core:gpsp:update:
     desc: Refetch gpSP's source archive and rebuild the core from it, even if the set is current
     cmds:
@@ -411,7 +328,7 @@ tasks:
     # Both cores now ship: crates/slot/src/core.rs resolves the dylib from a cart's own
     # Core, so a card naming gpsp in System/selected_core.ini gets gpSP for real rather than
     # mGBA wearing its name.
-    deps: [core:device, core:gpsp, core:tgbdual, build:device]
+    deps: [core:device, core:gpsp, build:device]
     vars:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
@@ -430,10 +347,8 @@ tasks:
       # now, right before it ships, for both cores.
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64
-      - file vendor/tgbdual_libretro.so | grep -q aarch64
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
       - cp vendor/gpsp_libretro.so {{.OUT}}/System/
-      - cp vendor/tgbdual_libretro.so {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
       # GPL-2.0 section 3(a): gpSP's corresponding source travels with the binary. It lands
       # inside licenses/ itself, next to the license text that explains it, named for the
@@ -451,17 +366,6 @@ tasks:
         for p in cores/gpsp/*.patch; do
           cp "$p" "{{.OUT}}/System/licenses/gpsp-$(basename "$p")"
         done
-      # TGB Dual is GPL-2.0-or-later too, so its source ships on the same terms and by the same
-      # route. It has no patches today; the loop is here so adding one cannot be forgotten.
-      - |
-        set -euo pipefail
-        sha="$(cat vendor/tgbdual-src.sha)"
-        cp vendor/tgbdual-src.tar.gz "{{.OUT}}/System/licenses/tgbdual-${sha}.tar.gz"
-        cp vendor/tgbdual-src.meta "{{.OUT}}/System/licenses/tgbdual-${sha}.meta"
-        for p in cores/tgbdual/*.patch; do
-          [ -e "$p" ] || continue
-          cp "$p" "{{.OUT}}/System/licenses/tgbdual-$(basename "$p")"
-        done
       # MPL-2.0: mGBA ships patched, so what changed travels with it. Every patch
       # cores/mgba/build.sh applied lands here, prefixed `mgba-`, beside the .meta naming the
       # libretro/mgba commit they apply to, whose source is public there. The .meta is named for
@@ -478,7 +382,7 @@ tasks:
   deploy:device:
     desc: Build and push onto a device over adb, then restart it. SD defaults to /mnt/sdcard
     # See the note on dist:device: both cores are real now, so both are pushed.
-    deps: [core:device, core:gpsp, core:tgbdual, build:device]
+    deps: [core:device, core:gpsp, build:device]
     vars:
       SD: '{{.SD | default "/mnt/sdcard"}}'
     cmds:
@@ -488,14 +392,12 @@ tasks:
       # own `status` has started skipping them.
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64
-      - file vendor/tgbdual_libretro.so | grep -q aarch64
       # Onto the card the device is already running from, rather than a tree to copy by hand.
       # The binary is replaced under the running process, which is why the reboot below is
       # part of the task and not left to be remembered.
       - adb push target-device/device/slot '{{.SD}}/System/slot'
       - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
       - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
-      - adb push vendor/tgbdual_libretro.so '{{.SD}}/System/tgbdual_libretro.so'
       # Into System/, not onto System/licenses: adb copies a folder inside a destination that
       # already exists, so naming licenses itself nested a fresh copy inside the old one on
       # every deploy after the first and left the notice at the top of the card stale.
@@ -511,16 +413,6 @@ tasks:
         # Same as dist:device: gpSP ships patched, so its patches go with the archive.
         for p in cores/gpsp/*.patch; do
           adb push "$p" "{{.SD}}/System/licenses/gpsp-$(basename "$p")"
-        done
-      # Same as dist:device: TGB Dual's 3(a) source beside the binary it corresponds to.
-      - |
-        set -euo pipefail
-        sha="$(cat vendor/tgbdual-src.sha)"
-        adb push vendor/tgbdual-src.tar.gz "{{.SD}}/System/licenses/tgbdual-${sha}.tar.gz"
-        adb push vendor/tgbdual-src.meta "{{.SD}}/System/licenses/tgbdual-${sha}.meta"
-        for p in cores/tgbdual/*.patch; do
-          [ -e "$p" ] || continue
-          adb push "$p" "{{.SD}}/System/licenses/tgbdual-$(basename "$p")"
         done
       # Same as dist:device: mGBA's patches, and the .meta naming the commit they apply to.
       - |
