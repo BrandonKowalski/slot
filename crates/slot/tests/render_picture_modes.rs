@@ -151,11 +151,8 @@ fn run_for(f: &mut Frontend, input: &mut Script, secs: f32) {
 #[test]
 fn l_fills_the_panel_and_r_gives_back_the_centred_picture() {
     let _core = core_lock();
-    // The core this cart will actually be opened on, not a named one. Planting mgba here while
-    // the cart resolved to another core left nothing for the search to find, so `open_core` fell
-    // back to `MockCore` and this test measured its test pattern: a full-bleed gradient, which
-    // lights every margin the assertions below require to be dark, for a reason that has nothing
-    // to do with picture modes.
+    // The core this cart resolves to. Planting a named one that the cart does not use leaves
+    // nothing for the search to find, and `MockCore`'s test pattern lights every margin.
     let core = Core::default_for(Platform::Gb);
     let file = format!(
         "{}_libretro.{}",

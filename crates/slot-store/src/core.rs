@@ -79,17 +79,19 @@ impl Core {
 
     /// The core a cart of this platform gets when nothing on the card says otherwise.
     ///
-    /// Game Boy and Game Boy Color default to TGB Dual for one reason, and it is worth stating
-    /// because it is a trade: TGB Dual is the only core measured to hold 60 fps for a *linked*
-    /// Colour pair on an H700 (2.0 ms of a 16.743 ms frame, against SameBoy's 22.4 ms, which
-    /// does not fit at all). mGBA is the more accurate Game Boy and costs little more in single
-    /// player. The default is TGB Dual anyway, for both single and linked play, because a cart
-    /// that changed core when a link began would change which `States/<platform>/<core>/`
-    /// directory its saves live in, and strand them.
+    /// The default when the card says nothing, which is mGBA on all three: it carries the
+    /// emulated cable for each of them, so one link route covers the lot. Linked pairs measured
+    /// on an H700 against a 16.743 ms frame: Game Boy 3.802 ms, Colour 2.661 ms.
+    ///
+    /// Not the only core that ships. gpSP is what runs the wireless adapter carts, and a card
+    /// naming it for one of those gets it; see `read_selected_cores`.
+    ///
+    /// Game Boy was TGB Dual, chosen on cost alone. Its output was never compared against a
+    /// known-good core, and it cannot render `Tetris Chromatic` at all. mGBA also carries the SP
+    /// palette and colour correction, which TGB Dual has no options for.
     pub fn default_for(platform: Platform) -> Core {
         match platform {
-            Platform::Gba => Core::Mgba,
-            Platform::Gb | Platform::Gbc => Core::TgbDual,
+            Platform::Gba | Platform::Gb | Platform::Gbc => Core::Mgba,
         }
     }
 }

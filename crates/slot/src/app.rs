@@ -1859,16 +1859,9 @@ impl App {
             self.mute_toggle();
             return true;
         }
-        // TEMPORARY. See `Action::ColourCorrectionToggle`. Routed through `change_setting` rather
-        // than flipping the flag here so the shortcut and the row it stands in for cannot drift:
-        // one of them carrying the change to the running core and the other not is exactly the
-        // bug this shortcut exists to test for. Deliberately silent, because a toast would sit on
-        // top of the picture whose colours are the thing being judged.
+        // TEMPORARY. Through `change_setting` so the shortcut and the menu row cannot drift.
         if action == Action::ColourCorrectionToggle {
             self.change_setting(QuickRow::ColourCorrection, true);
-            // It does cover part of the picture, which is the cost of being able to tell "the
-            // toggle did nothing" from "it worked and the difference is subtle". The banner
-            // fades by itself, so the uncovered frame is a moment away either way.
             let said = match self.state.colour_correction {
                 true => Toast::ColourOn,
                 false => Toast::ColourOff,

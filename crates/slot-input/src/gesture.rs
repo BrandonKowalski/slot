@@ -64,14 +64,9 @@ pub enum Action {
     /// tap, which the quick menu already has.
     GameMenu,
     MuteToggle,
-    /// TEMPORARY, for judging colour correction on the device. SELECT+Y flips it from inside a
-    /// game, which is the only place the picture it changes can be looked at: the setting's own
-    /// row is on the carousel, and the game is not on screen there, so there was no way to A/B
-    /// it at all. Y is what this is bound to because Y never reaches the core, so unlike every
-    /// other chord in this file it takes nothing away from the game underneath.
-    ///
-    /// Delete this variant, its entry in `chord`, and the branch in `App::adjust` together once
-    /// the setting has been judged. Nothing else depends on it.
+    /// TEMPORARY. SELECT+Y, for judging colour correction in a game, where the settings row
+    /// cannot reach. Y never reaches the core, so the chord costs the game nothing. Remove with
+    /// its `chord` entry and the branch in `App::adjust`.
     ColourCorrectionToggle,
     /// The press itself. Nothing visible hangs off it — it exists so the save state is
     /// flushed before a hold can reach the PMIC's own cutoff, which takes the rails away

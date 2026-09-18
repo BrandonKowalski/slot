@@ -30,11 +30,8 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 /// as well would be the same fact told twice. So the list is held by name, because the way a
 /// line like that comes back is one variant at a time.
 ///
-/// The last two are TEMPORARY and go with `Action::ColourCorrectionToggle`. They are admitted
-/// under the rule rather than as an exception to it: each answers the chord the player just
-/// pressed, and the state is in the string only because that is the thing the press changed.
-/// They are not a description of what is on screen, which is the case they would fail. Delete
-/// them here and in `toast.rs` together with the shortcut.
+/// The last two are TEMPORARY, with `Action::ColourCorrectionToggle`: each answers the chord just
+/// pressed, so they hold to the rule rather than sitting outside it.
 #[test]
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     assert_eq!(

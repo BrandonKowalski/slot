@@ -25,12 +25,8 @@ pub enum Toast {
     /// `LinkEnded`, and a separate sentence because which device ended it is the one thing the
     /// player on this one cannot see.
     PeerEnded,
-    /// TEMPORARY, with `Action::ColourCorrectionToggle`. The shortcut is silent by default
-    /// because a banner sits on top of the picture whose colours are the thing being judged,
-    /// but without one there is no way to tell "the toggle did nothing" from "the toggle worked
-    /// and the difference is too small to see", and those want opposite next steps. Two lines
-    /// rather than one because a face is rasterised per variant, so the state has to be in the
-    /// string. Delete both with the shortcut.
+    /// TEMPORARY, with `Action::ColourCorrectionToggle`. Two variants because a face is
+    /// rasterised per variant, so the state has to be in the string.
     ColourOn,
     ColourOff,
 }

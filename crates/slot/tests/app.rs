@@ -2422,14 +2422,8 @@ fn run(s: &mut Session, from: u64, frames: u64) -> u64 {
     now
 }
 
-/// TEMPORARY, alongside `Action::ColourCorrectionToggle`. Delete this test with it.
-///
-/// Why the shortcut exists, stated as a test: the setting's own row is a shelf affordance, and
-/// `the_quick_menu_opens_from_the_shelf_and_nowhere_else` is the rule that makes it one. So the
-/// picture the setting changes could never be looked at while it changed, which is the one thing
-/// that can judge it. This is the half that matters — with a cart seated, the toggle both flips
-/// the setting and queues it for the core already running, rather than leaving it for the next
-/// insert, which from inside a game never comes.
+/// TEMPORARY, with `Action::ColourCorrectionToggle`. With a cart seated, the toggle flips the
+/// setting and queues it for the running core rather than the next insert.
 #[test]
 fn the_colour_shortcut_reaches_the_core_already_running() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
@@ -2453,13 +2447,8 @@ fn the_colour_shortcut_reaches_the_core_already_running() {
     );
 }
 
-/// TEMPORARY, alongside `Action::ColourCorrectionToggle`. Delete this test with it.
-///
-/// The banner has to name the state the press arrived at, not the one it left. Getting that
-/// backwards is the one failure the banner cannot survive: it exists so "nothing happened" can
-/// be told from "it worked and the difference is subtle", and a banner that lies about which way
-/// it went answers that question wrongly rather than not at all. Both directions, because an
-/// off-by-one here reads correct in whichever single direction it was tried in.
+/// TEMPORARY, with `Action::ColourCorrectionToggle`. The banner names the state arrived at, not
+/// the one left. Both directions, since an inversion reads correct in either one alone.
 #[test]
 fn the_colour_shortcut_names_the_state_it_arrived_at() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);

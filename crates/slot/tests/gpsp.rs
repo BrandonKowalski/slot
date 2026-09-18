@@ -788,19 +788,21 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
 /// `System/selected_core.ini` is a text file a person edits on a card, and nothing in it stops a
 /// line naming gpSP for a Game Boy cart. gpSP does not run Game Boy games at all: it would refuse
 /// the ROM outright or paint garbage, so a line naming it for a Game Boy cart is dropped and that
-/// cart runs on its platform's default, which is TGB Dual. The ini keeps every bit of its meaning
+/// cart runs on its platform's default, which is asked for rather than named so this stays about
+/// the dropped line when the default moves. The ini keeps every bit of its meaning
 /// for a line naming a core that really does run the platform, which is what
 /// `a_game_boy_cart_can_ask_for_mgba_by_hand` over in slot-store covers.
 ///
 /// Driven through the real `Session`, because `spawn_core` is the one place a cart's core is
 /// resolved, and read back through the directory that one resolution also names. The seeded
 /// counter is 700_000, which is further than the mock could ever count to on its own, and it has
-/// to come back **moved**: only a run that read `States/GB/tgbdual/` and then wrote back to it can
+/// to come back **moved**: only a run that read `States/GB/<default>/` and then wrote back to it can
 /// produce that, so one number pins both halves. A run that had honoured the ini would have left
 /// that file exactly as seeded and filed its own state under `States/GB/gpsp/` instead, which is
 /// what the second assertion refuses.
 #[test]
-fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_tgb_dual() {
+fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_the_platform_default() {
+    let default = Core::default_for(Platform::Gb);
     use slot::app::Phase;
     use slot::persist;
     use slot::session::Session;
@@ -810,7 +812,7 @@ fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_tgb_dual() {
 
     let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
     std::fs::write(d.path().join(SELECTED_CORE_FILE), "Tetris = gpsp\n").unwrap();
-    StateRing::new(d.path(), Platform::Gb, Core::TgbDual, "Tetris")
+    StateRing::new(d.path(), Platform::Gb, default, "Tetris")
         .write_resume(&700_000u64.to_le_bytes())
         .unwrap();
 
@@ -841,7 +843,7 @@ fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_tgb_dual() {
     // nothing: that is equally what a run resuming from somewhere else leaves behind.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if counter(Core::TgbDual).is_some_and(|n| n > 700_000) {
+        if counter(default).is_some_and(|n| n > 700_000) {
             break;
         }
         assert!(

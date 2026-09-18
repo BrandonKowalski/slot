@@ -21,11 +21,8 @@ use slot::session::Session;
 use slot_input::{Btn, RawEvent};
 use slot_store::{core_for_platform, Core, Platform, StateRing};
 
-/// The core the session would actually open a Game Boy cart on, asked the same way `session.rs`
-/// asks it. Naming a core here instead makes both assertions below vacuous the day a platform's
-/// default moves: the state lands under the core the session used, so a path built from any
-/// other core is one nothing ever writes, and "it is not in the GBA folder" stops meaning
-/// anything. This is the platform's test, not the core's; `gpsp.rs` is where the core is pinned.
+/// The core the session opens a Game Boy cart on. Named rather than hardcoded so these stay
+/// about the platform folder when the default moves; `gpsp.rs` pins the core.
 fn seated_core(root: &Path, stem: &str) -> Core {
     core_for_platform(root, stem, Platform::Gb)
 }
