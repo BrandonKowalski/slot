@@ -526,6 +526,9 @@ pub struct App {
     /// `core::apply_core_options` puts them, and a row that only did that would appear to do
     /// nothing until the cart was next inserted.
     colour_pending: Option<bool>,
+    /// Which port this device drives once a cable session is loaded for, and `None` whenever the
+    /// seated core is not being opened for one. Read by `Session::spawn_core`.
+    link_player: Option<u8>,
     /// The seated cart's `Platform`, resolved and stored the same way and in the same breath as
     /// `core` — see `set_platform`. Saves and states are filed under it, so a `.gb` and a `.gba`
     /// cart sharing a stem never share a save or a ring either.
@@ -696,6 +699,7 @@ impl App {
             snapshot: None,
             core: Core::default(),
             colour_pending: None,
+            link_player: None,
             platform: Platform::default(),
             named_core: false,
             video_mode: VideoMode::default(),
@@ -1289,6 +1293,9 @@ impl App {
     /// call site today.
     pub fn end_link(&mut self) {
         self.link = None;
+        // The core is still in link mode until it is opened again, but nothing is being loaded
+        // for a session any more, so the next cart in does not inherit one.
+        self.link_player = None;
         self.sync_link_badge();
         // `down` ends the session's own network and, on a BaseOS that has it, cools on the
         // way out; the `cool` behind it is for the one that does not, and costs nothing
@@ -1508,6 +1515,12 @@ impl App {
 
     /// A colour correction change to carry to the running core, once. `Session::update` drains
     /// it and decides from the seated core whether there is an option to send at all.
+    /// The port a cable session is being loaded for. Not `take`n: a reload re-reads it, and it
+    /// stays set for as long as the session does.
+    pub fn link_player(&self) -> Option<u8> {
+        self.link_player
+    }
+
     pub fn take_colour_correction(&mut self) -> Option<bool> {
         self.colour_pending.take()
     }
@@ -3416,6 +3429,25 @@ impl App {
         // When slot's mGBA lockstep route lands this becomes the place a Game Boy cart's own link
         // is offered from — mGBA runs the cart and would be running both ends of it — and until
         // then "no link support" is the whole truth.
+        // The core's route first, which is the inversion the long note below already asks for.
+        // mGBA links by running both machines in step rather than by speaking a game's protocol,
+        // so it carries every cart on every platform and `link_carried` is not its question.
+        if self.core == Core::Mgba {
+            // mGBA emulates the cable and nothing else. A cart that talks to the Wireless
+            // Adapter has no cable to be linked by, so gpSP stays the only core that carries
+            // one and the banner still has something true to say.
+            let wireless = self
+                .seated()
+                .is_some_and(|stem| self.link_mode(stem).0 == LinkKind::Wireless);
+            if wireless {
+                self.hud.toast(Toast::NeedsGpsp, self.now());
+                return;
+            }
+            self.link_hardware = LinkKind::Cable;
+            self.radio.ask(RadioJob::Warm);
+            self.game_menu = Some(GameMenu::Pick(self.last_role));
+            return;
+        }
         if self.platform != Platform::Gba {
             self.hud.toast(Toast::NoLink, self.now());
             return;
@@ -3643,9 +3675,41 @@ impl App {
         let Some(stem) = self.seated().map(str::to_string) else {
             return;
         };
-        let (_, serial) = self.link_mode(&stem);
         // A core nobody reported was loaded on `auto`.
         let loaded = self.link_loaded.unwrap_or("auto");
+        // The in-core cable. mGBA reads `mgba_link` only while a game loads, exactly as gpSP
+        // reads its serial mode, so a core not already in link mode for this port is loaded
+        // again first and the handshake waits for that. There is no mode to switch between
+        // here, so `from` is what is loaded rather than the other of two.
+        if self.core == Core::Mgba {
+            let player = role.client_id() as u8;
+            if self.link_player == Some(player) {
+                return self.start_link(
+                    LinkStarter::spawn(role.role(), link_port()),
+                    role.client_id(),
+                );
+            }
+            if self.snapshot.as_ref().is_some_and(|s| !s.resume_trusted()) {
+                return self.refuse();
+            }
+            self.link_player = Some(player);
+            self.link_reload = Some((stem.clone(), loaded));
+            self.reload = Some(Reload {
+                stem,
+                role,
+                cancelled: false,
+                from: self.link_hardware,
+                from_serial: loaded,
+                fallback: false,
+            });
+            self.game_menu = Some(GameMenu::Working {
+                role,
+                step: LinkStep::Radio,
+                since: self.now(),
+            });
+            return;
+        }
+        let (_, serial) = self.link_mode(&stem);
         if serial == loaded {
             return self.start_link(
                 LinkStarter::spawn(role.role(), link_port()),

@@ -102,19 +102,21 @@ fn select_and_menu_open_the_link_screen_on_host() {
     assert!(matches!(app.phase(), Phase::Playing { .. }));
 }
 
-/// mGBA cannot link, so the screen stays shut, and the banner says what would open it.
+/// mGBA links by running both machines in step, so the screen opens on its own cable rather
+/// than sending the player to another core.
 #[test]
-fn the_link_screen_does_not_open_under_mgba_and_says_to_switch() {
+fn the_link_screen_opens_under_mgba_on_its_own_cable() {
     let (mut app, _d) = playing_on(Core::Mgba);
     app.apply(Action::GameMenu);
-    assert!(
-        !app.game_menu_open(),
-        "an mGBA cart was offered a link it cannot make"
+    assert_eq!(
+        app.game_menu(),
+        Some(GameMenu::Pick(LinkRow::Host)),
+        "mGBA did not offer the link it carries"
     );
     assert_eq!(
         app.toast(),
-        Some(slot_ui::Toast::NeedsGpsp),
-        "the press did nothing and said nothing"
+        None,
+        "it opened the screen and banished it too"
     );
 }
 
@@ -1742,36 +1744,38 @@ fn a_cart_gpsp_carries_still_opens_the_link_screen() {
 /// a refusal they could not reach from here. The cart's own answer is the one that survives a
 /// switch, so it is the one the banner gives.
 #[test]
-fn a_cart_nothing_can_link_is_refused_whatever_core_is_selected() {
-    for core in [Core::Mgba, Core::Gpsp] {
+fn a_cart_gpsp_cannot_link_is_refused_on_gpsp_and_carried_by_mgbas_cable() {
+    let refused = |core, open: bool| {
         let d = common::tmp_root_with_carts(&["Apotris", "Zzz"]);
         common::write_retail_header(&d, "Apotris", "APOTRIS", "2ATE");
         let mut app = seated_on(&d, core);
         app.apply(Action::GameMenu);
-        assert!(
-            !app.game_menu_open(),
-            "{core:?} offered a link screen for a cart nothing can link"
-        );
         assert_eq!(
-            app.toast(),
-            Some(Toast::NoLink),
-            "{core:?} answered a cart nothing can link with the wrong banner"
+            app.game_menu_open(),
+            open,
+            "{core:?} answered Apotris with the wrong screen"
         );
-    }
+        app.toast()
+    };
+    // gpSP speaks named protocols and has none for this cart, so there is nothing to reach.
+    assert_eq!(refused(Core::Gpsp, false), Some(Toast::NoLink));
+    // mGBA does not speak the game's protocol at all; it runs both machines in step, which
+    // carries every cart, Apotris included.
+    assert_eq!(refused(Core::Mgba, true), None);
 }
 
 /// The other half of the order, and the half that keeps "switch to gpSP" worth saying: a cart
 /// gpSP really can link, sitting on mGBA, is still told which core would carry it. Without this
 /// the refusal above passes just as well with `Toast::NeedsGpsp` deleted outright.
 #[test]
-fn a_cart_gpsp_can_link_still_says_to_switch_to_it() {
+fn a_wireless_adapter_cart_on_mgba_still_says_to_switch_to_gpsp() {
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
-    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
+    common::write_retail_header(&d, "Emerald", "POKEMON EMER", "BPEE");
     let mut app = seated_on(&d, Core::Mgba);
     app.apply(Action::GameMenu);
     assert!(
         !app.game_menu_open(),
-        "mGBA opened a link screen it has no netpacket interface for"
+        "mGBA offered a cable to a cart that talks to the Wireless Adapter"
     );
     assert_eq!(
         app.toast(),
@@ -1791,20 +1795,24 @@ fn a_cart_gpsp_can_link_still_says_to_switch_to_it() {
 /// Both cores, because neither is an excuse. The platform check sits ahead of the core check, so
 /// a device somehow sitting on gpSP with a Game Boy cart is refused the screen just the same.
 #[test]
-fn the_link_shortcut_on_a_game_boy_cart_says_no_link_support() {
-    for core in [Core::Mgba, Core::Gpsp] {
+fn a_game_boy_cart_links_on_mgba_and_is_refused_on_gpsp() {
+    for (core, open) in [(Core::Mgba, true), (Core::Gpsp, false)] {
         let d = common::tmp_root_with_gb_carts(&["Pokemon Red", "Zzz"]);
         let mut app = seated_on_platform(&d, core, Platform::Gb);
         app.apply(Action::GameMenu);
-        assert!(
-            !app.game_menu_open(),
-            "{core:?} offered a Game Boy cart a link screen"
+        assert_eq!(
+            app.game_menu_open(),
+            open,
+            "{core:?} answered a Game Boy cart with the wrong screen"
         );
         assert_ne!(
             app.toast(),
             Some(Toast::NeedsGpsp),
             "{core:?} told a Game Boy cart to switch to gpSP, which cannot run it at all"
         );
+        if open {
+            continue;
+        }
         assert_eq!(
             app.toast(),
             Some(Toast::NoLink),

@@ -522,7 +522,8 @@ fn banner_ink(t: Toast) -> usize {
 /// GPSP would send them to a core that cannot carry this cart either.
 #[test]
 fn a_cart_nothing_can_link_reads_no_link_support_on_the_glass() {
-    let px = banner_pixels(Core::Mgba, "APOTRIS", "2ATE", "banner-apotris-mgba");
+    // gpSP, not mGBA: mGBA's cable carries Apotris, so gpSP is where the refusal lives now.
+    let px = banner_pixels(Core::Gpsp, "APOTRIS", "2ATE", "banner-apotris-gpsp");
     assert!(
         ink(&px) > 0,
         "the refusal put no banner on the frame at all"
@@ -550,7 +551,8 @@ fn a_cart_nothing_can_link_reads_no_link_support_on_the_glass() {
 /// the sentence that names the core which would link it.
 #[test]
 fn a_cart_gpsp_can_link_reads_please_switch_to_gpsp() {
-    let px = banner_pixels(Core::Mgba, "POKEMON RUBY", "AXVE", "banner-ruby-mgba");
+    // A Wireless Adapter cart, which is the one thing mGBA's cable cannot carry.
+    let px = banner_pixels(Core::Mgba, "POKEMON EMER", "BPEE", "banner-emerald-mgba");
     assert!(
         ink(&px) > 0,
         "the refusal put no banner on the frame at all"

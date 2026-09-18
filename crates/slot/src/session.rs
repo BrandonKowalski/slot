@@ -299,7 +299,13 @@ impl Session {
         // a frame the game is running again.
         if let Some((client_id, transport)) = self.app.take_link_transport() {
             match &self.emu {
-                Some(emu) => emu.begin_link(client_id, transport),
+                // Which route carries it is decided by whether a port was loaded for: the cable
+                // is the only one that opens the core in link mode, so `link_player` is the one
+                // thing that can tell the two apart by the time the wire arrives.
+                Some(emu) => match self.app.link_player() {
+                    Some(player) => emu.begin_cable(player, transport),
+                    None => emu.begin_link(client_id, transport),
+                },
                 // No core to carry it. Dropping the transport closes the socket, which is
                 // the only honest thing to do with a session that has nowhere to run.
                 None => eprintln!("slot: link: a transport arrived with no core to run it"),
@@ -629,7 +635,13 @@ impl Session {
         // all. The quick menu that sets it is only ever open on the shelf, with the core already
         // dropped, so the cart going in now is always the first to see a change made there — the
         // same way `sync_speed` picks up the fast forward settings.
-        let opened = open_core(&self.root, core, serial, self.app.colour_correction());
+        let opened = open_core(
+            &self.root,
+            core,
+            serial,
+            self.app.colour_correction(),
+            self.app.link_player(),
+        );
         // Whether the emulator about to run is the one the state directory is named after.
         // Only this line knows: everything downstream sees a `Box<dyn RetroCore>` that looks
         // the same either way. `App` needs it because it is about to be told whether the core

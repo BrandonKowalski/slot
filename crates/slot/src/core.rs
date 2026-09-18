@@ -80,9 +80,9 @@ pub struct Opened {
 /// state" from "there was no real core to ask": the mock refuses everything, so without it a
 /// missing dylib looks exactly like a state the core rejected — and retiring a save on that
 /// evidence would lose it to a file that simply was not there.
-pub fn open_core(root: &Path, core: Core, serial: &str, colour: bool) -> Opened {
+pub fn open_core(root: &Path, core: Core, serial: &str, colour: bool, link: Option<u8>) -> Opened {
     let paths = candidates(root, core);
-    match open_named(root, core, serial, colour, &paths) {
+    match open_named(root, core, serial, colour, link, &paths) {
         Some(core) => Opened { core, named: true },
         None => {
             report_missing(core, &paths);
@@ -115,7 +115,7 @@ pub fn open_core_for(
     colour: bool,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
-    open_named(root, core, serial, colour, paths).unwrap_or_else(|| {
+    open_named(root, core, serial, colour, None, paths).unwrap_or_else(|| {
         report_missing(core, paths);
         Box::new(MockCore::new())
     })
@@ -130,6 +130,7 @@ fn open_named(
     core: Core,
     serial: &str,
     colour: bool,
+    link: Option<u8>,
     paths: &[PathBuf],
 ) -> Option<Box<dyn RetroCore>> {
     let bios = root::bios_dir(root);
@@ -141,6 +142,12 @@ fn open_named(
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
                 apply_core_options(&mut opened, core, serial, root::has_real_bios(root), colour);
+                // Only while a cable session is being loaded for. mGBA reads these during
+                // `retro_load_game` and never again, so a core already running cannot be put
+                // into link mode; `Session::reload_for_link` is what re-opens it.
+                if let Some(player) = link {
+                    apply_link_options(&mut opened, core, player);
+                }
                 eprintln!("slot: core {}", path.display());
                 return Some(Box::new(opened));
             }
@@ -236,6 +243,16 @@ pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static st
 /// `colour` is the quick menu's Colour Correction, and unlike everything else here it is set on
 /// both cores, because both of them have the option — which is worth stating outright, since it
 /// was assumed for a while that only mGBA did. Each spells it its own way; see below.
+/// The in-core cable, on a core that has one. mGBA runs both consoles itself and `mgba_link_player`
+/// says which of them this device drives; every other core has no such mode and is left alone.
+pub fn apply_link_options(core: &mut LibretroCore, which: Core, player: u8) {
+    if which != Core::Mgba {
+        return;
+    }
+    core.set_option("mgba_link", "on");
+    core.set_option("mgba_link_player", &player.to_string());
+}
+
 pub fn apply_core_options(
     core: &mut LibretroCore,
     which: Core,
