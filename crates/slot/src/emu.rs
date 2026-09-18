@@ -629,6 +629,7 @@ impl Worker {
         let mut cable_stalls = 0u32;
         let mut cable_said = Instant::now();
         let mut cable_core = Duration::ZERO;
+        let mut cable_wait = Duration::ZERO;
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
@@ -798,6 +799,7 @@ impl Worker {
                             // outright while both devices sat well inside their own budget.
                             // Bounded by what is left of the present, so a peer that really has
                             // gone still stalls rather than holding the frame open.
+                            let waited = Instant::now();
                             let ready = loop {
                                 if let Some(pair) = c.ready() {
                                     break Some(pair);
@@ -812,6 +814,7 @@ impl Worker {
                                 }
                                 std::thread::sleep(Duration::from_micros(250));
                             };
+                            cable_wait += waited.elapsed();
                             match ready {
                                 Some((p0, p1)) => {
                                     core.run_frame_linked(p0, p1);
@@ -851,16 +854,18 @@ impl Worker {
                     if cable_said.elapsed() >= Duration::from_secs(5) {
                         let secs = cable_said.elapsed().as_secs_f32();
                         eprintln!(
-                            "slot: cable: {} presents, {} stalled, {:.1} fps, {:.1} ms core of {:.1} ms present",
+                            "slot: cable: {} presents, {} stalled, {:.1} fps, {:.1} ms core ({:.1} ms waiting) of {:.1} ms present",
                             cable_presents,
                             cable_stalls,
                             (cable_presents - cable_stalls) as f32 / secs,
                             cable_core.as_secs_f32() * 1000.0 / cable_presents as f32,
+                            cable_wait.as_secs_f32() * 1000.0 / cable_presents as f32,
                             secs * 1000.0 / cable_presents as f32,
                         );
                         cable_presents = 0;
                         cable_stalls = 0;
                         cable_core = Duration::ZERO;
+                        cable_wait = Duration::ZERO;
                         cable_said = Instant::now();
                     }
                 }

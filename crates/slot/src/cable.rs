@@ -15,9 +15,16 @@ use std::collections::BTreeMap;
 
 use slot_retro::ButtonMask;
 
-/// Frames between sampling a mask and running it. Two at 60 Hz is about 33 ms of wire, against a
-/// link measured at about 2 ms, so it absorbs a stalled present rather than only a slow packet.
-pub const DELAY: u64 = 2;
+/// Frames between sampling a mask and running it.
+///
+/// Three, not two, and the reason is phase rather than latency. Two devices holding 60 fps are
+/// tightly coupled, and their presents do not start at the same moment: an offset of a few ms
+/// means each spends that long every frame waiting for the other. Measured on hardware at two,
+/// the wait was about 6 ms of a 16.7 ms present, which left too little room for jitter and showed
+/// as bursts of 10 to 14 stalls in a 5 s window with the audio chopping through them.
+///
+/// Three buys 50 ms of slack against about 2 ms of wire. The cost is one frame of input lag.
+pub const DELAY: u64 = 3;
 
 /// One player's buttons for one frame: kind, frame index, mask, little endian.
 const PACKET: usize = 11;
