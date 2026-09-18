@@ -1,6 +1,7 @@
 pub mod app;
 pub mod audio;
 pub mod build_info;
+pub mod cable;
 pub mod core;
 pub mod core_picker;
 pub mod drc;
