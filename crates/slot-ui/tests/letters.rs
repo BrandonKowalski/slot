@@ -9,12 +9,26 @@ use slot_store::{initial, sort_key};
 #[test]
 fn titles_file_digits_first_then_a_to_z_whatever_their_case() {
     let mut names = vec![
-        "Zebra", "apple", "3D Pinball", "Metroid", "1943", "banana", "Apotris",
+        "Zebra",
+        "apple",
+        "3D Pinball",
+        "Metroid",
+        "1943",
+        "banana",
+        "Apotris",
     ];
     names.sort_by_key(|n| sort_key(n));
     assert_eq!(
         names,
-        vec!["1943", "3D Pinball", "Apotris", "apple", "banana", "Metroid", "Zebra"]
+        vec![
+            "1943",
+            "3D Pinball",
+            "Apotris",
+            "apple",
+            "banana",
+            "Metroid",
+            "Zebra"
+        ]
     );
 }
 
@@ -60,7 +74,13 @@ fn shelf_of(names: &[&str]) -> Shelf {
 }
 
 const ROW: [&str; 7] = [
-    "1943", "Apotris", "Advance Wars", "Metroid", "Mario Kart", "Zelda", "Zzz",
+    "1943",
+    "Apotris",
+    "Advance Wars",
+    "Metroid",
+    "Mario Kart",
+    "Zelda",
+    "Zzz",
 ];
 
 /// Down lands on the first cart of the next letter, not the next cart.
@@ -95,11 +115,17 @@ fn the_letters_wrap_at_both_ends() {
     let mut s = shelf_of(&ROW);
     s.select(5); // Zelda, the last letter
     s.jump_next_letter();
-    assert_eq!(s.carts[s.index].stem, "1943", "the end did not loop forward");
+    assert_eq!(
+        s.carts[s.index].stem, "1943",
+        "the end did not loop forward"
+    );
 
     s.select(0); // the digit stop, the first
     s.jump_prev_letter();
-    assert_eq!(s.carts[s.index].stem, "Zelda", "the start did not loop back");
+    assert_eq!(
+        s.carts[s.index].stem, "Zelda",
+        "the start did not loop back"
+    );
 }
 
 /// And it travels the way the press asked rather than the short way round, or the row would be
@@ -129,7 +155,10 @@ fn a_wrap_travels_the_way_the_press_asked() {
 fn a_row_of_one_letter_stays_put() {
     let mut s = shelf_of(&["Metroid", "Mario Kart"]);
     s.jump_next_letter();
-    assert_eq!(s.carts[s.index].stem, "Metroid", "it moved within one letter");
+    assert_eq!(
+        s.carts[s.index].stem, "Metroid",
+        "it moved within one letter"
+    );
     s.jump_prev_letter();
     assert_eq!(s.carts[s.index].stem, "Metroid");
 }

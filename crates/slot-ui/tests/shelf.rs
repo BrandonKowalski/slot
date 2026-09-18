@@ -1,8 +1,8 @@
 use slot_power::{Battery, Charge};
 use slot_store::{Cart, Platform};
 use slot_ui::{
-    draw_footer, label_colour, mark_at, mark_box, rest_y, Draw, GbShell, Printed, Shelf, TexId,
-    CART_W, GB_CART_H, OUT_W, PLATE_H,
+    draw_footer, label_colour, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W, GB_CART_H,
+    OUT_W,
 };
 
 fn shelf_with(n: usize) -> Shelf {
@@ -576,12 +576,17 @@ fn the_other_direction_letting_go_does_not_stop_the_repeat() {
 /// end for anything.
 ///
 /// Charging, with a bolt supplied, because the gauge's own leftmost piece is the bolt's reserved
-/// slot and only a charging device fills it — which is what would otherwise make this reading
+/// slot and only a charging device fills it, which is what would otherwise make this reading
 /// about the capsule rather than about the margin.
+///
+/// The gauge was at the left margin and is at the right one now, with the shelf's name having
+/// taken the left. What is held is the same thing either way: it ends on the case margin, not a
+/// pixel inside it, and the piece that lands there is the percent rather than the capsule.
 #[test]
-fn the_gauge_starts_at_the_case_margin() {
+fn the_gauge_ends_at_the_case_margin() {
     let mut out = Vec::new();
     draw_footer(
+        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Charging,
@@ -591,69 +596,78 @@ fn the_gauge_starts_at_the_case_margin() {
         Printed { face: None, w: 40 },
         &mut out,
     );
-    let leftmost = out
+    let rightmost = out
         .iter()
         .map(|d| match *d {
-            Draw::Rect { x, .. } | Draw::Tex { x, .. } => x,
-            _ => f32::MAX,
+            Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => x + w,
+            _ => 0.0,
         })
-        .fold(f32::MAX, f32::min);
-    assert_eq!(leftmost, 24.0, "the case margin is the case margin");
+        .fold(0.0, f32::max);
+    assert_eq!(
+        rightmost,
+        OUT_W as f32 - 24.0,
+        "the case margin is the case margin"
+    );
+    // What lands on the margin is the percent, the gauge's own last piece, rather than the
+    // capsule or the clock. `draw_gauge`'s suite holds the order inside the gauge; this holds
+    // only that the whole of it finishes on the case margin.
+    let ends_on_margin = out.iter().any(|d| match *d {
+        Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => {
+            (x + w - (OUT_W as f32 - 24.0)).abs() < 0.01
+        }
+        _ => false,
+    });
     assert!(
-        out.contains(&Draw::Tex {
-            x: 24.0,
-            y: 444.0,
-            w: 14.0,
-            h: 14.0,
-            tex: TexId::from_raw(1),
-            alpha: 1.0,
-        }),
-        "the thing at the margin is not the bolt's own slot: {out:?}"
+        ends_on_margin,
+        "nothing finishes on the case margin: {out:?}"
     );
 }
 
-/// And the mark it lost is somewhere else entirely: the top right corner, held off both edges by
-/// the case's own margin — the one the gauge and the clock are printed at, and the one this file
-/// asserts above. Read from `mark_box` and `mark_at` together rather than from four numbers, so
-/// moving either moves this with it.
+/// The band's two ends, which is the whole of the space it has: the cart slot's bay, opening and
+/// thumb scoop run through its middle, so nothing may be printed between them.
 ///
-/// The right edge is what is really held here. A mark and the clock are at the same end of the
-/// screen with nothing between them, and the mark spent a release inset half as far as the clock
-/// was, which is what "tucked into the corner" turned out to mean. The halo is the one pixel of
-/// slack: a mark's box carries a transparent ring that the clock's type does not.
-///
-/// The plate is deliberately not part of this any more. A mark is drawn on the carousel, where
-/// the HUD's plate is usually not on screen at all, and it is now taller than the plate is deep
-/// — so a rule that fitted it inside 40 px would be a rule that capped the drawing at a size the
-/// device has twice said is too small. What is held instead is that it clears the plate's depth,
-/// which is the geometry the layout now depends on: if a mark ever fits inside the plate again,
-/// the reasoning in `mark_at` and in `badge_at` about why the two came apart is stale.
+/// The shelf's name takes the left margin, and the charge takes the right one with the clock
+/// inboard of it. Read out of `draw_footer`'s own output rather than typed as coordinates, so
+/// moving either end moves this with it.
 #[test]
-fn a_mark_is_held_off_the_screen_edges_by_the_case_margin() {
-    // Every shelf, because the marks are no longer one size: the wide Advance mark reaches
-    // further in than the two upright ones, and it is the right edge they have to share.
-    for platform in [Platform::Gba, Platform::Gb, Platform::Gbc] {
-        let (w, h) = mark_box(platform);
-        let (x, y) = mark_at(w as f32);
-        assert_eq!(
-            x + w as f32,
-            OUT_W as f32 - 24.0,
-            "{platform:?}: the mark's right edge is not on the case margin the clock is printed at"
-        );
-        assert_eq!(
-            y, 16.0,
-            "{platform:?}: the mark is not held off the top of the screen"
+fn the_band_prints_its_name_at_one_margin_and_the_charge_at_the_other() {
+    let mut out = Vec::new();
+    draw_footer(
+        Printed { face: None, w: 160 },
+        Some(Battery {
+            percent: 68,
+            charge: Charge::Charging,
+        }),
+        Printed { face: None, w: 30 },
+        Some(TexId::from_raw(1)),
+        Printed { face: None, w: 40 },
+        &mut out,
+    );
+    let xs: Vec<(f32, f32)> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => Some((x, x + w)),
+            _ => None,
+        })
+        .collect();
+    let leftmost = xs.iter().map(|(a, _)| *a).fold(f32::MAX, f32::min);
+    let rightmost = xs.iter().map(|(_, b)| *b).fold(0.0, f32::max);
+    assert_eq!(
+        leftmost, 24.0,
+        "the shelf's name does not start at the case margin"
+    );
+    assert_eq!(
+        rightmost,
+        OUT_W as f32 - 24.0,
+        "the charge does not end at the case margin"
+    );
+    // And nothing at all is printed across the bay.
+    for (a, b) in &xs {
+        assert!(
+            *b <= 224.0 || *a >= 496.0,
+            "something is printed from {a} to {b}, across the cart bay at 224..496"
         );
     }
-    // The upright marks are the tall ones, so they are what has to still stand clear of the
-    // plate. The wide Advance mark is shorter and would pass a weaker test than this one.
-    let (w, h) = mark_box(Platform::Gb);
-    let (_, y) = mark_at(w as f32);
-    assert!(
-        y + h as f32 > PLATE_H,
-        "a {w}x{h} mark at {y} fits inside the {PLATE_H} px plate again, which is not what \
-         `mark_at` and `badge_at` say about each other"
-    );
 }
 
 /// `draw_gauge`'s own suite proves the capsule holds still in isolation; `the_gauge_starts_at_
@@ -665,6 +679,7 @@ fn a_mark_is_held_off_the_screen_edges_by_the_case_margin() {
 fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     let mut idle = Vec::new();
     draw_footer(
+        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Discharging,
@@ -676,6 +691,7 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     );
     let mut charging = Vec::new();
     draw_footer(
+        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Charging,
@@ -699,6 +715,7 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
 fn the_clock_stays_at_the_right_margin() {
     let mut out = Vec::new();
     draw_footer(
+        Printed::default(),
         None,
         Printed::default(),
         None,
@@ -720,6 +737,7 @@ fn the_clock_stays_at_the_right_margin() {
 fn a_band_with_no_gauge_still_draws_its_clock() {
     let mut out = Vec::new();
     draw_footer(
+        Printed::default(),
         None,
         Printed::default(),
         None,

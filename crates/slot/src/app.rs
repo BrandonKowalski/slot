@@ -11,11 +11,11 @@ use slot_store::{
 };
 use slot_ui::{
     board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
-    lid_at, lid_from, lift_of, mark_at, mark_box, on_board, shelf_cart_at, ClockPicker, Draw,
-    FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice,
-    QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast,
-    BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT,
-    SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, GbShell, Hud,
+    HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces,
+    QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast, BOARD_W, BOARD_X, CART_W,
+    CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H,
+    SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -586,7 +586,9 @@ pub struct App {
     /// One mark per shelf, in `Platform::ALL` order, uploaded at boot beside the bolt. Which one
     /// is drawn is the only thing in the top plate's corner that answers to the shoulders, and it
     /// is what replaced the banner that used to name the shelf over the carts.
-    mark_faces: Vec<TexId>,
+    /// The machine whose shelf is showing, printed on the case band. Empty on a card with one
+    /// shelf, where naming it would label a thing that could not be anything else.
+    shelf_platform: slot_ui::Printed,
     shelf_clock: slot_ui::Printed,
     hud: Hud,
     /// How far up the game layer's own screen is. Not a phase: it outlives the insert, since
@@ -716,7 +718,7 @@ impl App {
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
             bolt: None,
-            mark_faces: Vec::new(),
+            shelf_platform: slot_ui::Printed::default(),
             shelf_clock: slot_ui::Printed::default(),
             hud: Hud::new(),
             screen: 0.0,
@@ -1015,8 +1017,20 @@ impl App {
 
     /// The shelves' marks, in `Platform::ALL` order. Uploaded once, at boot: there are three of
     /// them, they never change, and the shoulders only ever choose between them.
-    pub fn set_mark_faces(&mut self, faces: Vec<TexId>) {
-        self.mark_faces = faces;
+    pub fn set_shelf_platform_face(&mut self, face: TexId, w: u32) {
+        self.shelf_platform = slot_ui::Printed::new(face, w);
+    }
+
+    /// The band stops naming a shelf: a card that lost a platform while running, or one that
+    /// only ever had the one.
+    pub fn clear_shelf_platform(&mut self) {
+        self.shelf_platform = slot_ui::Printed::default();
+    }
+
+    /// Which machine the band should name, or `None` on a card with one shelf.
+    pub fn shelf_platform_name(&self) -> Option<&'static str> {
+        self.next_shelf(1)?;
+        Some(self.shelves[self.shelf_at].0.name())
     }
 
     /// The mark for the shelf on screen, and nothing at all when there is no other shelf to be
@@ -1033,16 +1047,6 @@ impl App {
     /// agree today, since `shelves_of` builds one shelf per `Platform::ALL` entry in that order,
     /// but a shelf list that ever stopped mirroring `ALL` would otherwise start drawing the
     /// wrong machine in the corner with nothing to say it had.
-    /// The face and the platform it was drawn for, together. Apart, the box came off the seated
-    /// cart while the face came off the shelf on screen, and a Game Boy mark was drawn squashed
-    /// into the wide Advance box whenever the two differed.
-    fn shelf_mark(&self) -> Option<(TexId, Platform)> {
-        self.next_shelf(1)?;
-        let platform = self.shelves[self.shelf_at].0;
-        let at = Platform::ALL.iter().position(|p| *p == platform)?;
-        Some((self.mark_faces.get(at).copied()?, platform))
-    }
-
     pub fn set_battery_percent_face(&mut self, face: TexId, w: u32) {
         self.battery_percent = slot_ui::Printed::new(face, w);
     }
@@ -2481,6 +2485,7 @@ impl App {
                     _ => self.shelf().draw(self.shelf_shake(), out),
                 }
                 draw_footer(
+                    self.shelf_platform,
                     self.battery,
                     self.battery_percent,
                     self.bolt,
@@ -2574,26 +2579,6 @@ impl App {
         // belongs to a live session and this belongs to the carousel, so the two are never both
         // on screen.
         //
-        // After the HUD rather than before it, because the HUD's plate is 72% black across the
-        // whole width: under it the mark would dim every time the brightness was nudged, while
-        // the badge it stands in for sits over that plate rather than beneath it. The mark is
-        // taller than the plate is deep now, so on the frames where a bar or a toast is up the
-        // plate's lower edge passes behind it.
-        if matches!(self.phase, Phase::Shelf) {
-            if let Some((tex, platform)) = self.shelf_mark() {
-                let (w, h) = mark_box(platform);
-                let (w, h) = (w as f32, h as f32);
-                let (x, y) = mark_at(w);
-                out.push(Draw::Tex {
-                    x,
-                    y,
-                    w,
-                    h,
-                    tex,
-                    alpha: 1.0,
-                });
-            }
-        }
     }
 
     pub fn screen_shake(&self) -> f32 {

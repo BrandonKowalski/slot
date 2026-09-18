@@ -26,6 +26,16 @@ impl Platform {
 
     /// The card directory this platform's files live under, in `Games/`, `Saves/`, `States/`
     /// and `Labels/` alike. Every platform has one — see the type's own comment.
+    /// What the machine is called, for printing on the case band. Not `dir_name`: that is the
+    /// folder's spelling, meant to be typed on a computer, and this is the player's.
+    pub fn name(self) -> &'static str {
+        match self {
+            Platform::Gba => "Game Boy Advance",
+            Platform::Gb => "Game Boy",
+            Platform::Gbc => "Game Boy Color",
+        }
+    }
+
     pub fn dir_name(self) -> &'static str {
         match self {
             Platform::Gba => "GBA",

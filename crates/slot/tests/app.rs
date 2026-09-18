@@ -523,91 +523,75 @@ fn the_shoulders_do_nothing_when_there_is_one_shelf_to_be_on() {
 /// The faces are pushed in the way the frontend pushes them at boot, in `Platform::ALL` order,
 /// and the frame is read for which of the three actually reached the corner.
 #[test]
-fn the_switch_changes_the_mark_on_the_case_and_says_nothing() {
+fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
     let mut a = app_with_platforms(&[
         (Platform::Gba, "Emerald"),
         (Platform::Gb, "Tetris"),
         (Platform::Gbc, "Chromatic"),
     ]);
-    let marks: Vec<TexId> = (0..Platform::ALL.len())
-        .map(|i| TexId::from_raw(900 + i))
-        .collect();
-    a.set_mark_faces(marks.clone());
-    let on_the_band = |a: &App| {
-        let out = frame(a);
-        let found: Vec<TexId> = marks
-            .iter()
-            .copied()
-            .filter(|m| tex_at(&out, *m).is_some())
-            .collect();
-        assert_eq!(found.len(), 1, "the band is showing {} marks", found.len());
-        found[0]
-    };
-
     assert_eq!(
-        on_the_band(&a),
-        marks[0],
+        a.shelf_platform_name(),
+        Some("Game Boy Advance"),
         "the card did not open on the GBA"
     );
     for (btn, want) in [
-        (Btn::R1, marks[1]),
-        (Btn::R1, marks[2]),
-        (Btn::R1, marks[0]),
-        (Btn::L1, marks[2]),
+        (Btn::R1, "Game Boy"),
+        (Btn::R1, "Game Boy Color"),
+        (Btn::R1, "Game Boy Advance"),
+        (Btn::L1, "Game Boy Color"),
     ] {
         a.apply_at(Action::GbaDown(btn), 1_000);
         assert_eq!(
-            on_the_band(&a),
-            want,
-            "{btn:?} left the wrong mark on the case"
+            a.shelf_platform_name(),
+            Some(want),
+            "{btn:?} left the wrong name on the case"
         );
         assert_eq!(a.toast(), None, "{btn:?} put a banner up over the carts");
     }
-    // And it is still there long after any banner would have faded, because it is printed in
-    // the corner rather than said.
+    // And it is still there long after any banner would have faded, because it is printed on the
+    // case rather than said. This is the whole of the difference from the banner it replaced.
     a.update(5.0);
-    assert_eq!(on_the_band(&a), marks[2], "the mark faded");
+    assert_eq!(
+        a.shelf_platform_name(),
+        Some("Game Boy Color"),
+        "the name faded"
+    );
 }
 
-/// A card whose library is all on one shelf gets no mark at all. The shoulders do nothing there
-/// — there is nowhere to go — and a mark naming the platform would be the device answering a
-/// question the player has no way to ask: it would sit in the corner for the life of the card
-/// saying the one thing that can never change.
+/// A card whose library is all on one shelf names nothing. The shoulders do nothing there, since
+/// there is nowhere to go, and naming the platform would be the device answering a question the
+/// player has no way to ask: it would sit on the band for the life of the card saying the one
+/// thing that can never change.
 ///
 /// It is the same rule L1 and R1 follow and it is asked of the same code, so this is really
-/// holding that the two cannot come apart. Both cases are read here rather than only the dead
-/// one: a mark that vanished whenever the shoulders were pressed would pass a test that only
-/// looked at the single-shelf card.
+/// holding that the two cannot come apart. Both cases are read rather than only the dead one: a
+/// name that vanished whenever the shoulders were pressed would pass a test that only looked at
+/// the single-shelf card.
 #[test]
-fn a_card_on_one_shelf_shows_no_mark_because_there_is_nowhere_to_switch_to() {
-    let marks: Vec<TexId> = (0..Platform::ALL.len())
-        .map(|i| TexId::from_raw(900 + i))
-        .collect();
-    let marked = |a: &App| {
-        let out = frame(a);
-        marks.iter().any(|m| tex_at(&out, *m).is_some())
-    };
-
+fn a_card_on_one_shelf_names_nothing_because_there_is_nowhere_to_switch_to() {
     let mut alone = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gba, "Fusion")]);
-    alone.set_mark_faces(marks.clone());
-    assert!(
-        !marked(&alone),
+    assert_eq!(
+        alone.shelf_platform_name(),
+        None,
         "a card with only Game Boy Advance carts named its platform anyway"
     );
-    // The shoulders and the mark are the same rule read from two sides: nothing to switch to,
+    // The shoulders and the name are the same rule read from two sides: nothing to switch to,
     // nothing to say.
     for btn in [Btn::L1, Btn::R1] {
         alone.apply_at(Action::GbaDown(btn), 1_000);
-        assert!(
-            !marked(&alone),
-            "{btn:?} put a mark up on a card that has one shelf"
+        assert_eq!(
+            alone.shelf_platform_name(),
+            None,
+            "{btn:?} named a shelf on a card that has one"
         );
     }
 
-    let mut two = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
-    two.set_mark_faces(marks.clone());
-    assert!(
-        marked(&two),
+    // The other side of the same rule, read here rather than in its own test: two shelves and
+    // the band does name one. Without this, a band that never named anything would pass.
+    let two = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
+    assert_eq!(
+        two.shelf_platform_name(),
+        Some("Game Boy Advance"),
         "a card with two shelves did not say which one it was on"
     );
 }
