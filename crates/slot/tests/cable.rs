@@ -36,6 +36,8 @@ fn a_sampled_mask_is_stamped_for_a_later_frame() {
 fn each_end_reports_the_pair_in_port_order() {
     let mut p0 = Cable::new(0);
     let mut p1 = Cable::new(1);
+    // The state swap is what does this in a real session; here there is no core to copy.
+    p1.prime();
     // Sample, exchange, advance: the order the worker uses, until the seeded frames run out and
     // the next frame is one whose masks both ends actually sent each other.
     for _ in 0..DELAY {
@@ -82,6 +84,7 @@ fn a_frame_waits_rather_than_guessing_a_missing_mask() {
 fn both_ends_agree_on_every_frame() {
     let mut p0 = Cable::new(0);
     let mut p1 = Cable::new(1);
+    p1.prime();
     let script = [A, B, A, ButtonMask::default(), B, B, A];
 
     let mut seen0 = Vec::new();
@@ -108,7 +111,8 @@ fn both_ends_agree_on_every_frame() {
 #[test]
 fn junk_and_duplicates_are_dropped_rather_than_raised() {
     let mut c = Cable::new(0);
-    assert!(!c.accept(&[1, 2, 3]), "a short packet was taken");
+    // Junk that is not one of the packet kinds. A leading 1 is a state chunk now.
+    assert!(!c.accept(&[9, 2, 3]), "a short packet was taken");
     assert!(!c.accept(&[]), "an empty packet was taken");
     for _ in 0..DELAY {
         c.sample(B);
@@ -155,4 +159,60 @@ fn a_stall_does_not_add_to_the_input_delay() {
         mask, B,
         "a decided mask was revised, which desyncs the pair"
     );
+}
+
+/// The joiner runs nothing until it holds the host's machine. Both devices simulate both
+/// consoles, so identical inputs on different starting states produce two different games: one
+/// device waiting for a cable while the other is already in a race. The seeded frames are not an
+/// exception, which is the trap here, since they need no peer mask and would otherwise run.
+#[test]
+fn a_joiner_runs_nothing_until_it_has_the_hosts_machine() {
+    let mut join = Cable::new(1);
+    assert!(!join.primed(), "a fresh joiner claimed to be ready");
+    assert!(
+        join.ready().is_none(),
+        "the joiner ran a seeded frame on its own machine"
+    );
+
+    let state: Vec<u8> = (0..150_000u32).map(|n| n as u8).collect();
+    let packets = slot::cable::state_packets(&state);
+    assert!(packets.len() > 1, "a state this size must be cut up");
+    for (i, p) in packets.iter().enumerate() {
+        assert!(p.len() <= 65_535, "chunk {i} cannot cross the wire");
+        assert!(join.accept(p));
+        if i + 1 < packets.len() {
+            assert!(
+                join.take_state().is_none(),
+                "a part was taken for the whole"
+            );
+        }
+    }
+    assert_eq!(join.take_state().as_deref(), Some(state.as_slice()));
+    assert!(
+        join.take_state().is_none(),
+        "the state was handed over twice"
+    );
+
+    join.prime();
+    assert!(join.ready().is_some(), "priming did not let the frames run");
+}
+
+/// The host needs no priming: its own machine is the one being copied.
+#[test]
+fn a_host_is_ready_from_the_start() {
+    let host = Cable::new(0);
+    assert!(host.primed());
+    assert!(host.ready().is_some());
+}
+
+/// A state and a mask are told apart by the packet itself, so neither is ever read as the other.
+#[test]
+fn a_state_chunk_is_never_read_as_a_button_mask() {
+    let mut c = Cable::new(0);
+    for p in slot::cable::state_packets(&[9u8; 32]) {
+        assert!(decode(&p).is_none(), "a state chunk parsed as a mask");
+        assert!(c.accept(&p));
+    }
+    // And the masks still work alongside it.
+    assert!(c.accept(&encode(DELAY, A)));
 }

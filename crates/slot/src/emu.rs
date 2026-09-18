@@ -647,6 +647,22 @@ impl Worker {
                         while let Some(buf) = t.try_recv() {
                             c.accept(&buf);
                         }
+                        // The host's machine, once it is whole. Restored here rather than in
+                        // `cable.rs`, which holds no core and never should.
+                        if let Some(state) = c.take_state() {
+                            match core.unserialize(&state) {
+                                Ok(()) => {
+                                    eprintln!(
+                                        "slot: cable: restored {} bytes, running the host's game",
+                                        state.len()
+                                    );
+                                    c.prime();
+                                }
+                                // Nothing to run in step with. Better to sit refusing to start
+                                // than to play a different game to the other device.
+                                Err(e) => eprintln!("slot: cable: the state was refused: {e}"),
+                            }
+                        }
                     }
                     None => drain_transport(t.as_mut(), &link, MAX_LINK_PACKETS_PER_PRESENT),
                 }
@@ -1015,8 +1031,27 @@ impl Worker {
                 // No `start_link` and no `link.set_active`: this route never goes through
                 // libretro's netpacket interface at all, so a core with no `start` callback is
                 // not a gap here the way it is for `BeginLink`.
-                *cable = Some(Cable::new(player));
-                *transport = Some(t);
+                let mut c = Cable::new(player);
+                let mut wire = t;
+                // The host's machine is the one the session runs. Both devices simulate both
+                // consoles, so they have to start from the same bytes or identical inputs drive
+                // two different games: one device sat on "insert the link cable" while the other
+                // was already choosing a character. Serialized before a single frame runs, so
+                // what crosses is frame zero rather than wherever the host had got to.
+                if player == 0 {
+                    match core.serialize() {
+                        Ok(state) => {
+                            eprintln!("slot: cable: sending {} bytes of state", state.len());
+                            for p in cable::state_packets(&state) {
+                                wire.send(NETPACKET_RELIABLE, &p);
+                            }
+                        }
+                        Err(e) => eprintln!("slot: cable: the core would not serialize: {e}"),
+                    }
+                    c.prime();
+                }
+                *cable = Some(c);
+                *transport = Some(wire);
             }
             Cmd::SetOption(key, value) => {
                 // The core re-reads its options on its next `retro_run`, through the

@@ -100,6 +100,56 @@ fn a_cable_session_steps_both_consoles() {
     }
 }
 
+/// The joiner starts from the host's machine, not its own. Both devices simulate both consoles,
+/// so a joiner that began from whatever its own card had would play a different game from
+/// identical inputs: on hardware that showed as one SP waiting for a cable while the other was
+/// already choosing a character.
+#[test]
+fn a_joiner_runs_the_hosts_machine_and_not_its_own() {
+    let wire = Arc::new(Mutex::new(Wire::default()));
+    let host = spawn(Arc::new(Ring::new(4096)));
+    let join = spawn(Arc::new(Ring::new(4096)));
+
+    // Run the joiner on alone first, so its machine is demonstrably somewhere else.
+    join.set_speed(Speed::Normal);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while join.published_count() < 20 {
+        assert!(Instant::now() < deadline, "the joiner never ran alone");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    join.set_speed(Speed::Paused);
+
+    host.begin_cable(
+        0,
+        Box::new(End {
+            wire: wire.clone(),
+            first: true,
+        }),
+    );
+    join.begin_cable(
+        1,
+        Box::new(End {
+            wire: wire.clone(),
+            first: false,
+        }),
+    );
+    host.set_speed(Speed::Normal);
+    join.set_speed(Speed::Normal);
+
+    // The joiner only reaches linked frames at all once it has restored what the host sent: an
+    // unprimed cable refuses even the seeded frames, which need no peer mask and would otherwise
+    // have run on the wrong machine.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while join.linked_frames() < 20 {
+        assert!(
+            Instant::now() < deadline,
+            "the joiner never started: {} linked frames",
+            join.linked_frames()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 /// A peer that says nothing stalls the frame rather than being guessed at, and is eventually
 /// reported lost. Guessing would desync the two devices silently, which is worse than stopping.
 #[test]
