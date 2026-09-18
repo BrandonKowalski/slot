@@ -1259,12 +1259,16 @@ fn the_card_cart_link_state_travels_between_two_link_mode_cores() {
         .expect("the joiner refused the host's link state");
 }
 
-/// Each device skips rendering the console it never shows, and the two devices skip *different*
-/// consoles. That is only safe if skipping cannot change the machine, so this asks the machine.
-/// Identical inputs from both sides have to leave byte-identical state, or two SPs would drift
-/// apart the moment a race started and no test below this one would notice.
+/// Each device skips both the picture and the sound of the console it never shows, and the two
+/// devices skip *different* consoles. That is only safe if skipping cannot change the machine, so
+/// this asks the machine. Identical inputs from both sides have to leave byte-identical state, or
+/// two SPs would drift apart the moment a race started and no test below this one would notice.
+///
+/// It guards the audio skip as much as the video one: the mixing deliberately still runs, because
+/// `GBAAudioSerialize` carries `chA.samples` and `chB.samples`, and only the write into an output
+/// ring nobody drains is dropped. If that line ever moved to cover the mixing, this fails.
 #[test]
-fn skipping_the_peers_picture_does_not_change_the_machine() {
+fn skipping_the_peers_picture_and_sound_does_not_change_the_machine() {
     let _g = common::core_lock();
     let Some(dylib) = vendored() else { return };
     let rom = rom("mgba-link-multiplayer.gba", multiplayer_rom());

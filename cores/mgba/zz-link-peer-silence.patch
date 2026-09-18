@@ -1,0 +1,51 @@
+--- a/include/mgba/internal/gba/audio.h
++++ b/include/mgba/internal/gba/audio.h
+@@ -85,6 +85,9 @@
+ 
+ 	bool forceDisableChA;
+ 	bool forceDisableChB;
++	/* Mix as normal but write nothing out. Set on the console a linked device runs only to be
++	 * linked to, whose sound nobody hears, so its output ring is filled and never drained. */
++	bool skipOutput;
+ 	int masterVolume;
+ 
+ 	struct mTimingEvent sampleEvent;
+--- a/src/gba/audio.c
++++ b/src/gba/audio.c
+@@ -42,6 +42,7 @@
+ 
+ 	audio->forceDisableChA = false;
+ 	audio->forceDisableChB = false;
++	audio->skipOutput = false;
+ 	audio->masterVolume = GBA_AUDIO_VOLUME_MAX;
+ 	audio->sampleInterval = GBA_ARM7TDMI_FREQUENCY / 0x8000;
+ }
+@@ -415,7 +416,13 @@
+ 	memset(audio->chB.samples, audio->chB.samples[samples - 1], sizeof(audio->chB.samples));
+ 
+ 	mCoreSyncLockAudio(audio->p->sync);
+-	mAudioBufferWrite(&audio->psg.buffer, (int16_t*) audio->currentSamples, samples);
++	/* The mixing above stays: GBAAudioSerialize carries chA.samples and chB.samples, so a console
++	 * that stopped producing them would be a different machine from its opposite number on the
++	 * other device. Only the write into the output ring goes, and only for a console whose sound
++	 * is never played, where that ring is written every sample and drained by nobody. */
++	if (!audio->skipOutput) {
++		mAudioBufferWrite(&audio->psg.buffer, (int16_t*) audio->currentSamples, samples);
++	}
+ 	if (audio->p->stream) {
+ 		if (audio->p->stream->postAudioFrame) {
+ 			int i;
+--- a/src/platform/libretro/libretro.c
++++ b/src/platform/libretro/libretro.c
+@@ -2035,6 +2035,11 @@
+ 	 * The counter renders one frame and then reloads from this, so the peer draws its first frame
+ 	 * and none after it. */
+ 	((struct GBA*) peer->board)->video.frameskip = INT_MAX;
++	/* And its sound is never played either. Same argument, smaller: the expensive half of the
++	 * peer's audio path is already idle because setAVStream is only ever called on the local
++	 * core, so postAudioFrame and postAudioBuffer have no listener to call. What is left is the
++	 * write into an output ring nobody drains. */
++	((struct GBA*) peer->board)->audio.skipOutput = true;
+ 	_linkPlugIn();
+ }
+ 
