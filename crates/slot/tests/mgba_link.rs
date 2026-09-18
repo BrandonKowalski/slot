@@ -1172,3 +1172,51 @@ fn the_cable_is_plugged_in_after_a_load_and_after_a_restore() {
         "after a restore, player 1's GBA read what a lone GBA reads: no cable"
     );
 }
+
+/// The session's own state swap, which is how two devices come to simulate the same machine: a
+/// link-mode core serializes its pair, and another link-mode core loads it. On hardware this came
+/// back as `unserialize refused` with the whole 1,057,876 bytes across, so the question is whether
+/// the container is at fault or the core that received it was never in link mode.
+#[test]
+fn a_link_states_travels_between_two_link_mode_cores() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-multiplayer.gba", multiplayer_rom());
+
+    let mut host = link_core(&dylib, 0);
+    host.load(&rom).expect("link mode refused the rom");
+    let state = host.serialize().expect("the host would not serialize");
+    assert!(
+        state.starts_with(b"SLK1"),
+        "the host produced something that is not a link state"
+    );
+    // One libretro core to a process, so the host goes before the joiner arrives.
+    drop(host);
+
+    let mut joiner = link_core(&dylib, 1);
+    joiner.load(&rom).expect("link mode refused the rom");
+    joiner
+        .unserialize(&state)
+        .expect("a link-mode core refused a link state from its own build");
+}
+
+/// And the failure the device saw, reproduced deliberately: a core that is *not* in link mode
+/// cannot take a link state, because it is expecting one GBA's worth and this is two.
+#[test]
+fn a_single_core_refuses_a_link_state() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-multiplayer.gba", multiplayer_rom());
+
+    let mut host = link_core(&dylib, 0);
+    host.load(&rom).expect("link mode refused the rom");
+    let state = host.serialize().expect("the host would not serialize");
+    drop(host);
+
+    let mut single = single_core(&dylib);
+    single.load(&rom).expect("load");
+    assert!(
+        single.unserialize(&state).is_err(),
+        "a single GBA took a state holding two"
+    );
+}

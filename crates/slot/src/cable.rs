@@ -25,6 +25,9 @@ const PACKET: usize = 11;
 const KIND_MASK: u8 = 0;
 const KIND_STATE: u8 = 1;
 const KIND_STATE_END: u8 = 2;
+/// The joiner saying it is running the host's machine. Until this arrives the host has no way to
+/// tell a joiner that is still restoring a megabyte from one that has walked away.
+const KIND_READY: u8 = 3;
 
 /// The transport frames with a `u16` length, so nothing larger than this can cross in one piece
 /// and a linked pair's state is far larger. Under 65535 with the kind byte in front.
@@ -49,6 +52,10 @@ pub fn decode(buf: &[u8]) -> Option<(u64, ButtonMask)> {
 
 /// A serialized pair, cut into pieces the wire can carry. The last is `KIND_STATE_END`, so the
 /// far end knows the state is whole without being told a length up front.
+pub fn ready_packet() -> [u8; 1] {
+    [KIND_READY]
+}
+
 pub fn state_packets(state: &[u8]) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = state
         .chunks(CHUNK)
@@ -85,6 +92,9 @@ pub struct Cable {
     incoming: Vec<u8>,
     /// The reassembled state is whole and waiting to be restored.
     complete: bool,
+    /// The far end is running the agreed machine. A session is not under way until both ends are,
+    /// and until it is, a stalled frame means "still getting ready" rather than "gone".
+    peer_ready: bool,
 }
 
 impl Cable {
@@ -101,11 +111,20 @@ impl Cable {
             primed: player == 0,
             incoming: Vec::new(),
             complete: false,
+            // The joiner's peer is the host, whose machine is the one being copied.
+            peer_ready: player != 0,
         }
     }
 
     pub fn primed(&self) -> bool {
         self.primed
+    }
+
+    /// Whether a stalled frame means the peer is late rather than merely still getting ready.
+    /// A joiner restoring a megabyte of state stalls every present by design, and counting that
+    /// as a peer that vanished ends the session a second into every join.
+    pub fn armed(&self) -> bool {
+        self.primed && self.peer_ready
     }
 
     /// The host's machine, once it is whole. Restoring it is the caller's job, because only the
@@ -154,6 +173,10 @@ impl Cable {
     /// a duplicate is not an error and a short read is not worth ending a session over.
     pub fn accept(&mut self, buf: &[u8]) -> bool {
         match buf.first() {
+            Some(&KIND_READY) => {
+                self.peer_ready = true;
+                return true;
+            }
             Some(&KIND_STATE) => {
                 self.incoming.extend_from_slice(&buf[1..]);
                 return true;

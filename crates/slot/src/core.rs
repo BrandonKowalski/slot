@@ -251,6 +251,7 @@ pub fn apply_link_options(core: &mut LibretroCore, which: Core, player: u8) {
     }
     core.set_option("mgba_link", "on");
     core.set_option("mgba_link_player", &player.to_string());
+    eprintln!("slot: core: link mode on, player {player}");
 }
 
 pub fn apply_core_options(

@@ -216,3 +216,35 @@ fn a_state_chunk_is_never_read_as_a_button_mask() {
     // And the masks still work alongside it.
     assert!(c.accept(&encode(DELAY, A)));
 }
+
+/// A stall is only a lost peer once both ends are running the agreed machine. A joiner restoring
+/// a megabyte of state stalls every present by design, and on hardware that ended the session a
+/// second into the join, before the swap could finish.
+#[test]
+fn a_stall_during_the_swap_is_not_a_lost_peer() {
+    let mut host = Cable::new(0);
+    assert!(
+        !host.armed(),
+        "the host armed before the joiner said it was running"
+    );
+    for _ in 0..200 {
+        host.stall();
+    }
+    assert!(
+        !host.armed(),
+        "a long swap was read as a peer that vanished"
+    );
+
+    assert!(host.accept(&slot::cable::ready_packet()));
+    assert!(host.armed(), "the joiner said it was ready and was ignored");
+}
+
+/// The joiner's own side: it is not armed while it is still restoring, so its own stalls waiting
+/// for a state cannot end the session either.
+#[test]
+fn a_joiner_is_not_armed_until_it_has_restored() {
+    let mut join = Cable::new(1);
+    assert!(!join.armed(), "an unprimed joiner armed");
+    join.prime();
+    assert!(join.armed(), "the joiner never armed after restoring");
+}

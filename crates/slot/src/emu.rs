@@ -657,6 +657,7 @@ impl Worker {
                                         state.len()
                                     );
                                     c.prime();
+                                    t.send(NETPACKET_RELIABLE, &cable::ready_packet());
                                 }
                                 // Nothing to run in step with. Better to sit refusing to start
                                 // than to play a different game to the other device.
