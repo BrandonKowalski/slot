@@ -2421,3 +2421,34 @@ fn run(s: &mut Session, from: u64, frames: u64) -> u64 {
     }
     now
 }
+
+/// TEMPORARY, alongside `Action::ColourCorrectionToggle`. Delete this test with it.
+///
+/// Why the shortcut exists, stated as a test: the setting's own row is a shelf affordance, and
+/// `the_quick_menu_opens_from_the_shelf_and_nowhere_else` is the rule that makes it one. So the
+/// picture the setting changes could never be looked at while it changed, which is the one thing
+/// that can judge it. This is the half that matters — with a cart seated, the toggle both flips
+/// the setting and queues it for the core already running, rather than leaving it for the next
+/// insert, which from inside a game never comes.
+#[test]
+fn the_colour_shortcut_reaches_the_core_already_running() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut s, _motor) = common::session_with_platform(d.path());
+    s.app_mut().apply(slot_input::Action::Insert);
+
+    let before = s.app().colour_correction();
+    s.app_mut()
+        .apply(slot_input::Action::ColourCorrectionToggle);
+
+    assert_eq!(
+        s.app().colour_correction(),
+        !before,
+        "the shortcut did not flip the setting"
+    );
+    assert_eq!(
+        s.app_mut().take_colour_correction(),
+        Some(!before),
+        "the change was written down but never queued for the core already running, which is \
+         the whole of what this shortcut is for"
+    );
+}

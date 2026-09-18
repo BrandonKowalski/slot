@@ -518,3 +518,28 @@ fn the_menu_button_still_works_after_a_chord() {
         "the chord left the menu button dead"
     );
 }
+
+/// TEMPORARY, alongside `Action::ColourCorrectionToggle`. Delete this test with it.
+///
+/// The one chord that costs the game nothing. Every other entry in the table takes a button the
+/// cart can read, so firing one means the game does not get that press; Y is not a GBA button at
+/// all, so this chord is free in a way none of the others are. Worth a test of its own precisely
+/// because that is the property that would make someone rebind it to something cheaper-looking.
+#[test]
+fn select_and_y_toggles_colour_correction_and_costs_the_game_nothing() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(Y), 10), vec![ColourCorrectionToggle]);
+    // The second key is the chord's on both edges, so no stray Y reaches anything.
+    assert!(g.feed(Up(Y), 40).is_empty());
+    assert_eq!(g.feed(Up(Select), 200), vec![GbaUp(Select)]);
+}
+
+/// And a bare Y, with no SELECT under it, is still the switcher's own button. The chord must not
+/// have swallowed it everywhere.
+#[test]
+fn y_on_its_own_is_untouched_by_the_colour_chord() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(Y), 0), vec![GbaDown(Y)]);
+    assert_eq!(g.feed(Up(Y), 40), vec![GbaUp(Y)]);
+}

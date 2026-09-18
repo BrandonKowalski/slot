@@ -1859,6 +1859,15 @@ impl App {
             self.mute_toggle();
             return true;
         }
+        // TEMPORARY. See `Action::ColourCorrectionToggle`. Routed through `change_setting` rather
+        // than flipping the flag here so the shortcut and the row it stands in for cannot drift:
+        // one of them carrying the change to the running core and the other not is exactly the
+        // bug this shortcut exists to test for. Deliberately silent, because a toast would sit on
+        // top of the picture whose colours are the thing being judged.
+        if action == Action::ColourCorrectionToggle {
+            self.change_setting(QuickRow::ColourCorrection, true);
+            return true;
+        }
         let s = &self.state;
         let (kind, value) = match action {
             Action::BrightnessUp => (HudKind::Brightness, up(s.brightness, 1, BRIGHTNESS_MAX)),
