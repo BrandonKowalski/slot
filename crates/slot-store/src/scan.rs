@@ -100,8 +100,45 @@ pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
             });
         }
     }
-    carts.sort_by(|a, b| (a.platform as u8, &a.stem).cmp(&(b.platform as u8, &b.stem)));
+    carts.sort_by(|a, b| {
+        (a.platform as u8, sort_key(&a.stem)).cmp(&(b.platform as u8, sort_key(&b.stem)))
+    });
     Ok(carts)
+}
+
+/// Where a title files on the shelf: digits first, then A to Z, and case ignored.
+///
+/// Plain byte order put `apple` after `Zebra`, because every lowercase letter sorts above every
+/// uppercase one, so a card's row depended on how its files happened to be capitalised.
+///
+/// The group runs ahead of the text rather than being folded into it, so that one digit-led title
+/// cannot land between two letters however it is spelled, and anything led by neither, a bracket
+/// or a quote, files after both rather than silently first.
+pub fn sort_key(stem: &str) -> (u8, String) {
+    (group_of(stem), stem.to_uppercase())
+}
+
+fn group_of(stem: &str) -> u8 {
+    match stem.chars().find(|c| !c.is_whitespace()) {
+        Some(c) if c.is_ascii_digit() => 0,
+        Some(c) if c.is_alphabetic() => 1,
+        _ => 2,
+    }
+}
+
+/// The letter a title is filed under, for skipping a row a letter at a time. Every digit-led
+/// title shares one bucket, and so does everything led by neither a digit nor a letter: a row of
+/// thirty carts has few enough of either that giving each its own stop would be a stop that moves
+/// by one, which is what the shoulder buttons are already for.
+pub fn initial(stem: &str) -> char {
+    match group_of(stem) {
+        1 => stem
+            .chars()
+            .find(|c| !c.is_whitespace())
+            .and_then(|c| c.to_uppercase().next())
+            .unwrap_or('#'),
+        _ => '#',
+    }
 }
 
 /// A leading dot is card metadata rather than content, and every folder on the card is read

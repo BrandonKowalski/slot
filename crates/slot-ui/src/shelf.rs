@@ -150,6 +150,88 @@ impl Shelf {
         self.step(1);
     }
 
+    /// Up and Down: to the first cart of the next letter, or the previous one.
+    ///
+    /// The row is a ring, so the last letter's Down reaches the first letter by carrying on
+    /// forwards rather than by turning round, and the first letter's Up reaches the last the same
+    /// way. That costs a long slide once round a big row, which is the honest picture of what the
+    /// press asked for; turning round instead would show the row travelling one way while the
+    /// player pressed the other.
+    ///
+    /// Up goes to the *start* of the previous letter rather than to the cart before this one, so
+    /// a row stopped halfway through the Ms lands on the first M rather than stepping back into
+    /// the Ls. Pressed again from there it does reach the Ls, because by then it is already at
+    /// the letter's start.
+    pub fn jump_next_letter(&mut self) {
+        self.jump(1);
+    }
+
+    pub fn jump_prev_letter(&mut self) {
+        self.jump(-1);
+    }
+
+    /// The first cart of the letter `from` is filed under.
+    fn start_of_letter(&self, from: usize) -> usize {
+        let n = self.carts.len();
+        let letter = slot_store::initial(&self.carts[from].stem);
+        let mut at = from;
+        for _ in 0..n {
+            let before = (at as i32 - 1).rem_euclid(n as i32) as usize;
+            if slot_store::initial(&self.carts[before].stem) != letter {
+                break;
+            }
+            at = before;
+        }
+        at
+    }
+
+    fn jump(&mut self, dir: i32) {
+        let n = self.carts.len();
+        if n < 2 {
+            return;
+        }
+        let wrap = |i: i32| i.rem_euclid(n as i32) as usize;
+        let here = slot_store::initial(&self.carts[self.index].stem);
+        // A row filed under one letter has nowhere to go, in either direction. Said once here
+        // rather than left to the walks below, which have no previous letter to find and would
+        // wander the ring looking for one.
+        if self
+            .carts
+            .iter()
+            .all(|c| slot_store::initial(&c.stem) == here)
+        {
+            return;
+        }
+        let target = match dir > 0 {
+            true => {
+                let mut at = self.index;
+                for _ in 0..n {
+                    at = wrap(at as i32 + 1);
+                    if slot_store::initial(&self.carts[at].stem) != here {
+                        break;
+                    }
+                }
+                at
+            }
+            false => {
+                let start = self.start_of_letter(self.index);
+                match start == self.index {
+                    true => self.start_of_letter(wrap(start as i32 - 1)),
+                    false => start,
+                }
+            }
+        };
+        // Signed the way the press asked, never the short way round, so the row is never seen
+        // travelling one way while the player is pressing the other.
+        let ahead = (target as i32 - self.index as i32).rem_euclid(n as i32);
+        let delta = match dir > 0 {
+            true => ahead,
+            false => ahead - n as i32,
+        };
+        self.index = target;
+        self.ride += delta as f32;
+    }
+
     pub fn hold_left(&mut self, now: Millis) {
         self.hold(-1, now);
     }

@@ -1716,6 +1716,12 @@ impl App {
                 // Ahead of the shelf's own movement, so an open picker takes the arrows
                 // before the row of carts underneath it does.
                 _ if self.core_picker.is_some() => self.core_picker_input(action),
+                // Up and Down cross the row a letter at a time, where Left and Right cross it a
+                // cart at a time. A thirty cart library is a long hold on the shoulders and two
+                // presses here. SELECT+Up is brightness and reaches `adjust` before this, so the
+                // chord is unaffected.
+                Action::GbaDown(Btn::Up) => self.shelf_mut().jump_prev_letter(),
+                Action::GbaDown(Btn::Down) => self.shelf_mut().jump_next_letter(),
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf_mut().hold_left(now),
                 Action::ShelfRight | Action::GbaDown(Btn::Right) => {
                     self.shelf_mut().hold_right(now)
