@@ -1866,6 +1866,14 @@ impl App {
         // top of the picture whose colours are the thing being judged.
         if action == Action::ColourCorrectionToggle {
             self.change_setting(QuickRow::ColourCorrection, true);
+            // It does cover part of the picture, which is the cost of being able to tell "the
+            // toggle did nothing" from "it worked and the difference is subtle". The banner
+            // fades by itself, so the uncovered frame is a moment away either way.
+            let said = match self.state.colour_correction {
+                true => Toast::ColourOn,
+                false => Toast::ColourOff,
+            };
+            self.hud.toast(said, self.now());
             return true;
         }
         let s = &self.state;

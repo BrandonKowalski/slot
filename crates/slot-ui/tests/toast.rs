@@ -27,8 +27,14 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 /// Every banner the HUD can raise answers something the user just did, and none of them merely
 /// describes what is already on screen. The carousel briefly had three that named the shelf it
 /// had moved to; that is the plate corner's job now — see `slot_ui::mark` — and a banner saying it
-/// as well would be the same fact told twice. So the list is held at six, by name, because the
-/// way a line like that comes back is one variant at a time.
+/// as well would be the same fact told twice. So the list is held by name, because the way a
+/// line like that comes back is one variant at a time.
+///
+/// The last two are TEMPORARY and go with `Action::ColourCorrectionToggle`. They are admitted
+/// under the rule rather than as an exception to it: each answers the chord the player just
+/// pressed, and the state is in the string only because that is the thing the press changed.
+/// They are not a description of what is on screen, which is the case they would fail. Delete
+/// them here and in `toast.rs` together with the shortcut.
 #[test]
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     assert_eq!(
@@ -40,6 +46,8 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::NoLink,
             Toast::LinkEnded,
             Toast::PeerEnded,
+            Toast::ColourOn,
+            Toast::ColourOff,
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );

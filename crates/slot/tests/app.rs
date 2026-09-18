@@ -2452,3 +2452,31 @@ fn the_colour_shortcut_reaches_the_core_already_running() {
          the whole of what this shortcut is for"
     );
 }
+
+/// TEMPORARY, alongside `Action::ColourCorrectionToggle`. Delete this test with it.
+///
+/// The banner has to name the state the press arrived at, not the one it left. Getting that
+/// backwards is the one failure the banner cannot survive: it exists so "nothing happened" can
+/// be told from "it worked and the difference is subtle", and a banner that lies about which way
+/// it went answers that question wrongly rather than not at all. Both directions, because an
+/// off-by-one here reads correct in whichever single direction it was tried in.
+#[test]
+fn the_colour_shortcut_names_the_state_it_arrived_at() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut s, _motor) = common::session_with_platform(d.path());
+    s.app_mut().apply(slot_input::Action::Insert);
+
+    for _ in 0..2 {
+        let want = match s.app().colour_correction() {
+            true => slot_ui::Toast::ColourOff,
+            false => slot_ui::Toast::ColourOn,
+        };
+        s.app_mut()
+            .apply(slot_input::Action::ColourCorrectionToggle);
+        assert_eq!(
+            s.app().toast(),
+            Some(want),
+            "the banner named the state the toggle left, not the one it reached"
+        );
+    }
+}
