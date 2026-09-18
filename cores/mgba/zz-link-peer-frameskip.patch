@@ -1,0 +1,26 @@
+--- a/src/platform/libretro/libretro.c
++++ b/src/platform/libretro/libretro.c
+@@ -2018,6 +2018,23 @@
+ 	if (!peer->loadSave(peer, save)) {
+ 		save->close(save);
+ 	}
++	/* The peer's picture is never shown. This device draws its own console and runs the other one
++	 * only to be linked to, so every scanline it rasterises is thrown away. Measured on an H700, a
++	 * linked pair in a Mario Kart race cost about 12 ms of a 16.7 ms frame with both consoles
++	 * drawing, which left nothing for jitter and showed as bursts of dropped frames with the audio
++	 * chopping through them.
++	 *
++	 * frameskip is the instrument rather than a dummy renderer, because it is the one that cannot
++	 * change the machine. GBAVideoSerialize does not carry it, so the state swap at the start of a
++	 * session cannot hand this device the other's setting; GBAVideoInit sets it and reset does not,
++	 * so it survives the resets a state load performs; and in _startHblank and _startHdraw the
++	 * counter gates drawScanline and finishFrame alone, with DISPSTAT, VCOUNT, the blank DMAs and
++	 * every interrupt outside the gate. A renderer swap would have been visible in a savestate,
++	 * and the two devices skip different consoles, so it would not have stayed symmetric.
++	 *
++	 * The counter renders one frame and then reloads from this, so the peer draws its first frame
++	 * and none after it. */
++	((struct GBA*) peer->board)->video.frameskip = INT_MAX;
+ 	_linkPlugIn();
+ }
+ 

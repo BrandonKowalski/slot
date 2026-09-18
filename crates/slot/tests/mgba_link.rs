@@ -1258,3 +1258,42 @@ fn the_card_cart_link_state_travels_between_two_link_mode_cores() {
         .unserialize(&state)
         .expect("the joiner refused the host's link state");
 }
+
+/// Each device skips rendering the console it never shows, and the two devices skip *different*
+/// consoles. That is only safe if skipping cannot change the machine, so this asks the machine.
+/// Identical inputs from both sides have to leave byte-identical state, or two SPs would drift
+/// apart the moment a race started and no test below this one would notice.
+#[test]
+fn skipping_the_peers_picture_does_not_change_the_machine() {
+    let _g = common::core_lock();
+    let Some(dylib) = vendored() else { return };
+    let rom = rom("mgba-link-multiplayer.gba", multiplayer_rom());
+    let script = [
+        ButtonMask(ButtonMask::A),
+        ButtonMask(ButtonMask::B),
+        ButtonMask::default(),
+        ButtonMask(ButtonMask::A | ButtonMask::B),
+    ];
+
+    let run = |player: u8| {
+        let mut core = link_core(&dylib, player);
+        core.load(&rom).expect("link mode refused the rom");
+        for i in 0..240 {
+            core.run_frame_linked(script[i % script.len()], script[(i + 1) % script.len()]);
+        }
+        core.serialize().expect("no link state")
+    };
+
+    let as_host = run(0);
+    let as_joiner = run(1);
+    assert_eq!(
+        as_host.len(),
+        as_joiner.len(),
+        "the two ends produced link states of different sizes"
+    );
+    assert_eq!(
+        as_host, as_joiner,
+        "the two ends ran the same inputs to different machines: skipping the peer's picture is \
+         not state-safe, and two devices would drift apart in a race"
+    );
+}
