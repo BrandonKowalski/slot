@@ -628,6 +628,7 @@ impl Worker {
         let mut cable_presents = 0u32;
         let mut cable_stalls = 0u32;
         let mut cable_said = Instant::now();
+        let mut cable_core = Duration::ZERO;
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
@@ -846,17 +847,20 @@ impl Worker {
                 };
                 if cable.is_some() {
                     cable_presents += 1;
+                    cable_core += core_time;
                     if cable_said.elapsed() >= Duration::from_secs(5) {
+                        let secs = cable_said.elapsed().as_secs_f32();
                         eprintln!(
-                            "slot: cable: {} presents, {} stalled, {:.1} fps over {:.1}s",
+                            "slot: cable: {} presents, {} stalled, {:.1} fps, {:.1} ms core of {:.1} ms present",
                             cable_presents,
                             cable_stalls,
-                            (cable_presents - cable_stalls) as f32
-                                / cable_said.elapsed().as_secs_f32(),
-                            cable_said.elapsed().as_secs_f32(),
+                            (cable_presents - cable_stalls) as f32 / secs,
+                            cable_core.as_secs_f32() * 1000.0 / cable_presents as f32,
+                            secs * 1000.0 / cable_presents as f32,
                         );
                         cable_presents = 0;
                         cable_stalls = 0;
+                        cable_core = Duration::ZERO;
                         cable_said = Instant::now();
                     }
                 }
@@ -881,7 +885,14 @@ impl Worker {
                 // while fast forwarding, so the newest state was whatever predated the
                 // trigger and the first pop of a rewind swallowed the entire stretch in one
                 // step instead of walking back through it.
+                // Not while a session is live. `App::may_rewind` refuses rewinding outright for
+                // as long as one is, so every snapshot taken here is work nobody can ever use,
+                // and in link mode it is the priciest work in the present: a link state is both
+                // consoles, so `serialize` is twice a single GBA's and runs every other present.
                 since_snapshot += 1;
+                if cable.is_some() {
+                    since_snapshot = 0;
+                }
                 if since_snapshot >= SNAPSHOT_EVERY {
                     since_snapshot = 0;
                     // A core that will not serialize has already said so through the save
