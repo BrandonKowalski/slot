@@ -1,0 +1,314 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index afbff7b..620ab41 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1032,6 +1032,9 @@ if(BUILD_LIBRETRO)
+ 	# slot's link mode joins two GBAs with mGBA's lockstep link driver, which MINIMAL_CORE
+ 	# leaves out of CORE_SRC. The Dolphin driver beside it stays out.
+ 	list(APPEND LIBRETRO_CORE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/gba/sio/lockstep.c)
++	# The Game Boy's own lockstep, which MINIMAL_CORE leaves out for the same reason. The Game
++	# Boy Printer beside it in GB_SIO_FILES stays out.
++	list(APPEND LIBRETRO_CORE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/gb/sio/lockstep.c)
+ 	list(FILTER LIBRETRO_CORE_SRC EXCLUDE REGEX "/core/(scripting|library|mem-search|rewind|input)\\.c$")
+ 	list(FILTER LIBRETRO_CORE_SRC EXCLUDE REGEX "/util/(audio-resampler|interpolator)\\.c$")
+ 	if(CMAKE_TRY_COMPILE_TARGET_TYPE STREQUAL "STATIC_LIBRARY" AND NOT APPLE)
+diff --git a/src/platform/libretro/libretro.c b/src/platform/libretro/libretro.c
+index 754846e..2aa210d 100644
+--- a/src/platform/libretro/libretro.c
++++ b/src/platform/libretro/libretro.c
+@@ -17,8 +17,10 @@
+ #ifdef M_CORE_GB
+ #include <mgba/gb/core.h>
+ #include <mgba/internal/gb/gb.h>
++#include <mgba/internal/gb/io.h>
+ #include <mgba/internal/gb/mbc.h>
+ #include <mgba/internal/gb/overrides.h>
++#include <mgba/internal/gb/sio/lockstep.h>
+ #endif
+ #ifdef M_CORE_GBA
+ #include <mgba/core/lockstep.h>
+@@ -164,6 +166,32 @@ static mColor* peerOutputBuffer;
+ static void* peerSavedata;
+ #endif
+ 
++#ifdef M_CORE_GB
++/* The Game Boy half of link mode, and it is a different machine from the GBA's. GBSIOLockstep is
++ * the pre-2024 mLockstep API: the frontend supplies six scheduling callbacks, the master is
++ * expected to *block* inside wait(), and _masterUpdate abort()s if wait() says it did not. On one
++ * thread nothing can block, so wait() records the sleep and returns true , which is the honest
++ * answer, since the master is by definition running when it asks.
++ *
++ * Savestates are not done. A Game Boy state carries no serial section, and link-mode savestates
++ * are still the GBA's SLK1 container, so a session's state swap has nothing to hand over yet.
++ * Measured on an H700: 3.802 ms for a linked Game Boy pair, 2.661 ms for a linked Colour pair,
++ * against a 16.743 ms frame. */
++struct LinkGB {
++	struct GBSIOLockstepNode node; /* first, so lockstep.players[id] is a struct LinkGB* */
++	struct mCore* core;
++	bool asleep;
++	int32_t cyclesPosted;
++	unsigned waitMask;
++};
++
++/* Indexed by player: linkGb[linkPlayer].core is `core`. Scheduling state lives with the console,
++ * and is reached by node id through lockstep.players[], because GBSIOLockstepNodeWriteSC swaps
++ * the two nodes' ids at runtime whenever the console that claims the clock is not node 0. */
++static struct LinkGB linkGb[2];
++static struct GBSIOLockstep gbLockstep;
++#endif
++
+ static const int keymap[] = {
+ 	RETRO_DEVICE_ID_JOYPAD_A,
+ 	RETRO_DEVICE_ID_JOYPAD_B,
+@@ -1634,6 +1662,187 @@ static void _postFrame(bool skipFrame) {
+ #endif
+ }
+ 
++#ifdef M_CORE_GB
++/* The six mLockstep callbacks, on one thread. mgba's own MultiplayerController (Qt) is the
++ * reference; every mCoreThreadWaitFromThread there becomes `asleep = true` here and every
++ * mCoreThreadStopWaiting becomes `asleep = false`. Nothing else about them changes, deliberately:
++ * the credit arithmetic decides emulated timing, and two SPs running different arithmetic would
++ * part company. */
++static struct LinkGB* _gbPlayer(int id) {
++	return (struct LinkGB*) gbLockstep.players[id];
++}
++
++/* Only the master ever waits, and only on the slaves named in the mask. */
++static bool _gbWait(struct mLockstep* lockstep, unsigned mask) {
++	UNUSED(lockstep);
++	struct LinkGB* master = _gbPlayer(0);
++	master->waitMask |= mask;
++	/* Always true. False here is an abort() in _masterUpdate, and on one thread the master is
++	 * running whenever it asks, so "yes, you are now asleep" is the truthful answer. */
++	master->asleep = true;
++	return true;
++}
++
++/* A slave telling the master it has caught up. */
++static bool _gbSignal(struct mLockstep* lockstep, unsigned mask) {
++	UNUSED(lockstep);
++	struct LinkGB* master = _gbPlayer(0);
++	master->waitMask &= ~mask;
++	if (!master->waitMask && master->asleep) {
++		master->asleep = false;
++		return true;
++	}
++	return false;
++}
++
++/* id 0 credits the *slave* with the cycles the master has just run, and wakes it; a slave credits
++ * itself. This is upstream's asymmetry, not a typo (MultiplayerController.cpp:104-113). */
++static void _gbAddCycles(struct mLockstep* lockstep, int id, int32_t cycles) {
++	UNUSED(lockstep);
++	struct LinkGB* player;
++	if (!id) {
++		player = _gbPlayer(1);
++		player->cyclesPosted += cycles;
++		if (player->asleep) {
++			player->node.nextEvent += player->cyclesPosted;
++			player->asleep = false;
++		}
++	} else {
++		player = _gbPlayer(id);
++		player->cyclesPosted += cycles;
++	}
++}
++
++static int32_t _gbUseCycles(struct mLockstep* lockstep, int id, int32_t cycles) {
++	UNUSED(lockstep);
++	struct LinkGB* player = _gbPlayer(id);
++	player->cyclesPosted -= cycles;
++	if (player->cyclesPosted <= 0) {
++		player->asleep = true;
++	}
++	return player->cyclesPosted;
++}
++
++static int32_t _gbUnusedCycles(struct mLockstep* lockstep, int id) {
++	UNUSED(lockstep);
++	return _gbPlayer(id)->cyclesPosted;
++}
++
++/* Every one of the six must be set before a node is attached: mLockstepInit leaves four of them
++ * as whatever was in the struct, and GBSIOLockstepNodeDeinit calls unload() on the first unplug. */
++static void _gbUnload(struct mLockstep* lockstep, int id) {
++	UNUSED(lockstep);
++	if (id) {
++		_gbPlayer(id)->cyclesPosted = 0;
++		struct LinkGB* master = _gbPlayer(0);
++		master->waitMask &= ~(1u << id);
++		if (!master->waitMask && master->asleep) {
++			master->asleep = false;
++		}
++	} else {
++		int i;
++		for (i = 1; i < gbLockstep.d.attached; ++i) {
++			struct LinkGB* player = _gbPlayer(i);
++			player->cyclesPosted += gbLockstep.players[0]->eventDiff;
++			if (player->asleep) {
++				player->node.nextEvent += player->cyclesPosted;
++				player->asleep = false;
++			}
++		}
++	}
++}
++
++/* The Game Boy has no link peripheral , include/mgba/gba/interface.h has mPERIPH_GBA_LINK_PORT
++ * and there is no GB analogue, and _GBCoreSetPeripheral ignores anything it does not know. So the
++ * cable goes in the way mgba's own Qt frontend puts it in: reach past the core for the board and
++ * call GBSIOSetDriver. */
++static void _linkPlugInGB(void) {
++	int i;
++	memset(&gbLockstep, 0, sizeof(gbLockstep));
++	mLockstepInit(&gbLockstep.d);
++	GBSIOLockstepInit(&gbLockstep);
++	gbLockstep.d.wait = _gbWait;
++	gbLockstep.d.signal = _gbSignal;
++	gbLockstep.d.addCycles = _gbAddCycles;
++	gbLockstep.d.useCycles = _gbUseCycles;
++	gbLockstep.d.unusedCycles = _gbUnusedCycles;
++	gbLockstep.d.unload = _gbUnload;
++	for (i = 0; i < 2; ++i) {
++		struct LinkGB* player = &linkGb[i];
++		player->asleep = false;
++		player->cyclesPosted = 0;
++		player->waitMask = 0;
++		memset(&player->node, 0, sizeof(player->node));
++		GBSIOLockstepNodeCreate(&player->node);
++		GBSIOLockstepAttachNode(&gbLockstep, &player->node);
++		GBSIOSetDriver(&((struct GB*) player->core->board)->sio, &player->node.d);
++	}
++	linkPlugged = true;
++	linkStuck = false;
++}
++
++static void _linkUnplugGB(void) {
++	int i;
++	for (i = 0; i < 2; ++i) {
++		/* GBSIOSetDriver deinits the old driver, which is what detaches the node. */
++		GBSIOSetDriver(&((struct GB*) linkGb[i].core->board)->sio, NULL);
++		GBSIOLockstepDetachNode(&gbLockstep, &linkGb[i].node);
++	}
++	mLockstepDeinit(&gbLockstep.d);
++	linkPlugged = false;
++}
++
++/* Steps both Game Boys one video frame, taking turns on this thread. The rule is the GBA's: run
++ * whichever console is awake and short of its frame, and let a console that has finished keep
++ * running only while the other sleeps , which for the Game Boy is how the slave is paid, since the
++ * master's _masterUpdate credits it with addCycles(0, eventDiff) every 512 units.
++ *
++ * Plan 1's finished-player-0 special case is deliberately NOT ported. That fires the GBA
++ * coordinator's event early to sync at a frame boundary; the Game Boy's credit scheduler
++ * distributes slack differently and the stall it fixes may not exist here. Reproduce the stall
++ * before porting the fix. */
++static void _linkStepGB(void) {
++	uint32_t target[2];
++	uint32_t start[2];
++	bool done[2] = { false, false };
++	int i;
++	for (i = 0; i < 2; ++i) {
++		struct GB* gb = linkGb[i].core->board;
++		target[i] = gb->video.frameCounter + 1;
++		start[i] = mTimingCurrentTime(&gb->timing);
++	}
++	while (!done[0] || !done[1]) {
++		bool ran = false;
++		for (i = 0; i < 2; ++i) {
++			struct LinkGB* self = &linkGb[i];
++			struct LinkGB* other = &linkGb[1 - i];
++			if (self->asleep) {
++				continue;
++			}
++			if (done[i] && (done[1 - i] || !other->asleep)) {
++				continue;
++			}
++			struct GB* gb = self->core->board;
++			self->core->runLoop(self->core);
++			ran = true;
++			if (gb->video.frameCounter >= target[i] ||
++			    (uint32_t) mTimingCurrentTime(&gb->timing) - start[i] >=
++			        (GB_VIDEO_TOTAL_LENGTH + GB_VIDEO_HORIZONTAL_LENGTH) * 2) {
++				done[i] = true;
++			}
++		}
++		if (!ran) {
++			if (!linkStuck) {
++				fprintf(stderr, "mgba: link: neither GB can run (asleep %d/%d, done %d/%d)\n",
++				        linkGb[0].asleep, linkGb[1].asleep, done[0], done[1]);
++				linkStuck = true;
++			}
++			return;
++		}
++	}
++}
++#endif
++
+ #ifdef M_CORE_GBA
+ static void _linkSleep(struct mLockstepUser* user) {
+ 	((struct LinkGBA*) user)->asleep = true;
+@@ -1697,6 +1906,12 @@ static void _linkRunToFrameEnd(struct mCore* gbaCore) {
+  * the mode to the other, and player 0 waits for player 1 to take it up. */
+ static void _linkPlugIn(void) {
+ 	int i;
++#ifdef M_CORE_GB
++	if (core->platform(core) != mPLATFORM_GBA) {
++		_linkPlugInGB();
++		return;
++	}
++#endif
+ 	for (i = 0; i < 2; ++i) {
+ 		struct mCore* gbaCore = linkGba[i].core;
+ 		gbaCore->rtc.override = RTC_FAKE_EPOCH;
+@@ -1735,6 +1950,12 @@ static void _linkUnplug(void) {
+ 		return;
+ 	}
+ 	int i;
++#ifdef M_CORE_GB
++	if (core->platform(core) != mPLATFORM_GBA) {
++		_linkUnplugGB();
++		return;
++	}
++#endif
+ 	for (i = 0; i < 2; ++i) {
+ 		linkGba[i].core->setPeripheral(linkGba[i].core, mPERIPH_GBA_LINK_PORT, NULL);
+ 		GBASIOLockstepCoordinatorDetach(&linkCoordinator, &linkGba[i].driver);
+@@ -1780,6 +2001,11 @@ static bool _linkCreatePeer(const struct retro_game_info* game, const char* bios
+ 	memset(linkGba, 0, sizeof(linkGba));
+ 	linkGba[linkPlayer].core = core;
+ 	linkGba[1 - linkPlayer].core = peer;
++#ifdef M_CORE_GB
++	memset(linkGb, 0, sizeof(linkGb));
++	linkGb[linkPlayer].core = core;
++	linkGb[1 - linkPlayer].core = peer;
++#endif
+ 	return true;
+ }
+ 
+@@ -1855,6 +2081,12 @@ static void _linkStep(void) {
+ 	uint32_t start[2];
+ 	bool done[2] = { false, false };
+ 	int i;
++#ifdef M_CORE_GB
++	if (core->platform(core) != mPLATFORM_GBA) {
++		_linkStepGB();
++		return;
++	}
++#endif
+ 	for (i = 0; i < 2; ++i) {
+ 		struct GBA* gba = linkGba[i].core->board;
+ 		target[i] = gba->video.frameCounter + 1;
+@@ -2486,7 +2718,11 @@ bool retro_load_game(const struct retro_game_info* game) {
+ #endif
+ 
+ #ifdef M_CORE_GBA
+-	if (linkMode && core->platform(core) != mPLATFORM_GBA) {
++	if (linkMode && core->platform(core) != mPLATFORM_GBA
++#ifdef M_CORE_GB
++	    && core->platform(core) != mPLATFORM_GB
++#endif
++	) {
+ 		linkMode = false;
+ 	}
+ 	if (linkMode && !_linkCreatePeer(game, core->opts.useBios && sysDir && biosName ? biosPath : NULL)) {
