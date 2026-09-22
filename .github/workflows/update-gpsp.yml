@@ -1,0 +1,205 @@
+name: update gpSP
+
+on:
+  schedule:
+    # Monday at 16:00 UTC (09:00 PDT / 08:00 PST).
+    - cron: '0 16 * * 1'
+  workflow_dispatch:
+    inputs:
+      open_pr:
+        description: Open or update the gpSP dependency PR after validation
+        required: false
+        type: boolean
+        default: false
+
+# Detection and validation are read-only. The PR job below gets write access only after
+# the candidate commit has built and passed the gpSP regression test.
+permissions:
+  contents: read
+
+concurrency:
+  group: update-gpsp
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: validate candidate
+    runs-on: ubuntu-24.04-arm
+    # Match the release build: native aarch64 inside Bullseye, so core:gpsp builds the same
+    # arm64 core against the same glibc rather than reaching for Docker.
+    container: rust:1-bullseye
+    outputs:
+      update: ${{ steps.version.outputs.update }}
+      current: ${{ steps.version.outputs.current }}
+      latest: ${{ steps.version.outputs.latest }}
+      short: ${{ steps.version.outputs.short }}
+      base_sha: ${{ steps.version.outputs.base_sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The updater always evaluates the pin on main, even when workflow_dispatch is used
+          # to smoke-test this workflow from another branch.
+          ref: main
+
+      # checkout adds safe.directory using a temporary HOME. Container run steps use a
+      # different HOME, so trust this one workspace explicitly before reading its git SHA.
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Task
+        run: curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Resolve upstream gpSP
+        id: version
+        run: |
+          set -eu
+
+          current="$(awk '/^[[:space:]]*GPSP_COMMIT:/ { print $2; exit }' taskfile.yml)"
+          remote="$(git ls-remote https://github.com/libretro/gpsp.git HEAD)"
+          latest="$(printf '%s\n' "$remote" | awk 'NR == 1 { print $1 }')"
+          short="$(printf '%.12s' "$latest")"
+          base_sha="$(git rev-parse HEAD)"
+
+          printf '%s\n' "$current" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s\n' "$latest" | grep -Eq '^[0-9a-f]{40}$'
+
+          {
+            echo "current=$current"
+            echo "latest=$latest"
+            echo "short=$short"
+            echo "base_sha=$base_sha"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Pinned gpSP:   $current"
+          echo "Upstream HEAD: $latest"
+
+          if [ "$current" = "$latest" ]; then
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            echo "gpSP is already current."
+          else
+            echo "update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update candidate pin
+        if: steps.version.outputs.update == 'true'
+        env:
+          CURRENT: ${{ steps.version.outputs.current }}
+          LATEST: ${{ steps.version.outputs.latest }}
+        run: |
+          set -eu
+          grep -q "^  GPSP_COMMIT: ${CURRENT}$" taskfile.yml
+          sed -i "s/^  GPSP_COMMIT: ${CURRENT}$/  GPSP_COMMIT: ${LATEST}/" taskfile.yml
+          grep -q "^  GPSP_COMMIT: ${LATEST}$" taskfile.yml
+
+      - name: Build and regression-test candidate
+        if: steps.version.outputs.update == 'true'
+        # core:gpsp:test depends on core:gpsp, so this first builds the patched aarch64
+        # core from the candidate source archive, then requires the unpatched Advance Wars
+        # regression to fail and the patched version to pass.
+        run: task core:gpsp:test
+
+  pr:
+    name: open update PR
+    needs: check
+    if: needs.check.outputs.update == 'true' && (github.event_name == 'schedule' || inputs.open_pr)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: deps/gpsp-update
+      CURRENT: ${{ needs.check.outputs.current }}
+      LATEST: ${{ needs.check.outputs.latest }}
+      SHORT: ${{ needs.check.outputs.short }}
+      BASE_SHA: ${{ needs.check.outputs.base_sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Create the PR from the exact Slot revision that was validated above.
+          ref: ${{ needs.check.outputs.base_sha }}
+          fetch-depth: 0
+
+      - name: Update gpSP pin
+        run: |
+          set -eu
+          grep -q "^  GPSP_COMMIT: ${CURRENT}$" taskfile.yml
+          sed -i "s/^  GPSP_COMMIT: ${CURRENT}$/  GPSP_COMMIT: ${LATEST}/" taskfile.yml
+          grep -q "^  GPSP_COMMIT: ${LATEST}$" taskfile.yml
+          git diff --check
+
+      - name: Push update branch
+        run: |
+          set -eu
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch -C "$BRANCH"
+          git add taskfile.yml
+          git commit -m "Update gpSP to ${SHORT}"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            # Fetch the current branch tip so --force-with-lease protects against overwriting
+            # a branch someone changed after this workflow started.
+            git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+            git push --force-with-lease origin "HEAD:refs/heads/${BRANCH}"
+          else
+            git push origin "HEAD:refs/heads/${BRANCH}"
+          fi
+
+      - name: Open or update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+
+          current_short="$(printf '%.12s' "$CURRENT")"
+          base_short="$(printf '%.12s' "$BASE_SHA")"
+          body="$(mktemp)"
+
+          cat > "$body" <<BODY
+          Updates the pinned libretro/gpsp commit:
+
+          - current: [\`${current_short}\`](https://github.com/libretro/gpsp/commit/${CURRENT})
+          - candidate: [\`${SHORT}\`](https://github.com/libretro/gpsp/commit/${LATEST})
+
+          Validation completed before this PR was opened or updated:
+
+          - \`task core:gpsp:test\`
+            - built the patched aarch64 gpSP core from the candidate source archive
+            - required the unpatched Advance Wars regression case to fail
+            - required the patched regression case to pass
+
+          Validated against Slot main [\`${base_short}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${BASE_SHA}).
+
+          Upstream changes: https://github.com/libretro/gpsp/compare/${CURRENT}...${LATEST}
+
+          This PR is intentionally not auto-merged.
+          BODY
+
+          pr_number="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$BRANCH" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "[deps] update gpSP to ${SHORT}" \
+              --body-file "$body"
+            echo "Updated PR #${pr_number}."
+          else
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$BRANCH" \
+              --title "[deps] update gpSP to ${SHORT}" \
+              --body-file "$body"
+          fi
