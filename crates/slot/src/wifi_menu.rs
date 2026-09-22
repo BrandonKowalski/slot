@@ -1,7 +1,7 @@
 //! Controller-friendly Wi-Fi screen. Passwords are masked and never part of a render cache key.
 use crate::wifi::{self, Network, Request, Security, Service};
 use slot_input::Btn;
-use slot_ui::UndoFace;
+use slot_ui::{UndoFace, OUT_H, OUT_W};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -178,28 +178,76 @@ impl WifiMenu {
     }
 
     pub fn face(&self) -> UndoFace {
-        let (w, h) = (640, 480);
+        let (w, h) = (OUT_W as usize, OUT_H as usize);
+        let content_width = OUT_W as i32 - 56;
+        let key_pitch = content_width / 10;
         let mut face = UndoFace {
             rgba: vec![0; w * h * 4],
             w: w as u32,
             h: h as u32,
         };
-        fill(&mut face, 0, 0, 640, 480, [20, 21, 25, 255]);
-        text(&mut face, "Wi-Fi", 28, 20, 30.0, 584, [240, 240, 244]);
-        text(&mut face, &self.status, 28, 63, 18.0, 584, [185, 190, 200]);
+        fill(
+            &mut face,
+            0,
+            0,
+            OUT_W as i32,
+            OUT_H as i32,
+            [20, 21, 25, 255],
+        );
+        text(
+            &mut face,
+            "Wi-Fi",
+            28,
+            20,
+            30.0,
+            content_width,
+            [240, 240, 244],
+        );
+        text(
+            &mut face,
+            &self.status,
+            28,
+            63,
+            18.0,
+            content_width,
+            [185, 190, 200],
+        );
         if let Some(network) = &self.editing {
-            text(&mut face, &network.ssid, 28, 99, 22.0, 584, [240, 240, 244]);
+            text(
+                &mut face,
+                &network.ssid,
+                28,
+                99,
+                22.0,
+                content_width,
+                [240, 240, 244],
+            );
             let masked = format!(
                 "{}  ({} characters)",
                 "*".repeat(self.password.len().min(24)),
                 self.password.len()
             );
-            text(&mut face, &masked, 28, 139, 19.0, 584, [185, 190, 200]);
+            text(
+                &mut face,
+                &masked,
+                28,
+                139,
+                19.0,
+                content_width,
+                [185, 190, 200],
+            );
             for (i, key) in KEYS[self.page].chars().enumerate() {
-                let x = 28 + (i % 10) as i32 * 59;
+                let x = 28 + (i % 10) as i32 * key_pitch;
                 let y = 190 + (i / 10) as i32 * 45;
                 if i == self.key {
-                    fill(&mut face, x - 3, y - 4, 49, 40, [65, 70, 85, 255]);
+                    fill(
+                        &mut face,
+                        x - 3,
+                        y - 4,
+                        key_pitch - 10,
+                        40,
+                        [65, 70, 85, 255],
+                    );
                 }
                 let label = if key == ' ' {
                     "SP".to_string()
@@ -214,7 +262,7 @@ impl WifiMenu {
                 28,
                 391,
                 19.0,
-                584,
+                content_width,
                 [185, 190, 200],
             );
             text(
@@ -223,7 +271,7 @@ impl WifiMenu {
                 28,
                 433,
                 19.0,
-                584,
+                content_width,
                 [240, 240, 244],
             );
         } else {
@@ -248,9 +296,24 @@ impl WifiMenu {
             for (i, label) in rows.iter().enumerate().skip(first).take(6) {
                 let y = 105 + (i - first) as i32 * 46;
                 if i == self.row {
-                    fill(&mut face, 16, y - 3, 608, 41, [65, 70, 85, 255]);
+                    fill(
+                        &mut face,
+                        16,
+                        y - 3,
+                        OUT_W as i32 - 32,
+                        41,
+                        [65, 70, 85, 255],
+                    );
                 }
-                text(&mut face, label, 28, y, 22.0, 584, [240, 240, 244]);
+                text(
+                    &mut face,
+                    label,
+                    28,
+                    y,
+                    22.0,
+                    content_width,
+                    [240, 240, 244],
+                );
             }
             text(
                 &mut face,
@@ -258,7 +321,7 @@ impl WifiMenu {
                 28,
                 391,
                 18.0,
-                584,
+                content_width,
                 [185, 190, 200],
             );
             text(
@@ -271,7 +334,7 @@ impl WifiMenu {
                 28,
                 433,
                 19.0,
-                584,
+                content_width,
                 [240, 240, 244],
             );
         }
@@ -322,6 +385,12 @@ fn text(face: &mut UndoFace, s: &str, x: i32, y: i32, size: f32, width: i32, ink
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn wifi_face_matches_the_compositor_without_rescaling() {
+        let face = WifiMenu::default().face();
+        assert_eq!((face.w, face.h), (OUT_W, OUT_H));
+        assert_eq!(face.rgba.len(), (OUT_W * OUT_H * 4) as usize);
+    }
     #[test]
     fn keyboard_contains_every_printable_ascii_character() {
         for keys in KEYS {
