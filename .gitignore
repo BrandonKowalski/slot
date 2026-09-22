@@ -2,7 +2,6 @@
 **/*.rs.bk
 *.pdb
 
-/docs/
 /CLAUDE.md
 /.ralph/
 /.superpowers/
