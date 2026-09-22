@@ -48,8 +48,8 @@ jobs:
           apt-get install -y --no-install-recommends zip cmake
           curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Test Wi-Fi and settings
-        run: cargo test --locked -p slot --no-default-features --lib --test wifi_menu --test quick_menu --test clock --test power
+      - name: Test networking and settings
+        run: cargo test --locked -p slot --no-default-features --lib --test wifi_menu --test transfer --test transfer_menu --test quick_menu --test clock --test power
 
       # Named for the tag, so what comes out of the archive says which version it is rather
       # than landing seven unlabelled folders wherever it was opened.

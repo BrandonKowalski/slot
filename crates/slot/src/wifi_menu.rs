@@ -342,7 +342,7 @@ impl WifiMenu {
     }
 }
 
-fn fill(face: &mut UndoFace, x: i32, y: i32, w: i32, h: i32, colour: [u8; 4]) {
+pub(crate) fn fill(face: &mut UndoFace, x: i32, y: i32, w: i32, h: i32, colour: [u8; 4]) {
     for yy in y.max(0)..(y + h).min(face.h as i32) {
         for xx in x.max(0)..(x + w).min(face.w as i32) {
             let at = (yy as usize * face.w as usize + xx as usize) * 4;
@@ -352,7 +352,15 @@ fn fill(face: &mut UndoFace, x: i32, y: i32, w: i32, h: i32, colour: [u8; 4]) {
 }
 
 /// Preserve case: SSIDs and keyboard keys are case-sensitive, unlike Slot's menu typography.
-fn text(face: &mut UndoFace, s: &str, x: i32, y: i32, size: f32, width: i32, ink: [u8; 3]) {
+pub(crate) fn text(
+    face: &mut UndoFace,
+    s: &str,
+    x: i32,
+    y: i32,
+    size: f32,
+    width: i32,
+    ink: [u8; 3],
+) {
     let Some(font) = slot_ui::text::label_font() else {
         return;
     };

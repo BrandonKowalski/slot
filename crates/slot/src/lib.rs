@@ -21,6 +21,8 @@ pub mod rewind;
 pub mod root;
 pub mod session;
 pub mod thumb;
+pub mod transfer;
+pub mod transfer_menu;
 pub mod video_mode;
 pub mod wallpaper;
 pub mod wifi;

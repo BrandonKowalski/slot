@@ -120,6 +120,7 @@ fn up_and_down_move_the_bar_and_stop_at_the_ends() {
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::Wifi,
+        QuickRow::FileTransfer,
         QuickRow::About,
         QuickRow::About,
     ] {

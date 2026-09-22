@@ -71,6 +71,8 @@ pub struct Frontend {
     quick_clock: QuickClock,
     wifi_tex: Option<TexId>,
     wifi_revision: u64,
+    transfer_tex: Option<TexId>,
+    transfer_revision: u64,
 }
 
 /// Date & Time's value in the quick menu, grey and lit, and the text they were built for.
@@ -142,6 +144,8 @@ impl Frontend {
             quick_clock: QuickClock::default(),
             wifi_tex: None,
             wifi_revision: 0,
+            transfer_tex: None,
+            transfer_revision: 0,
         }
     }
 
@@ -379,6 +383,16 @@ impl Frontend {
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         let app = self.session.app_mut();
+        if matches!(app.phase(), Phase::FileTransfer)
+            && self.transfer_revision != app.transfer.revision()
+        {
+            self.transfer_revision = app.transfer.revision();
+            app.transfer_face = Some(upload(
+                compositor,
+                &mut self.transfer_tex,
+                app.transfer.face(),
+            ));
+        }
         if matches!(app.phase(), Phase::Wifi) && self.wifi_revision != app.wifi.revision() {
             self.wifi_revision = app.wifi.revision();
             app.wifi_face = Some(upload(compositor, &mut self.wifi_tex, app.wifi.face()));

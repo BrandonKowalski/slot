@@ -341,6 +341,7 @@ tasks:
           CMD: ./target-device/device/slot --init-root {{.OUT}}
       - cp target-device/device/slot {{.OUT}}/System/slot
       - cp WIFI.md {{.OUT}}/WIFI.md
+      - cp FILE-TRANSFER.md {{.OUT}}/FILE-TRANSFER.md
       # `core:device` and `core:gpsp`'s own arch check only runs on a fresh build: their
       # `status` skips the whole task, check included, whenever the core and its .meta already
       # match — so a hand-placed x86 `.so` beside a copied .meta sails through unchecked. Re-checked

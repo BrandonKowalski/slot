@@ -15,6 +15,7 @@ pub enum QuickRow {
     Rumble,
     DateTime,
     Wifi,
+    FileTransfer,
     About,
 }
 
@@ -33,13 +34,14 @@ impl QuickRow {
     /// between them, and what follows the pair is the settings that stand alone. Of those,
     /// colour correction is in effect every second a game is on screen while rumble only matters
     /// when a cart asks for the motor, so the unconditional one comes first.
-    pub const ALL: [QuickRow; 7] = [
+    pub const ALL: [QuickRow; 8] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::ColourCorrection,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::Wifi,
+        QuickRow::FileTransfer,
         QuickRow::About,
     ];
 
@@ -56,13 +58,17 @@ impl QuickRow {
             QuickRow::Rumble => "Rumble",
             QuickRow::DateTime => "Date & Time",
             QuickRow::Wifi => "Wi-Fi",
+            QuickRow::FileTransfer => "File Transfer",
             QuickRow::About => "About",
         }
     }
 
     /// A row A opens, rather than one the arrows change.
     pub fn opens(self) -> bool {
-        matches!(self, QuickRow::DateTime | QuickRow::Wifi | QuickRow::About)
+        matches!(
+            self,
+            QuickRow::DateTime | QuickRow::Wifi | QuickRow::FileTransfer | QuickRow::About
+        )
     }
 
     /// The row above, stopping at the top: the bar does not wrap, as no menu here does.
@@ -136,9 +142,8 @@ impl QuickValue {
     }
 }
 
-/// A size up from the power menu's rows: 30 px type on 52 px rows, which the full width has
-/// room for.
-pub const QUICK_PITCH: f32 = 52.0;
+/// 30 px type on 44 px rows leaves room for eight settings and the bottom legend.
+pub const QUICK_PITCH: f32 = 44.0;
 /// The first row's top, with all of them centred on the panel: derived from `QuickRow::ALL`, so
 /// a row added or removed moves the whole menu rather than hanging one off the bottom.
 pub const QUICK_TOP: f32 = (OUT_H as f32 - QUICK_PITCH * QuickRow::ALL.len() as f32) / 2.0;
