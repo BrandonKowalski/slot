@@ -1,10 +1,10 @@
 name: release
 
-# A tag cuts the release. Running it by hand builds the same tree and leaves it as an
-# artifact instead, so the pipeline can be exercised without spending a version number.
+# Every commit pushed to main cuts a release. Running it by hand builds the same tree and
+# leaves it as an artifact instead, so the pipeline can be exercised without publishing.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,17 +21,14 @@ jobs:
     # makes `task dist:device` skip its docker call.
     container: rust:1-bullseye
     outputs:
+      tag: ${{ steps.meta.outputs.tag }}
       zip: ${{ steps.package.outputs.zip }}
-      mgba_sha: ${{ steps.package.outputs.mgba_sha }}
-      mgba_head: ${{ steps.package.outputs.mgba_head }}
-      mgba_patches: ${{ steps.package.outputs.mgba_patches }}
-      gpsp_sha: ${{ steps.package.outputs.gpsp_sha }}
-      core_date: ${{ steps.package.outputs.core_date }}
-      gpsp_head: ${{ steps.package.outputs.gpsp_head }}
-      gpsp_anchor: ${{ steps.package.outputs.gpsp_anchor }}
-      gpsp_method: ${{ steps.package.outputs.gpsp_method }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set release tag
+        id: meta
+        run: echo "tag=main-$(printf '%.12s' "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
 
       # The image already carries curl, file and unzip, which the fetch and the arch check
       # need. zip is missing, and so is cmake, which core:device builds mGBA with. Bullseye is
@@ -51,17 +48,21 @@ jobs:
       - name: Test networking and settings
         run: cargo test --locked -p slot --no-default-features --lib --test wifi_menu --test transfer --test transfer_menu --test quick_menu --test clock --test power
 
-      # Named for the tag, so what comes out of the archive says which version it is rather
-      # than landing seven unlabelled folders wherever it was opened.
+      # Named for the release tag, so what comes out of the archive maps directly back to
+      # the main commit that produced it.
       - name: Build the tree
-        run: task dist:device OUT="slot-${GITHUB_REF_NAME}"
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        run: task dist:device OUT="slot-${RELEASE_TAG}"
 
       # Before anything is published, not after. A tree built by the wrong toolchain is a
       # download that bootloops a device, and it costs one exec to know.
       - name: Check what is about to ship
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -eu
-          out="slot-${GITHUB_REF_NAME}"
+          out="slot-${RELEASE_TAG}"
           file "$out/System/slot" | grep -q aarch64
           file "$out/System/mgba_libretro.so" | grep -q aarch64
           file "$out/System/gpsp_libretro.so" | grep -q aarch64
@@ -69,7 +70,7 @@ jobs:
           # GPL-2.0 section 3(a): the release does not ship without gpSP's corresponding
           # source. `task dist:device` names the file for the commit `core:gpsp` recorded, so
           # that recording is what says which file to look for. The .meta file travels with
-          # it, same naming, carrying the anchor timestamp and resolution method.
+          # it, same naming, carrying the source commit, build recipe and applied patches.
           gpsp_src_sha="$(cat vendor/gpsp-src.sha)"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.tar.gz"
           test -f "$out/System/licenses/gpsp-${gpsp_src_sha}.meta"
@@ -84,48 +85,92 @@ jobs:
 
       - name: Package
         id: package
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -eu
-          out="slot-${GITHUB_REF_NAME}"
+          out="slot-${RELEASE_TAG}"
           zip="$out-h700.zip"
           zip -qry "$zip" "$out"
           {
             echo "zip=$zip"
-            # gpSP is recorded rather than pinned: it is whatever the buildbot was serving as
-            # latest when this ran, and a release should be able to say which one that was.
-            # mGBA is built from the pin in taskfile.yml instead. Both are hashed, so a card
-            # with a corrupted or substituted core can be checked against the announcement.
+            echo "zip_sha=$(sha256sum "$zip" | cut -d' ' -f1)"
+            # Both cores are built from pinned source commits. Hash the shipped binaries so
+            # a card with a corrupted or substituted core can be checked against the announcement.
             echo "mgba_sha=$(sha256sum vendor/mgba_libretro.so | cut -d' ' -f1)"
             echo "gpsp_sha=$(sha256sum vendor/gpsp_libretro.so | cut -d' ' -f1)"
-            echo "core_date=$(date -u +%Y-%m-%d)"
             # mGBA's source, read back from the .meta cores/mgba/build.sh wrote beside the core
             # that shipped: the libretro/mgba commit, and the patches applied on top of it.
             echo "mgba_head=$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
             echo "mgba_patches=$(grep '^patch=' vendor/mgba_libretro.so.meta | cut -d= -f2 | cut -d' ' -f1 | paste -sd' ' -)"
-            # The commit whose source archive actually shipped in this zip (see
-            # licenses/README.md) — read back from what core:gpsp recorded, not re-resolved
-            # here, so this can never name a different commit than the file the "Check what
-            # is about to ship" step just verified is in the tree. gpsp_anchor and
-            # gpsp_method come from the same recording: the binary timestamp the commit was
-            # anchored to, and whether that anchoring used GitHub's API or fell back to
-            # git ls-remote — so the notes below can never claim a precision the fetch
-            # itself didn't get.
+            # The pinned gpSP commit whose source archive and build metadata actually ship
+            # in this zip. Read it back from what core:gpsp recorded so the release notes can
+            # never name a different source commit than the files on the card.
             echo "gpsp_head=$(cat vendor/gpsp-src.sha)"
-            echo "gpsp_anchor=$(grep '^binary_date=' vendor/gpsp-src.meta | cut -d= -f2)"
-            echo "gpsp_method=$(grep '^resolved_via=' vendor/gpsp-src.meta | cut -d= -f2)"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          ZIP_SHA: ${{ steps.package.outputs.zip_sha }}
+          MGBA_SHA: ${{ steps.package.outputs.mgba_sha }}
+          MGBA_HEAD: ${{ steps.package.outputs.mgba_head }}
+          MGBA_PATCHES: ${{ steps.package.outputs.mgba_patches }}
+          GPSP_SHA: ${{ steps.package.outputs.gpsp_sha }}
+          GPSP_HEAD: ${{ steps.package.outputs.gpsp_head }}
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          commit_message="$(git log -1 --pretty=%B)"
+          commit_short="$(git rev-parse --short=12 HEAD)"
+
+          cat > notes.md <<NOTES
+          ## Changes
+
+          ${commit_message}
+
+          Commit: [\`${commit_short}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})
+
+          ## Build details
+
+          Unzip and copy the contents of \`slot-${RELEASE_TAG}/\` onto SD2.
+
+          Release ZIP SHA-256: \`${ZIP_SHA}\`
+
+          | | |
+          |---|---|
+          | \`System/slot\` | aarch64, built against glibc 2.31 |
+          | \`System/mgba_libretro.so\` | built from libretro/mgba @ \`${MGBA_HEAD}\` with \`${MGBA_PATCHES}\` applied, sha256 \`${MGBA_SHA}\` |
+          | \`System/gpsp_libretro.so\` | built from libretro/gpsp @ \`${GPSP_HEAD}\`, sha256 \`${GPSP_SHA}\` |
+          | \`System/licenses/mgba-${MGBA_HEAD}.meta\` | mGBA's source commit and the patches applied, which ship beside it as \`mgba-*.patch\` |
+          | \`System/licenses/gpsp-${GPSP_HEAD}.tar.gz\` | gpSP source, libretro/gpsp @ \`${GPSP_HEAD}\` |
+          | \`System/licenses/gpsp-${GPSP_HEAD}.meta\` | source commit, build recipe and applied patches |
+
+          mGBA is MPL-2.0 and gpSP is GPL-2.0, both credited with their license text under
+          \`System/licenses/\`. mGBA ships patched: libretro/mgba had not picked up upstream
+          mGBA's fix for the Classic NES Series audio, so the core is built from libretro/mgba at
+          \`${MGBA_HEAD}\` with that fix applied. The patch ships under \`System/licenses/\`, and
+          the rest of mGBA's source is public at that commit. gpSP is built from the pinned
+          libretro/gpsp commit \`${GPSP_HEAD}\`; its corresponding source archive, build
+          metadata and applied patches ship under \`System/licenses/\` alongside the GPL-2.0
+          license.
+          NOTES
+
+          cat notes.md
 
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.package.outputs.zip }}
-          path: ${{ steps.package.outputs.zip }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            notes.md
           if-no-files-found: error
 
   publish:
     name: release
     needs: build
     # Skipped on a manual run, which leaves the artifact above and nothing else.
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # Not the arm runner and not a container: this job only moves a file, and gh is already
     # on the stock image.
     runs-on: ubuntu-latest
@@ -139,43 +184,27 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
           ZIP: ${{ needs.build.outputs.zip }}
-          MGBA_SHA: ${{ needs.build.outputs.mgba_sha }}
-          MGBA_HEAD: ${{ needs.build.outputs.mgba_head }}
-          MGBA_PATCHES: ${{ needs.build.outputs.mgba_patches }}
-          GPSP_SHA: ${{ needs.build.outputs.gpsp_sha }}
-          CORE_DATE: ${{ needs.build.outputs.core_date }}
-          GPSP_HEAD: ${{ needs.build.outputs.gpsp_head }}
-          GPSP_ANCHOR: ${{ needs.build.outputs.gpsp_anchor }}
-          GPSP_METHOD: ${{ needs.build.outputs.gpsp_method }}
         run: |
           set -eu
-          cat > notes.md <<NOTES
-          Unzip and copy the contents of \`slot-${GITHUB_REF_NAME}/\` onto SD2.
-
-          | | |
-          |---|---|
-          | \`System/slot\` | aarch64, built against glibc 2.31 |
-          | \`System/mgba_libretro.so\` | built from libretro/mgba @ \`${MGBA_HEAD}\` with \`${MGBA_PATCHES}\` applied, sha256 \`${MGBA_SHA}\` |
-          | \`System/gpsp_libretro.so\` | libretro buildbot nightly, fetched ${CORE_DATE}, sha256 \`${GPSP_SHA}\` |
-          | \`System/licenses/mgba-${MGBA_HEAD}.meta\` | mGBA's source commit and the patches applied, which ship beside it as \`mgba-*.patch\` |
-          | \`System/licenses/gpsp-${GPSP_HEAD}.tar.gz\` | gpSP source, libretro/gpsp \`master\` @ \`${GPSP_HEAD}\` |
-          | \`System/licenses/gpsp-${GPSP_HEAD}.meta\` | anchor \`${GPSP_ANCHOR}\`, resolved via \`${GPSP_METHOD}\` |
-
-          mGBA is MPL-2.0 and gpSP is GPL-2.0, both credited with their license text under
-          \`System/licenses/\`. mGBA ships patched: libretro/mgba had not picked up upstream
-          mGBA's fix for the Classic NES Series audio, so the core is built from libretro/mgba at
-          \`${MGBA_HEAD}\` with that fix applied. The patch ships under \`System/licenses/\`, and
-          the rest of mGBA's source is public at that commit. gpSP ships as the unmodified
-          buildbot nightly, and its corresponding
-          source ships in this zip too, per GPL-2.0 section 3(a): the buildbot does not publish
-          which commit a nightly was built from, so what ships is \`master\` as of
-          \`${GPSP_ANCHOR}\` — the timestamp the buildbot itself stamped onto this release's
-          \`gpsp_libretro.so\` — resolved via \`${GPSP_METHOD}\`, rather than a proven match to
-          this exact binary. \`System/licenses/README.md\` says so plainly and keeps a
-          section 3(b) written offer as a backstop for the gap.
-          NOTES
           # --repo because this job never checks out: gh works out where to publish from the
           # git remote otherwise, and there is no repository here to ask.
-          gh release create "$GITHUB_REF_NAME" "$ZIP" --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" --notes-file notes.md
+          # A rerun repairs the release if the first attempt created it but failed while
+          # uploading the asset or writing the final notes.
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; updating it."
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --notes-file notes.md
+            gh release upload "$RELEASE_TAG" "$ZIP" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" "$ZIP" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes-file notes.md
