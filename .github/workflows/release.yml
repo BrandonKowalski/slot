@@ -1,10 +1,16 @@
 name: release
 
-# Every commit pushed to main cuts a release. Running it by hand builds the same tree and
-# leaves it as an artifact instead, so the pipeline can be exercised without publishing.
+# Every build-affecting commit pushed to main cuts a release. Housekeeping-only changes
+# such as workflow, site, or repository metadata updates do not.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - 'site/**'
+      - 'README.md'
+      - 'CNAME'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
