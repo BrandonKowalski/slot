@@ -6,7 +6,12 @@ Has support for GBA, GBC, and GB titles only.
 
 A full user guide can be found at [slot.kowalski.io](https://slot.kowalski.io).
 
-## AI Disclosure
+## Disclosures
+
+- Original repo by BrandonKowalski (ty)
+- Modifications added by me using Codex
+
+---
 
 The Rust frontend was put together by Claude Opus. I reviewed everything that was
 produced. All documentation is 100% free-range, meatbag prose.
