@@ -382,12 +382,18 @@ pub enum Phase {
     /// looked at and there is nothing else on it. Opened from the quick menu, and left back
     /// to it.
     About,
+    Wifi,
+    FileTransfer,
     Doze {
         cart: Option<String>,
     },
 }
 
 pub struct App {
+    pub transfer: crate::transfer_menu::TransferMenu,
+    pub transfer_face: Option<TexId>,
+    pub wifi: crate::wifi_menu::WifiMenu,
+    pub wifi_face: Option<TexId>,
     phase: Phase,
     /// One carousel per platform, in `Platform::ALL` order, which is the order the shoulders
     /// ring through them. Every platform is held whether or not it has a cart on it — an empty
@@ -640,6 +646,10 @@ impl App {
             .position(|(_, s)| !s.carts.is_empty())
             .unwrap_or(0);
         App {
+            transfer: crate::transfer_menu::TransferMenu::default(),
+            transfer_face: None,
+            wifi: crate::wifi_menu::WifiMenu::default(),
+            wifi_face: None,
             radio: radio_jobs(),
             phase: Phase::Shelf,
             shelves,
@@ -726,6 +736,7 @@ impl App {
         slot_ui::set_theme(Theme::read(root));
         let mut app = App::new(scan(root).unwrap_or_default());
         app.root = Some(root.to_path_buf());
+        app.wifi.boot(root);
         app.state = read_slot_state(root);
         if app.state.clock_set {
             app.start();
@@ -926,7 +937,7 @@ impl App {
             QuickRow::FastForwardSound => Some(QuickValue::flag(self.state.ff_sound)),
             QuickRow::ColourCorrection => Some(QuickValue::flag(self.state.colour_correction)),
             QuickRow::Rumble => Some(QuickValue::flag(self.state.rumble)),
-            QuickRow::DateTime | QuickRow::About => None,
+            QuickRow::DateTime | QuickRow::Wifi | QuickRow::FileTransfer | QuickRow::About => None,
         }
     }
 
@@ -1705,6 +1716,33 @@ impl App {
                 }
             }
             Phase::QuickMenu { row } => self.quick_menu_input(row, action),
+            Phase::FileTransfer => match action {
+                Action::QuickMenu | Action::GbaDown(Btn::B) => {
+                    self.transfer.stop();
+                    self.phase = Phase::QuickMenu {
+                        row: QuickRow::FileTransfer,
+                    };
+                }
+                Action::GbaDown(Btn::A) if !self.transfer.running() => {
+                    self.transfer.open(self.root.as_deref(), &self.wifi.status);
+                }
+                _ => {}
+            },
+            Phase::Wifi => {
+                let back = match action {
+                    Action::QuickMenu => {
+                        self.wifi.input(Btn::B);
+                        true
+                    }
+                    Action::GbaDown(button) => self.wifi.input(button),
+                    _ => false,
+                };
+                if back {
+                    self.phase = Phase::QuickMenu {
+                        row: QuickRow::Wifi,
+                    };
+                }
+            }
             _ => {}
         }
     }
@@ -1717,7 +1755,7 @@ impl App {
     }
 
     /// Up and Down move the bar and stop at the ends, Left and Right change the row in hand, A
-    /// opens the two rows that open, and MENU or B puts the carousel back.
+    /// opens a submenu, and MENU or B puts the carousel back.
     fn quick_menu_input(&mut self, row: QuickRow, action: Action) {
         let row = match action {
             Action::GbaDown(Btn::Up) => row.up(),
@@ -1734,7 +1772,7 @@ impl App {
         self.phase = Phase::QuickMenu { row };
     }
 
-    /// A on a row. Only Date & Time and About open anything.
+    /// A opens Date & Time, Wi-Fi or About.
     fn open_quick_row(&mut self, row: QuickRow) {
         match row {
             QuickRow::DateTime => {
@@ -1743,6 +1781,14 @@ impl App {
                 self.phase = clock_screen(self.utc_secs(), self.state.utc_offset_min, true);
             }
             QuickRow::About => self.phase = Phase::About,
+            QuickRow::Wifi => {
+                self.wifi.open();
+                self.phase = Phase::Wifi;
+            }
+            QuickRow::FileTransfer => {
+                self.transfer.open(self.root.as_deref(), &self.wifi.status);
+                self.phase = Phase::FileTransfer;
+            }
             QuickRow::FastForward
             | QuickRow::FastForwardSound
             | QuickRow::ColourCorrection
@@ -1767,7 +1813,9 @@ impl App {
             QuickRow::FastForwardSound => s.ff_sound = !s.ff_sound,
             QuickRow::ColourCorrection => s.colour_correction = !s.colour_correction,
             QuickRow::Rumble => s.rumble = !s.rumble,
-            QuickRow::DateTime | QuickRow::About => return,
+            QuickRow::DateTime | QuickRow::Wifi | QuickRow::FileTransfer | QuickRow::About => {
+                return
+            }
         }
         self.persist();
     }
@@ -2062,6 +2110,8 @@ impl App {
     /// Everything the clock alone drives. The play hold is the one thing here the user did
     /// ask for; it is only the clock that decides which of the two things it was.
     fn timers(&mut self) {
+        self.transfer.poll();
+        self.wifi.poll(matches!(self.phase, Phase::Wifi));
         self.play_hold();
         // The grace period can run out with the switcher open, so the hint answers to the
         // clock rather than to whatever was on offer on the way in.
@@ -2330,6 +2380,32 @@ impl App {
             return;
         }
         match &self.phase {
+            Phase::FileTransfer => {
+                if let Some(tex) = self.transfer_face {
+                    out.push(Draw::Tex {
+                        x: 0.0,
+                        y: 0.0,
+                        w: OUT_W as f32,
+                        h: OUT_H as f32,
+                        tex,
+                        alpha: 1.0,
+                    });
+                }
+                return;
+            }
+            Phase::Wifi => {
+                if let Some(tex) = self.wifi_face {
+                    out.push(Draw::Tex {
+                        x: 0.0,
+                        y: 0.0,
+                        w: OUT_W as f32,
+                        h: OUT_H as f32,
+                        tex,
+                        alpha: 1.0,
+                    });
+                }
+                return;
+            }
             // Nothing else is on screen and nothing goes over it, the HUD included: the
             // levels are unreachable here and there is no game to say anything about.
             Phase::SetClock {
@@ -3085,6 +3161,7 @@ impl App {
     /// is the one already chosen for `PowerPress`, and completing the doze underneath it is
     /// the only way to actually reach the low-power state this function exists for.
     fn doze(&mut self) {
+        self.transfer.stop();
         if self.link_active() {
             self.end_link();
         }
@@ -3202,6 +3279,7 @@ impl App {
                 self.close_game_menu();
                 match PowerChoice::ALL[index] {
                     PowerChoice::Restart => {
+                        self.transfer.stop();
                         self.restarting = true;
                         self.act_at = self.now() + SHUTDOWN_SHOW_MS;
                         self.set_led(LedState::Off);
@@ -3699,6 +3777,7 @@ impl App {
     /// watching finish. A real behaviour on a handheld: the case still has a light on it for
     /// as long as `poweroff` takes to actually cut power.
     fn begin_power_off(&mut self) {
+        self.transfer.stop();
         // Idempotent, and that is the whole of why: `doze_expired` is a level rather than an
         // edge and this leaves the phase on `Doze`, so `timers` calls back here every frame
         // for as long as the lid is shut. Re-arming `act_at` each time walked the deadline

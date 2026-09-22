@@ -26,6 +26,10 @@ gilrs = { workspace = true, optional = true }
 libloading = { workspace = true }
 lz4_flex = { workspace = true }
 png = { workspace = true }
+pbkdf2 = "0.12"
+sha1 = "0.10"
+httparse = "1"
+serde_json = "1"
 
 [dev-dependencies]
 # `TexId::from_raw`, so a draw test can name the faces the binary uploads at boot without a

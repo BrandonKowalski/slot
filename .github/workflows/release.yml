@@ -41,9 +41,15 @@ jobs:
       - name: Install zip, cmake and Task
         run: |
           set -eu
+          # Match cores/mgba/build.sh: this retired suite advertises packages
+          # that now return 404. Use Bullseye's main archive for build tools.
+          sed -i '/bullseye-security/d' /etc/apt/sources.list
           apt-get -o Acquire::Check-Valid-Until=false update
           apt-get install -y --no-install-recommends zip cmake
           curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Test networking and settings
+        run: cargo test --locked -p slot --no-default-features --lib --test wifi_menu --test transfer --test transfer_menu --test quick_menu --test clock --test power
 
       # Named for the tag, so what comes out of the archive says which version it is rather
       # than landing seven unlabelled folders wherever it was opened.

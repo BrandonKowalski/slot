@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slot · File Transfer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      background: #151619;
+      color: #ececef;
+      font-size: 16px;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 38px;
+    }
+    .brand {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -2px;
+    }
+    .badge {
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #b4b6bd;
+    }
+    h1 {
+      font-size: 28px;
+      letter-spacing: -0.7px;
+      margin: 0 0 10px;
+    }
+    p {
+      color: #b4b6bd;
+      line-height: 1.6;
+      margin: 0 0 24px;
+    }
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid #45474f;
+      border-radius: 9px;
+      background: #292b31;
+      color: #ececef;
+      padding: 11px 17px;
+    }
+    button:hover {
+      background: #383b43;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    button.primary {
+      background: #e5dbbf;
+      color: #232323;
+      border-color: #e5dbbf;
+      font-weight: 650;
+    }
+    .card {
+      background: #1e2025;
+      border: 1px solid #35373e;
+      border-radius: 16px;
+      padding: 28px;
+    }
+    #login {
+      max-width: 500px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    input,
+    select {
+      background: #151619;
+      color: #ececef;
+      border: 1px solid #484a54;
+      border-radius: 8px;
+      padding: 12px;
+      width: 100%;
+    }
+    input {
+      font-size: 24px;
+      letter-spacing: 5px;
+      margin-bottom: 18px;
+    }
+    input:focus,
+    select:focus,
+    button:focus-visible {
+      outline: 2px solid #e5dbbf;
+      outline-offset: 3px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 14px;
+      align-items: end;
+      margin: 28px 0 20px;
+    }
+    .field {
+      flex: 1;
+    }
+    .toolbar label {
+      color: #b4b6bd;
+    }
+    .toolbar select {
+      height: 47px;
+    }
+    #drop {
+      border: 1px dashed #686971;
+      border-radius: 14px;
+      text-align: center;
+      padding: 38px 24px;
+      background: #1c1e22;
+      transition:
+        background 0.15s,
+        border 0.15s;
+    }
+    #drop.over {
+      border-color: #e5dbbf;
+      background: #32312d;
+    }
+    #drop strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+    #drop p {
+      margin-bottom: 18px;
+      font-size: 14px;
+    }
+    .note {
+      font-size: 13px;
+      margin-top: 18px;
+    }
+    #status {
+      min-height: 24px;
+      margin: 18px 0;
+      color: #ddd4bc;
+    }
+    #status.error {
+      color: #ffa59b;
+    }
+    progress {
+      width: 100%;
+      height: 7px;
+      accent-color: #e5dbbf;
+      margin-top: 18px;
+    }
+    #status:empty {
+      display: none;
+    }
+    .list-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 32px 0 10px;
+    }
+    .list-title h2 {
+      font-size: 18px;
+      margin: 0;
+    }
+    .file {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid #35373e;
+    }
+    .file-name {
+      flex: 1;
+      overflow-wrap: anywhere;
+    }
+    .size {
+      color: #999da8;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .file button {
+      font-size: 13px;
+      padding: 8px 12px;
+    }
+    .empty {
+      padding: 24px 0;
+      color: #999da8;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 550px) {
+      main {
+        padding: 24px 18px;
+      }
+      .card {
+        padding: 22px;
+      }
+      .toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .file {
+        gap: 10px;
+      }
+      .size {
+        display: none;
+      }
+      .badge {
+        font-size: 10px;
+      }
+    }
+    dialog {
+      max-width: 440px;
+      background: #1e2025;
+      color: #ececef;
+      border: 1px solid #45474f;
+      border-radius: 16px;
+      padding: 28px;
+    }
+    dialog::backdrop {
+      background: #000a;
+    }
+    dialog h2 {
+      margin-top: 0;
+    }
+    dialog p {
+      overflow-wrap: anywhere;
+    }
+    .dialog-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+  </style>
+  <main>
+    <header>
+      <div class="brand">slot.</div>
+      <span class="badge">Local file transfer</span>
+    </header>
+    <div id="status" role="status" aria-live="polite"></div>
+    <section id="login" class="card">
+      <h1>A little less card swapping.</h1>
+      <p>Enter the code on your handheld to open its game and label folders.</p>
+      <form id="login-form">
+        <label for="pin">Transfer code</label
+        ><input
+          id="pin"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]{8}"
+          minlength="8"
+          maxlength="8"
+          autocomplete="off"
+          placeholder="00000000"
+          required
+          aria-describedby="login-note"
+        /><button class="primary" type="submit">Connect to Slot</button>
+      </form>
+      <p id="login-note" class="note">
+        Keep the File Transfer screen open on your handheld.
+      </p>
+    </section>
+    <section id="transfer" hidden>
+      <h1>Your card, without the card reader.</h1>
+      <p>
+        Add games, match up labels, or download a file back to your computer.
+      </p>
+      <div class="toolbar">
+        <div class="field">
+          <label for="folder">Destination folder</label
+          ><select id="folder">
+            <option value="Games/GBA">Games / Game Boy Advance</option>
+            <option value="Games/GB">Games / Game Boy</option>
+            <option value="Games/GBC">Games / Game Boy Color</option>
+            <option value="Labels/GBA">Labels / Game Boy Advance</option>
+            <option value="Labels/GB">Labels / Game Boy</option>
+            <option value="Labels/GBC">Labels / Game Boy Color</option>
+            <option value="BIOS">BIOS</option>
+          </select>
+        </div>
+        <button id="refresh">Refresh files</button>
+      </div>
+      <div id="drop">
+        <strong>Drop files here</strong>
+        <p id="types">GBA files · Up to 128 MB each</p>
+        <button id="choose" class="primary">Choose files</button
+        ><input id="files" type="file" multiple hidden /><progress
+          id="progress"
+          max="100"
+          value="0"
+          hidden
+          aria-label="Upload progress"
+        ></progress>
+      </div>
+      <p class="note">
+        Labels must be PNG files with the same name as the game. Restart Slot
+        after adding games or labels. Leaving the handheld's File Transfer
+        screen stops the connection.
+      </p>
+      <div class="list-title">
+        <h2>On your card</h2>
+        <span id="count" class="size"></span>
+      </div>
+      <div id="list"></div>
+    </section>
+  </main>
+  <dialog id="replace-dialog" aria-labelledby="replace-title">
+    <h2 id="replace-title">Replace this file?</h2>
+    <p id="replace-name"></p>
+    <div class="dialog-actions">
+      <button id="keep-file">Keep existing</button
+      ><button id="replace-file" class="primary">Replace file</button>
+    </div>
+  </dialog>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let pin = "",
+      busy = false,
+      currentFiles = [];
+    const maxSize = 128 * 1024 * 1024;
+    function message(text, error = false) {
+      $("status").textContent = text;
+      $("status").classList.toggle("error", error);
+    }
+    function url(route, name, replace = false) {
+      const q = new URLSearchParams({ dir: $("folder").value });
+      if (name !== undefined) q.set("name", name);
+      if (replace) q.set("replace", "1");
+      return "/api/" + route + "?" + q;
+    }
+    function size(bytes) {
+      return bytes < 1024 * 1024
+        ? (bytes / 1024).toFixed(1) + " KB"
+        : (bytes / 1024 / 1024).toFixed(1) + " MB";
+    }
+    function lock(value) {
+      busy = value;
+      for (const id of ["folder", "refresh", "choose"]) $(id).disabled = value;
+      document
+        .querySelectorAll("#list button")
+        .forEach((b) => (b.disabled = value));
+    }
+    async function api(path) {
+      let r;
+      try {
+        r = await fetch(path, { headers: { "X-Slot-Pin": pin } });
+      } catch {
+        throw Error(
+          "Connection lost. Keep File Transfer open and check that both devices are on the same Wi-Fi.",
+        );
+      }
+      if (!r.ok) {
+        let data;
+        try {
+          data = await r.json();
+        } catch {}
+        throw Error(data?.error || "Could not read from the handheld");
+      }
+      return r;
+    }
+    async function refresh() {
+      const data = await (await api(url("files"))).json();
+      currentFiles = data.files;
+      $("list").replaceChildren();
+      $("count").textContent =
+        currentFiles.length + " file" + (currentFiles.length === 1 ? "" : "s");
+      if (!currentFiles.length) {
+        const e = document.createElement("div");
+        e.className = "empty";
+        e.textContent = "This folder is ready for its first file.";
+        $("list").append(e);
+      }
+      for (const file of currentFiles) {
+        const row = document.createElement("div");
+        row.className = "file";
+        const name = document.createElement("span");
+        name.className = "file-name";
+        name.textContent = file.name;
+        const length = document.createElement("span");
+        length.className = "size";
+        length.textContent = size(file.size);
+        const button = document.createElement("button");
+        button.textContent = "Download";
+        button.setAttribute("aria-label", "Download " + file.name);
+        button.onclick = () => download(file.name);
+        row.append(name, length, button);
+        $("list").append(row);
+      }
+    }
+    async function download(name) {
+      if (busy) return;
+      lock(true);
+      message("Downloading " + name + "…");
+      try {
+        const blob = await (await api(url("file", name))).blob();
+        const link = document.createElement("a");
+        const object = URL.createObjectURL(blob);
+        link.href = object;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(object), 60000);
+        message("Downloaded " + name);
+      } catch (e) {
+        message(e.message, true);
+      } finally {
+        lock(false);
+      }
+    }
+    function upload(file, replace) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url("file", file.name, replace));
+        xhr.setRequestHeader("X-Slot-Pin", pin);
+        xhr.timeout = 10 * 60 * 1000;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable)
+            $("progress").value = (e.loaded / e.total) * 100;
+        };
+        xhr.onload = () => {
+          if (xhr.status === 201) resolve();
+          else {
+            let data;
+            try {
+              data = JSON.parse(xhr.responseText);
+            } catch {}
+            reject(
+              Error(data?.error || "Upload failed; refresh and try again."),
+            );
+          }
+        };
+        xhr.onerror = () =>
+          reject(
+            Error(
+              "Connection lost. Refresh the folder to check whether the upload completed.",
+            ),
+          );
+        xhr.ontimeout = () =>
+          reject(Error("Upload timed out. Check Wi-Fi and try again."));
+        xhr.send(file);
+      });
+    }
+    function askReplace(name) {
+      return new Promise((resolve) => {
+        const dialog = $("replace-dialog");
+        $("replace-name").textContent =
+          "“" +
+          name +
+          "” already exists on your SD card. Replace it with the selected file?";
+        const finish = (value) => {
+          dialog.close();
+          resolve(value);
+        };
+        $("keep-file").onclick = () => finish(false);
+        $("replace-file").onclick = () => finish(true);
+        dialog.oncancel = (e) => {
+          e.preventDefault();
+          finish(false);
+        };
+        dialog.showModal();
+        $("keep-file").focus();
+      });
+    }
+    function extension() {
+      return $("folder").value.startsWith("Labels/")
+        ? "png"
+        : $("folder").value === "BIOS"
+          ? "bin"
+          : $("folder").value.split("/")[1].toLowerCase();
+    }
+    function types() {
+      const ext = extension();
+      $("files").accept = "." + ext;
+      $("types").textContent = ext.toUpperCase() + " files · Up to 128 MB each";
+    }
+    async function send(files) {
+      if (busy || !files.length) return;
+      lock(true);
+      let completed = 0,
+        skipped = 0;
+      try {
+        for (const file of files) {
+          if (file.size === 0 || file.size > maxSize)
+            throw Error(file.name + ": choose a nonempty file up to 128 MB.");
+          if (file.name.split(".").pop().toLowerCase() !== extension())
+            throw Error(
+              file.name + ": choose the matching destination folder first.",
+            );
+          const exists = currentFiles.some(
+            (f) => f.name.toLowerCase() === file.name.toLowerCase(),
+          );
+          if (exists && !(await askReplace(file.name))) {
+            skipped++;
+            continue;
+          }
+          $("progress").hidden = false;
+          $("progress").value = 0;
+          message(
+            "Uploading " +
+              file.name +
+              " (" +
+              (completed + skipped + 1) +
+              " of " +
+              files.length +
+              ")…",
+          );
+          await upload(file, exists);
+          completed++;
+          currentFiles.push({ name: file.name, size: file.size });
+        }
+        await refresh();
+        message(
+          completed +
+            " file" +
+            (completed === 1 ? "" : "s") +
+            " uploaded" +
+            (skipped ? " · " + skipped + " skipped" : "") +
+            ". Restart Slot when you are finished.",
+        );
+      } catch (e) {
+        message((completed ? completed + " uploaded. " : "") + e.message, true);
+      } finally {
+        lock(false);
+        $("progress").hidden = true;
+        $("files").value = "";
+      }
+    }
+    $("login-form").onsubmit = async (e) => {
+      e.preventDefault();
+      pin = $("pin").value.trim();
+      const button = e.submitter;
+      button.disabled = true;
+      message("Connecting…");
+      try {
+        await refresh();
+        $("login").hidden = true;
+        $("transfer").hidden = false;
+        $("pin").value = "";
+        types();
+        message("Connected. Choose a folder, then drop your files.");
+      } catch (e) {
+        message(e.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    };
+    $("folder").onchange = async () => {
+      types();
+      lock(true);
+      try {
+        await refresh();
+        message("");
+      } catch (e) {
+        message(e.message, true);
+      } finally {
+        lock(false);
+      }
+    };
+    $("refresh").onclick = async () => {
+      lock(true);
+      try {
+        await refresh();
+        message("Files refreshed");
+      } catch (e) {
+        message(e.message, true);
+      } finally {
+        lock(false);
+      }
+    };
+    $("choose").onclick = () => $("files").click();
+    $("files").onchange = () => send([...$("files").files]);
+    for (const event of ["dragenter", "dragover"])
+      $("drop").addEventListener(event, (e) => {
+        e.preventDefault();
+        if (!busy) $("drop").classList.add("over");
+      });
+    for (const event of ["dragleave", "drop"])
+      $("drop").addEventListener(event, (e) => {
+        e.preventDefault();
+        $("drop").classList.remove("over");
+      });
+    $("drop").addEventListener("drop", (e) => send([...e.dataTransfer.files]));
+    window.addEventListener("dragover", (e) => e.preventDefault());
+    window.addEventListener("drop", (e) => e.preventDefault());
+  </script>
+</html>

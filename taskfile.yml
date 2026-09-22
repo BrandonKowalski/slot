@@ -239,7 +239,9 @@ tasks:
           "https://github.com/libretro/gpsp/archive/{{.GPSP_COMMIT}}.tar.gz"
         # A real gpSP checkout, not just a valid tarball: same shape as any GitHub source
         # archive, one top directory named for the commit, and the Makefile lives in it.
-        tar -tzf vendor/gpsp-src.tar.gz | grep -q "^gpsp-{{.GPSP_COMMIT}}/Makefile$"
+        # Consume the whole listing: grep -q can close the pipe early and make tar
+        # fail with SIGPIPE under pipefail even when the archive is valid.
+        tar -tzf vendor/gpsp-src.tar.gz | grep "^gpsp-{{.GPSP_COMMIT}}/Makefile$" > /dev/null
       # Built from exactly that archive, in the box the device build uses, so the core links
       # against the same glibc 2.31 as slot. cores/gpsp/build.sh has the recipe and the flags.
       - task: device:sh
@@ -338,6 +340,8 @@ tasks:
         vars:
           CMD: ./target-device/device/slot --init-root {{.OUT}}
       - cp target-device/device/slot {{.OUT}}/System/slot
+      - cp WIFI.md {{.OUT}}/WIFI.md
+      - cp FILE-TRANSFER.md {{.OUT}}/FILE-TRANSFER.md
       # `core:device` and `core:gpsp`'s own arch check only runs on a fresh build: their
       # `status` skips the whole task, check included, whenever the core and its .meta already
       # match — so a hand-placed x86 `.so` beside a copied .meta sails through unchecked. Re-checked
