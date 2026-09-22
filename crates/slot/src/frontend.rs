@@ -69,6 +69,8 @@ pub struct Frontend {
     clocks: Clocks,
     about: AboutFace,
     quick_clock: QuickClock,
+    wifi_tex: Option<TexId>,
+    wifi_revision: u64,
 }
 
 /// Date & Time's value in the quick menu, grey and lit, and the text they were built for.
@@ -138,6 +140,8 @@ impl Frontend {
             clocks: Clocks::default(),
             about: AboutFace::default(),
             quick_clock: QuickClock::default(),
+            wifi_tex: None,
+            wifi_revision: 0,
         }
     }
 
@@ -374,6 +378,11 @@ impl Frontend {
             compositor.upload_game(&frame);
         }
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
+        let app = self.session.app_mut();
+        if matches!(app.phase(), Phase::Wifi) && self.wifi_revision != app.wifi.revision() {
+            self.wifi_revision = app.wifi.revision();
+            app.wifi_face = Some(upload(compositor, &mut self.wifi_tex, app.wifi.face()));
+        }
         sync_about(self.session.app_mut(), compositor, &mut self.about);
         sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
         sync_core_picker(

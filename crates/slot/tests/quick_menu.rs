@@ -119,6 +119,7 @@ fn up_and_down_move_the_bar_and_stop_at_the_ends() {
         QuickRow::ColourCorrection,
         QuickRow::Rumble,
         QuickRow::DateTime,
+        QuickRow::Wifi,
         QuickRow::About,
         QuickRow::About,
     ] {
@@ -245,7 +246,7 @@ fn colour_correction_leaves_the_settings_around_it_alone() {
 fn the_arrows_change_nothing_on_a_row_that_opens() {
     let (d, mut a, _) = on_carousel();
     let before = std::fs::read(d.path().join("System/slot.state")).expect("read slot.state");
-    for row in [QuickRow::DateTime, QuickRow::About] {
+    for row in [QuickRow::DateTime, QuickRow::Wifi, QuickRow::About] {
         open_at(&mut a, row);
         press(&mut a, Btn::Left);
         press(&mut a, Btn::Right);

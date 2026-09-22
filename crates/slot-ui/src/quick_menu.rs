@@ -14,6 +14,7 @@ pub enum QuickRow {
     ColourCorrection,
     Rumble,
     DateTime,
+    Wifi,
     About,
 }
 
@@ -32,12 +33,13 @@ impl QuickRow {
     /// between them, and what follows the pair is the settings that stand alone. Of those,
     /// colour correction is in effect every second a game is on screen while rumble only matters
     /// when a cart asks for the motor, so the unconditional one comes first.
-    pub const ALL: [QuickRow; 6] = [
+    pub const ALL: [QuickRow; 7] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::ColourCorrection,
         QuickRow::Rumble,
         QuickRow::DateTime,
+        QuickRow::Wifi,
         QuickRow::About,
     ];
 
@@ -53,13 +55,14 @@ impl QuickRow {
             QuickRow::ColourCorrection => "Colour Correction",
             QuickRow::Rumble => "Rumble",
             QuickRow::DateTime => "Date & Time",
+            QuickRow::Wifi => "Wi-Fi",
             QuickRow::About => "About",
         }
     }
 
     /// A row A opens, rather than one the arrows change.
     pub fn opens(self) -> bool {
-        matches!(self, QuickRow::DateTime | QuickRow::About)
+        matches!(self, QuickRow::DateTime | QuickRow::Wifi | QuickRow::About)
     }
 
     /// The row above, stopping at the top: the bar does not wrap, as no menu here does.
