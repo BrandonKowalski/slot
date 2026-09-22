@@ -14,7 +14,7 @@ vars:
   # than resolved from whatever the buildbot last built, so every build of it builds the same
   # thing and the archive on the card is the source of the binary next to it. The Mac's gpSP
   # (core:gpsp:host) is still the buildbot's.
-  GPSP_COMMIT: 7b2dd37394e2822110cacef321e9bb291a305b77
+  GPSP_COMMIT: 5819380c2ffb0900219d700a382ee68c464ebb99
 
 tasks:
   default:
