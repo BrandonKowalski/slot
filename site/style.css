@@ -57,7 +57,8 @@ code{
 /* The navigation is a row of tabs rather than seventeen screens in a column, so the page
    moves only when it is asked to. The masthead sticks, which is what lets a panel taller
    than the screen be scrolled without losing the way out of it. */
-:root{--mast-h:60px;--foot-h:52px}
+:root{--mast-h:60px}
+/* The dropdown hangs off this, so it is the containing block for it. */
 .mast{
   position:sticky;
   top:0;
@@ -68,7 +69,7 @@ code{
   gap:clamp(12px,3vw,32px);
   min-height:var(--mast-h);
   padding:0 clamp(16px,3vw,32px);
-  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  background:color-mix(in srgb,var(--page) 88%,transparent);
   backdrop-filter:blur(10px);
   border-bottom:1px solid var(--rule);
 }
@@ -114,6 +115,33 @@ code{
 
 /* The second row belongs to its panel, not to the page, so it is quieter than the first
    and sits under the heading it subdivides. */
+/* Not drawn side by side, where the row of tabs fits and needs nothing to open it. */
+.menu-btn{
+  display:none;
+  appearance:none;
+  background:none;
+  border:1px solid var(--rule);
+  border-radius:8px;
+  width:40px;
+  height:36px;
+  place-items:center;
+  color:var(--ink);
+  cursor:pointer;
+  justify-self:end;
+}
+.menu-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.menu-bars,.menu-bars::before,.menu-bars::after{
+  display:block;
+  width:17px;
+  height:2px;
+  border-radius:2px;
+  background:currentColor;
+}
+.menu-bars{position:relative}
+.menu-bars::before,.menu-bars::after{content:"";position:absolute;left:0}
+.menu-bars::before{top:-6px}
+.menu-bars::after{top:6px}
+
 .subtabs{margin:0 0 22px;gap:4px;border-bottom:1px solid var(--rule)}
 .subtab{padding:8px 12px;font-size:15px;border-radius:8px 8px 0 0;margin-bottom:-1px}
 .subtab[aria-selected=true]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
@@ -122,27 +150,15 @@ code{
    stranded over a band of nothing. Taller ones simply scroll, which is now the only
    scrolling on the page. */
 .panel{
-  min-height:calc(100vh - var(--mast-h) - var(--foot-h));
-  min-height:calc(100dvh - var(--mast-h) - var(--foot-h));
+  min-height:calc(100vh - var(--mast-h));
+  min-height:calc(100dvh - var(--mast-h));
 }
 [hidden]{display:none!important}
 
-/* The page is a column: masthead, whichever panel is up, then the colophon. `main` taking the
-   slack is what puts the line on the bottom edge of a short panel without the panel having to
-   guess its own height, and leaves it directly under a tall one rather than fixed over it. */
-body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
-main{flex:1 0 auto}
-.colophon{
-  flex:0 0 auto;
-  min-height:var(--foot-h);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-top:1px solid var(--rule);
-  color:var(--muted);
-  font-size:14px;
-}
-.colophon p{margin:0}
+/* The masthead sticks, so the browser's own jump to a hash on load put the target underneath
+   it. Every id that can be linked to keeps the masthead's height clear above it. */
+.panel,.subpanel,.step{scroll-margin-top:calc(var(--mast-h) + 12px)}
+
 
 /* The steps of the install, numbered, because unlike the guide these are done in order. */
 /* The same block the reference and the questions stand in, so the panels do not each
@@ -469,10 +485,10 @@ kbd{
    The rules replace an earlier layout that let the chips carry the structure alone, which
    worked at four rows and stopped working at eight. */
 .reference{padding:clamp(26px,4vh,52px) 0}
-/* Wider than the prose columns elsewhere. A table wants the room, and nothing in it is a
-   paragraph that gets harder to read as the measure grows. */
-.reference .wrap{max-width:1040px}
-.reference h2{margin-bottom:20px}
+/* The same 900px column every other panel stands in. Widened to 1040 it started 70px further
+   left than the panels either side of it, so stepping along the tabs shifted the page under
+   you. The table fills whichever column it is given, and 900 is what the page sets. */
+.reference h2{margin-bottom:22px}
 .reference h3,.faq h3{
   font-size:16px;
   font-weight:700;
@@ -504,7 +520,7 @@ kbd{
    made it 1133px of content centred in an 844px window: both ends permanently cropped
    and no way to scroll to them. */
 .faq{padding:clamp(26px,4vh,52px) 0}
-.faq h2{font-size:clamp(26px,3.2vw,34px);margin-bottom:22px}
+.faq h2{margin-bottom:22px}
 .faq dl{margin:0}
 .faq .qa{margin:0 0 26px;max-width:64ch}
 .faq .qa:last-child{margin-bottom:0}
@@ -513,16 +529,17 @@ kbd{
 
 /* No rule above the credits. The only dividers on the page are the ones between guide
    entries, and only stacked; the two endnotes are held apart by their own padding. */
-footer{
+.endnote{
+  padding:clamp(26px,4vh,52px) 0;
   font-size:20px;
   line-height:1.7;
   color:var(--muted);
 }
-.endnote{padding:clamp(26px,4vh,52px) 0}
-footer h2{font-size:26px;color:var(--ink);margin-bottom:16px}
+.endnote h2{color:var(--ink);margin-bottom:22px}
 /* At 20px the 900px wrap runs to about 85 characters a line. */
-footer p{max-width:64ch;margin:0 0 18px}
-footer a{color:var(--ink)}
+.endnote p{max-width:64ch;margin:0 0 18px}
+.endnote p:last-child{margin-bottom:0}
+.endnote a{color:var(--ink)}
 
 /* --------------------------------------------------------- device parts --- */
 
@@ -638,15 +655,17 @@ footer a{color:var(--ink)}
    page turner centred on the column rather than on the text above it, landing 58px to the
    right of it and reading as misaligned rather than as centred. */
 .guide-body{min-width:0;max-width:44ch}
-/* Room for the tallest step, measured at 171px against a 117px shortest, so the controls
-   under it hold still as the steps are paged through instead of walking up and down. The step
-   is centred in that room: held to the top instead, every step shorter than the tallest left
-   its slack in one lump above the page turner, which read as a hole rather than as spacing. */
+/* Room for the tallest step, so the controls under it hold still as the steps are paged
+   through instead of walking up and down. Measured at 201px against a 115px shortest, with a
+   little over: this is the one number here that a longer paragraph can invalidate, and when it
+   does the page turner starts stepping down the page on whichever step outgrew it.
+   The step is centred in that room. Held to the top instead, every step shorter than the
+   tallest left its slack in one lump above the page turner, which read as a hole. */
 .guide-steps{
   list-style:none;
   margin:0;
   padding:0;
-  min-height:180px;
+  min-height:210px;
   display:flex;
   align-items:center;
 }
@@ -708,7 +727,7 @@ footer a{color:var(--ink)}
      the way. The device leads the panel and scrolls away with it, which is what a phone does
      with everything else on the page. */
   .guide-stage{
-    --dw:min(58vw,230px);
+    --dw:min(48vw,196px);
     /* Explicitly static, not merely left out: the rule above sets sticky for the side by side
        layout, so dropping the declaration here inherited it rather than turning it off, and
        the pinned artwork painted over the heading of the step underneath it. */
@@ -739,31 +758,58 @@ footer a{color:var(--ink)}
      an iPhone SE is 375x667 — so the device is sized off viewport HEIGHT as well as width.
      Width alone let it grow to 415px tall on a 667px screen and pushed the buttons 13px
      past the fold. The gap and the bottom padding give back the rest. */
+  /* Centred on a phone: the device sits above the copy rather than beside it, so the wordmark,
+     the line under it and the two buttons all hang off the same axis the artwork is already on.
+     Ranged left they read as leaning away from it. */
   .hero{flex-direction:column;align-items:stretch;padding:24px 24px 36px;gap:clamp(22px,4vh,40px)}
-  .hero-copy{width:100%}
+  .hero-copy{width:100%;text-align:center}
+  .actions{justify-content:center}
   /* --dw, never width: the walls, the lid's back and its top edge are all calc'd off
      --dw, so overriding width alone left a 270px device wearing a 210px thickness.
      The device leads on a phone; the copy reads under it. */
   /* The projected silhouette runs about 2.1x --dw tall once the pose is applied, so the
      height cap is what actually keeps it on screen; the width cap keeps it off the edges. */
-  .hero-device{--dw:min(210px,46vw,30vh);align-self:center;order:-1}
+  .hero-device{--dw:min(168px,38vw,24vh);align-self:center;order:-1}
   .tagline,.hero-copy p.sub{max-width:none}
 
   /* Set for the phone, where the 20px credits and 19px answers were running to barely
      six words a line. */
   .faq dt{font-size:19px}
   .faq dd{font-size:18px}
-  footer{font-size:18px}
+  .endnote{font-size:18px}
 
-  /* Narrow, the mark and six labels cannot share a line, so the mark gives up what it can
-     and the strip takes the rest and scrolls. */
-  .mast{padding:0 14px;gap:12px}
+  /* The mark at one end, the button that opens the sections at the other, and the sections
+     themselves in a list under the masthead. Every one of them is on screen and a full row
+     wide once it is open, where the strip showed two of six and scrolled for the rest. */
+  .mast{padding:0 14px;gap:12px;grid-template-columns:1fr auto}
   .mast-mark{font-size:19px}
-  .tab{padding:9px 11px;font-size:15px}
+  .menu-btn{display:grid}
+  .tabs{
+    position:absolute;
+    top:100%;
+    left:0;
+    right:0;
+    display:none;
+    flex-direction:column;
+    justify-content:flex-start;
+    gap:2px;
+    padding:8px;
+    overflow:visible;
+    background:var(--page);
+    border-bottom:1px solid var(--rule);
+    /* Over the panel it covers, and dark enough underneath to read against the artwork the
+       guide puts directly below the masthead. */
+    box-shadow:0 18px 34px rgba(0,0,0,.55);
+  }
+  .tabs.is-open{display:flex}
+  .tab{width:100%;text-align:left;padding:13px 14px;font-size:16px;border-radius:8px}
 
   /* Stacked: three chips and their separators do not fit a column beside the action at
      this width, so the input goes above what it does. */
   .key{grid-template-columns:1fr;gap:4px;padding:12px 2px;font-size:18px}
+  .install h2{text-align:center}
+  .install-note{text-align:center;margin-left:auto;margin-right:auto}
+
   .reference h3{margin-top:32px}
 }
 /* Shorter than an iPhone SE — the 2016 one is 320x568, and a phone held sideways lands
@@ -805,7 +851,7 @@ footer a{color:var(--ink)}
 }
 
 @media (max-width:880px) and (max-height:620px){
-  .hero-device{--dw:min(210px,40vw,30vh)}
+  .hero-device{--dw:min(148px,34vw,22vh)}
   .guide-steps{min-height:132px}
   .wordmark{font-size:clamp(42px,12vw,56px)}
   .tagline{margin-top:12px}

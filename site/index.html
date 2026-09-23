@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>slot.</title>
-<meta name="description" content="A bespoke, Game Boy-centric frontend for the Anbernic RG SP.">
+<meta name="description" content="A bespoke, GBA-centric frontend for the Anbernic RG SP.">
 <meta property="og:title" content="slot.">
-<meta property="og:description" content="A bespoke, Game Boy-centric frontend for the Anbernic RG SP.">
+<meta property="og:description" content="A bespoke, GBA-centric frontend for the Anbernic RG SP.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,14 @@
      own; the row of tabs is centred on the page. -->
 <header class="mast">
   <a class="mast-mark" href="#hero">slot.</a>
-  <nav class="tabs" role="tablist" aria-label="Sections">
+  <!-- Narrow, the six labels come to 448px against 229px of room, so the row hid two thirds
+       of itself off the right edge with nothing to say it was there. The button is what opens
+       them on a phone; side by side it is not drawn at all and the row speaks for itself. -->
+  <button class="menu-btn" type="button" id="menu-btn" aria-expanded="false"
+          aria-controls="section-tabs" aria-label="Sections">
+    <span class="menu-bars" aria-hidden="true"></span>
+  </button>
+  <nav class="tabs" id="section-tabs" role="tablist" aria-label="Sections">
     <button class="tab" role="tab" id="t-install" aria-controls="install" aria-selected="false" tabindex="-1">Installing</button>
     <button class="tab" role="tab" id="t-guide" aria-controls="guide" aria-selected="false" tabindex="-1">Guide</button>
     <button class="tab" role="tab" id="t-buttons" aria-controls="buttons" aria-selected="false" tabindex="-1">Buttons</button>
@@ -36,7 +43,7 @@
 <section class="panel hero" id="hero" aria-label="slot.">
   <div class="hero-copy">
     <h1 class="wordmark">slot.</h1>
-    <p class="tagline">A bespoke, Game Boy-centric frontend for the Anbernic RG SP.</p>
+    <p class="tagline">A bespoke, GBA-centric frontend for the Anbernic RG SP.</p>
     <div class="actions">
       <a class="btn" href="https://github.com/BrandonKowalski/slot/releases/latest">Download</a>
       <a class="btn ghost" href="https://brandonkowalski.github.io/slot-cart-studio/" target="_blank">Cart Studio</a>
@@ -111,8 +118,8 @@
       <li>
         <h3>Put the second card into <code>SD2</code> and boot!</h3>
         <p>I hope you enjoy using slot!</p>
-        <p>Feedback is welcome and can be provided in a GitHub issue. ❤️</p>
-        <p>Please do reach out before setting out to build a new feature. I am looking to avoid bloating the feature set and will be selective in accepting PRs.</p>
+        <p>Feedback and contributions are welcomed!</p>
+        <p>Please do reach out before setting out to build a new feature as I am looking to avoid bloating slot.</p>
       </li>
     </ol>
     <p class="install-note">To update, replace the <code>System/</code>
@@ -157,7 +164,7 @@
   <ol class="guide-steps">
       <li class="step" id="browse" data-clip="carousel.mp4">
         <h3>Browse the Carousel</h3>
-        <p><kbd>Left</kbd> and <kbd>Right</kbd> to flip through games on the shelf.<br><kbd>L1</kbd> and <kbd>R1</kbd> to switch platforms.</p>
+        <p><kbd>Left</kbd> and <kbd>Right</kbd> to flip through games on the shelf.</p>
       </li>
       <li class="step" id="insert" data-clip="insert.mp4">
         <h3>Insert and Play</h3>
@@ -173,14 +180,15 @@
       </li>
       <li class="step" id="fast-forward" data-clip="rewind.mp4">
         <h3>Fast-Forward and Rewind</h3>
-        <p>Hold <kbd>R2</kbd> to fast-forward, or double tap to lock it on.<br>Hold <kbd>L2</kbd> to go back in time.</p>
+        <p>Hold <kbd>R2</kbd> to fast-forward.<br>Double tap <kbd>R2</kbd> to lock FF on.<br>Hold <kbd>L2</kbd> to rewind.</p>
       </li>
       <!-- Not id="lid": device.svg has a path by that name and app.js inlines it at the top
            of the body, so it would win getElementById and the anchor would land on the
            artwork rather than this step. -->
       <li class="step" id="lid-detection" data-clip="rewind.mp4" data-lid="shut">
         <h3>Lid Detection</h3>
-        <p>Closing the lid writes a save state and turns off the display. Open it again and you're back in the game. Leave it shut for three minutes and slot powers off. It will resume with that save state on the next boot.</p>
+        <p>Closing the lid writes a save state and turns off the display. Open it again and you're back in the game.</p><br>
+        <p>Leave it shut for three minutes and slot powers off. It will resume with that save state on the next boot.</p>
       </li>
   </ol>
   <div class="stepper">
@@ -220,7 +228,7 @@
         </div>
         <div class="key">
           <dt><kbd>VOL+</kbd> + <kbd>VOL&minus;</kbd></dt>
-          <dd>Mute (remembers last set on unmute)</dd>
+          <dd>Toggle Mute</dd>
         </div>
       </dl>
     </div>
@@ -230,10 +238,6 @@
         <div class="key">
           <dt><kbd>Left</kbd> / <kbd>Right</kbd></dt>
           <dd>Move along the shelf</dd>
-        </div>
-        <div class="key">
-          <dt><kbd>L1</kbd> / <kbd>R1</kbd></dt>
-          <dd>Switch between platforms</dd>
         </div>
         <div class="key">
           <dt>Tap <kbd>A</kbd></dt>
@@ -332,7 +336,7 @@
       <dl>
         <div class="qa">
           <dt>Will slot run anything other than GBA?</dt>
-          <dd>Yes. You can bring your GB and GBC carts to the party.</dd>
+          <dd>No.</dd>
         </div>
         <div class="qa">
           <dt>This is almost perfect but needs more systems. Will you add them?</dt>
@@ -391,9 +395,7 @@
         </div>
         <div class="qa">
           <dt>Which games can link?</dt>
-          <dd>Pokémon Ruby through LeafGreen, both Advance Wars, and a handful of wireless
-              adapter games. All of them GBA: linking runs through gpSP, and gpSP does not run a
-              Game Boy or Game Boy Color cart at all.</dd>
+          <dd>Pokémon Ruby through LeafGreen, both Advance Wars, and a handful of wireless adapter games.</dd>
         </div>
       </dl>
     </div>
@@ -422,13 +424,6 @@
 </section>
 
 </main>
-
-<!-- Outside the panels, so it is under every tab rather than being one more thing to go and
-     find. The body is a column and main takes the slack, which is what keeps this on the
-     bottom edge without a panel having to be exactly the right height. -->
-<footer class="colophon">
-  <p><a href="https://kowalski.io">From your friend in Ithaca, NY</a></p>
-</footer>
 
 <script src="app.js" defer></script>
 </body>

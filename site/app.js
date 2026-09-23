@@ -257,7 +257,7 @@
         /* The strip scrolls on a phone, so the tab that was just chosen is brought into view
            rather than left off the edge. `nearest` on the block axis so bringing a tab into
            view sideways cannot also scroll the page up or down under the reader. */
-        if (tabs[i].scrollIntoView) {
+        if (tabs[i].scrollIntoView && list.scrollWidth > list.clientWidth + 1) {
           try { tabs[i].scrollIntoView({ inline: "center", block: "nearest" }); } catch (e) {}
         }
         if (focus) tabs[i].focus();
@@ -290,21 +290,56 @@
   var hero = document.getElementById("hero");
   var groups = Array.prototype.slice.call(document.querySelectorAll("[role=tablist]")).map(wire);
 
+  /* ------------------------------------------------------- phone menu --- */
+
+  /* Six labels come to 448px against 229px of masthead on the narrowest phone, so side by
+     side they are a row and narrow they are a list behind a button. The stylesheet decides
+     which; this only opens and shuts it, and the button is not on screen at all at the width
+     where the row fits. */
+  var menuBtn = document.getElementById("menu-btn");
+  var tabsNav = document.getElementById("section-tabs");
+  function setMenu(open){
+    if (!menuBtn || !tabsNav) return;
+    tabsNav.classList.toggle("is-open", open);
+    menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  if (menuBtn && tabsNav) {
+    menuBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      setMenu(!tabsNav.classList.contains("is-open"));
+    });
+    /* Choosing a section is the end of choosing one. */
+    tabsNav.addEventListener("click", function(){ setMenu(false); });
+    /* Anywhere else puts it away, which is what a menu over the page should do rather than
+       waiting to be dismissed by the control that opened it. */
+    document.addEventListener("click", function(e){
+      if (e.target !== menuBtn && !menuBtn.contains(e.target) && !tabsNav.contains(e.target)) {
+        setMenu(false);
+      }
+    });
+    document.addEventListener("keydown", function(e){
+      if (e.key !== "Escape" || !tabsNav.classList.contains("is-open")) return;
+      setMenu(false);
+      menuBtn.focus();
+    });
+  }
+
   /* Back to the landing. Every tab is deselected rather than one being left lit over a panel
      that is no longer up, and the first one keeps the tab stop so the row is still reachable
      from the keyboard with nothing in it chosen. */
   function showHero(){
-    for (var g = 0; g < groups.length; g++) {
-      var grp = groups[g];
-      for (var k = 0; k < grp.tabs.length; k++) {
-        grp.tabs[k].setAttribute("aria-selected", "false");
-        grp.tabs[k].tabIndex = k === 0 ? 0 : -1;
-      }
-      /* Only the outer row owns panels that sit beside the hero; a sub-panel staying chosen
-         inside a hidden panel is what it should do, so it is left as it was. */
-      if (g === 0) for (var q = 0; q < grp.panels.length; q++) {
-        if (grp.panels[q]) grp.panels[q].hidden = true;
-      }
+    /* The section row only. The rows inside Buttons and Questions own a choice that belongs to
+       their own panel, and clearing those too left the sub-panel on screen with nothing in its
+       row marked: coming back to Buttons after a trip through the hero showed the Everywhere
+       list under a row where Everywhere was no longer underlined. */
+    var grp = groups[0];
+    if (!grp) return;
+    for (var k = 0; k < grp.tabs.length; k++) {
+      grp.tabs[k].setAttribute("aria-selected", "false");
+      grp.tabs[k].tabIndex = k === 0 ? 0 : -1;
+    }
+    for (var q = 0; q < grp.panels.length; q++) {
+      if (grp.panels[q]) grp.panels[q].hidden = true;
     }
     if (hero) hero.hidden = false;
   }
