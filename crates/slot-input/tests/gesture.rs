@@ -6,9 +6,7 @@ use slot_input::{
 
 /// The reported bug, and the half of it this fixes. SELECT used to be withheld for the whole
 /// chord window, so a *held* SELECT arrived at the game `SELECT_CHORD_MS` late whether or not a
-/// chord ever followed it. On a Game Boy cart that uses SELECT to hold a piece, 600 ms is the
-/// whole gesture — and disabling chords for Game Boy carts would not have helped, because the
-/// latency was never the chord's, it was the waiting.
+/// chord ever followed it. The latency was never the chord's, it was the waiting.
 ///
 /// The press goes straight through now and the chord arms off the same hold, so nothing about
 /// the gesture moves: only the game stops being kept waiting to find out.

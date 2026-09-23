@@ -1,6 +1,4 @@
-use slot_store::{
-    core_for, core_for_platform, read_selected_cores, write_selected_core, Core, Platform,
-};
+use slot_store::{core_for, read_selected_cores, write_selected_core, Core};
 use tempfile::tempdir;
 
 fn root_with(ini: Option<&str>) -> tempfile::TempDir {
@@ -175,49 +173,13 @@ fn writing_the_default_still_records_it() {
     assert!(text.contains("Emerald = mgba"));
 }
 
-#[test]
-fn every_platform_defaults_to_mgba() {
-    let d = tempfile::tempdir().unwrap();
-    assert_eq!(
-        core_for_platform(d.path(), "Tetris", Platform::Gb),
-        Core::Mgba
-    );
-    assert_eq!(
-        core_for_platform(d.path(), "Tetris Chromatic", Platform::Gbc),
-        Core::Mgba
-    );
-    assert_eq!(
-        core_for_platform(d.path(), "Emerald", Platform::Gba),
-        Core::Mgba
-    );
-}
-
-/// The ini escape hatch, read with the platform known: a cart naming a core that is not its
-/// platform's default gets the one it asked for.
+/// The ini escape hatch: a cart naming a core that is not the default gets the one it asked for.
 #[test]
 fn a_cart_can_ask_for_a_non_default_core_by_hand() {
     let d = tempfile::tempdir().unwrap();
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Mgba);
     write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
-    assert_ne!(Core::default_for(Platform::Gba), Core::Gpsp);
-    assert_eq!(
-        core_for_platform(d.path(), "Emerald", Platform::Gba),
-        Core::Gpsp
-    );
-}
-
-#[test]
-fn a_line_naming_a_core_the_platform_cannot_run_is_dropped() {
-    // gpSP does not run Game Boy games, so the line is dropped for the platform default.
-    let d = tempfile::tempdir().unwrap();
-    write_selected_core(d.path(), "Tetris", Core::Gpsp).unwrap();
-    assert_eq!(
-        core_for_platform(d.path(), "Tetris", Platform::Gb),
-        Core::Mgba
-    );
-    assert_eq!(
-        core_for_platform(d.path(), "Tetris", Platform::Gbc),
-        Core::Mgba
-    );
+    assert_eq!(core_for(d.path(), "Emerald"), Core::Gpsp);
 }
 
 #[test]

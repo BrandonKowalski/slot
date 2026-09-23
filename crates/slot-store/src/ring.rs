@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::atomic::{atomic_write, sync_dir};
 use crate::core::Core;
-use crate::platform::Platform;
 
 pub const RING_MAX: usize = 10;
 
@@ -33,15 +32,13 @@ impl StateRing {
     /// another, so offering them together would only produce a confusing failure. Battery
     /// saves under `Saves/` are raw cartridge bytes and stay shared.
     ///
-    /// Platform first, then core: `States/<platform>/<core>/<stem>/`, which is also the shape a
-    /// person organising a card by hand has to build. A `.gb` and a `.gba` cart can share a stem —
-    /// two different games, two different carts — so the platform has to separate them before
-    /// the core does, or one cart's states would be offered to the other's.
-    pub fn new(root: &Path, platform: Platform, core: Core, stem: &str) -> Self {
+    /// `States/GBA/<core>/<stem>/`, which is also the shape a person organising a card by hand
+    /// has to build.
+    pub fn new(root: &Path, core: Core, stem: &str) -> Self {
         StateRing {
             dir: root
                 .join("States")
-                .join(platform.dir_name())
+                .join(crate::CART_DIR)
                 .join(core.as_str())
                 .join(stem),
         }

@@ -4,7 +4,7 @@ use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
 use slot_store::Theme;
 
-use crate::cart::{cart_box, label_colour, label_text, CART_W};
+use crate::cart::{label_colour, label_text, CART_H, CART_W};
 use crate::icon::icon_box;
 use crate::shelf::{foot_y, rest_y};
 
@@ -100,20 +100,10 @@ const LIP_Y: f32 = BAND_Y;
 /// the base of the slot is covered by the cart rather than going dark again. Four pixels
 /// below the top of the recess, which leaves the far wall showing above the cart's rounded
 /// top edge instead of butting it flat against the lip.
-///
-/// The one number in the travel that carries no cart in it at all, and it must stay that way:
-/// it is the *top* edge that comes to rest here, so how much cartridge is left out of the
-/// machine is set by the recess and is the same for a pak as for a GBA cart. A seat derived
-/// from the cartridge instead would put a tall one in deeper, which is what "inserted deep"
-/// was: the pak's own 253 px squashed into a 135 px quad, so proportionally twice as much of
-/// its face went under the lip.
 const SEATED_Y: f32 = BAY_Y + 4.0;
 
 /// Where the cart stops across the screen: the mouth is the middle of the device and cannot
-/// move, so the cart arrives centred on it. Asked of the cartridge's own width for the same
-/// reason the shelf's `rest_x` is — both cartridges are 240 wide today and this is the same
-/// number either way, but the cart it centres is the one being drawn rather than a GBA cart
-/// standing in for it.
+/// move, so the cart arrives centred on it.
 fn seated_x(w: f32) -> f32 {
     (OUT_W as f32 - w) / 2.0
 }
@@ -121,34 +111,12 @@ fn seated_x(w: f32) -> f32 {
 /// How far into the travel the cart's bottom edge reaches the lip, as a fraction of the whole
 /// journey. Derived rather than tuned, because the catch is a collision: it happens where the
 /// foot meets the lip and nowhere else, whatever that works out to in animation time.
-///
-/// Both ends of the fraction are a cartridge's own. The numerator is the drop from where it
-/// stands to where its foot lands on the lip, and the denominator is the whole journey from
-/// there to the seat. Neither cancels any more, and that is the cost of the carousel centring:
-/// while both cartridges' feet started on one floor the drop came to 114.5 px for either of
-/// them, and now a pak — centred, so standing 59 px lower with its foot 59 px nearer the
-/// machine — falls 55.5 px against a GBA cart's 114.5. The push past the lip is untouched by
-/// the change: it is `SEATED_Y - LIP_Y + h`, which was already a different distance for each
-/// shape and still is.
-///
-/// What that means on screen is that a pak's approach is a shorter, slower fall than a GBA
-/// cart's over the same stretch of the animation, and its push is the same shove it always was.
-/// Rendered and looked at, that is the right way round: the pak is a bigger object sitting
-/// closer to the slot, and a heavy thing that has not far to drop should not be flung at it.
 fn catch_at(h: f32) -> f32 {
     (LIP_Y - foot_y(h)) / (SEATED_Y - rest_y(h))
 }
 
 /// The seat either side of the catch. It opens a little before halfway because the cart is
 /// resting on the lip for the whole of it, and the push comes after.
-///
-/// Fractions of the *animation*, not of the journey, and so the same two numbers for both
-/// cartridges. They no longer fall the same distance — the row centres each cartridge rather
-/// than standing them all on one floor, so a pak's foot begins 59 px nearer the lip — but the
-/// beat of the thing is the slot's and not the cartridge's: the catch has to land on the same
-/// frame of the animation, and the hesitation has to last as long, or one shelf's insert reads
-/// as a different mechanism from another's. What differs between them is speed, which is what
-/// ought to differ when one object has further to go than another in the same time.
 const CATCH_IN: f32 = 0.42;
 const CATCH_OUT: f32 = 0.62;
 /// How far the cart creeps while it is caught. Not zero: a dead stop reads as a dropped
@@ -209,11 +177,7 @@ impl SlotChrome<'_> {
         // on the way through rather than sliding behind a painted bar.
         draw_slot_back(chrome, out);
 
-        // The cartridge's own box, whatever platform it is for. A cart is an object and goes
-        // into the slot at the size it is: a pak drawn in a GBA cart's quad is squashed to
-        // 53% of its height, which is the smoosh.
-        let (cw, ch) = cart_box(self.cart.platform);
-        let (cw, ch) = (cw as f32, ch as f32);
+        let (cw, ch) = (CART_W as f32, CART_H as f32);
 
         // Across, down and up to size on the one progress, so the cart arrives over the mouth
         // exactly as it reaches it. The slot is the middle of the device and cannot move, so a
@@ -221,9 +185,7 @@ impl SlotChrome<'_> {
         //
         // Where the cart stands before it is pushed in: the shelf's own answer, not a second
         // copy of it. The chrome takes over drawing the cart on the frame the button is
-        // pressed, so anything but the row's own placement is a cart that jumps on that frame —
-        // and the row centres a cartridge on the screen, which puts a 253 px pak's foot 59 px
-        // below a GBA cart's.
+        // pressed, so anything but the row's own placement is a cart that jumps on that frame.
         //
         // The foot begins on the row's floor whatever size the row had the cart at, because the
         // row shrinks a cart upward off that floor rather than about its middle — so `stands` is

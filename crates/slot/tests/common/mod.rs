@@ -10,10 +10,7 @@ use slot::persist::Snapshot;
 use slot::session::Session;
 use slot_power::{Battery, Charge, LedState, Motor, Platform, Power, SimPlatform};
 use slot_retro::{ButtonMask, MockCore, RetroCore};
-// Aliased because `slot_power::Platform` — the device this runs on — is already in scope above
-// under that name, and this one is the console a cart is for. Two different questions that
-// happen to share a word.
-use slot_store::{write_slot_state, Platform as CartPlatform, SlotState};
+use slot_store::{write_slot_state, SlotState};
 use tempfile::TempDir;
 
 /// What the emulator was last told to load. `None` until something loads.
@@ -85,47 +82,6 @@ pub fn tmp_root_with_carts(stems: &[&str]) -> TempDir {
     d
 }
 
-/// The same card, holding Game Boy carts instead. `Games/GB/` and the `.gb` extension are the
-/// whole of what makes the scan read one as `Platform::Gb`: nothing in the bytes is consulted,
-/// and the shelf falls back to the filename when the header title is empty — so what this
-/// writes into the header is there to keep the fixture a plausible cart rather than to be read
-/// back.
-///
-/// Kept apart from `tmp_root_with_carts` rather than folded into it with a platform argument,
-/// because every existing caller is about a GBA card and naming the platform at fifty call
-/// sites would say nothing any of them care about.
-///
-/// The stem is truncated to the header's eleven bytes rather than asserted against them: a
-/// fixture built from a long filename is a normal thing for a caller to want, and the title is
-/// not what any of these tests read back.
-pub fn tmp_root_with_gb_carts(stems: &[&str]) -> TempDir {
-    let d = tmp_root();
-    for stem in stems {
-        let title = stem.to_uppercase();
-        write_gb_cart(&d, stem, &title[..title.len().min(11)]);
-    }
-    d
-}
-
-/// A Game Boy cart on the card, with a title of your choosing — which is what makes it worth
-/// having beside `tmp_root_with_gb_carts`: the link refusal keys on the title, so a test needs
-/// to be able to write `POKEMON RED` onto a cart whose filename says something else.
-///
-/// `scan` reads the platform off the folder and never off the ROM, so this writes into
-/// `Games/GB/`. The title goes at 0x134 in the eleven byte field `slot_store::gb::title` reads,
-/// a different place entirely from the 0xA0 a GBA header keeps its own in — and the rom runs
-/// past 0x14F so the whole cartridge header, CGB flag and all, is inside the file rather than
-/// running off the end of it.
-pub fn write_gb_cart(d: &TempDir, stem: &str, title: &str) {
-    assert!(
-        title.len() <= 11,
-        "a Game Boy header title is eleven bytes, and {title:?} is longer"
-    );
-    let mut rom = vec![0u8; 0x150];
-    rom[0x134..0x134 + title.len()].copy_from_slice(title.as_bytes());
-    std::fs::write(cart_path(d, CartPlatform::Gb, stem), rom).expect("write rom");
-}
-
 /// The headers `tmp_root_with_carts` writes are not roms, and a real core refuses them.
 /// Anything that puts a cart in the slot for real needs these instead.
 pub fn tmp_root_with_real_carts(stems: &[&str]) -> TempDir {
@@ -145,18 +101,7 @@ fn tmp_root() -> TempDir {
 }
 
 fn rom_path(d: &TempDir, stem: &str) -> PathBuf {
-    cart_path(d, CartPlatform::Gba, stem)
-}
-
-/// The one place a test builds a rom path, for either platform, and it builds it out of
-/// `Platform` itself: the folder from `dir_name` and the extension from `extensions`, so a
-/// fixture cannot be written to a folder whose scan would pass it over — which is exactly what
-/// a `.gb` under `Games/GBA/` would be, a file on the card that never reaches the shelf.
-fn cart_path(d: &TempDir, platform: CartPlatform, stem: &str) -> PathBuf {
-    d.path()
-        .join("Games")
-        .join(platform.dir_name())
-        .join(format!("{stem}.{}", platform.extensions()[0]))
+    d.path().join("Games/GBA").join(format!("{stem}.gba"))
 }
 
 /// A header gpSP takes at its word: title, code, the entry branch's 0xEA and the fixed 0x96.

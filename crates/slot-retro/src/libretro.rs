@@ -134,9 +134,7 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             // that early return.
             //
             // Answering falsely was not free. A core that asks and is told no draws a frame
-            // this frontend then throws away, and Gambatte goes further and refuses the rom
-            // outright — which would make an untrue `false` here a hard block on ever shipping
-            // a second core rather than a small inefficiency.
+            // this frontend then throws away.
             *(data as *mut bool) = true;
             true
         }
@@ -493,23 +491,9 @@ unsafe extern "C" fn video_refresh(
     with_host(|h| {
         let cols = width.min(GBA_W) as usize;
         let rows = height.min(GBA_H) as usize;
-        // A Game Boy is 160x144 in a buffer built for a GBA's 240x160. Centre it here, where
-        // the true size is already known, rather than at draw time: the buffer is photographed
-        // as well as drawn — `thumb::png` encodes all of it for every polaroid and save-state
-        // thumbnail — so a fix that only moved the quad would leave every picture of the game
-        // parked in a corner. Both offsets are whole source pixels, so the LCD mask's phase is
-        // untouched.
-        let ox = (GBA_W as usize - cols) / 2;
-        let oy = (GBA_H as usize - rows) / 2;
-        // The margin belongs to nobody. Cleared every frame rather than trusting the
-        // allocation, so a core that changes size mid-session cannot leave the old picture's
-        // edges around the new one.
-        if cols != GBA_W as usize || rows != GBA_H as usize {
-            h.video.fill(0);
-        }
         for y in 0..rows {
             let src = (data as *const u8).add(y * pitch);
-            let row = ((y + oy) * GBA_W as usize + ox) * 4;
+            let row = y * GBA_W as usize * 4;
             match h.format {
                 PixelFormat::Xrgb8888 => {
                     ptr::copy_nonoverlapping(src, h.video.as_mut_ptr().add(row), cols * 4);
@@ -1003,9 +987,11 @@ mod tests {
     #[test]
     fn set_variables_records_what_the_core_declared() {
         let mut host = host_with(HashMap::new(), false);
-        let (a, _ak, _av) = declaration("mgba_sgb_borders", "Use Super Game Boy Borders; ON|OFF");
-        let (b, _bk, _bv) =
-            declaration("mgba_gb_colors_preset", "Game Boy Palette Preset; 0|1|2|3");
+        let (a, _ak, _av) = declaration("mgba_solar_sensor_level", "Solar Sensor Level; 0|1|2");
+        let (b, _bk, _bv) = declaration(
+            "mgba_color_correction",
+            "Color Correction; OFF|GBA|GBC|Auto",
+        );
         let list = [a, b, end_of_list()];
         // Scoped, because the binding holds `host` mutably for as long as it lives and the
         // assertions below read the field it wrote.
@@ -1016,14 +1002,16 @@ mod tests {
 
         assert!(ok);
         assert_eq!(
-            host.declared.get("mgba_sgb_borders").map(Vec::as_slice),
-            Some(["ON".to_string(), "OFF".to_string()].as_slice())
+            host.declared
+                .get("mgba_solar_sensor_level")
+                .map(Vec::as_slice),
+            Some(["0", "1", "2"].map(str::to_string).as_slice())
         );
         assert_eq!(
             host.declared
-                .get("mgba_gb_colors_preset")
+                .get("mgba_color_correction")
                 .map(Vec::as_slice),
-            Some(["0", "1", "2", "3"].map(str::to_string).as_slice())
+            Some(["OFF", "GBA", "GBC", "Auto"].map(str::to_string).as_slice())
         );
         assert_eq!(
             host.declared.len(),
@@ -1031,7 +1019,7 @@ mod tests {
             "the walk ran past the terminator and read whatever was after it"
         );
         assert!(
-            !host.declared.contains_key("mgba_sgb_border"),
+            !host.declared.contains_key("mgba_solar_sensor"),
             "a key the core never declared came back declared"
         );
     }
@@ -1979,41 +1967,6 @@ mod tests {
     // and `thumb::png`, which encodes the whole buffer for every polaroid and save-state
     // thumbnail — reads the buffer these tests inspect.
 
-    /// A 160x144 picture goes in the middle of the 240x160 buffer: x 40..=199, y 8..=151. Both
-    /// offsets are whole source pixels, which is what keeps the LCD mask's phase — the mask repeats
-    /// every 3 panel pixels, exactly one source pixel, so any integer offset preserves it.
-    #[test]
-    fn a_small_picture_is_centred_in_the_buffer() {
-        let mut host = host_with(HashMap::new(), false);
-        let _active = Active::bind(&mut host);
-        let frame = vec![0xffu8; 160 * 144 * 4];
-        unsafe { video_refresh(frame.as_ptr() as *const c_void, 160, 144, 160 * 4) };
-
-        let lit =
-            |x: usize, y: usize| unsafe { with_host(|h| h.video[(y * 240 + x) * 4]) }.unwrap() != 0;
-        assert!(lit(40, 8), "the top left of the picture is not at (40, 8)");
-        assert!(lit(199, 151), "the bottom right is not at (199, 151)");
-        assert!(!lit(39, 8), "the picture starts one column too early");
-        assert!(!lit(40, 7), "the picture starts one row too early");
-    }
-
-    /// The margin is nobody's pixels and must be cleared on every frame, not merely left as the
-    /// allocation. A core that changes picture size mid-session would otherwise leave the previous
-    /// picture's edges on screen around the new one.
-    #[test]
-    fn the_margin_is_cleared_when_the_picture_shrinks() {
-        let mut host = host_with(HashMap::new(), false);
-        let _active = Active::bind(&mut host);
-        unsafe {
-            let full = vec![0xffu8; 240 * 160 * 4];
-            video_refresh(full.as_ptr() as *const c_void, 240, 160, 240 * 4);
-            let small = vec![0x11u8; 160 * 144 * 4];
-            video_refresh(small.as_ptr() as *const c_void, 160, 144, 160 * 4);
-        }
-        let corner = unsafe { with_host(|h| h.video[0]) }.unwrap();
-        assert_eq!(corner, 0, "the previous picture is still in the margin");
-    }
-
     /// A gradient rather than a flat fill: a frame that came back shifted by any amount, or with
     /// its rows walked in the wrong order, then reads back bytes that belong to some other texel
     /// instead of matching a fill that looks the same everywhere.
@@ -2030,8 +1983,7 @@ mod tests {
         px
     }
 
-    /// Every GBA pixel must land exactly where it does today: a full-size frame has no margin and
-    /// no offset, so this path is arithmetically unchanged for the platform that already works.
+    /// Every GBA pixel lands exactly where the core put it.
     #[test]
     fn a_full_size_picture_is_unmoved() {
         let mut host = host_with(HashMap::new(), false);
@@ -2110,36 +2062,6 @@ mod tests {
             unsafe { with_host(|h| h.video.clone()) }.unwrap(),
             frame,
             "a duplicate frame changed the picture instead of keeping it"
-        );
-    }
-
-    /// The Game Boy case, which is the one a second core would arrive on: a 160x144 picture sits
-    /// centred in a buffer built for a GBA, so a duplicate frame has both a picture and a margin
-    /// to leave alone. Two in a row, because a fast forward never sends only one.
-    #[test]
-    fn a_duplicate_frame_keeps_a_centred_game_boy_picture_where_it_is() {
-        let mut host = host_with(HashMap::new(), false);
-        let _active = Active::bind(&mut host);
-        let frame = gradient(160, 144);
-        unsafe { video_refresh(frame.as_ptr() as *const c_void, 160, 144, 160 * 4) };
-        let drawn = unsafe { with_host(|h| h.video.clone()) }.unwrap();
-
-        unsafe {
-            video_refresh(ptr::null(), 160, 144, 160 * 4);
-            video_refresh(ptr::null(), 160, 144, 160 * 4);
-        }
-
-        let kept = unsafe { with_host(|h| h.video.clone()) }.unwrap();
-        assert_eq!(kept, drawn, "the picture did not survive two duplicates");
-        // The comparison above is only worth anything if there was a picture there to keep, so
-        // one texel well inside it — source (100, 50), which the centring puts at (140, 58) —
-        // is read back on its own. A setup that drew nothing would otherwise pass by comparing
-        // two blank buffers.
-        let lit = (58 * GBA_W as usize + 140) * 4;
-        assert_eq!(
-            &kept[lit..lit + 3],
-            &[100u8, 50, 100 ^ 50],
-            "the picture was blanked or moved where a duplicate should have kept it"
         );
     }
 }

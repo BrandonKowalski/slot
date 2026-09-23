@@ -14,7 +14,7 @@
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use slot_gfx::{Compositor, HeadlessSurface};
-use slot_store::{Cart, Platform};
+use slot_store::Cart;
 use slot_ui::{cart_face, cart_shadow, Draw, Shelf, SlotChrome, TexId, CART_W, OUT_H, OUT_W};
 
 /// `gl::load_with` writes global function pointers, so two GL tests must not overlap.
@@ -31,7 +31,6 @@ fn shelf_with(n: usize) -> Shelf {
     Shelf::new(
         (0..n)
             .map(|i| Cart {
-                platform: Platform::Gba,
                 stem: format!("Game {i}"),
                 rom: format!("Games/GBA/Game {i}.gba").into(),
                 label: None,

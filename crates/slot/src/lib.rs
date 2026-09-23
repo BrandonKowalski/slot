@@ -22,5 +22,4 @@ pub mod rewind;
 pub mod root;
 pub mod session;
 pub mod thumb;
-pub mod video_mode;
 pub mod wallpaper;

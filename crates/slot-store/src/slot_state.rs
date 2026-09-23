@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::atomic::atomic_write;
-use crate::platform::Platform;
 
 pub const BRIGHTNESS_MAX: u8 = 9;
 pub const BLUE_LIGHT_MAX: u8 = 9;
@@ -59,19 +58,6 @@ pub const FF_SPEED_DEFAULT: u8 = 6;
 pub struct SlotState {
     /// Filename stem. `None` is an empty slot, which is the shelf.
     pub cart: Option<String>,
-    /// Which shelf `cart` stands on, when the card says so. A stem is ambiguous exactly when it
-    /// collides across the three platform folders — `Tetris.gb` beside `Tetris.gba` is two
-    /// cartridges under one name — and this is the only thing that says which of them was in
-    /// the slot.
-    ///
-    /// `None` is a card that never said, which is every card written before this line existed
-    /// and every card written by a build that does not know it. That is deliberately *not* the
-    /// same as a stated `Gba`: unstated means "look the stem up across the shelves and take the
-    /// first that has it", which is what slot has always done and which puts Game Boy Advance
-    /// first, while a stated platform means that shelf and no other. A card written before this
-    /// change held only GBA carts, so the old behaviour is what the line meant when it was
-    /// written, and it is what a missing line still means.
-    pub cart_platform: Option<Platform>,
     pub brightness: u8,
     pub blue_light: u8,
     pub volume: u8,
@@ -114,7 +100,6 @@ impl Default for SlotState {
     fn default() -> Self {
         SlotState {
             cart: None,
-            cart_platform: None,
             brightness: 5,
             blue_light: 0,
             volume: 60,
@@ -143,9 +128,8 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\n",
+        "cart={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\n",
         s.cart.as_deref().unwrap_or(""),
-        s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
         s.blue_light,
         s.volume,
@@ -170,7 +154,7 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
 /// unreadable reads as its own default and leaves the rest of the card alone.
 fn parse(text: &str) -> Option<SlotState> {
     let mut cart = None;
-    let mut cart_platform = None;
+    let mut other_platform = false;
     let mut brightness = None;
     let mut blue_light = None;
     let mut volume = None;
@@ -187,7 +171,12 @@ fn parse(text: &str) -> Option<SlotState> {
         };
         match key {
             "cart" => cart = Some(value.to_string()),
-            "cart_platform" => cart_platform = platform_value(value),
+            // Written by the builds that ran Game Boy carts too, naming the folder the seated cart
+            // came from. Any answer but `gba` was a Game Boy cart, and its stem must not seat
+            // a GBA cart that happens to share it.
+            "cart_platform" => {
+                other_platform = !value.is_empty() && !value.eq_ignore_ascii_case("gba")
+            }
             "brightness" => brightness = Some(level(value, BRIGHTNESS_MAX)?),
             "blue_light" => blue_light = Some(level(value, BLUE_LIGHT_MAX)?),
             "volume" => volume = Some(level(value, VOLUME_MAX)?),
@@ -204,13 +193,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let cart = cart?;
     let fallback = SlotState::default();
     Some(SlotState {
-        cart: (!cart.is_empty()).then_some(cart),
-        // Assigned rather than resolved against the fallback, which the three settings below do,
-        // because for this one key the fallback *is* `None`: absent is a meaning of its own —
-        // "the card never said, look the stem up" — and not a value waiting on a default. It is
-        // forgiven in exactly the same way for exactly the same reason: a line this build cannot
-        // read costs its own answer and takes nothing else on the card with it.
-        cart_platform,
+        cart: (!cart.is_empty() && !other_platform).then_some(cart),
         brightness: brightness?,
         blue_light: blue_light?,
         volume: volume?,
@@ -222,24 +205,6 @@ fn parse(text: &str) -> Option<SlotState> {
         ff_sound: ff_sound.unwrap_or(fallback.ff_sound),
         colour_correction: colour_correction.unwrap_or(fallback.colour_correction),
     })
-}
-
-/// How a platform is spelled on this line: its own directory name in lower case, so the file
-/// says `cart_platform=gb` for the cart that lives in `Games/GB/`. Built from `dir_name` rather
-/// than from a second list of three strings, which is what stops the state file and the card's
-/// own folders coming to disagree about what a platform is called.
-fn platform_key(platform: Platform) -> String {
-    platform.dir_name().to_ascii_lowercase()
-}
-
-/// The reverse, and forgiving of case for the same reason the extension check is: the line is
-/// plain text on a card anyone can open in an editor, and `GB` means what `gb` means. Anything
-/// that is not one of the three — an empty value, a platform a later build added, a typo — is
-/// `None`, which reads as a card that never said.
-fn platform_value(value: &str) -> Option<Platform> {
-    Platform::ALL
-        .into_iter()
-        .find(|p| value.eq_ignore_ascii_case(p.dir_name()))
 }
 
 fn offset(value: &str) -> Option<i16> {

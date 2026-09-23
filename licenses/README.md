@@ -100,8 +100,5 @@ from this repo carries the same notice the release zip does.
 `slot` draws its own cartridges, its own slot and its own wordmark, and the two fonts it sets
 type and glyphs in each ship with their licence beside them in `crates/slot-ui/assets/`.
 
-Three drawings here were somebody else's: Noun Project icons of a Game Boy Advance SP, a Game
-Boy and a Game Boy Color, used under CC BY as the marks in the top plate's corner that said which
-shelf the carousel was standing on. They are gone, and so is the corner: the shelf says its own
-name in words on the case band now. Nothing in this repository is drawn by anyone else any more,
-and the attribution that stood here is in the history with the files it credited.
+Nothing in this repository is drawn by anyone else. Three Noun Project icons used under CC BY
+once were, and the attribution that stood here is in the history with the files it credited.

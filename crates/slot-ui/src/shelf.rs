@@ -1,9 +1,8 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
 
-use crate::cart::{cart_box, gb_shell_of, label_colour, label_text, CART_W};
+use crate::cart::{label_colour, label_text, CART_H, CART_W};
 use crate::hud::Millis;
-use crate::silhouette::GbShell;
 use crate::slot_chrome::draw_empty_slot;
 
 /// Distance between cart centres. Wider than a cart so the neighbours peek in at both
@@ -13,12 +12,7 @@ use crate::slot_chrome::draw_empty_slot;
 const PITCH: f32 = 240.0;
 const SIDE_SCALE: f32 = 0.78;
 const SIDE_ALPHA: f32 = 0.55;
-/// Where a cartridge of this height stands on the row: centred on the screen. Every shelf holds
-/// one platform — the card is one folder per system — so a row never mixes heights, and what the
-/// eye reads on the carousel is where the selected cartridge sits in the frame. A GBA cart has
-/// always been centred; a Game Boy pak measured from a shared floor instead sat 59 px higher,
-/// crowding the top of the screen and leaving a gap above the slot, which is what the user
-/// objected to. The two now share a centre rather than a floor.
+/// Where a cartridge of this height stands on the row: centred on the screen.
 ///
 /// This is where the *full size* cartridge rests. A side cart is smaller, and it keeps its foot
 /// on the line the selection's foot is on rather than shrinking about the middle, so the row
@@ -27,7 +21,7 @@ pub fn rest_y(h: f32) -> f32 {
     (OUT_H as f32 - h) / 2.0
 }
 
-/// The line this platform's cartridges stand on, which is `rest_y` plus that cartridge's own
+/// The line the cartridges stand on, which is `rest_y` plus that cartridge's own
 /// height. Asked with the cart's full height even for a shrunken neighbour: the foot stays put
 /// as a cart shrinks away, which is what stops the row reading as carts floating.
 pub fn foot_y(h: f32) -> f32 {
@@ -64,18 +58,8 @@ pub struct Shelf {
     pub index: usize,
     pub scroll: f32,
     faces: Vec<TexId>,
-    /// The cart silhouette in black, drawn under a dimmed cart. One texture per *mould* rather
-    /// than one for the row: a row can hold GBA carts or Game Boy paks, the two Game Pak shells
-    /// differ at their top corners, and all three are different objects. Backing of the wrong
-    /// outline either draws black over the wallpaper beside the cart or leaves part of the
-    /// dimmed face with nothing behind it, and both of those are visible.
+    /// The cart silhouette in black, drawn under a dimmed cart.
     shadow: Option<TexId>,
-    gb_shadow: Option<TexId>,
-    gbc_shadow: Option<TexId>,
-    /// Which mould each cart in `carts` came out of, `None` for a GBA cart. Worked out once
-    /// here because the answer is in the rom's header: asking it while drawing would open a
-    /// file on every cart of every frame.
-    shells: Vec<Option<GbShell>>,
     /// The presses added up, in the same continuous coordinate `scroll` lives in, so it counts
     /// laps rather than wrapping. This is what the spring aims at — see `scroll_target` — because
     /// it is the only thing that remembers which button was pressed once the row has wrapped.
@@ -91,14 +75,11 @@ pub struct Shelf {
 impl Shelf {
     pub fn new(carts: Vec<Cart>) -> Self {
         Shelf {
-            shells: carts.iter().map(gb_shell_of).collect(),
             carts,
             index: 0,
             scroll: 0.0,
             faces: Vec::new(),
             shadow: None,
-            gb_shadow: None,
-            gbc_shadow: None,
             ride: 0.0,
             vel: 0.0,
             held: None,
@@ -120,16 +101,6 @@ impl Shelf {
     /// can mint a `TexId`.
     pub fn set_shadow(&mut self, face: TexId) {
         self.shadow = Some(face);
-    }
-
-    /// The Game Boy pak's outline in black, one per shell mould. A row whose carts are paks and
-    /// whose only uploaded shadow is the GBA one draws no black at all rather than a tapered
-    /// shape stretched under a straight sided cart.
-    pub fn set_gb_shadow(&mut self, shell: GbShell, face: TexId) {
-        match shell {
-            GbShell::Notched => self.gb_shadow = Some(face),
-            GbShell::Rounded => self.gbc_shadow = Some(face),
-        }
     }
 
     pub fn set_faces(&mut self, faces: Vec<TexId>) {
@@ -417,16 +388,9 @@ impl Shelf {
     /// teleports into the middle of the screen while the cart it was passing is still sliding.
     ///
     /// The sum is `draw_row`'s own for the slot the selection is in, with `recede` at zero
-    /// because nothing has begun to part yet — not a second copy of it. The width is asked of
-    /// the selected cart rather than assumed to be `CART_W`: both cartridges are 240 wide today
-    /// and the number is the same either way, and the point is that it stays the same as what is
-    /// drawn if a later one is not. `CART_W` stands in for an empty row, which draws no cart to
-    /// measure.
+    /// because nothing has begun to part yet, not a second copy of it.
     pub fn selected_at(&self) -> (f32, f32) {
-        let w = self
-            .carts
-            .get(self.index)
-            .map_or(CART_W, |c| cart_box(c.platform).0) as f32;
+        let w = CART_W as f32;
         let offset = self.scroll_target() - self.scroll;
         let scale = shrink(offset);
         (OUT_W as f32 / 2.0 + offset * PITCH - w * scale / 2.0, scale)
@@ -485,8 +449,7 @@ impl Shelf {
             let t = offset.abs().min(1.0);
             let scale = shrink(offset);
             let alpha = (1.0 + (SIDE_ALPHA - 1.0) * t) * (1.0 - recede);
-            let (cw, ch) = cart_box(cart.platform);
-            let (w, h) = (cw as f32 * scale, ch as f32 * scale);
+            let (w, h) = (CART_W as f32 * scale, CART_H as f32 * scale);
             // Away from the middle, and further the further out it already was, so the row
             // opens rather than sliding sideways.
             let away = offset.signum() * (1.0 + offset.abs());
@@ -495,29 +458,14 @@ impl Shelf {
                 continue;
             }
             let x = x + shake;
-            // The floor is this platform's, asked of the cartridge's own full height rather than
-            // of the scaled one: a neighbour shrinks upward off a floor it shares with the
-            // selection instead of shrinking about its own middle.
-            let y = foot_y(ch as f32) - h;
+            // The floor is asked of the cartridge's full height rather than of the scaled one: a
+            // neighbour shrinks upward off a floor it shares with the selection instead of
+            // shrinking about its own middle.
+            let y = foot_y(CART_H as f32) - h;
             // Black in the cart's own shape, under the dimmed face. Without it the dimming is
             // transparency, and over a wallpaper the row reads as ghosts of carts.
             if alpha < 1.0 {
-                // Three backings for three moulds: it is the cart's own outline, and a class C
-                // pak's corners are not a class A/B pak's. See `cart::gb_cart_shadow`.
-                //
-                // Asked for rather than indexed, the way `faces` is asked for eighteen lines
-                // below and for the same reason: `carts` is public, `shells` is not, and a push
-                // through the public field would leave this one entry short. Indexed, that is a
-                // panic inside the draw loop — on the device a black screen and a dead handset,
-                // with no message anywhere — for a row that would otherwise have drawn. A cart
-                // whose mould was never recorded gets the straight sided backing, which is the
-                // same degrading a cart whose face was never uploaded already gets.
-                let backing = match self.shells.get(i).copied().flatten() {
-                    None => self.shadow,
-                    Some(GbShell::Notched) => self.gb_shadow,
-                    Some(GbShell::Rounded) => self.gbc_shadow,
-                };
-                if let Some(tex) = backing {
+                if let Some(tex) = self.shadow {
                     out.push(Draw::Tex {
                         x,
                         y,

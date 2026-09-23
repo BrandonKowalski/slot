@@ -252,14 +252,6 @@ pub fn shelf_cart() -> Placed {
 /// middle. So the height comes off the foot and not off `rest_y`, which is only the top of a
 /// cart the row has finished growing.
 ///
-/// `CART_W` and `CART_H` are the right constants here, where `SlotChrome` asks `cart_box` for
-/// the same two numbers. The difference is what the two are drawing. The chrome carries
-/// whatever cartridge was chosen, so it has to ask. This is the cart the core picker opens, and
-/// `App::open_core_picker` refuses to open one on anything but a GBA cart — the board inside is
-/// a traced GBA PCB, and there is no core to choose for a Game Boy cart anyway. So these are
-/// not a GBA cart standing in for a cartridge in general: they are the GBA cart, which is the
-/// only cartridge this rect is ever the rest of. Asking `cart_box` would read as a promise that
-/// a pak can open here, which is a decision the app has deliberately taken the other way.
 pub fn shelf_cart_at(x: f32, scale: f32) -> Placed {
     let (w, h) = (CART_W as f32 * scale, CART_H as f32 * scale);
     Placed {

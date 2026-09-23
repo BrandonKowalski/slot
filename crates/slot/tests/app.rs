@@ -8,11 +8,9 @@ use slot::app::{App, Phase, EJECT_S, INSERT_S, SEATED_AT};
 use slot::audio::Sfx;
 use slot::emu::{EmuHandle, Speed};
 use slot::session::Session;
-use slot::video_mode::{video_mode_for, VideoMode, VIDEO_MODE_FILE};
-use slot_gfx::WHOLE_TEXTURE;
 use slot_input::{Action, Btn, RawEvent};
 use slot_retro::ButtonMask;
-use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
+use slot_store::{write_slot_state, Cart, Core, SlotState};
 use slot_ui::{
     board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Icon, Placed, TexId,
     BOARD_W, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
@@ -31,7 +29,6 @@ fn app_with_carts(stems: &[&str]) -> App {
         stems
             .iter()
             .map(|stem| Cart {
-                platform: Platform::Gba,
                 stem: (*stem).to_string(),
                 rom: format!("Games/GBA/{stem}.gba").into(),
                 label: None,
@@ -327,331 +324,6 @@ fn a_held_direction_walks_the_shelf_and_a_release_stops_it() {
     assert_eq!(cart, "C", "one press and one repeat, then nothing");
 }
 
-/// One cart per pair, filed under the platform named. Which folder a cart came out of is the
-/// only thing that decides which shelf it stands on — there is one shelf per platform — so a
-/// test wanting more than one shelf says so here.
-fn app_with_platforms(carts: &[(Platform, &str)]) -> App {
-    App::new(
-        carts
-            .iter()
-            .map(|(platform, stem)| Cart {
-                platform: *platform,
-                stem: (*stem).to_string(),
-                rom: format!(
-                    "Games/{}/{stem}.{}",
-                    platform.dir_name(),
-                    platform.extensions()[0]
-                )
-                .into(),
-                label: None,
-                code: String::new(),
-                title: stem.to_uppercase(),
-            })
-            .collect(),
-    )
-}
-
-/// One press of a button and the release that follows. The shelf moves on the press, so this is
-/// a press that has ended rather than one being held: nothing here is testing the repeat.
-fn tap(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
-}
-
-/// The shelves are a ring, so with two of them either shoulder reaches the other one and a
-/// second press comes back.
-#[test]
-fn the_shoulders_ring_over_the_shelves() {
-    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
-    assert_eq!(a.selected_stem(), Some("Emerald"));
-    tap(&mut a, Btn::R1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Tetris"),
-        "R1 did not reach the Game Boy shelf"
-    );
-    tap(&mut a, Btn::R1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Emerald"),
-        "the ring did not come back round"
-    );
-    tap(&mut a, Btn::L1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Tetris"),
-        "L1 did not reach the Game Boy shelf"
-    );
-}
-
-/// One shelf per platform, so a card with all three has three stops and the shoulders walk them
-/// in the order the platforms are named in. A Colour cart stands on its own shelf: identical
-/// plastic to a Game Boy cart or not, it is a different system and says so.
-#[test]
-fn a_colour_cart_stands_on_a_shelf_of_its_own() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Emerald"),
-        (Platform::Gb, "Tetris"),
-        (Platform::Gbc, "Chromatic"),
-    ]);
-    tap(&mut a, Btn::R1);
-    assert_eq!(a.selected_stem(), Some("Tetris"));
-    tap(&mut a, Btn::R1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Chromatic"),
-        "the Colour cart shares the Game Boy shelf"
-    );
-    tap(&mut a, Btn::R1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Emerald"),
-        "three shelves did not ring back round to the first"
-    );
-    // And the other way, which with three shelves is a different route rather than the same
-    // one run backwards.
-    tap(&mut a, Btn::L1);
-    assert_eq!(a.selected_stem(), Some("Chromatic"));
-}
-
-/// Each shelf keeps its own place. Coming back to a platform on a different cart than the one
-/// it was left on would be the carousel forgetting.
-#[test]
-fn every_shelf_keeps_the_cart_it_was_left_on() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Emerald"),
-        (Platform::Gba, "Fusion"),
-        (Platform::Gb, "Tetris"),
-        (Platform::Gb, "Zelda"),
-    ]);
-    tap(&mut a, Btn::Right);
-    assert_eq!(a.selected_stem(), Some("Fusion"));
-    tap(&mut a, Btn::R1);
-    assert_eq!(a.selected_stem(), Some("Tetris"));
-    tap(&mut a, Btn::Right);
-    assert_eq!(a.selected_stem(), Some("Zelda"));
-
-    tap(&mut a, Btn::L1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Fusion"),
-        "the Game Boy Advance shelf forgot where it was"
-    );
-    tap(&mut a, Btn::R1);
-    assert_eq!(
-        a.selected_stem(),
-        Some("Zelda"),
-        "the Game Boy shelf forgot where it was"
-    );
-}
-
-/// A shelf keeps its spring as well as its place, so coming back to one does not restart the
-/// row sliding in from the beginning. Read off where the selected cart's own face lands, since
-/// the scroll is a continuous position that the index alone cannot show.
-///
-/// It is also the only place the faces are proved to have been split between the shelves: a
-/// build that handed every face to the first shelf would leave the Game Boy cart drawn as a
-/// bare rectangle, and `Ccc`'s face would belong to somebody else.
-#[test]
-fn a_shelf_comes_back_settled_where_it_was_left() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Aaa"),
-        (Platform::Gba, "Bbb"),
-        (Platform::Gba, "Ccc"),
-        (Platform::Gb, "Tetris"),
-    ]);
-    let faces: Vec<TexId> = (0..4).map(|i| TexId::from_raw(700 + i)).collect();
-    a.set_faces(faces.clone());
-    tap(&mut a, Btn::Right);
-    tap(&mut a, Btn::Right);
-    for _ in 0..120 {
-        a.update(1.0 / 60.0);
-    }
-    let settled = tex_at(&frame(&a), faces[2])
-        .expect("no face for the selected cart")
-        .1;
-
-    tap(&mut a, Btn::R1);
-    assert!(
-        tex_at(&frame(&a), faces[3]).is_some(),
-        "the Game Boy cart has no face of its own"
-    );
-    tap(&mut a, Btn::L1);
-    a.update(1.0 / 60.0);
-    let back = tex_at(&frame(&a), faces[2])
-        .expect("no face on the way back")
-        .1;
-    assert!(
-        (back[0] - settled[0]).abs() < 1.0,
-        "the row came back at {} rather than settled at {}",
-        back[0],
-        settled[0]
-    );
-}
-
-/// One shelf with carts on it means the buttons do nothing at all: no movement, no banner, and
-/// no refusal either. A dead button is the right answer to "there is nowhere to go" — a shake
-/// would be slot claiming something was wrong.
-#[test]
-fn the_shoulders_do_nothing_when_there_is_one_shelf_to_be_on() {
-    let mut a = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gba, "Fusion")]);
-    for btn in [Btn::L1, Btn::R1] {
-        tap(&mut a, btn);
-        assert_eq!(
-            a.selected_stem(),
-            Some("Emerald"),
-            "{btn:?} moved a shelf with no neighbour"
-        );
-        assert_eq!(
-            a.toast(),
-            None,
-            "{btn:?} said something about doing nothing"
-        );
-        assert_eq!(
-            a.shelf_shake(),
-            0.0,
-            "{btn:?} refused where it should have done nothing"
-        );
-    }
-}
-
-/// The switch says which system it landed on with the mark in the top plate's corner, and says
-/// it in silence: no banner goes up over the carts, then or ever, and the mark does not fade.
-/// This replaced three banners that named the shelf and then went away, which meant the one fact
-/// the row could not state about itself was on screen for a second and a half out of every visit.
-///
-/// The faces are pushed in the way the frontend pushes them at boot, in `Platform::ALL` order,
-/// and the frame is read for which of the three actually reached the corner.
-#[test]
-fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Emerald"),
-        (Platform::Gb, "Tetris"),
-        (Platform::Gbc, "Chromatic"),
-    ]);
-    assert_eq!(
-        a.shelf_platform_name(),
-        Some("Game Boy Advance"),
-        "the card did not open on the GBA"
-    );
-    for (btn, want) in [
-        (Btn::R1, "Game Boy"),
-        (Btn::R1, "Game Boy Color"),
-        (Btn::R1, "Game Boy Advance"),
-        (Btn::L1, "Game Boy Color"),
-    ] {
-        a.apply_at(Action::GbaDown(btn), 1_000);
-        assert_eq!(
-            a.shelf_platform_name(),
-            Some(want),
-            "{btn:?} left the wrong name on the case"
-        );
-        assert_eq!(a.toast(), None, "{btn:?} put a banner up over the carts");
-    }
-    // And it is still there long after any banner would have faded, because it is printed on the
-    // case rather than said. This is the whole of the difference from the banner it replaced.
-    a.update(5.0);
-    assert_eq!(
-        a.shelf_platform_name(),
-        Some("Game Boy Color"),
-        "the name faded"
-    );
-}
-
-/// A card whose library is all on one shelf names nothing. The shoulders do nothing there, since
-/// there is nowhere to go, and naming the platform would be the device answering a question the
-/// player has no way to ask: it would sit on the band for the life of the card saying the one
-/// thing that can never change.
-///
-/// It is the same rule L1 and R1 follow and it is asked of the same code, so this is really
-/// holding that the two cannot come apart. Both cases are read rather than only the dead one: a
-/// name that vanished whenever the shoulders were pressed would pass a test that only looked at
-/// the single-shelf card.
-#[test]
-fn a_card_on_one_shelf_names_nothing_because_there_is_nowhere_to_switch_to() {
-    let mut alone = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gba, "Fusion")]);
-    assert_eq!(
-        alone.shelf_platform_name(),
-        None,
-        "a card with only Game Boy Advance carts named its platform anyway"
-    );
-    // The shoulders and the name are the same rule read from two sides: nothing to switch to,
-    // nothing to say.
-    for btn in [Btn::L1, Btn::R1] {
-        alone.apply_at(Action::GbaDown(btn), 1_000);
-        assert_eq!(
-            alone.shelf_platform_name(),
-            None,
-            "{btn:?} named a shelf on a card that has one"
-        );
-    }
-
-    // The other side of the same rule, read here rather than in its own test: two shelves and
-    // the band does name one. Without this, a band that never named anything would pass.
-    let two = app_with_platforms(&[(Platform::Gba, "Emerald"), (Platform::Gb, "Tetris")]);
-    assert_eq!(
-        two.shelf_platform_name(),
-        Some("Game Boy Advance"),
-        "a card with two shelves did not say which one it was on"
-    );
-}
-
-/// A card with no Game Boy Advance carts opens on the shelf that has some. Booting onto an
-/// empty shelf beside a full one would be a device that starts by showing nothing.
-#[test]
-fn the_carousel_opens_on_a_shelf_that_has_carts() {
-    let a = app_with_platforms(&[(Platform::Gbc, "Chromatic")]);
-    assert_eq!(a.selected_stem(), Some("Chromatic"));
-}
-
-/// The shoulders are the GBA's own buttons while a game is playing, so a shelf must not move
-/// under one — the row would be showing a different platform when the cart comes out.
-#[test]
-fn the_shoulders_belong_to_the_game_while_one_is_playing() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Emerald"),
-        (Platform::Gba, "Fusion"),
-        (Platform::Gb, "Tetris"),
-    ]);
-    a.apply(Action::Insert);
-    a.on_core_ready();
-    for _ in 0..120 {
-        a.update(1.0 / 60.0);
-    }
-    tap(&mut a, Btn::R1);
-    assert_eq!(a.toast(), None, "the game's shoulder button named a shelf");
-    assert_eq!(
-        a.selected_stem(),
-        Some("Emerald"),
-        "the game's shoulder button switched the shelf behind it"
-    );
-}
-
-/// A direction still held as a shelf leaves the screen is not held when it comes back. The
-/// repeat belongs to the row being looked at, and a stale one starts the moment that row
-/// returns — with nothing under the player's thumb to explain it.
-#[test]
-fn a_held_direction_does_not_follow_the_shelf_it_was_pressed_on() {
-    let mut a = app_with_platforms(&[
-        (Platform::Gba, "Aaa"),
-        (Platform::Gba, "Bbb"),
-        (Platform::Gba, "Ccc"),
-        (Platform::Gb, "Tetris"),
-    ]);
-    a.apply_at(Action::GbaDown(Btn::Right), 0);
-    assert_eq!(a.selected_stem(), Some("Bbb"));
-    a.apply_at(Action::GbaDown(Btn::R1), 10);
-    a.apply_at(Action::GbaDown(Btn::L1), 20);
-    for _ in 0..120 {
-        a.update(1.0 / 60.0);
-    }
-    assert_eq!(
-        a.selected_stem(),
-        Some("Bbb"),
-        "the row walked on by itself once the shelf came back"
-    );
-}
-
 #[test]
 fn a_cart_in_flight_is_not_also_left_standing_on_the_shelf() {
     let mut a = app_with_carts(&["Emerald"]);
@@ -863,12 +535,6 @@ fn on_shelf(stems: &[&str]) -> (tempfile::TempDir, App) {
     booted_on_shelf(common::tmp_root_with_carts(stems))
 }
 
-/// The same shelf, holding Game Boy carts instead. The folder is what gives a cart its
-/// platform, so this is a different card rather than the same one with different filenames.
-fn on_shelf_gb(stems: &[&str]) -> (tempfile::TempDir, App) {
-    booted_on_shelf(common::tmp_root_with_gb_carts(stems))
-}
-
 fn booted_on_shelf(d: tempfile::TempDir) -> (tempfile::TempDir, App) {
     write_slot_state(
         d.path(),
@@ -890,48 +556,6 @@ fn let_it_close(app: &mut App) {
 /// Long enough for a hop to land.
 fn let_it_hop(app: &mut App) {
     app.update(0.25);
-}
-
-/// What START left behind: the picker it opened, the shelf's shake, and whether the drawn shelf
-/// moved at all. The twin is the same card booted a second time and advanced beside it, so
-/// "nothing moved" is measured against the shelf as it stands at that instant rather than
-/// against a frame taken before the press — the row is a spring, and the two are not the same
-/// picture on principle.
-fn start_on(mut pressed: App, mut untouched: App) -> (Option<Core>, f32, bool) {
-    fake_picker_faces(&mut pressed);
-    fake_picker_faces(&mut untouched);
-    pressed.apply(Action::GbaDown(Btn::Start));
-    let_it_hop(&mut pressed);
-    let_it_hop(&mut untouched);
-    let moved = frame(&pressed) != frame(&untouched);
-    (pressed.core_picker(), pressed.shelf_shake(), moved)
-}
-
-/// The picker's board art is a traced GBA cartridge PCB — 32 contacts and a GBA ROM package — so
-/// opening a Game Boy shell onto it would show the player hardware that is not in their hand.
-/// There is no core to choose for one either: mGBA is the only core that runs a Game Boy game,
-/// and the ini gets no say in it. Nothing to offer and nothing to refuse, so START does nothing
-/// at all — not even the shake, on the same reasoning as inert L1/R1 where there is only one
-/// shelf. A Game Boy board is on the backlog.
-#[test]
-fn start_opens_no_picker_on_a_game_boy_cart() {
-    let (_d, gb) = on_shelf_gb(&["Tetris", "Zzz"]);
-    let (_twin, gb_twin) = on_shelf_gb(&["Tetris", "Zzz"]);
-    let (picker, shake, moved) = start_on(gb, gb_twin);
-    assert_eq!(picker, None, "a Game Boy cart opened the GBA picker");
-    assert_eq!(
-        shake, 0.0,
-        "START on a Game Boy cart was answered with a refusal shake"
-    );
-    assert!(!moved, "START changed what the shelf draws");
-
-    // The control, without which "nothing moved" would pass just as well with START unbound
-    // outright: the same press on a GBA cart does open the picker, and the shelf does move.
-    let (_d, gba) = on_shelf(&["Emerald", "Zzz"]);
-    let (_twin, gba_twin) = on_shelf(&["Emerald", "Zzz"]);
-    let (picker, _, moved) = start_on(gba, gba_twin);
-    assert_eq!(picker, Some(Core::Mgba), "START stopped opening the picker");
-    assert!(moved, "the picker opened and the shelf drew the same frame");
 }
 
 /// Opening on mGBA whatever the cart runs would be a board that says every cart runs mGBA,
@@ -2022,208 +1646,11 @@ fn session_playing(root: &Path) -> Session {
     s
 }
 
-/// What `video_refresh` leaves a Game Boy picture occupying inside the 240x160 buffer, as the
-/// game pass takes it: x 40..200 and y 8..152, in texture coordinates.
-const GB_WINDOW: [f32; 4] = [40.0 / 240.0, 8.0 / 160.0, 160.0 / 240.0, 144.0 / 160.0];
-
 /// What the pad is holding right now, as the core would be polled for it. `Session` hands the
 /// mask to the emulator thread at the end of every `feed`, so this is the far side of the one
 /// gate that decides whether a button is the game's.
 fn pad(s: &Session) -> u16 {
     s.emu().expect("no core in the slot").input().0
-}
-
-/// The Game Boy and the Game Boy Color had no shoulder buttons, so on one of their carts slot
-/// takes L and R for the picture. On a GBA cart they are the GBA's own and must reach the pad
-/// untouched — letting them through to a Game Boy core as well would in fact be harmless,
-/// since mGBA maps libretro's L and R to nothing there, but correct-by-accident is what this
-/// plan has already been bitten by once.
-#[test]
-fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    let mut s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "it did not open actual size"
-    );
-
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    assert_eq!(
-        s.app().source_rect(),
-        GB_WINDOW,
-        "L did not stretch the picture"
-    );
-    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
-    s.feed([RawEvent::Up(Btn::L1)], 120);
-
-    s.feed([RawEvent::Down(Btn::R1)], 200);
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "R did not give it back"
-    );
-    assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
-    s.feed([RawEvent::Up(Btn::R1)], 220);
-
-    // The control. Without it every assertion above would pass on a build that simply stopped
-    // sending the shoulders to any core at all.
-    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
-    let mut s = session_playing(d.path());
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    assert_ne!(pad(&s) & ButtonMask::L, 0, "the GBA lost its own L");
-    s.feed([RawEvent::Down(Btn::R1)], 120);
-    assert_ne!(pad(&s) & ButtonMask::R, 0, "the GBA lost its own R");
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "a GBA picture moved when its shoulders were pressed"
-    );
-}
-
-/// A shoulder held across the insert. Which side of the gate a button falls on is decided on
-/// the phase it lands in, and a finger can stay down across a change of phase: L pressed on the
-/// shelf is nobody's and reaches the pad, and the release that follows it arrives in
-/// `Phase::Playing` on a Game Boy cart, where slot owns it. Withholding that release rather than
-/// acting on it leaves the bit set and the core holding L for the rest of the session.
-///
-/// It goes unnoticed today because mGBA maps libretro's L and R to nothing on a Game Boy, so
-/// nothing in the game moves. That is the reasoning this plan has already been bitten by three
-/// times, which is why it is pinned here instead of relied on.
-#[test]
-fn a_shoulder_held_across_the_insert_does_not_stick_on_the_pad() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    common::clocked(d.path());
-    let mut s = Session::boot(d.path().to_path_buf());
-    // Down on the shelf, where nothing has taken it. The library is Game Boy only, so there is
-    // no other shelf to ring to and the press moves nothing on screen — it is here to put the
-    // bit on the pad, which is exactly what a player's thumb resting on L would do.
-    s.feed([RawEvent::Down(Btn::L1)], 16);
-    // In it goes, with L still held.
-    s.feed([RawEvent::Down(Btn::A)], 32);
-    s.feed([RawEvent::Up(Btn::A)], 48);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !matches!(s.app().phase(), Phase::Playing { .. }) {
-        assert!(Instant::now() < deadline, "the cart never seated");
-        s.update(1.0 / 60.0);
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    // And the finger comes off, now that slot owns the shoulders.
-    s.feed([RawEvent::Up(Btn::L1)], 1000);
-    assert_eq!(
-        pad(&s) & ButtonMask::L,
-        0,
-        "the pad is still holding L after the finger came off it"
-    );
-}
-
-/// The same shoulder, still held. The test above lets go once the cart is playing, so it is
-/// answered by acting on that release — an edge. This one never releases, and there is no edge
-/// to answer with: the finger goes down on the shelf, the cart seats under it, and the thumb
-/// stays where it is.
-///
-/// Ownership is a function of the phase and the platform, and nothing about a phase changing is
-/// an edge on a button. So a gate that only ever runs on an edge hands the core a pad with L
-/// held for as long as the finger stays down, however long that is — the state the player is in
-/// while they keep holding, not a state they pass through.
-///
-/// Harmless on this cart only because mGBA maps libretro's L and R to nothing on a Game Boy.
-/// That is the fourth time this plan has been asked to rely on correct-by-accident, which is why
-/// the answer here is to re-decide ownership wherever the answer can move rather than to add
-/// another edge.
-///
-/// The GBA half is the control, and it is the reason this cannot be satisfied by simply never
-/// sending the shoulders: on a GBA cart L is the game's own button, and a thumb resting on it
-/// through the insert has to arrive in the game still holding it.
-#[test]
-fn a_shoulder_still_held_when_the_cart_seats_never_reaches_a_game_boy_core() {
-    for (label, root, want_held) in [
-        (
-            "Game Boy",
-            common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]),
-            false,
-        ),
-        (
-            "Game Boy Advance",
-            common::tmp_root_with_carts(&["Emerald", "Zzz"]),
-            true,
-        ),
-    ] {
-        common::clocked(root.path());
-        let mut s = Session::boot(root.path().to_path_buf());
-        // Down on the shelf, where nothing has taken it, and never let go of.
-        s.feed([RawEvent::Down(Btn::L1)], 16);
-        s.feed([RawEvent::Down(Btn::A)], 32);
-        s.feed([RawEvent::Up(Btn::A)], 48);
-        // Fed and updated every frame, in that order, which is what `Frontend::advance` does on
-        // the device: a thumb held down is an absence of events, not a stream of them.
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut now = 48;
-        while !matches!(s.app().phase(), Phase::Playing { .. }) {
-            assert!(Instant::now() < deadline, "{label}: the cart never seated");
-            now += 16;
-            s.feed([], now);
-            s.update(1.0 / 60.0);
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(
-            pad(&s) & ButtonMask::L != 0,
-            want_held,
-            "{label}: the core is holding L {} the cart seated under a thumb that never moved",
-            if want_held {
-                "nowhere after"
-            } else {
-                "ever since"
-            }
-        );
-    }
-}
-
-/// A display preference, remembered per cart, in the shape `selected_core.ini` already has —
-/// and it is the card that remembers it, which is why the second half boots the whole session
-/// again rather than reading the app's own field back.
-#[test]
-fn the_picture_mode_is_remembered_per_cart() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    let mut s = session_playing(d.path());
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    s.feed([RawEvent::Up(Btn::L1)], 120);
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Stretch);
-    assert_eq!(
-        video_mode_for(d.path(), "Zzz"),
-        VideoMode::Actual,
-        "the press was recorded against another cart as well"
-    );
-    drop(s);
-
-    let mut s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        GB_WINDOW,
-        "the cart did not come back stretched"
-    );
-    s.feed([RawEvent::Down(Btn::R1)], 100);
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
-    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
-}
-
-/// A cart nobody has chosen for gets the integer-scaled, mask-aligned look — exactly as
-/// `core_for` answers for a cart with no line.
-#[test]
-fn a_cart_with_no_line_reads_as_actual_size() {
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    assert!(
-        !d.path().join(VIDEO_MODE_FILE).exists(),
-        "the fixture already wrote the file"
-    );
-    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
-
-    let s = session_playing(d.path());
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "a cart with no line did not open at actual size"
-    );
 }
 
 /// The power menu's own buttons, which are not the game's. `App::apply` returns above the
@@ -2233,8 +1660,7 @@ fn a_cart_with_no_line_reads_as_actual_size() {
 ///
 /// The dismissal is the one that bites, and the pause underneath does not save it: B ends the
 /// menu, `sync_speed` takes the core off `Paused` on that same frame, and the game is handed a
-/// B it never saw pressed and holds for as long as the thumb stays down. On a Game Boy cart B
-/// is one of two buttons the console has.
+/// B it never saw pressed and holds for as long as the thumb stays down.
 #[test]
 fn the_power_menus_own_buttons_never_reach_the_game() {
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
@@ -2266,9 +1692,8 @@ fn the_power_menus_own_buttons_never_reach_the_game() {
 
 /// The reported bug, read at the seam the core is actually polled through. SELECT was withheld
 /// for the whole 600 ms chord window, so a *held* SELECT reached the game 600 ms late whether or
-/// not a chord ever followed it — the whole of a hold-piece gesture on a Game Boy cart, and the
-/// reason turning chords off for Game Boy carts would not have fixed it. The latency was never
-/// the chord's; it was the waiting to find out whether there would be one.
+/// not a chord ever followed it. The latency was never the chord's; it was the waiting to find out
+/// whether there would be one.
 ///
 /// `EmuHandle::input` rather than the action list, because what the player feels is the mask the
 /// core is polled for on the frame the thumb went down.

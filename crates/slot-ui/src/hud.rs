@@ -30,15 +30,6 @@ const BADGE_MARGIN: f32 = 12.0;
 
 /// Where something of this size goes when it goes in that corner: hard against the right
 /// margin, centred in the plate's own height.
-///
-/// The shelf's platform mark used to take this too, and no longer does — it is `mark_at` now.
-/// The corner is still one corner and still says one thing, since the two can never be on screen
-/// at once: a badge only exists inside a live session and a mark only on the carousel. What came
-/// apart is what each is measured against. A badge is drawn on this plate, over a running game,
-/// and both of these numbers are the plate's own: 12 px in from the edge it shares with the bar,
-/// centred in the 40 px it has to sit in. A mark is drawn where there is no plate, so it is held
-/// off the screen's edges by the case's margin instead — and at the size a mark is now, nothing
-/// centred in 40 px would fit anyway.
 pub fn badge_at(w: f32, h: f32) -> (f32, f32) {
     (OUT_W as f32 - BADGE_MARGIN - w, (PLATE_H - h) / 2.0)
 }

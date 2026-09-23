@@ -1,15 +1,11 @@
 use slot_power::{Battery, Charge};
-use slot_store::{Cart, Platform};
-use slot_ui::{
-    draw_footer, label_colour, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W, GB_CART_H,
-    OUT_W,
-};
+use slot_store::Cart;
+use slot_ui::{draw_footer, label_colour, Draw, Printed, Shelf, TexId, CART_W, OUT_W};
 
 fn shelf_with(n: usize) -> Shelf {
     Shelf::new(
         (0..n)
             .map(|i| Cart {
-                platform: Platform::Gba,
                 stem: format!("Game {i}"),
                 rom: format!("Games/GBA/Game {i}.gba").into(),
                 label: None,
@@ -570,23 +566,15 @@ fn the_other_direction_letting_go_does_not_stop_the_repeat() {
     assert_eq!(s.index, 2, "releasing left stopped a held right");
 }
 
-/// The gauge starts at the case margin, where the wordmark used to be. It briefly did not: the
-/// shelf's mark stood there and held the gauge one mark and one gap further in. The mark has gone
-/// to the top plate's corner and the band is the readout again, so nothing is reserved at this
-/// end for anything.
-///
-/// Charging, with a bolt supplied, because the gauge's own leftmost piece is the bolt's reserved
-/// slot and only a charging device fills it, which is what would otherwise make this reading
-/// about the capsule rather than about the margin.
-///
-/// The gauge was at the left margin and is at the right one now, with the shelf's name having
-/// taken the left. What is held is the same thing either way: it ends on the case margin, not a
-/// pixel inside it, and the piece that lands there is the percent rather than the capsule.
+/// The gauge takes the shelf the wordmark had, at the same margin, so what is printed on the
+/// case still lines up with the row above it. Charging, with a bolt supplied: the bolt's own
+/// slot is reserved ahead of the capsule, so it is only while charging that anything actually
+/// reaches all the way to the margin — discharging leaves that slot empty and the capsule
+/// inset from it, which is the whole point of reserving it unconditionally.
 #[test]
-fn the_gauge_ends_at_the_case_margin() {
+fn the_gauge_sits_where_the_wordmark_did() {
     let mut out = Vec::new();
     draw_footer(
-        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Charging,
@@ -596,82 +584,18 @@ fn the_gauge_ends_at_the_case_margin() {
         Printed { face: None, w: 40 },
         &mut out,
     );
-    let rightmost = out
+    let leftmost = out
         .iter()
         .map(|d| match *d {
-            Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => x + w,
-            _ => 0.0,
+            Draw::Rect { x, .. } | Draw::Tex { x, .. } => x,
+            _ => f32::MAX,
         })
-        .fold(0.0, f32::max);
-    assert_eq!(
-        rightmost,
-        OUT_W as f32 - 24.0,
-        "the case margin is the case margin"
-    );
-    // What lands on the margin is the percent, the gauge's own last piece, rather than the
-    // capsule or the clock. `draw_gauge`'s suite holds the order inside the gauge; this holds
-    // only that the whole of it finishes on the case margin.
-    let ends_on_margin = out.iter().any(|d| match *d {
-        Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => {
-            (x + w - (OUT_W as f32 - 24.0)).abs() < 0.01
-        }
-        _ => false,
-    });
-    assert!(
-        ends_on_margin,
-        "nothing finishes on the case margin: {out:?}"
-    );
+        .fold(f32::MAX, f32::min);
+    assert_eq!(leftmost, 24.0, "the case margin is the case margin");
 }
 
-/// The band's two ends, which is the whole of the space it has: the cart slot's bay, opening and
-/// thumb scoop run through its middle, so nothing may be printed between them.
-///
-/// The shelf's name takes the left margin, and the charge takes the right one with the clock
-/// inboard of it. Read out of `draw_footer`'s own output rather than typed as coordinates, so
-/// moving either end moves this with it.
-#[test]
-fn the_band_prints_its_name_at_one_margin_and_the_charge_at_the_other() {
-    let mut out = Vec::new();
-    draw_footer(
-        Printed { face: None, w: 160 },
-        Some(Battery {
-            percent: 68,
-            charge: Charge::Charging,
-        }),
-        Printed { face: None, w: 30 },
-        Some(TexId::from_raw(1)),
-        Printed { face: None, w: 40 },
-        &mut out,
-    );
-    let xs: Vec<(f32, f32)> = out
-        .iter()
-        .filter_map(|d| match *d {
-            Draw::Rect { x, w, .. } | Draw::Tex { x, w, .. } => Some((x, x + w)),
-            _ => None,
-        })
-        .collect();
-    let leftmost = xs.iter().map(|(a, _)| *a).fold(f32::MAX, f32::min);
-    let rightmost = xs.iter().map(|(_, b)| *b).fold(0.0, f32::max);
-    assert_eq!(
-        leftmost, 24.0,
-        "the shelf's name does not start at the case margin"
-    );
-    assert_eq!(
-        rightmost,
-        OUT_W as f32 - 24.0,
-        "the charge does not end at the case margin"
-    );
-    // And nothing at all is printed across the bay.
-    for (a, b) in &xs {
-        assert!(
-            *b <= 224.0 || *a >= 496.0,
-            "something is printed from {a} to {b}, across the cart bay at 224..496"
-        );
-    }
-}
-
-/// `draw_gauge`'s own suite proves the capsule holds still in isolation; `the_gauge_starts_at_
-/// the_case_margin` above only ever calls `draw_footer` while charging, so nothing here was
+/// `draw_gauge`'s own suite proves the capsule holds still in isolation; `the_gauge_sits_where_
+/// the_wordmark_did` above only ever calls `draw_footer` while charging, so nothing here was
 /// exercising the discharging path through the call the app actually makes. This is that path,
 /// at both charge states, at the same percent: everything but the bolt itself has to come back
 /// identical.
@@ -679,7 +603,6 @@ fn the_band_prints_its_name_at_one_margin_and_the_charge_at_the_other() {
 fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     let mut idle = Vec::new();
     draw_footer(
-        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Discharging,
@@ -691,7 +614,6 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     );
     let mut charging = Vec::new();
     draw_footer(
-        Printed::default(),
         Some(Battery {
             percent: 68,
             charge: Charge::Charging,
@@ -709,13 +631,11 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
     }
 }
 
-/// The clock is the one thing on this band that never changed: a mark arrived at the other end
-/// of it and left again, and this end is where it was throughout.
+/// The clock is the one thing on this band that did not change.
 #[test]
 fn the_clock_stays_at_the_right_margin() {
     let mut out = Vec::new();
     draw_footer(
-        Printed::default(),
         None,
         Printed::default(),
         None,
@@ -737,7 +657,6 @@ fn the_clock_stays_at_the_right_margin() {
 fn a_band_with_no_gauge_still_draws_its_clock() {
     let mut out = Vec::new();
     draw_footer(
-        Printed::default(),
         None,
         Printed::default(),
         None,
@@ -914,195 +833,5 @@ fn dim_darkens_a_side_carts_face_and_not_the_black_under_it() {
     assert_eq!(
         dimmed_under, under,
         "the black under the side cart changed with the dim"
-    );
-}
-
-fn gb_shelf_with(n: usize) -> Shelf {
-    Shelf::new(
-        (0..n)
-            .map(|i| Cart {
-                platform: Platform::Gb,
-                stem: format!("Pak {i}"),
-                rom: format!("Games/GB/Pak {i}.gb").into(),
-                label: None,
-                code: String::new(),
-                title: format!("PAK {i}"),
-            })
-            .collect(),
-    )
-}
-
-/// A Game Boy Game Pak is the same width as a GBA cart and 1.87x as tall, so a row that drew
-/// every cart at one size would squash it. It is centred on the carousel exactly as a GBA cart
-/// is — the two share a centre, not a floor — so its own floor is 59 px lower than the GBA
-/// shelf's and its top edge is 59 px lower too.
-#[test]
-fn the_row_draws_a_game_boy_pak_at_its_own_height() {
-    let mut s = gb_shelf_with(3);
-    settle(&mut s);
-    s.set_faces((0..3).map(|i| TexId::from_raw(20 + i)).collect());
-    let mut out = Vec::new();
-    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
-    let (h, y) = out
-        .iter()
-        .find_map(|d| match *d {
-            Draw::Tex { y, w, h, .. } if (w - CART_W as f32).abs() < 0.01 => Some((h, y)),
-            _ => None,
-        })
-        .expect("no cart is drawn at full size");
-    assert_eq!(h, GB_CART_H as f32, "the pak was drawn at the GBA height");
-    assert_eq!(
-        y,
-        rest_y(GB_CART_H as f32),
-        "the pak is not centred on the carousel"
-    );
-}
-
-/// The black backing under a dimmed cart is the cart's own outline. A Game Boy shelf that has
-/// only the GBA silhouette uploaded draws no backing rather than a tapered one stretched to a
-/// straight sided pak.
-#[test]
-fn a_game_boy_row_backs_its_carts_with_the_game_boy_shadow() {
-    let mut s = gb_shelf_with(3);
-    settle(&mut s);
-    s.set_faces((0..3).map(|i| TexId::from_raw(20 + i)).collect());
-    let gba = TexId::from_raw(98);
-    s.set_shadow(gba);
-    let drawn = |s: &Shelf| {
-        let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
-        out
-    };
-    assert!(
-        !drawn(&s)
-            .iter()
-            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gba)),
-        "the GBA silhouette was stretched under a Game Boy pak"
-    );
-    let gb = TexId::from_raw(97);
-    s.set_gb_shadow(GbShell::Notched, gb);
-    assert!(
-        drawn(&s)
-            .iter()
-            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gb)),
-        "nothing backs the dimmed paks once their own shadow is uploaded"
-    );
-}
-
-/// There are three moulds, not two, and the backing is one per mould. A class C pak's top
-/// corners are rounded where a class A/B pak's are stepped, so backing one with the other's
-/// outline either paints black beside the cart or leaves a corner of the dimmed face with
-/// nothing behind it — and over a light wallpaper that corner reads as a bite out of the cart.
-///
-/// The shell is read off the rom's CGB flag, so these are real files on a real temporary card:
-/// what is being checked is that the row picks between the two backings by what the cartridge
-/// actually is, and that it does it without opening anything while drawing.
-#[test]
-fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
-    let d = tempfile::tempdir().expect("tempdir");
-    let games = d.path().join("Games/GB");
-    std::fs::create_dir_all(&games).expect("create games dir");
-    let carts: Vec<Cart> = [("Grey", 0x00u8), ("Clear", 0xc0)]
-        .iter()
-        .map(|(stem, cgb)| {
-            let mut rom = vec![0u8; 0x150];
-            rom[0x143] = *cgb;
-            let path = games.join(format!("{stem}.gb"));
-            std::fs::write(&path, rom).expect("write rom");
-            Cart {
-                platform: Platform::Gb,
-                stem: (*stem).into(),
-                rom: path,
-                label: None,
-                code: String::new(),
-                title: (*stem).to_uppercase(),
-            }
-        })
-        .collect();
-
-    let notched = TexId::from_raw(90);
-    let rounded = TexId::from_raw(91);
-    // Only a dimmed cart is backed, and the selection is not dimmed — so whichever backing the
-    // row draws belongs to the *neighbour*, which is what makes the answer unambiguous. A row
-    // of two repeats, so that neighbour stands on both sides of the selection and its backing
-    // comes back twice: the same shell, drawn under each of its two images.
-    for (selected, neighbour_shell) in [(0usize, rounded), (1, notched)] {
-        let mut s = Shelf::new(carts.clone());
-        s.select(selected);
-        settle(&mut s);
-        s.set_faces(vec![TexId::from_raw(20), TexId::from_raw(21)]);
-        s.set_gb_shadow(GbShell::Notched, notched);
-        s.set_gb_shadow(GbShell::Rounded, rounded);
-        let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
-        let backings: Vec<TexId> = out
-            .iter()
-            .filter_map(|d| match *d {
-                Draw::Tex { tex, .. } if tex == notched || tex == rounded => Some(tex),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            backings,
-            vec![neighbour_shell; 2],
-            "with the {} pak selected, its neighbour was backed by the wrong shell",
-            carts[selected].stem
-        );
-    }
-}
-
-/// `carts` is public and the mould each one came out of is not: `shells` is built once, in
-/// `Shelf::new`, with one entry per cart. Nothing in the workspace mutates `carts` today, so the
-/// two cannot currently disagree — but they are two vectors kept in step by nobody, and the
-/// place that reads them together is the draw loop. A cart pushed straight onto the public field
-/// used to index one entry past the end of `shells` and panic there, which on the device is a
-/// black screen and a handset that has stopped, with the message nowhere anybody can read it.
-///
-/// So the row draws whatever it has been given. A cart whose mould was never recorded is backed
-/// with the straight sided silhouette, exactly as a cart whose face was never uploaded still
-/// holds its place in the row rather than leaving a hole in it.
-///
-/// The pushed cart is a Game Boy pak on a Game Boy row, which is the shape that makes the
-/// difference visible at all: if this ever goes back to indexing, it is a panic and not a wrong
-/// backing, and the row is one cart longer than the shells are either way.
-#[test]
-fn a_cart_pushed_onto_the_row_draws_rather_than_stopping_the_device() {
-    let mut s = gb_shelf_with(2);
-    let gb = TexId::from_raw(97);
-    let gba = TexId::from_raw(98);
-    s.set_shadow(gba);
-    s.set_gb_shadow(GbShell::Notched, gb);
-    settle(&mut s);
-    let backed = |s: &Shelf| {
-        let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
-        out.iter()
-            .filter(|d| matches!(**d, Draw::Tex { tex, .. } if tex == gb || tex == gba))
-            .count()
-    };
-    // Twice, not once: a row of two repeats, so its one neighbour stands on both sides of the
-    // selection and is backed under each of its two images. This read 1 until the repeat landed
-    // and was left behind by it — before that a row of two had a hole where the second image now
-    // stands, and only one cart on the row was dimmed.
-    assert_eq!(backed(&s), 2, "the neighbour was not backed to begin with");
-
-    // Straight onto the public field, which is the only way the two can come apart. The
-    // selection stays where it is, so the new cart stands as a *neighbour* — dimmed, and
-    // therefore backed, which is the one read that ever looks a cart's mould up.
-    s.carts.push(Cart {
-        platform: Platform::Gb,
-        stem: "Pushed".into(),
-        rom: "Games/GB/Pushed.gb".into(),
-        label: None,
-        code: String::new(),
-        title: "PUSHED".into(),
-    });
-    settle(&mut s);
-    // Drawn at all is the whole claim. Which silhouette backs it is the graceful part; that the
-    // device is still running to draw anything is the part this exists for.
-    assert_eq!(
-        backed(&s),
-        2,
-        "the row holding a cart the shells never heard of did not draw both its neighbours"
     );
 }

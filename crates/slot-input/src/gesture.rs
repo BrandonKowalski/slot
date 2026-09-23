@@ -5,8 +5,7 @@ use crate::{Btn, Millis, RawEvent};
 ///
 /// This no longer withholds anything. It used to be how long SELECT waited before conceding it
 /// was a plain press, which meant a held SELECT arrived at the game 600 ms late whether or not
-/// a chord ever followed — the whole of a hold-piece gesture on a Game Boy cart. The press goes
-/// straight through now (see `select_down`), so this is the arming window and nothing else.
+/// a chord ever followed. The press goes straight through now (see `select_down`), so this is the arming window and nothing else.
 pub const SELECT_CHORD_MS: Millis = 600;
 
 /// The least time SELECT stays down on the pad, measured from the press. The core reads the
@@ -288,9 +287,8 @@ impl Gestures {
     ///
     /// SELECT used to be withheld for the whole of `SELECT_CHORD_MS` so that a chord could
     /// swallow it whole, which meant a *held* SELECT reached the game 600 ms late whether or
-    /// not a chord ever followed. For a Game Boy game that holds a piece with SELECT that is
-    /// the entire gesture, and it is why turning chords off for Game Boy carts would not have
-    /// helped: the latency was never the chord's, it was the waiting to find out.
+    /// not a chord ever followed. The latency was never the chord's, it was the waiting to find
+    /// out.
     ///
     /// What it costs is that a chord now hands the game a SELECT press it did not mean to send.
     /// There is no way around that while the two share the button — the press is already out by

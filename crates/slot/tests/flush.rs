@@ -5,11 +5,10 @@ use std::sync::Arc;
 
 use common::{app_playing_in, app_playing_with, tmp_root_with_carts};
 use slot::app::Phase;
-use slot::persist;
 use slot::persist::Snapshot;
 use slot_input::{Action, Btn};
 use slot_power::{Battery, Charge, LedState};
-use slot_store::{read_slot_state, Core, Platform, StateRing};
+use slot_store::{read_slot_state, Core, StateRing};
 
 /// Today's behaviour is what an unknown charge state has to go on reproducing, so the
 /// pre-existing cases read as unknown rather than as a state the device asserted.
@@ -25,7 +24,7 @@ fn power_press_edge_flushes_immediately_not_on_release() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::PowerTap);
-    let r = StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald");
+    let r = StateRing::new(d.path(), Core::Mgba, "Emerald");
     assert!(
         r.read_resume().unwrap().is_some(),
         "flush must happen on press, a held power button is a hardware cutoff"
@@ -37,19 +36,15 @@ fn autosave_fires_at_sixty_seconds_and_not_before() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.tick_ms(59_999);
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_none()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_none());
     a.tick_ms(60_000);
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_some()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_some());
 }
 
 #[test]
@@ -57,12 +52,10 @@ fn battery_critical_flushes_and_powers_off() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.on_battery(unknown(3));
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_some()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_some());
     assert!(a.powering_off());
 }
 
@@ -95,7 +88,7 @@ fn opening_the_menu_flushes_and_the_choice_powers_off() {
         "the hold asks the question, it does not answer it"
     );
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
@@ -136,7 +129,7 @@ fn an_idle_doze_times_out_into_a_power_off() {
     a.on_doze_timeout();
     assert!(a.powering_off(), "the timeout powers off");
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
@@ -151,12 +144,10 @@ fn a_battery_above_the_threshold_keeps_playing() {
     let mut a = app_playing_in(d.path(), "Emerald");
     a.on_battery(unknown(20));
     assert!(!a.powering_off());
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_none()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -229,27 +220,6 @@ fn at(percent: u8, charge: Charge) -> Battery {
     Battery { percent, charge }
 }
 
-/// The collision, closed. Before platform folders these were one file, and a 128 KB GBA save
-/// truncated into a Game Boy game's SRAM was *accepted* by the core — then the shrink guard
-/// stopped that game ever saving again, silently.
-#[test]
-fn one_stem_on_two_platforms_writes_two_saves() {
-    let d = tempfile::tempdir().unwrap();
-    persist::write_sav(d.path(), Platform::Gba, "Tetris", &[1u8; 32]).unwrap();
-    persist::write_sav(d.path(), Platform::Gb, "Tetris", &[2u8; 8]).unwrap();
-
-    assert_eq!(
-        persist::read_sav(d.path(), Platform::Gba, "Tetris").unwrap(),
-        vec![1u8; 32]
-    );
-    assert_eq!(
-        persist::read_sav(d.path(), Platform::Gb, "Tetris").unwrap(),
-        vec![2u8; 8]
-    );
-    assert!(d.path().join("Saves/GBA/Tetris.sav").is_file());
-    assert!(d.path().join("Saves/GB/Tetris.sav").is_file());
-}
-
 /// Plug in a flat device, boot it, and the frontend used to flush and power off with the
 /// cable in. The charge state is the whole reason this can now be told apart.
 #[test]
@@ -279,12 +249,10 @@ fn a_critical_battery_that_is_discharging_still_powers_off() {
     let mut a = app_playing_in(d.path(), "Emerald");
     a.on_battery(at(3, Charge::Discharging));
     assert!(a.powering_off());
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_some()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_some());
 }
 
 /// THE INVARIANT. If `status` turns out to be unpopulated on the SP — and on this PMIC
@@ -297,12 +265,10 @@ fn an_unknown_charge_state_powers_off_exactly_as_before() {
     let mut a = app_playing_in(d.path(), "Emerald");
     a.on_battery(at(3, Charge::Unknown));
     assert!(a.powering_off());
-    assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
-            .read_resume()
-            .unwrap()
-            .is_some()
-    );
+    assert!(StateRing::new(d.path(), Core::Mgba, "Emerald")
+        .read_resume()
+        .unwrap()
+        .is_some());
 }
 
 /// The case band's left shelf used to sit blank for the first ten seconds of every boot,

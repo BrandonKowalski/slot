@@ -1,8 +1,7 @@
-use slot_store::{Cart, Platform};
+use slot_store::Cart;
 use slot_ui::{
-    cart_box, draw_empty_slot, edge, foot_y, housing, icon_box, opening, recess, Draw, Shelf,
-    SlotChrome, TexId, ALERT_PX, CART_H, CART_W, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, MOUTH_H,
-    OUT_H, OUT_W,
+    draw_empty_slot, edge, foot_y, housing, icon_box, opening, recess, Draw, Shelf, SlotChrome,
+    TexId, ALERT_PX, CART_H, CART_W, LABEL_H, LABEL_Y, MOUTH_H, OUT_H, OUT_W,
 };
 
 /// Where a settled shelf stands its selected cart, which is what the chrome is handed on every
@@ -11,7 +10,6 @@ const CENTRED: f32 = (OUT_W - CART_W) as f32 / 2.0;
 
 fn cart() -> Cart {
     Cart {
-        platform: Platform::Gba,
         stem: "Emerald".into(),
         rom: "Games/GBA/Emerald.gba".into(),
         label: None,
@@ -20,33 +18,25 @@ fn cart() -> Cart {
     }
 }
 
-/// A Game Boy Game Pak: the same width and 1.87x the height. Everything about the travel that
-/// is a property of the slot rather than of the cartridge has to come out the same for this one
-/// as for the cart above, which is why the travel tests below run over both.
-fn pak() -> Cart {
+/// A second cart, for a row with more than one thing on it.
+fn other() -> Cart {
     Cart {
-        platform: Platform::Gb,
-        stem: "Tetris".into(),
-        rom: "Games/GB/Tetris.gb".into(),
+        stem: "Metroid Fusion".into(),
+        rom: "Games/GBA/Metroid Fusion.gba".into(),
         label: None,
         code: String::new(),
-        title: "TETRIS".into(),
+        title: "METROID4USA".into(),
     }
 }
 
-/// Both cartridges, each named for the failure message.
-fn both() -> [(&'static str, Cart); 2] {
-    [("the GBA cart", cart()), ("the Game Boy pak", pak())]
+/// The cartridge, named for the failure message.
+fn every_cart() -> [(&'static str, Cart); 1] {
+    [("the GBA cart", cart())]
 }
 
-/// Where the label well of this cartridge starts and how tall it is. A pak's paper sits high on
-/// a tall body and a GBA cart's sits low on a short one, so a test about how much label shows
-/// has to ask the cartridge rather than reach for one platform's constants.
-fn label_band(c: &Cart) -> (f32, f32) {
-    match c.platform {
-        Platform::Gba => (LABEL_Y as f32, LABEL_H as f32),
-        Platform::Gb | Platform::Gbc => (GB_LABEL_Y as f32, GB_LABEL_H as f32),
-    }
+/// Where the label well starts and how tall it is.
+fn label_band(_: &Cart) -> (f32, f32) {
+    (LABEL_Y as f32, LABEL_H as f32)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -72,13 +62,9 @@ fn quad(d: &Draw) -> Quad {
     }
 }
 
-/// A quad the width of a cartridge. Asked of both shapes rather than of `CART_W`, so a pak
-/// drawn at a width of its own is still found instead of the detector silently matching
-/// nothing — the failure that once had one test fail and another pass for the wrong reason.
+/// A quad the width of a cartridge.
 fn is_cart(d: &Draw) -> bool {
-    [Platform::Gba, Platform::Gb]
-        .iter()
-        .any(|p| (quad(d).w - cart_box(*p).0 as f32).abs() < 0.01)
+    (quad(d).w - CART_W as f32).abs() < 0.01
 }
 
 fn is_game_layer(d: &Draw) -> bool {
@@ -178,7 +164,7 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
 #[test]
 fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
     let c = cart();
-    let mut shelf = Shelf::new(vec![cart(), pak(), cart()]);
+    let mut shelf = Shelf::new(vec![cart(), other(), cart()]);
     shelf.right();
     shelf.update(1.0 / 60.0);
     shelf.update(1.0 / 60.0);
@@ -314,7 +300,7 @@ fn the_slot_is_at_the_bottom_of_the_screen() {
 
 #[test]
 fn the_cart_travels_downward() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let early = cart_y(&c, 0.1);
         let late = cart_y(&c, 0.9);
         assert!(late > early, "{name} is going up, not down into the slot");
@@ -323,7 +309,7 @@ fn the_cart_travels_downward() {
 
 #[test]
 fn the_cart_is_progressively_occluded_by_the_lip() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let h = |t: f32| visible_cart_height(&c, t);
         assert!(h(0.5) < h(0.1), "{name} is not sinking behind the lip");
         assert!(h(0.95) < h(0.5) * 0.5, "{name} is barely in by the end");
@@ -344,7 +330,7 @@ fn the_lip_is_the_frontmost_band() {
 /// recover, or it reads as a card sliding down a slot rather than seating in one.
 #[test]
 fn the_cart_catches_on_the_lip_before_going_in() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let step = |a: f32, b: f32| cart_y(&c, b) - cart_y(&c, a);
         let approach = step(0.15, 0.30);
         let catching = step(0.45, 0.60);
@@ -359,11 +345,10 @@ fn the_cart_catches_on_the_lip_before_going_in() {
 
 /// The handoff out of the shelf. The chrome takes over drawing the cart on the frame the button
 /// is pressed, so whatever the shelf was standing there has to be exactly what the chrome starts
-/// with — same box, same place. A pak driven off the GBA cart's height jumped from 253 px tall
-/// to 135 on that frame, which is the smoosh.
+/// with, same box, same place.
 #[test]
 fn an_unseated_cart_stands_where_the_shelf_left_it() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let mut shelf = Vec::new();
         Shelf::new(vec![c.clone()]).draw_row(None, 0.0, 0.0, 1.0, &mut shelf);
         let on_shelf = quad(&shelf[cart_at(&shelf)]);
@@ -378,12 +363,11 @@ fn an_unseated_cart_stands_where_the_shelf_left_it() {
 }
 
 /// The cartridge is an object, not a picture that can be stretched to fit the travel. Its box
-/// is the one `cart_box` gives for its platform, on every frame of the way in — which is the
-/// other half of the smoosh: the pak's 253 px face was being drawn into a 135 px quad.
+/// is its own on every frame of the way in.
 #[test]
 fn a_cart_keeps_its_own_size_the_whole_way_in() {
-    for (name, c) in both() {
-        let (w, h) = cart_box(c.platform);
+    for (name, c) in every_cart() {
+        let (w, h) = (CART_W, CART_H);
         for step in 0..=20 {
             let out = chrome(&c, step as f32 / 20.0);
             let q = quad(&out[cart_at(&out)]);
@@ -398,46 +382,15 @@ fn a_cart_keeps_its_own_size_the_whole_way_in() {
     }
 }
 
-/// How much cartridge is left out of the machine once it has landed. It is a property of the
-/// slot — the recess is a fixed depth — so it cannot come out different for a taller cartridge:
-/// a pak that goes further in than a GBA cart is the "inserted deep" half of the complaint.
+/// The catch is a collision, the foot arriving on the lip, and the cartridge has to arrive *on*
+/// the lip rather than sailing through it.
 #[test]
-fn every_cartridge_seats_to_the_same_depth() {
-    let tops: Vec<(&str, f32)> = both()
-        .iter()
-        .map(|(name, c)| {
-            let out = chrome(c, 1.0);
-            (*name, quad(&out[cart_at(&out)]).y)
-        })
-        .collect();
-    let (first, rest) = tops.split_first().expect("two cartridges");
-    for (name, top) in rest {
-        assert!(
-            (top - first.1).abs() < 0.01,
-            "{name} seats with its top edge at {top} against {} for {}: one of them is in \
-             deeper than the other",
-            first.1,
-            first.0
-        );
-    }
-}
-
-/// The cartridges no longer fall together, and cannot: the row centres each one, so a pak's
-/// foot starts 59 px nearer the lip than a GBA cart's and has that much less ground to cover.
-/// What is still the same for both, and is the thing the insert is actually built out of, is
-/// *when* the fall ends. The catch is a collision — the foot arriving on the lip — and it has to
-/// land on the same frame of the animation whichever shelf the cartridge came off, or one
-/// system's insert reads as a different mechanism from another's.
-///
-/// So this asks two things of each cartridge and then compares the answers: the moment its foot
-/// first reaches the lip, and that it arrives *on* the lip rather than sailing through it.
-#[test]
-fn every_cartridge_lands_its_foot_on_the_lip_at_the_same_moment() {
+fn the_cartridge_lands_its_foot_on_the_lip() {
     let lip = OUT_H as f32 - MOUTH_H;
-    let landings: Vec<(&str, f32, f32)> = both()
+    let landings: Vec<(&str, f32, f32)> = every_cart()
         .iter()
         .map(|(name, c)| {
-            let (_, h) = cart_box(c.platform);
+            let h = CART_H;
             let foot = |t: f32| cart_y(c, t) + h as f32;
             // Finely enough that the answer is the animation's and not the sampling's: the
             // fall is under half the travel and this walks it in 1/400ths.
@@ -459,16 +412,6 @@ fn every_cartridge_lands_its_foot_on_the_lip_at_the_same_moment() {
             "{name} is already on the lip before the travel starts"
         );
     }
-    let (first, rest) = landings.split_first().expect("two cartridges");
-    for (name, at, _) in rest {
-        assert!(
-            (at - first.1).abs() < 0.01,
-            "{name} lands on the lip at seat {at} and {} at {}: the catch is not the same \
-             moment for both",
-            first.0,
-            first.1
-        );
-    }
 }
 
 /// In means *in*. The cart comes to rest filling the opening, so the base of the slot ends up
@@ -476,7 +419,7 @@ fn every_cartridge_lands_its_foot_on_the_lip_at_the_same_moment() {
 /// entirely, which reads as a cart falling past a window rather than seating in a slot.
 #[test]
 fn a_seated_cart_stops_in_the_opening_and_covers_its_base() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let out = chrome(&c, 1.0);
         let cart = quad(&out[cart_at(&out)]);
         let recess = out
@@ -501,52 +444,28 @@ fn a_seated_cart_stops_in_the_opening_and_covers_its_base() {
     }
 }
 
-/// What a seated cartridge leaves out of the machine. The recess is a fixed depth, so it is the
-/// same 38 px of cartridge whichever one went in — and what that 38 px *is* depends on where
-/// that cartridge's own label sits down its face. The two answers differ, and are written down
-/// separately rather than covered by one tolerance wide enough to swallow both:
-///
-/// - A GBA cart's paper starts 31 px down a 135 px body, so 7 px of it clears the scoop. A
-///   sliver, and nothing on it readable.
-/// - A Game Boy pak's starts 70 px down a 253 px body, so the whole label is 32 px inside the
-///   machine and none of it shows. That is what the hardware does: an inserted Game Pak shows
-///   its ribbed grip and the moulded lettering plate, and its label genuinely disappears. The
-///   user's own line drawing is what puts the well down under that plate, and the drawing is
-///   the authority on it.
-///
-/// So "the slot must not read as empty" cannot be spelled `peek > 0` — that is a fact about the
-/// GBA cart, not a rule the slot imposes on every cartridge. The opening being filled is held by
-/// `a_seated_cart_stops_in_the_opening_and_covers_its_base` instead, which asks the question of
-/// the cartridge's whole body rather than of its paper.
+/// What a seated cartridge leaves out of the machine: 7 px of its label clears the scoop. A
+/// sliver, and nothing on it readable.
 #[test]
-fn a_seated_cart_shows_at_most_a_sliver_of_label_and_a_pak_shows_none() {
-    for (name, c, shows_paper) in [
-        ("the GBA cart", cart(), true),
-        ("the Game Boy pak", pak(), false),
-    ] {
-        let out = chrome(&c, 1.0);
-        let cart = quad(&out[cart_at(&out)]);
-        let deepest = out
-            .iter()
-            .filter(|d| is_mouth(d) || tinted(d, recess()))
-            .map(|d| {
-                let q = quad(d);
-                q.y + q.h
-            })
-            .fold(0.0, f32::max);
-        let (label_y, label_h) = label_band(&c);
-        let peek = deepest - (cart.y + label_y);
-        assert!(
-            peek < label_h / 4.0,
-            "{peek}px of {name}'s {label_h}px label is out of the machine"
-        );
-        assert_eq!(
-            peek > 0.0,
-            shows_paper,
-            "{name} shows {peek}px of label, which is not what this cartridge is supposed to \
-             leave showing"
-        );
-    }
+fn a_seated_cart_shows_at_most_a_sliver_of_label() {
+    let c = cart();
+    let out = chrome(&c, 1.0);
+    let seated = quad(&out[cart_at(&out)]);
+    let deepest = out
+        .iter()
+        .filter(|d| is_mouth(d) || tinted(d, recess()))
+        .map(|d| {
+            let q = quad(d);
+            q.y + q.h
+        })
+        .fold(0.0, f32::max);
+    let (label_y, label_h) = label_band(&c);
+    let peek = deepest - (seated.y + label_y);
+    assert!(
+        peek < label_h / 4.0,
+        "{peek}px of the {label_h}px label is out of the machine"
+    );
+    assert!(peek > 0.0, "the seated cart shows no label at all");
 }
 
 /// Superseded by `the_slot_is_drawn_in_front_of_and_behind_the_cart`. This used to require
@@ -566,7 +485,7 @@ fn the_cart_is_never_the_frontmost_thing() {
 
 #[test]
 fn ejecting_reverses_the_travel() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let mut a = Vec::new();
         draw_ejecting(&c, 0.1, &mut a);
         let mut b = Vec::new();
@@ -666,7 +585,7 @@ fn the_alert_fits_on_the_cart_face() {
 /// design the slowest stretch of the travel.
 #[test]
 fn the_travel_eases_out_into_the_seat() {
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let last = (cart_y(&c, 1.0) - cart_y(&c, 0.9)).abs();
         let through = (cart_y(&c, 0.85) - cart_y(&c, 0.70)).abs() / 1.5;
         assert!(
@@ -729,7 +648,7 @@ fn nothing_is_ever_ruled_across_the_cart() {
     // Across the whole travel, not one frame of it: the pieces are the same every frame but
     // only the screen says so, and one frame proves nothing about the rest. Both cartridges,
     // because a taller one is over the slot's pieces for a different stretch of the travel.
-    for (_, c) in both() {
+    for (_, c) in every_cart() {
         for step in 0..=20 {
             let seat = step as f32 / 20.0;
             let out = chrome(&c, seat);
@@ -915,7 +834,7 @@ fn the_slot_sits_in_a_recessed_bay() {
 #[test]
 fn the_cart_catches_on_the_top_edge_of_the_slot() {
     let lip = OUT_H as f32 - MOUTH_H;
-    for (name, c) in both() {
+    for (name, c) in every_cart() {
         let bottom_at = |t: f32| {
             let out = chrome(&c, t);
             match out[cart_at(&out)] {
@@ -936,8 +855,7 @@ fn the_cart_catches_on_the_top_edge_of_the_slot() {
         let at = bottom_at(slowest.1);
         // Tight, and in pixels rather than in a share of a cart's height: the foot lands on the
         // lip and creeps a few pixels past it, and that is the same few pixels whatever is
-        // standing on top of it. A tolerance measured against the cartridge would be twice as
-        // forgiving for a pak, which is exactly the cartridge it needs to hold hardest for.
+        // standing on top of it.
         assert!(
             (at - lip).abs() < 16.0,
             "{name} hesitates at {at} but the slot's top edge is {lip}"

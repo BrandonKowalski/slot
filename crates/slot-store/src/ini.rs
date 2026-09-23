@@ -12,10 +12,6 @@
 //! - A write replaces one line in place and never rebuilds the file from the map, so every
 //!   comment, blank line and unparsed line survives — including the note somebody wrote to
 //!   themselves above a cart.
-//!
-//! `selected_core.ini` had all of this to itself and `video_mode.ini` is the second file to
-//! want it. The two were within a value type of being the same eighty lines, and two
-//! hand-copied parsers is how two files meant to behave identically start to differ.
 
 use std::collections::HashMap;
 use std::path::Path;

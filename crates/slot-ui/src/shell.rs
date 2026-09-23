@@ -1,7 +1,4 @@
-use std::path::Path;
-
-use slot_store::gb::Class;
-use slot_store::{Cart, Platform};
+use slot_store::Cart;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Finish {
@@ -42,55 +39,14 @@ const EXACT: &[(&str, Shell)] = &[
 /// releases that would otherwise be thirty hand transcribed rows.
 const FAMILY: &[(u8, Shell)] = &[(b'M', shell([0xc6, 0xc6, 0xc9], Finish::Solid))];
 
-/// The plain Game Boy Game Pak, CGB flag 0x00. The reference photograph the outline was drawn
-/// from is a grey pak, and `slot-card-backups/cart-refs/PROVENANCE.md` names it grey. Drawn as
-/// the object is, warm and light enough that the moulded ribs and the recess walls have
-/// somewhere to go.
-pub const DMG_SHELL: Shell = shell([0x9a, 0x97, 0x8f], Finish::Solid);
-
-/// A Colour-enhanced pak, CGB flag 0x80: the **black** cartridge. Not the clear one — a 0x80
-/// cart runs on original hardware and was moulded in the same notched shell as a grey pak, in
-/// black plastic. Charcoal rather than ink, because the moulding is drawn by darkening the
-/// shell and a shell already at zero has nothing left to give.
-pub const DUAL_MODE_SHELL: Shell = shell([0x33, 0x30, 0x31], Finish::Solid);
-
-/// A Colour-only pak, CGB flag 0xc0: smoke coloured clear plastic. Cooler than the grey pak
-/// beside it, because they are otherwise close enough in value that only the lit rim would
-/// tell them apart.
-pub const GB_CLEAR_SHELL: Shell = shell([0x7c, 0x7a, 0x8a], Finish::Translucent);
-
-/// What plastic this cart shipped in. Which question to ask depends on the platform: a GBA cart
-/// is looked up by the game code in its header, and a Game Boy pak has no such field at all, so
-/// the CGB flag answers instead.
-///
-/// `Gb` and `Gbc` are one arm on purpose, and it is not the shelf being ignored. The shelves
-/// are one per folder; the plastic is one per CGB flag, and the two groupings do not line up.
-/// A `.gb` file is routinely Colour-exclusive and a `.gbc` file is routinely DMG-compatible, so
-/// asking the folder would paint a misfiled cart as something it is not. `gb_shell_for` asks
-/// the rom instead.
+/// What plastic this cart shipped in, looked up by the game code in its header.
 pub fn shell_for(cart: &Cart) -> Shell {
-    match cart.platform {
-        Platform::Gba => gba_shell_for(&cart.code),
-        Platform::Gb | Platform::Gbc => gb_shell_for(&cart.rom),
-    }
+    gba_shell_for(&cart.code)
 }
 
 /// `code` is the four character game code; only the first three are matched.
 pub fn gba_shell_for(code: &str) -> Shell {
     lookup(code, EXACT, FAMILY)
-}
-
-/// Three flag values, three plastics: grey, black, clear. They used to be two, with 0x80 drawn
-/// in the clear shell on the reasoning that a Colour-enhanced cart shipped in the same plastic
-/// as a Colour-only one. It did not — the 0x80 cart is the black one, and Nintendo's own
-/// typology has always named all three. A rom that cannot be read falls out as a plain pak
-/// rather than as a failure, so the shelf still has a cart to draw.
-fn gb_shell_for(rom: &Path) -> Shell {
-    match slot_store::gb::class(rom) {
-        Class::Original => DMG_SHELL,
-        Class::DualMode => DUAL_MODE_SHELL,
-        Class::ColourOnly => GB_CLEAR_SHELL,
-    }
 }
 
 pub fn table_keys() -> Vec<&'static str> {

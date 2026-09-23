@@ -2,21 +2,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::gba::{header_code, header_title};
-use crate::platform::Platform;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Cart {
-    /// Which console this cart is for, and therefore which folder under `Games/`, `Saves/`,
-    /// `States/` and `Labels/` its files live in. Decided by the folder `scan` found the rom
-    /// in, never by reading the rom itself.
-    pub platform: Platform,
     /// Filename stem, which is the key for labels, saves and states. Not a content hash.
     pub stem: String,
     pub rom: PathBuf,
     pub label: Option<PathBuf>,
     pub title: String,
-    /// The four character header game code, empty when the rom has none. A Game Boy cart has
-    /// no equivalent field, so this is always empty for `Platform::Gb` and `Platform::Gbc`.
+    /// The four character header game code, empty when the rom has none.
     pub code: String,
 }
 
@@ -41,69 +35,54 @@ impl From<std::io::Error> for StoreError {
     }
 }
 
-/// An unmounted card or a card with no library is an empty shelf, not a boot failure — and so
-/// is a platform folder that does not exist, which is the normal state of a card with no
-/// Colour carts.
+/// An unmounted card, or a card with no `Games/GBA/`, is an empty shelf, not a boot failure.
 ///
-/// A platform folder that exists and cannot be read is not a boot failure either, and this is
-/// the one place that has to decide that. The only caller is `App::boot`, which does
-/// `scan(root).unwrap_or_default()` — so an `Err` out of here is not an error message anywhere,
-/// it is every cart on the card gone from the shelf. One folder being unreadable says nothing
-/// about the other two, so a folder that will not open costs the player that folder and nothing
-/// else. Same for a single directory entry that will not stat: it costs that one cart.
+/// A folder that exists and cannot be read is not a boot failure either. The only caller is
+/// `App::boot`, which does `scan(root).unwrap_or_default()`, so an `Err` out of here is not an
+/// error message anywhere, it is an empty shelf. A single directory entry that will not stat
+/// costs that one cart and nothing else.
 pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
     let mut carts = Vec::new();
-    for platform in Platform::ALL {
-        let dir = root.join("Games").join(platform.dir_name());
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(d) => d,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                eprintln!("slot: scan: {}: {e}", dir.display());
-                continue;
-            }
-        };
-        for entry in entries {
-            let Ok(entry) = entry else {
-                continue;
-            };
-            let rom = entry.path();
-            // The folder decides the platform; the extension decides whether this is a cart at
-            // all. A `.gba` under `GB/` is neither, and is passed over in silence.
-            if is_hidden(&rom) || !rom.is_file() || !platform.accepts(&rom) {
-                continue;
-            }
-            let Some(stem) = rom.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let label = root
-                .join("Labels")
-                .join(platform.dir_name())
-                .join(format!("{stem}.png"));
-            let (title, code) = match platform {
-                Platform::Gba => (
-                    header_title(&rom).unwrap_or_default(),
-                    header_code(&rom).unwrap_or_default(),
-                ),
-                // A Game Boy cart has no GBA-style four-character game code, and the fields
-                // `gba.rs` reads sit below the Game Boy header entirely — 0xA0 and 0xAC are in
-                // the cartridge's RST vectors, so they would read arbitrary opcode bytes.
-                _ => (crate::gb::title(&rom).unwrap_or_default(), String::new()),
-            };
-            carts.push(Cart {
-                platform,
-                stem: stem.to_string(),
-                title,
-                code,
-                label: label.is_file().then_some(label),
-                rom,
-            });
+    let dir = root.join("Games").join(crate::CART_DIR);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(d) => d,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(carts),
+        Err(e) => {
+            eprintln!("slot: scan: {}: {e}", dir.display());
+            return Ok(carts);
         }
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let rom = entry.path();
+        if is_hidden(&rom) || !rom.is_file() || !is_gba(&rom) {
+            continue;
+        }
+        let Some(stem) = rom.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let label = root
+            .join("Labels")
+            .join(crate::CART_DIR)
+            .join(format!("{stem}.png"));
+        carts.push(Cart {
+            stem: stem.to_string(),
+            title: header_title(&rom).unwrap_or_default(),
+            code: header_code(&rom).unwrap_or_default(),
+            label: label.is_file().then_some(label),
+            rom,
+        });
     }
-    carts.sort_by(|a, b| {
-        (a.platform as u8, sort_key(&a.stem)).cmp(&(b.platform as u8, sort_key(&b.stem)))
-    });
+    carts.sort_by_key(|c| sort_key(&c.stem));
     Ok(carts)
+}
+
+fn is_gba(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gba"))
 }
 
 /// Where a title files on the shelf: digits first, then A to Z, and case ignored.

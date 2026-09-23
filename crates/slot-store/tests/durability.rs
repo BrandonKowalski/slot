@@ -2,8 +2,7 @@ mod common;
 
 use common::tmp_root;
 use slot_store::{
-    atomic_write, read_slot_state, write_slot_state, Platform, SlotState, FF_SPEEDS,
-    FF_SPEED_DEFAULT,
+    atomic_write, read_slot_state, write_slot_state, SlotState, FF_SPEEDS, FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -212,10 +211,6 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
         read_slot_state(d.path()),
         SlotState {
             cart: Some("Emerald".into()),
-            // Nothing on that card said which platform, and nothing may invent one: this is the
-            // shape of card the "GBA wins" fallback exists for, and it reaches it by the line
-            // being absent rather than by the line saying `gba`.
-            cart_platform: None,
             brightness: 3,
             blue_light: 1,
             volume: 40,
@@ -340,81 +335,45 @@ fn an_out_of_range_setting_falls_back_to_its_default() {
     }
 }
 
-/// Each of the three shelves survives a round trip through the card, spelled as its own folder
-/// name in lower case. Written as well as read, because the whole point of the line is that the
-/// next boot can tell `Tetris.gb` from `Tetris.gba`, and a platform that only round trips
-/// through the struct would leave both boots looking identical.
+/// The builds that ran Game Boy carts too wrote which folder the seated cart came from. A card
+/// left with a Game Boy cart in the slot must come up on the shelf, not resume a GBA cart that
+/// shares its stem; one that says `gba`, in any case, or nothing, is the cart it names.
 #[test]
-fn every_platform_round_trips_as_its_own_line() {
-    for platform in Platform::ALL {
-        let d = tmp_root();
-        let s = SlotState {
-            cart: Some("Tetris".into()),
-            cart_platform: Some(platform),
-            clock_set: true,
-            ..SlotState::default()
-        };
-        write_slot_state(d.path(), &s).unwrap();
+fn a_card_left_holding_a_game_boy_cart_comes_up_empty() {
+    let d = tmp_root();
+    let known = "cart=Tetris\nbrightness=3\nblue_light=1\nvolume=40\nmuted=0\nclock_set=1\nutc_offset_min=0\n";
+    for (line, want) in [
+        ("", Some("Tetris")),
+        ("cart_platform=\n", Some("Tetris")),
+        ("cart_platform=gba\n", Some("Tetris")),
+        ("cart_platform=GBA\n", Some("Tetris")),
+        ("cart_platform=gb\n", None),
+        ("cart_platform=gbc\n", None),
+    ] {
+        std::fs::write(d.path().join("System/slot.state"), format!("{known}{line}")).unwrap();
+        let s = read_slot_state(d.path());
+        assert_eq!(s.cart.as_deref(), want, "read {line:?} wrong");
         assert_eq!(
-            read_slot_state(d.path()),
-            s,
-            "{platform:?} did not come back"
+            (s.brightness, s.volume, s.clock_set),
+            (3, 40, true),
+            "{line:?} took the rest of the card with it"
         );
-        let text = std::fs::read_to_string(d.path().join("System/slot.state")).unwrap();
-        let want = format!("cart_platform={}", platform.dir_name().to_lowercase());
-        assert!(text.lines().any(|l| l == want), "no {want} in {text:?}");
     }
 }
 
-/// An empty slot says nothing about a platform, and the line has to be there saying nothing
-/// rather than absent: a card whose `cart_platform` survived an eject would name a shelf beside
-/// a `cart` line that names no cart, and the pair would describe a session that never happened.
+/// Nothing this build writes names a platform: there is only the one.
 #[test]
-fn an_empty_slot_writes_an_empty_platform() {
+fn the_state_file_no_longer_names_a_platform() {
     let d = tmp_root();
     let s = SlotState {
+        cart: Some("Emerald".into()),
         clock_set: true,
         ..SlotState::default()
     };
     write_slot_state(d.path(), &s).unwrap();
     let text = std::fs::read_to_string(d.path().join("System/slot.state")).unwrap();
-    assert!(
-        text.lines().any(|l| l == "cart_platform="),
-        "no empty cart_platform line in {text:?}"
-    );
-    assert_eq!(read_slot_state(d.path()).cart_platform, None);
-}
-
-/// The line is forgiven the way `rumble`, `ff_speed` and `ff_sound` are, and for the same
-/// reason: it arrived after cards were already in use. A value this build cannot read costs its
-/// own answer — the card falls back to resolving the stem across the shelves, which is what slot
-/// did before the line existed — and takes nothing else on the card with it.
-///
-/// `gba` in capitals is in the list deliberately: the file is plain text on a card anyone can
-/// open in an editor, and `GBA` is the same folder as `gba`.
-#[test]
-fn an_unreadable_platform_reads_as_a_card_that_never_said() {
-    let d = tmp_root();
-    let known = "cart=Tetris\nbrightness=3\nblue_light=1\nvolume=40\nmuted=0\nclock_set=1\nutc_offset_min=0\n";
-    for (line, want) in [
-        ("cart_platform=\n", None),
-        ("cart_platform=nes\n", None),
-        ("cart_platform=gameboy\n", None),
-        ("cart_platform=0\n", None),
-        // A platform a later build added, which this one has never heard of.
-        ("cart_platform=nds\n", None),
-        ("cart_platform=GBA\n", Some(Platform::Gba)),
-        ("cart_platform=Gbc\n", Some(Platform::Gbc)),
-    ] {
-        std::fs::write(d.path().join("System/slot.state"), format!("{known}{line}")).unwrap();
-        let s = read_slot_state(d.path());
-        assert_eq!(s.cart_platform, want, "read {line:?} wrong");
-        assert_eq!(
-            (s.cart.as_deref(), s.brightness, s.volume, s.clock_set),
-            (Some("Tetris"), 3, 40, true),
-            "{line:?} took the rest of the card with it"
-        );
-    }
+    assert!(!text.contains("cart_platform"), "{text:?}");
+    assert_eq!(read_slot_state(d.path()), s);
 }
 
 /// Half hour zones are real and whole hour steps would put several countries permanently

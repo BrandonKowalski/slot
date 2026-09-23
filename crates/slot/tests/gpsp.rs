@@ -1,6 +1,6 @@
 mod common;
 
-use slot_store::{Core, Platform};
+use slot_store::Core;
 
 /// The device carries both cores in `System/`; a host build carries whichever were fetched.
 /// Absent means this host cannot run the test, not that the test failed.
@@ -194,13 +194,11 @@ fn mgba_is_given_its_own_frameskip_and_none_of_gpsps() {
 /// read off the vendored dylibs by dumping that discarded list; this is what keeps them true.
 ///
 /// The two cores disagree about every part of it. mGBA declares `OFF|GBA|GBC|Auto` and gpSP
-/// `disabled|enabled`, under different keys, and only mGBA has an `Auto` — it is the core that
-/// runs Game Boy and Game Boy Color carts as well as GBA ones, so it is the only one with more
-/// than one tint to choose between. Neither core may be handed the other's words.
+/// `disabled|enabled`, under different keys. Neither core may be handed the other's words.
 #[test]
 fn both_cores_are_told_about_colour_correction_in_their_own_words() {
     for (which, key, on, off) in [
-        (Core::Mgba, "mgba_color_correction", "Auto", "OFF"),
+        (Core::Mgba, "mgba_color_correction", "GBA", "OFF"),
         (Core::Gpsp, "gpsp_color_correction", "enabled", "disabled"),
     ] {
         let path = dylib_for(which);
@@ -476,10 +474,10 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     // Distinguishable resume states in both directories. If `spawn_core` ever resolved the
     // core twice and the two calls disagreed, or fell back to the default, this is what
     // would catch it: the counter would come back from the wrong file.
-    StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+    StateRing::new(d.path(), Core::Gpsp, "Emerald")
         .write_resume(&700_000u64.to_le_bytes())
         .unwrap();
-    StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+    StateRing::new(d.path(), Core::Mgba, "Emerald")
         .write_resume(&1u64.to_le_bytes())
         .unwrap();
 
@@ -502,8 +500,7 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     // back out through the path the binary uses, same as `play.rs`'s `counter_after`.
     s.app_mut().tick_ms(60_000);
 
-    let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
-        .expect("nothing resumed");
+    let state = persist::read_resume(d.path(), Core::Gpsp, "Emerald").expect("nothing resumed");
     let n = u64::from_le_bytes(state.try_into().expect("mock state is 8 bytes"));
     assert!(
         n >= 700_000,
@@ -567,8 +564,7 @@ fn a_gpsp_cart_runs_the_dylib_planted_under_its_own_name_through_the_session() {
     // gets written back through the path the binary uses.
     s.app_mut().tick_ms(60_000);
 
-    let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
-        .expect("nothing resumed");
+    let state = persist::read_resume(d.path(), Core::Gpsp, "Emerald").expect("nothing resumed");
     assert!(
         state.len() > 100_000,
         "the session ran the mock, not the dylib the ini named: {} bytes",
@@ -618,14 +614,14 @@ fn changing_the_ini_mid_session_does_not_move_a_seated_carts_autosave() {
     s.app_mut().tick_ms(60_000);
 
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        StateRing::new(d.path(), Core::Gpsp, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
         "the autosave did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_none(),
@@ -672,14 +668,14 @@ fn changing_the_ini_mid_session_does_not_move_a_manual_save_state() {
     s.app_mut().apply(Action::SaveState);
 
     assert!(
-        !StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        !StateRing::new(d.path(), Core::Gpsp, "Emerald")
             .list()
             .unwrap()
             .is_empty(),
         "the manual save did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
             .list()
             .unwrap()
             .is_empty(),
@@ -724,14 +720,14 @@ fn changing_the_ini_mid_session_does_not_move_an_ejected_carts_resume() {
     s.app_mut().apply(Action::Eject);
 
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        StateRing::new(d.path(), Core::Gpsp, "Emerald")
             .read_resume()
             .unwrap()
             .is_some(),
         "the ejected cart's resume did not land under the seated core's own directory"
     );
     assert!(
-        StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        StateRing::new(d.path(), Core::Mgba, "Emerald")
             .read_resume()
             .unwrap()
             .is_none(),
@@ -778,87 +774,5 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
     assert!(
         core.serialize().expect("core gave up no state").len() > 100_000,
         "open_core fell back to the mock instead of the dylib planted at root/System"
-    );
-}
-
-/// `System/selected_core.ini` is a text file a person edits on a card, and nothing in it stops a
-/// line naming gpSP for a Game Boy cart. gpSP does not run Game Boy games at all: it would refuse
-/// the ROM outright or paint garbage, so a line naming it for a Game Boy cart is dropped and that
-/// cart runs on its platform's default, which is asked for rather than named so this stays about
-/// the dropped line when the default moves. The ini keeps every bit of its meaning
-/// for a line naming a core that really does run the platform, which is what
-/// `a_game_boy_cart_can_ask_for_mgba_by_hand` over in slot-store covers.
-///
-/// Driven through the real `Session`, because `spawn_core` is the one place a cart's core is
-/// resolved, and read back through the directory that one resolution also names. The seeded
-/// counter is 700_000, which is further than the mock could ever count to on its own, and it has
-/// to come back **moved**: only a run that read `States/GB/<default>/` and then wrote back to it can
-/// produce that, so one number pins both halves. A run that had honoured the ini would have left
-/// that file exactly as seeded and filed its own state under `States/GB/gpsp/` instead, which is
-/// what the second assertion refuses.
-#[test]
-fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_the_platform_default() {
-    let default = Core::default_for(Platform::Gb);
-    use slot::app::Phase;
-    use slot::persist;
-    use slot::session::Session;
-    use slot_input::{Btn, RawEvent};
-    use slot_store::{StateRing, SELECTED_CORE_FILE};
-    use std::time::{Duration, Instant};
-
-    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
-    std::fs::write(d.path().join(SELECTED_CORE_FILE), "Tetris = gpsp\n").unwrap();
-    StateRing::new(d.path(), Platform::Gb, default, "Tetris")
-        .write_resume(&700_000u64.to_le_bytes())
-        .unwrap();
-
-    common::clocked(d.path());
-    let mut s = Session::boot(d.path().to_path_buf());
-    s.feed([RawEvent::Down(Btn::A)], 16);
-    s.feed([RawEvent::Up(Btn::A)], 32);
-
-    let mut now = 32;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !matches!(s.app().phase(), Phase::Playing { .. }) {
-        assert!(Instant::now() < deadline, "the cart never seated");
-        now += 16;
-        s.feed([], now);
-        s.update(1.0 / 60.0);
-        std::thread::sleep(Duration::from_millis(1));
-    }
-
-    // The counter each core directory holds, as the mock's eight byte state, or `None` where
-    // nothing has ever been filed under that core at all.
-    let counter = |core| {
-        persist::read_resume(d.path(), Platform::Gb, core, "Tetris")
-            .map(|b| u64::from_le_bytes(b.try_into().expect("the mock's state is 8 bytes")))
-    };
-
-    // Frames the seated core actually runs, flushed out through the path the binary uses, until
-    // the resumed counter moves. A counter that merely still reads what it was seeded with says
-    // nothing: that is equally what a run resuming from somewhere else leaves behind.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if counter(default).is_some_and(|n| n > 700_000) {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the ini's `Tetris = gpsp` was honoured for a Game Boy cart: States/GB/{} still \
-             reads {:?} and States/GB/gpsp reads {:?}",
-            default.as_str(),
-            counter(default),
-            counter(Core::Gpsp)
-        );
-        now += 16;
-        s.feed([], now);
-        s.update(1.0 / 60.0);
-        std::thread::sleep(Duration::from_millis(1));
-        s.app_mut().flush_resume();
-    }
-    assert_eq!(
-        counter(Core::Gpsp),
-        None,
-        "a Game Boy cart's state was filed under States/GB/gpsp"
     );
 }

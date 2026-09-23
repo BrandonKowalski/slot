@@ -1,7 +1,5 @@
 //! The `<stem> = <value>` files under `System/`, at the layer that knows nothing about what a
-//! value means. `selected_core.ini` had all of this to itself; `video_mode.ini` is the second
-//! file to want it and the cart shells will be the third, so it is checked here once rather
-//! than a second and third time through whatever type happens to be sitting on top of it.
+//! value means, checked here once rather than again through whatever type sits on top of it.
 
 use slot_store::ini;
 use tempfile::tempdir;

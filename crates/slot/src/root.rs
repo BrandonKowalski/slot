@@ -1,51 +1,31 @@
 use std::path::{Path, PathBuf};
 
-/// The folders of a content root, including a platform subdirectory under each of the four
-/// folders whose contents are filed per platform, so `ensure` creates them and the card teaches
-/// its own layout to someone dropping files in over USB.
+/// The folders of a content root, including the `GBA/` level under each of the four folders
+/// whose contents are filed by it, so `ensure` creates them and the card teaches its own layout
+/// to someone dropping files in over USB. An empty folder with the right name is the only thing
+/// on the card that says where a file belongs, so every folder a person has to put something in
+/// has to be here.
 ///
-/// The card teaching its own layout is now the whole of the guidance there is. slot used to
-/// sweep loose files into these folders on every boot; it does not any more, so an empty folder
-/// with the right name is the only thing on the card that says where a file belongs, and every
-/// folder a person has to put something in has to be here.
-///
-/// `Saves/` and `States/` are on that list for the first time, and the reason they were kept off
-/// it went out with the sweep. The old rule was who places a file: a person places a rom and a
-/// piece of label art by hand and needs somewhere to put each that names a platform — a `.gb` and
-/// a `.gba` cart may share a stem, so `Tetris.png` alone does not say which cart it is the face
-/// of — whereas nobody hand-placed a battery save or a save state, because slot wrote both and
-/// the sweep moved whatever was already there. Now that a card is organised by hand, a person
-/// bringing an old card across carries their own `.sav` files and their own `States/<core>/`
-/// trees over, and those two folders need to say where they go as much as `Games/` does.
-///
-/// `States/` goes one level deeper than this — `States/<platform>/<core>/<stem>/` — and the core
-/// level is deliberately not scaffolded: slot creates it on first write, and someone moving an
-/// old card's `States/mgba/` wholesale into `States/GBA/` lands on exactly the right shape
-/// without having to be told the core's spelling.
+/// `States/` goes one level deeper than this, `States/GBA/<core>/<stem>/`, and the core level is
+/// deliberately not scaffolded: slot creates it on first write, and someone moving an old card's
+/// `States/mgba/` wholesale into `States/GBA/` lands on exactly the right shape without having to
+/// be told the core's spelling.
 ///
 /// A card that has never held slot. has none of them, and every write path below assumes its
 /// own is already there.
 ///
 /// Parents come before their children: `ensure` creates each in turn, and so does the test
 /// harness's own root.
-pub const DIRS: [&str; 19] = [
+pub const DIRS: [&str; 11] = [
     "BIOS",
     "Games",
     "Games/GBA",
-    "Games/GB",
-    "Games/GBC",
     "Labels",
     "Labels/GBA",
-    "Labels/GB",
-    "Labels/GBC",
     "Saves",
     "Saves/GBA",
-    "Saves/GB",
-    "Saves/GBC",
     "States",
     "States/GBA",
-    "States/GB",
-    "States/GBC",
     "System",
     "Wallpapers",
 ];

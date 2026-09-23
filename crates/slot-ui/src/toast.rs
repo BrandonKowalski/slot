@@ -10,10 +10,6 @@ use crate::CartFace;
 /// at all, and on a cart whose link gpSP cannot carry — either of which would otherwise do
 /// nothing and say nothing, and the last two are a link session ending, from whichever end ended
 /// it.
-///
-/// Three more used to name the shelf the shoulders had just moved to. They are gone: the shelf
-/// is now said by the platform's mark in the top plate's corner, which is always there rather
-/// than fading after a moment — see `slot_ui::mark`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
     StateSaved,
