@@ -178,6 +178,7 @@ pub fn apply_core_options(
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
+        core.set_option("mgba_force_gbp", "ON");
         match palette {
             Some(p) => {
                 core.set_option("mgba_gb_model", "Game Boy");
