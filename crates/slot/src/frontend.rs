@@ -152,11 +152,7 @@ impl Frontend {
         if info.color_type != png::ColorType::Grayscale || info.width != info.height {
             return;
         }
-        let rgba: Vec<u8> = buf[..info.buffer_size()]
-            .iter()
-            .flat_map(|&l| [l, l, l, 255])
-            .collect();
-        compositor.set_paper(info.width, &rgba);
+        compositor.set_paper(info.width, &buf[..info.buffer_size()]);
     }
 
     pub fn upload_faces(&mut self, compositor: &mut Compositor) {

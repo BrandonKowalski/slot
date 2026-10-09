@@ -87,7 +87,7 @@ void main() {
         float luma = dot(c, luma_coeff);
         w = w * luma;
         c = mix(c, vec3(1.0), w);
-        vec3 bg = texture2D(u_paper, (floor(gl_FragCoord.xy) + 0.5) / u_paper_size).rgb * c;
+        vec3 bg = vec3(texture2D(u_paper, (floor(gl_FragCoord.xy) + 0.5) / u_paper_size).r) * c;
         c = mix(c, bg, dot(c, luma_coeff));
     } else if (u_mode > 2.5) {
         float bloom = mix(1.05, 0.95, dot(c, vec3(0.30, 0.59, 0.11)));

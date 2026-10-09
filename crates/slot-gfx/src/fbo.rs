@@ -147,8 +147,8 @@ impl Compositor {
         self.game.set_picture(rect);
     }
 
-    pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
-        self.game.set_paper(size, rgba);
+    pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
+        self.game.set_paper(size, gray);
     }
 
     pub fn fit(&mut self, window: (u32, u32)) {
