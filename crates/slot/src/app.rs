@@ -464,7 +464,10 @@ impl App {
     pub fn boot(root: &Path) -> Self {
         crate::root::ensure(root);
         slot_ui::set_theme(Theme::read(root));
-        let mut app = App::new(scan(root).unwrap_or_default());
+        crate::boot_time::mark("root and theme");
+        let carts = scan(root).unwrap_or_default();
+        crate::boot_time::mark("scan");
+        let mut app = App::new(carts);
         app.root = Some(root.to_path_buf());
         app.state = read_slot_state(root);
         if app.state.clock_set {

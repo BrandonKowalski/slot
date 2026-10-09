@@ -19,6 +19,14 @@ pub use stub::StubSink;
 
 pub const GBA_HZ: u32 = 32_768;
 
+pub fn opened_sink() -> Box<dyn AudioSink> {
+    let mut sink = open_sink();
+    if let Err(e) = sink.open(GBA_HZ) {
+        eprintln!("slot: audio: {e}");
+    }
+    sink
+}
+
 #[cfg(feature = "host")]
 pub fn open_sink() -> Box<dyn AudioSink> {
     if std::env::var_os("SLOT_SILENT").is_some() {
