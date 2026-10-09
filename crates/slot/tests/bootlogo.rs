@@ -1,77 +1,126 @@
-use slot::bootlogo::{install, valid, Outcome};
+use slot::bootlogo::{compose, decode, encode, install, size, Bmp, Outcome};
 
-fn bmp(fill: u8) -> Vec<u8> {
-    let mut b = vec![0u8; 54];
-    b[0..2].copy_from_slice(b"BM");
-    b[2..6].copy_from_slice(&1_036_854u32.to_le_bytes());
-    b[10..14].copy_from_slice(&54u32.to_le_bytes());
-    b[14..18].copy_from_slice(&40u32.to_le_bytes());
-    b[18..22].copy_from_slice(&720i32.to_le_bytes());
-    b[22..26].copy_from_slice(&480i32.to_le_bytes());
-    b[26..28].copy_from_slice(&1u16.to_le_bytes());
-    b[28..30].copy_from_slice(&24u16.to_le_bytes());
-    b.extend(std::iter::repeat_n(fill, 720 * 480 * 3));
-    b
+const BG: [u8; 3] = [11, 14, 17];
+const INK: [u8; 3] = [240, 240, 240];
+
+fn mark() -> Bmp {
+    let (width, height) = (5, 3);
+    let mut rgb = vec![BG; width * height];
+    rgb[width + 1] = INK;
+    rgb[width + 3] = [200, 0, 0];
+    Bmp { width, height, rgb }
+}
+
+fn screen(w: usize, h: usize, fill: u8) -> Vec<u8> {
+    encode(&Bmp {
+        width: w,
+        height: h,
+        rgb: vec![[fill; 3]; w * h],
+    })
+}
+
+fn at(b: &Bmp, x: usize, y: usize) -> [u8; 3] {
+    b.rgb[y * b.width + x]
 }
 
 #[test]
-fn only_a_720x480_24_bit_bmp_is_valid() {
-    assert!(valid(&bmp(0)));
-    assert!(!valid(&bmp(0)[..1000]));
-    let mut wide = bmp(0);
-    wide[18..22].copy_from_slice(&640i32.to_le_bytes());
-    assert!(!valid(&wide));
-    let mut deep = bmp(0);
-    deep[28..30].copy_from_slice(&32u16.to_le_bytes());
-    assert!(!valid(&deep));
-    let mut packed = bmp(0);
-    packed[30..34].copy_from_slice(&1u32.to_le_bytes());
-    assert!(!valid(&packed));
-    let mut png = bmp(0);
-    png[0..2].copy_from_slice(b"PN");
-    assert!(!valid(&png));
+fn a_bmp_survives_encode_and_decode_with_padded_rows() {
+    let m = mark();
+    let back = decode(&encode(&m)).unwrap();
+    assert_eq!((back.width, back.height), (5, 3));
+    assert_eq!(back.rgb, m.rgb);
 }
 
 #[test]
-fn a_new_logo_replaces_the_old_and_keeps_the_original_once() {
+fn the_wordmark_is_centred_on_a_panel_of_its_background() {
+    let logo = compose(&mark(), (11, 7)).unwrap();
+    assert_eq!((logo.width, logo.height), (11, 7));
+    assert_eq!(at(&logo, 0, 0), BG);
+    assert_eq!(at(&logo, 4, 3), INK);
+    assert_eq!(at(&logo, 6, 3), [200, 0, 0]);
+}
+
+#[test]
+fn a_portrait_panel_gets_the_wordmark_turned_a_quarter_counter_clockwise() {
+    let logo = compose(&mark(), (7, 11)).unwrap();
+    assert_eq!((logo.width, logo.height), (7, 11));
+    assert_eq!(at(&logo, 3, 6), INK);
+    assert_eq!(at(&logo, 3, 4), [200, 0, 0]);
+}
+
+#[test]
+fn a_wordmark_bigger_than_the_panel_is_refused() {
+    assert!(compose(&mark(), (4, 3)).is_none());
+}
+
+#[test]
+fn the_logo_takes_the_size_of_the_one_already_on_the_panel() {
     let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join("bootlogo.bmp"), bmp(1)).unwrap();
-
-    assert_eq!(install(&bmp(2), d.path()).unwrap(), Outcome::Installed);
+    std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
     assert_eq!(
-        std::fs::read(d.path().join("bootlogo.bmp")).unwrap(),
-        bmp(2)
+        install(&encode(&mark()), d.path()).unwrap(),
+        Outcome::Installed
     );
+    let logo = std::fs::read(d.path().join("bootlogo.bmp")).unwrap();
+    assert_eq!(size(&logo), Some((64, 48)));
+    assert_eq!(logo.len(), screen(64, 48, 1).len());
     assert_eq!(
         std::fs::read(d.path().join("bootlogo.baseos.bmp")).unwrap(),
-        bmp(1)
-    );
-
-    assert_eq!(install(&bmp(3), d.path()).unwrap(), Outcome::Installed);
-    assert_eq!(
-        std::fs::read(d.path().join("bootlogo.baseos.bmp")).unwrap(),
-        bmp(1),
-        "the original was overwritten by a logo slot had installed"
+        screen(64, 48, 1)
     );
     assert!(!d.path().join("bootlogo.tmp").exists());
+    assert_eq!(install(&encode(&mark()), d.path()).unwrap(), Outcome::Same);
 }
 
 #[test]
-fn the_same_logo_is_left_alone() {
+fn a_wrong_sized_logo_is_rebuilt_at_the_size_of_the_original() {
     let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join("bootlogo.bmp"), bmp(2)).unwrap();
-    assert_eq!(install(&bmp(2), d.path()).unwrap(), Outcome::Same);
-    assert!(!d.path().join("bootlogo.baseos.bmp").exists());
+    std::fs::write(d.path().join("bootlogo.baseos.bmp"), screen(64, 48, 1)).unwrap();
+    std::fs::write(d.path().join("bootlogo.bmp"), screen(72, 48, 2)).unwrap();
+    assert_eq!(
+        install(&encode(&mark()), d.path()).unwrap(),
+        Outcome::Installed
+    );
+    let logo = std::fs::read(d.path().join("bootlogo.bmp")).unwrap();
+    assert_eq!(size(&logo), Some((64, 48)));
+    assert_eq!(
+        std::fs::read(d.path().join("bootlogo.baseos.bmp")).unwrap(),
+        screen(64, 48, 1),
+        "the original was overwritten"
+    );
 }
 
 #[test]
-fn a_bad_logo_never_touches_the_partition() {
+fn a_bad_wordmark_or_no_logo_to_measure_never_touches_the_partition() {
     let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join("bootlogo.bmp"), bmp(1)).unwrap();
-    assert_eq!(install(&bmp(2)[..500], d.path()).unwrap(), Outcome::Invalid);
+    std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
+    assert_eq!(
+        install(&encode(&mark())[..20], d.path()).unwrap(),
+        Outcome::Invalid
+    );
     assert_eq!(
         std::fs::read(d.path().join("bootlogo.bmp")).unwrap(),
-        bmp(1)
+        screen(64, 48, 1)
     );
     assert!(!d.path().join("bootlogo.baseos.bmp").exists());
+
+    let empty = tempfile::tempdir().unwrap();
+    assert_eq!(
+        install(&encode(&mark()), empty.path()).unwrap(),
+        Outcome::Invalid
+    );
+    assert!(!empty.path().join("bootlogo.bmp").exists());
+}
+
+#[test]
+fn the_shipped_wordmark_fits_every_panel_baseos_supports() {
+    let card = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../card/System/bootlogo.bmp"
+    ))
+    .unwrap();
+    let m = decode(&card).unwrap();
+    for panel in [(720, 480), (640, 480), (720, 720), (480, 640)] {
+        assert!(compose(&m, panel).is_some(), "{panel:?}");
+    }
 }

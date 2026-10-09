@@ -42,6 +42,8 @@ impl ApplicationHandler for Slot {
             }
         };
         self.frontend.upload_faces(&mut compositor);
+        self.frontend
+            .upload_bezel(&mut compositor, surface.window_size());
         self.gfx = Some((surface, compositor));
     }
 

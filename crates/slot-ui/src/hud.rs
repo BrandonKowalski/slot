@@ -26,8 +26,8 @@ pub fn badge_at(w: f32, h: f32) -> (f32, f32) {
 const BAR_W: f32 = 320.0;
 const BAR_H: f32 = 6.0;
 const BAR_Y: f32 = (PLATE_H - BAR_H) / 2.0;
-const TRACK: [f32; 4] = [1.0, 1.0, 1.0, 0.18];
-const FILL: [f32; 4] = [
+pub(crate) const TRACK: [f32; 4] = [1.0, 1.0, 1.0, 0.18];
+pub(crate) const FILL: [f32; 4] = [
     HUD_INK[0] as f32 / 255.0,
     HUD_INK[1] as f32 / 255.0,
     HUD_INK[2] as f32 / 255.0,

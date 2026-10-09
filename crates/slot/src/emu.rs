@@ -89,6 +89,8 @@ struct Shared {
     state: AtomicU8,
     rewind: AtomicBool,
     rewind_fill: AtomicU8,
+    turbo: AtomicBool,
+    recording: AtomicBool,
     stop: AtomicBool,
     volume: AtomicU8,
     fast_steps: AtomicU32,
@@ -154,6 +156,8 @@ impl EmuHandle {
             state: AtomicU8::new(CoreState::Loading as u8),
             rewind: AtomicBool::new(false),
             rewind_fill: AtomicU8::new(0),
+            turbo: AtomicBool::new(true),
+            recording: AtomicBool::new(true),
             stop: AtomicBool::new(false),
             volume: AtomicU8::new(100),
             fast_steps: AtomicU32::new(FAST_STEPS),
@@ -346,6 +350,14 @@ impl EmuHandle {
 
     pub fn set_rewinding(&self, on: bool) {
         self.shared.rewind.store(on, Ordering::Relaxed);
+    }
+
+    pub fn set_turbo(&self, on: bool) {
+        self.shared.turbo.store(on, Ordering::Relaxed);
+    }
+
+    pub fn set_rewind_recording(&self, on: bool) {
+        self.shared.recording.store(on, Ordering::Relaxed);
     }
 
     pub fn rewind_fill(&self) -> u8 {
@@ -629,7 +641,10 @@ impl Worker {
                 loop {
                     ran += 1;
                     let last = ran >= ceiling || cost.last(began.elapsed(), budget);
-                    let input = input.turbo(turbo_frame);
+                    let input = match self.shared.turbo.load(Ordering::Relaxed) {
+                        true => input.turbo(turbo_frame),
+                        false => input.without_turbo(),
+                    };
                     turbo_frame = turbo_frame.wrapping_add(1);
                     core.set_frame_skip(!last);
                     let frame_began = Instant::now();
@@ -729,7 +744,10 @@ impl Worker {
                 self.frame_done(served);
 
                 since_snapshot += 1;
-                if cable.is_some() || speed == Speed::Fast {
+                if cable.is_some()
+                    || speed == Speed::Fast
+                    || !self.shared.recording.load(Ordering::Relaxed)
+                {
                     since_snapshot = 0;
                 }
                 if since_snapshot >= SNAPSHOT_EVERY {

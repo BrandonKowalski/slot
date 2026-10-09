@@ -1,21 +1,26 @@
 use std::time::{Duration, Instant};
 
-use slot_gfx::{Compositor, Draw, TexId, OUT_H, OUT_W};
+use slot_gfx::{Compositor, Draw, ScreenEffect, TexId, OUT_H, OUT_W};
+
+const PAPER: &[u8] = include_bytes!("../assets/paper.png");
 use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::format_stamp;
 use slot_ui::{
-    arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
+    arrows_hint_face, badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face,
     date_time_text, gb_cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face,
-    quick_caret_face, quick_label_face, quick_legend_faces, quick_value_face, set_clock_hint_face,
-    socket_face, sticker_face, title_face, toast_face, wallpaper_face, word_face, GbShell, Icon,
-    LinkBadge, PowerChoice, QuickMenuFaces, QuickRow, QuickValue, StickerFields, Toast, UndoFace,
-    ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    quick_caret_face, quick_label_face, quick_legend_faces, quick_value_face, rebuild_count_face,
+    rebuild_title_face, set_clock_hint_face, socket_face, sticker_face, title_face, toast_face,
+    wallpaper_face, word_face, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces, QuickRow,
+    QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX,
+    HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
 use crate::build_info::Build;
+use crate::cart_faces::CartFaces;
 use crate::face_builder::FaceBuilder;
+use crate::label_cache::{self, Rebuild};
 use crate::link_art_builder::LinkArtBuilder;
 use crate::link_screen::{LinkSprites, Sprite};
 use crate::link_start::{LinkFail, LinkStep};
@@ -34,6 +39,9 @@ pub struct Frontend {
     polaroid_texes: Vec<TexId>,
     title_tex: Option<TexId>,
     faces: FaceBuilder,
+    cart_faces: CartFaces,
+    rebuild: Option<Rebuild>,
+    rebuild_faces: RebuildFaces,
     link_art: LinkArtBuilder,
     link_art_done: bool,
     core_asked: Option<String>,
@@ -45,6 +53,14 @@ pub struct Frontend {
     clocks: Clocks,
     about: AboutFace,
     quick_clock: QuickClock,
+}
+
+#[derive(Default)]
+struct RebuildFaces {
+    title: Option<(TexId, u32, u32)>,
+    count: Option<TexId>,
+    count_size: (u32, u32),
+    shown: Option<usize>,
 }
 
 #[derive(Default)]
@@ -82,7 +98,13 @@ struct Switcher {
 impl Frontend {
     pub fn boot(platform: Box<dyn Platform>) -> Self {
         let now = Instant::now();
+        let cart_faces = CartFaces::spawn(platform.root().to_path_buf());
         let mut session = Session::boot(platform.root().to_path_buf());
+        let stale = label_cache::stale(platform.root(), session.app().carts());
+        let rebuild = (!stale.is_empty()).then(|| {
+            eprintln!("slot: label cache: {} new labels", stale.len());
+            Rebuild::start(platform.root(), stale)
+        });
         session
             .app_mut()
             .set_power(Power::new(platform, DOZE_TIMEOUT));
@@ -94,6 +116,9 @@ impl Frontend {
             polaroid_texes: Vec::new(),
             title_tex: None,
             faces: FaceBuilder::spawn(),
+            cart_faces,
+            rebuild,
+            rebuild_faces: RebuildFaces::default(),
             link_art: LinkArtBuilder::spawn(),
             link_art_done: false,
             core_asked: None,
@@ -108,17 +133,31 @@ impl Frontend {
         }
     }
 
-    pub fn upload_faces(&mut self, compositor: &mut Compositor) {
-        let faces = self
-            .session
-            .app()
-            .carts()
-            .map(|c| {
-                let f = cart_face(c);
-                compositor.create_texture(f.w, f.h, &f.rgba)
-            })
+    fn upload_paper(compositor: &mut Compositor) {
+        let mut dec = png::Decoder::new(std::io::Cursor::new(PAPER));
+        dec.set_transformations(png::Transformations::normalize_to_color8());
+        let Ok(mut reader) = dec.read_info() else {
+            return;
+        };
+        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let Ok(info) = reader.next_frame(&mut buf) else {
+            return;
+        };
+        if info.color_type != png::ColorType::Grayscale || info.width != info.height {
+            return;
+        }
+        let rgba: Vec<u8> = buf[..info.buffer_size()]
+            .iter()
+            .flat_map(|&l| [l, l, l, 255])
             .collect();
-        self.session.app_mut().set_faces(faces);
+        compositor.set_paper(info.width, &rgba);
+    }
+
+    pub fn upload_faces(&mut self, compositor: &mut Compositor) {
+        Self::upload_paper(compositor);
+        if self.rebuild.is_none() {
+            self.cart_faces.sync(self.session.app_mut(), compositor);
+        }
         let icons = Icon::ALL
             .iter()
             .map(|i| {
@@ -233,10 +272,10 @@ impl Frontend {
         self.session.app_mut().set_link_step_faces(steps);
         let fails = menu_faces(compositor, LinkFail::SHOWN.iter().map(|f| f.line()));
         self.session.app_mut().set_link_fail_faces(fails);
-        let toasts = Toast::ALL
-            .iter()
+        let toasts = Toast::all()
+            .into_iter()
             .map(|t| {
-                let f = toast_face(*t);
+                let f = toast_face(t);
                 compositor.create_texture(f.w, f.h, &f.rgba)
             })
             .collect();
@@ -273,21 +312,55 @@ impl Frontend {
         self.session.app_mut().set_wallpaper(id);
     }
 
+    pub fn upload_bezel(&mut self, compositor: &mut Compositor, panel: (u32, u32)) {
+        if !slot_gfx::framed(panel) {
+            return;
+        }
+        slot_ui::set_shelf_slack((OUT_W * panel.1 / panel.0).saturating_sub(OUT_H) as f32);
+        let Some(path) = self
+            .session
+            .app()
+            .root()
+            .and_then(|root| crate::bezel::pick(root, panel))
+        else {
+            return;
+        };
+        if let Some(rgba) = bezel_face(&path, panel.0, panel.1) {
+            compositor.set_bezel(panel.0, panel.1, &rgba);
+            eprintln!("slot: bezel {}", path.display());
+        }
+    }
+
     pub fn render(&mut self, compositor: &mut Compositor, window: (u32, u32)) {
+        compositor.fit(window);
         self.compose(compositor);
         compositor.end_frame(window);
     }
 
     pub fn compose(&mut self, compositor: &mut Compositor) {
         compositor.set_blue_light(self.session.app().blue_light());
+        compositor.set_picture(self.session.app().picture_rect());
+        compositor.set_screen_effect(match self.session.app().screen_shader() {
+            slot_store::Shader::Off => ScreenEffect::None,
+            slot_store::Shader::Lcd3x => ScreenEffect::Lcd3x,
+            slot_store::Shader::Grid => ScreenEffect::Grid,
+            slot_store::Shader::Dot => ScreenEffect::Dot,
+            slot_store::Shader::Simpletex => ScreenEffect::Simpletex,
+        });
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
+        compositor.set_frame_lift(self.session.app().frame_lift());
+        compositor.set_frame_split(self.session.app().frame_split());
         compositor.set_game_source_rect(self.session.app().source_rect());
         compositor.begin_frame();
+        if self.draw_rebuild(compositor) {
+            return;
+        }
         if let Some(frame) = self.session.frame() {
             compositor.upload_game(&frame);
             crate::latency::taken();
         }
+        self.cart_faces.sync(self.session.app_mut(), compositor);
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_about(self.session.app_mut(), compositor, &mut self.about);
         sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
@@ -353,9 +426,50 @@ impl Frontend {
         self.session.step_emulator(present, timeout)
     }
 
+    pub fn rebuilding_labels(&self) -> bool {
+        self.rebuild.is_some()
+    }
+
+    fn draw_rebuild(&mut self, compositor: &mut Compositor) -> bool {
+        let Some(rebuild) = &self.rebuild else {
+            return false;
+        };
+        if rebuild.finished() {
+            self.rebuild = None;
+            self.last = Instant::now();
+            return false;
+        }
+        let faces = &mut self.rebuild_faces;
+        let title = *faces.title.get_or_insert_with(|| {
+            let f = rebuild_title_face("Caching New Labels");
+            (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
+        });
+        let done = rebuild.done();
+        if faces.shown != Some(done) {
+            let f = rebuild_count_face(&format!("{done} / {}", rebuild.total()));
+            faces.count_size = (f.w, f.h);
+            upload(compositor, &mut faces.count, f);
+            faces.shown = Some(done);
+        }
+        let screen = RebuildScreen {
+            title: Some(title),
+            count: faces
+                .count
+                .map(|tex| (tex, faces.count_size.0, faces.count_size.1)),
+            fraction: done as f32 / rebuild.total().max(1) as f32,
+        };
+        self.draws.clear();
+        screen.draw(&mut self.draws);
+        compositor.draw_list(&self.draws);
+        true
+    }
+
     pub fn advance(&mut self, input: &mut dyn InputSource) {
         let now = self.now();
         let events = input.poll(now);
+        if self.rebuild.is_some() {
+            return;
+        }
         self.session.feed(events, now);
         let dt = self.last.elapsed().as_secs_f32();
         self.last = Instant::now();

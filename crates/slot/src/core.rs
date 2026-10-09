@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use slot_retro::{LibretroCore, MockCore, RetroCore};
-use slot_store::Core;
+use slot_store::{Core, GbPalette, Platform};
 
 use crate::root;
 
@@ -37,9 +37,16 @@ pub struct Opened {
     pub named: bool,
 }
 
-pub fn open_core(root: &Path, core: Core, serial: &str, colour: bool, link: Option<u8>) -> Opened {
+pub fn open_core(
+    root: &Path,
+    core: Core,
+    serial: &str,
+    colour: bool,
+    palette: Option<GbPalette>,
+    link: Option<u8>,
+) -> Opened {
     let paths = candidates(root, core);
-    match open_named(root, core, serial, colour, link, &paths) {
+    match open_named(root, core, serial, colour, palette, link, &paths) {
         Some(core) => Opened { core, named: true },
         None => {
             report_missing(core, &paths);
@@ -58,7 +65,18 @@ pub fn open_core_for(
     colour: bool,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
-    open_named(root, core, serial, colour, None, paths).unwrap_or_else(|| {
+    open_core_for_palette(root, core, serial, colour, None, paths)
+}
+
+pub fn open_core_for_palette(
+    root: &Path,
+    core: Core,
+    serial: &str,
+    colour: bool,
+    palette: Option<GbPalette>,
+    paths: &[PathBuf],
+) -> Box<dyn RetroCore> {
+    open_named(root, core, serial, colour, palette, None, paths).unwrap_or_else(|| {
         report_missing(core, paths);
         Box::new(MockCore::new())
     })
@@ -69,6 +87,7 @@ fn open_named(
     core: Core,
     serial: &str,
     colour: bool,
+    palette: Option<GbPalette>,
     link: Option<u8>,
     paths: &[PathBuf],
 ) -> Option<Box<dyn RetroCore>> {
@@ -80,7 +99,14 @@ fn open_named(
         }
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
-                apply_core_options(&mut opened, core, serial, root::has_real_bios(root), colour);
+                apply_core_options(
+                    &mut opened,
+                    core,
+                    serial,
+                    root::has_real_bios(root),
+                    colour,
+                    palette,
+                );
                 if let Some(player) = link {
                     apply_link_options(&mut opened, core, player);
                 }
@@ -91,6 +117,23 @@ fn open_named(
         }
     }
     None
+}
+
+pub fn palette_for(
+    chosen: Option<GbPalette>,
+    platform: Platform,
+    rom: &Path,
+    link: Option<u8>,
+) -> Option<GbPalette> {
+    chosen.filter(|_| link.is_none() && platform != Platform::Gba && dmg_only(rom))
+}
+
+pub fn dmg_only(rom: &Path) -> bool {
+    use std::io::Read;
+    let mut header = [0u8; 0x150];
+    std::fs::File::open(rom)
+        .and_then(|mut f| f.read_exact(&mut header))
+        .is_ok_and(|_| header[0x143] & 0x80 == 0)
 }
 
 fn report_missing(core: Core, paths: &[PathBuf]) {
@@ -130,12 +173,23 @@ pub fn apply_core_options(
     serial: &str,
     bios: bool,
     colour: bool,
+    palette: Option<GbPalette>,
 ) {
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
-        core.set_option("mgba_gb_colors_preset", "1");
-        core.set_option("mgba_gb_colors", "GBC Dark Green →A");
+        match palette {
+            Some(p) => {
+                core.set_option("mgba_gb_model", "Game Boy");
+                core.set_option("mgba_gb_colors_preset", "0");
+                core.set_option("mgba_gb_colors", p.core_name());
+            }
+            None => {
+                core.set_option("mgba_gb_model", "Autodetect");
+                core.set_option("mgba_gb_colors_preset", "1");
+                core.set_option("mgba_gb_colors", "GBC Dark Green →A");
+            }
+        }
         if let Some((key, value)) = colour_option(which, colour) {
             core.set_option(key, value);
         }

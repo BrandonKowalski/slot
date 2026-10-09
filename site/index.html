@@ -120,6 +120,10 @@
           <h3>Add your games</h3>
           <p>Drop your legally obtained ROM files into their corresponding platform's folder in <code>Games/</code>. You may optionally place labels into the matching platform folder found in
              <code>Labels/</code>.</p>
+          <aside class="admonition" role="note">
+            <p class="admonition-title">ROMs must be unzipped!</p>
+            <p>slot does not read <code>.zip</code> or <code>.7z</code> files.</p>
+          </aside>
         </li>
         <li>
           <h3>Re-insert the card into <code>SD1</code> and boot!</h3>
@@ -150,6 +154,10 @@
           <h3>Add your games</h3>
           <p>Drop your legally obtained ROM files into their corresponding platform's folder in <code>Games/</code>. You may optionally place labels into the matching platform folder found in
              <code>Labels/</code>.</p>
+          <aside class="admonition" role="note">
+            <p class="admonition-title">ROMs must be unzipped!</p>
+            <p>slot does not read <code>.zip</code> or <code>.7z</code> files.</p>
+          </aside>
         </li>
         <li>
           <h3>Put the second card into <code>SD2</code> and boot!</h3>
@@ -248,6 +256,14 @@
       <li class="step" id="expand" data-clip="gbc-stretch.mp4">
         <h3>Commit Aspect Ratio Crimes</h3>
         <p>Just like the OG, <kbd>L1</kbd> stretches GB and GBC games.<br><kbd>R1</kbd> puts them back to their original size.</p>
+      </li>
+      <li class="step" id="shaders" data-clip="shaders.mp4">
+        <h3>Screen Shaders</h3>
+        <p><kbd>SELECT</kbd> + <kbd>B</kbd> / <kbd>A</kbd> changes the active shader.<br><kbd>SELECT</kbd> + <kbd>Y</kbd> toggles color correction.</p>
+      </li>
+      <li class="step" id="palettes" data-clip="palettes.mp4">
+        <h3>Game Boy Palettes</h3>
+        <p>Turn on GB Palettes in the Screen settings.<br><kbd>SELECT</kbd> + <kbd>L2</kbd> / <kbd>R2</kbd> steps through them.</p>
       </li>
       <li class="step" id="link" data-clip="link.mp4" data-pair="link-join.mp4">
         <h3>Link Up</h3>
@@ -362,6 +378,18 @@
           <dd>Load the most recent save state.</dd>
         </div>
         <div class="key">
+          <dt><kbd>SELECT</kbd> + <kbd>B</kbd> / <kbd>A</kbd></dt>
+          <dd>Previous / next screen shader.</dd>
+        </div>
+        <div class="key">
+          <dt><kbd>SELECT</kbd> + <kbd>Y</kbd></dt>
+          <dd>Toggle color correction.</dd>
+        </div>
+        <div class="key">
+          <dt><kbd>SELECT</kbd> + <kbd>L2</kbd> / <kbd>R2</kbd></dt>
+          <dd>Previous / next Game Boy palette, when GB Palettes is on.</dd>
+        </div>
+        <div class="key">
           <dt>Hold <kbd>L2</kbd></dt>
           <dd>Rewind</dd>
         </div>
@@ -429,12 +457,32 @@
     <div class="subpanel" id="faq" role="tabpanel" aria-labelledby="t-faq">
       <dl>
         <div class="qa">
+          <dt>Which devices does slot run on?</dt>
+          <dd>
+            <table class="devices">
+              <thead><tr><th>Device</th><th>Supported</th><th>Since Version</th></tr></thead>
+              <tbody>
+                <tr><td>Anbernic RG&nbsp;SP</td><td class="yes">Yes</td><td>Always</td></tr>
+                <tr><td>Anbernic RG34XX</td><td>Untested</td><td>N/A</td></tr>
+                <tr><td>Anbernic RG34XXSP</td><td>Untested</td><td>N/A</td></tr>
+                <tr><td>Anbernic RG35XXSP</td><td class="yes">Yes</td><td>1.5.0</td></tr>
+              </tbody>
+            </table>
+            <p>The RG34XX will likely work from 1.4.0. The RG34XXSP may not map its sticks correctly.</p>
+            <p>If you have one of the Untested devices, or have tried slot on a device not listed, please <a href="https://github.com/BrandonKowalski/slot/issues">open an issue on GitHub</a> and let me know how it went.</p>
+          </dd>
+        </div>
+        <div class="qa">
           <dt>Will slot run anything other than GBA?</dt>
           <dd>Yes. You can bring your GB and GBC carts to the party.</dd>
         </div>
         <div class="qa">
           <dt>This is almost perfect but needs more systems. Will you add them?</dt>
           <dd>No. I want to recreate the feeling I had playing my GBA SP as a child.</dd>
+        </div>
+        <div class="qa">
+          <dt>RetroAchievements and cheats would make this perfect. Will you add them?</dt>
+          <dd>No. These are two features I do not want to support. If they matter to you, a few of the forks have added them.</dd>
         </div>
         <div class="qa">
           <dt>Does slot allow you to pair Bluetooth headphones?</dt>
@@ -478,6 +526,10 @@
           <dt>Where do the games come from?</dt>
           <dd>Your own legally obtained backups.</dd>
         </div>
+        <div class="qa">
+          <dt>Why doesn't the GBA soft reset work?</dt>
+          <dd><kbd>SELECT</kbd> + <kbd>A</kbd> / <kbd>B</kbd> change the shader instead. Hold <kbd>A</kbd> on the carousel to start fresh.</dd>
+        </div>
       </dl>
     </div>
 
@@ -519,7 +571,7 @@
     <h2>Credits</h2>
     <p>Emulation is handled by <a href="https://mgba.io">mGBA</a> and <a href="https://github.com/libretro/gpsp">gpSP</a>.</p>
     <p><a href="https://github.com/pvaibhav/BaseOS">BaseOS</a> by <a href="https://github.com/pvaibhav">Prashant Vaibhav</a> serves as the operating system image.</p>
-    <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L. McIntyre, under MIT. The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro shader collection.</p>
+    <p>Type is <a href="https://github.com/googlefonts/opensans">Open Sans</a>, under the SIL Open Font License, and <a href="https://www.nerdfonts.com">Nerd Fonts</a> symbols by Ryan L. McIntyre, under MIT. The panel mask is derived from LCD3x, a public-domain shader by Gigaherz in the libretro shader collection. The Dot and Simpletex screen shaders are ports of Dot by Themaister and simpletex_lcd by jdgleaver from the same collection. The RG35XXSP bezel is "Perfect GBA SP" by <a href="https://github.com/mugwomp93/Knulli_Customization">mugwomp93</a>, from <a href="https://github.com/chrizzo-hb/knulli-bezels">knulli-bezels</a>, under CC BY-SA 4.0.</p>
     <p>The sounds are a recording of me shoving a cartridge into my childhood GBA.</p>
     <p>Game Boy is a trademark of Nintendo. slot is not affiliated with Nintendo.</p>
   </div>

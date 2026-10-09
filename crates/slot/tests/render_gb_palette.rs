@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::{core_lock, repo_root, vendored_core};
 use slot_retro::{ButtonMask, LibretroCore, RetroCore, GBA_H, GBA_W};
-use slot_store::Core;
+use slot_store::{Core, GbPalette};
 
 const DEFAULT_BG: [[u8; 3]; 3] = [[255, 251, 255], [123, 251, 49], [0, 97, 198]];
 
@@ -59,12 +59,13 @@ fn distinct_colours(rgba: &[u8]) -> usize {
     seen.len()
 }
 
-fn shipped(root: &Path, dylib: &Path, rom: &Path) -> Vec<u8> {
-    let mut core = slot::core::open_core_for(
+fn shipped(root: &Path, dylib: &Path, rom: &Path, palette: Option<GbPalette>) -> Vec<u8> {
+    let mut core = slot::core::open_core_for_palette(
         root,
         Core::Mgba,
         "auto",
         false,
+        palette,
         std::slice::from_ref(&dylib.to_path_buf()),
     );
     core.load(rom).expect("the core would not take the rom");
@@ -112,7 +113,7 @@ fn a_monochrome_cart_comes_up_in_the_colours_the_sp_gave_it() {
         };
         let stem = cart.split_whitespace().next().unwrap_or(cart);
         let off = without_palette(d.path(), &dylib, &rom);
-        let on = shipped(d.path(), &dylib, &rom);
+        let on = shipped(d.path(), &dylib, &rom, None);
         write_png(&format!("gb-palette-{stem}-off"), &off);
         write_png(&format!("gb-palette-{stem}-on"), &on);
 
@@ -150,7 +151,7 @@ fn a_colour_cart_is_untouched() {
         return;
     };
     let off = without_palette(d.path(), &dylib, &rom);
-    let on = shipped(d.path(), &dylib, &rom);
+    let on = shipped(d.path(), &dylib, &rom, None);
     write_png("gb-palette-colour-off", &off);
     write_png("gb-palette-colour-on", &on);
 
@@ -164,5 +165,58 @@ fn a_colour_cart_is_untouched() {
     assert_eq!(
         off, on,
         "the Game Boy palette options changed what a Game Boy Color cart draws"
+    );
+}
+
+fn as_sgb(rom: &Path, out: &Path) -> PathBuf {
+    let mut bytes = std::fs::read(rom).expect("read rom");
+    bytes[0x146] = 0x03;
+    bytes[0x14B] = 0x33;
+    let sum = bytes[0x134..=0x14C]
+        .iter()
+        .fold(0u8, |acc, b| acc.wrapping_sub(*b).wrapping_sub(1));
+    bytes[0x14D] = sum;
+    let p = out.join("sgb.gb");
+    std::fs::write(&p, bytes).expect("write rom");
+    p
+}
+
+#[test]
+fn a_named_palette_colours_plain_and_sgb_carts_alike() {
+    let Some(dylib) = vendored_core() else {
+        eprintln!("no mgba dylib, skipping");
+        return;
+    };
+    let _g = core_lock();
+    let d = common::tmp_root_with_carts(&[]);
+    let Some(plain) = card_cart("sdcard/Games/GB/Catrap (USA).gb") else {
+        eprintln!("no Catrap on this machine's card, skipping");
+        return;
+    };
+    let sgb = as_sgb(&plain, d.path());
+    let grey = GbPalette::parse("Grayscale").unwrap();
+    let green = GbPalette::parse("DMG Green").unwrap();
+
+    let auto_sgb = shipped(d.path(), &dylib, &sgb, None);
+    let grey_plain = shipped(d.path(), &dylib, &plain, Some(grey));
+    let grey_sgb = shipped(d.path(), &dylib, &sgb, Some(grey));
+    let green_sgb = shipped(d.path(), &dylib, &sgb, Some(green));
+    write_png("gb-palette-sgb-auto", &auto_sgb);
+    write_png("gb-palette-plain-grey", &grey_plain);
+    write_png("gb-palette-sgb-grey", &grey_sgb);
+    write_png("gb-palette-sgb-green", &green_sgb);
+
+    assert!(
+        mean_saturation(&grey_plain) < 4.0,
+        "Grayscale left colour on a plain cart"
+    );
+    assert!(
+        mean_saturation(&grey_sgb) < 4.0,
+        "Grayscale left colour on an SGB cart, so it still ran as a Super Game Boy"
+    );
+    assert_ne!(grey_sgb, green_sgb, "two palettes drew the same picture");
+    assert_ne!(
+        grey_sgb, auto_sgb,
+        "the palette changed nothing on an SGB cart"
     );
 }

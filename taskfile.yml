@@ -162,6 +162,15 @@ tasks:
     cmds:
       - cargo run --release -p slot
 
+  run:4x3:
+    desc: Run in a 4:3 window, as on the RG35XXSP, with the bezel around the screen
+    deps: [core]
+    env:
+      SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_WINDOW: '1280x960'
+    cmds:
+      - cargo run --release -p slot
+
   run:debug:
     desc: Run an unoptimised build, for a debugger. Will not hold 60 fps.
     deps: [core]
@@ -284,7 +293,7 @@ tasks:
         vars:
           CMD: ./target-device/device/slot --init-root {{.OUT}}
       - cp target-device/device/slot {{.OUT}}/System/slot
-      - cp card/System/* {{.OUT}}/System/
+      - cp -R card/System/* {{.OUT}}/System/
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64
       - cp vendor/mgba_libretro.so {{.OUT}}/System/

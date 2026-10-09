@@ -183,11 +183,21 @@ fn shadow(w: u32, h: u32, mask: &[u8]) -> CartFace {
 }
 
 pub fn cart_face(cart: &Cart) -> CartFace {
+    let (lw, lh) = label_size(cart);
+    let art = cart.label.as_deref().and_then(|p| art::cover(p, lw, lh));
+    cart_face_with(cart, art)
+}
+
+pub fn label_size(cart: &Cart) -> (u32, u32) {
+    let (_, _, lw, lh) = spec(shape_of(cart)).label;
+    (lw, lh)
+}
+
+pub fn cart_face_with(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
     let s = spec(shape_of(cart));
     let shell = shell_for(cart);
     let mut face = shell_face(&s, &shell);
-    let (_, _, lw, lh) = s.label;
-    let label = match cart.label.as_deref().and_then(|p| art::cover(p, lw, lh)) {
+    let label = match art {
         Some(rgba) => rgba,
         None => generated_label(&s, &label_text(cart)),
     };

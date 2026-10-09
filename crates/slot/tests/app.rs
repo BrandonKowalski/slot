@@ -742,7 +742,7 @@ fn both_b_and_menu_take_the_about_screen_back_to_the_quick_menu() {
     ] {
         let (mut s, _motor) = common::session_with_platform(d.path());
         s.app_mut().apply(slot_input::Action::QuickMenu);
-        for _ in 0..slot_ui::QuickRow::About.index() {
+        for _ in 0..slot_ui::QuickRow::About.position() {
             s.app_mut()
                 .apply(slot_input::Action::GbaDown(slot_input::Btn::Down));
         }
@@ -2164,4 +2164,82 @@ fn a_letter_jump_shows_the_letter_in_the_slot_and_fades_like_the_shelf_name() {
         slot_text_alpha(&a, face) > 0.0,
         "jumping to the letter already printed did not show it again"
     );
+}
+
+#[test]
+fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut s, _motor) = common::session_with_platform(d.path());
+    s.app_mut().apply(slot_input::Action::Insert);
+    use slot_store::Shader;
+    for (action, want, said) in [
+        (
+            slot_input::Action::ShaderNext,
+            Shader::Dot,
+            slot_ui::Toast::ShaderDot,
+        ),
+        (
+            slot_input::Action::ShaderNext,
+            Shader::Off,
+            slot_ui::Toast::ShaderOff,
+        ),
+        (
+            slot_input::Action::ShaderPrev,
+            Shader::Dot,
+            slot_ui::Toast::ShaderDot,
+        ),
+        (
+            slot_input::Action::ShaderPrev,
+            Shader::Grid,
+            slot_ui::Toast::ShaderGrid,
+        ),
+        (
+            slot_input::Action::ShaderPrev,
+            Shader::Lcd3x,
+            slot_ui::Toast::ShaderLcd3x,
+        ),
+    ] {
+        s.app_mut().apply(action);
+        assert_eq!(
+            slot_store::read_slot_state(d.path()).shader_gba,
+            want,
+            "{action:?}"
+        );
+        assert_eq!(s.app().toast(), Some(said), "{action:?}");
+    }
+    assert_eq!(
+        slot_store::read_slot_state(d.path()).shader_gb,
+        Shader::Simpletex,
+        "a GBA cart moved the Game Boy shader"
+    );
+}
+
+#[test]
+fn the_shader_shortcut_does_nothing_on_the_shelf() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut s, _motor) = common::session_with_platform(d.path());
+    let before = slot_store::read_slot_state(d.path());
+    s.app_mut().apply(slot_input::Action::ShaderNext);
+    let after = slot_store::read_slot_state(d.path());
+    assert_eq!(
+        (after.shader_gba, after.shader_gb),
+        (before.shader_gba, before.shader_gb)
+    );
+    assert_eq!(s.app().toast(), None);
+}
+
+#[test]
+fn the_shader_shortcut_does_nothing_in_the_save_state_switcher() {
+    let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    slot_store::StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")
+        .push(&[1u8; 64], b"png", "2026-08-09_00-00-00")
+        .unwrap();
+    let mut a = common::app_in_switcher(d.path(), "Emerald");
+    assert!(matches!(a.phase(), Phase::Polaroids { .. }));
+    let before = slot_store::read_slot_state(d.path()).shader_gba;
+    a.apply(Action::ShaderNext);
+    a.apply(Action::ShaderPrev);
+    a.apply(Action::ShaderPrev);
+    assert_eq!(slot_store::read_slot_state(d.path()).shader_gba, before);
+    assert_eq!(a.toast(), None);
 }

@@ -65,16 +65,22 @@ fn every_option_slot_sets_is_one_the_core_declares() {
         for serial in every_serial_mode() {
             for bios in [false, true] {
                 for colour in [false, true] {
-                    let mut core = LibretroCore::open(&path).expect("open core");
-                    slot::core::apply_core_options(&mut core, which, serial, bios, colour);
-                    every_option_is_one_the_core_has(
-                        &core,
-                        &format!(
-                            "{} serial={serial} bios={bios} colour={colour}",
-                            which.as_str()
-                        ),
-                    );
-                    ran += 1;
+                    for palette in
+                        std::iter::once(None).chain(slot_store::GbPalette::all().map(Some))
+                    {
+                        let mut core = LibretroCore::open(&path).expect("open core");
+                        slot::core::apply_core_options(
+                            &mut core, which, serial, bios, colour, palette,
+                        );
+                        every_option_is_one_the_core_has(
+                            &core,
+                            &format!(
+                                "{} serial={serial} bios={bios} colour={colour} palette={palette:?}",
+                                which.as_str()
+                            ),
+                        );
+                        ran += 1;
+                    }
                 }
             }
         }
@@ -143,5 +149,89 @@ fn a_cable_session_sets_nothing_on_gpsp() {
     assert!(
         core.options().is_empty(),
         "a cable session reached into gpSP, which has no cable to offer"
+    );
+}
+
+#[test]
+fn a_named_palette_forces_a_plain_game_boy_without_hardware_presets() {
+    let _g = common::core_lock();
+    let path = dylib_for(Core::Mgba);
+    if !path.exists() {
+        eprintln!("no mgba dylib on this host, skipping");
+        return;
+    }
+    let p = slot_store::GbPalette::parse("SGB 1-A").unwrap();
+    let mut core = LibretroCore::open(&path).expect("open core");
+    slot::core::apply_core_options(&mut core, Core::Mgba, "auto", false, false, Some(p));
+    let set: std::collections::HashMap<String, String> = core.options().into_iter().collect();
+    assert_eq!(
+        set.get("mgba_gb_model").map(String::as_str),
+        Some("Game Boy")
+    );
+    assert_eq!(
+        set.get("mgba_gb_colors_preset").map(String::as_str),
+        Some("0")
+    );
+    assert_eq!(
+        set.get("mgba_gb_colors").map(String::as_str),
+        Some("SGB 1-A")
+    );
+    drop(core);
+
+    let mut core = LibretroCore::open(&path).expect("open core");
+    slot::core::apply_core_options(&mut core, Core::Mgba, "auto", false, false, None);
+    let set: std::collections::HashMap<String, String> = core.options().into_iter().collect();
+    assert_eq!(
+        set.get("mgba_gb_model").map(String::as_str),
+        Some("Autodetect")
+    );
+    assert_eq!(
+        set.get("mgba_gb_colors_preset").map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        set.get("mgba_gb_colors").map(String::as_str),
+        Some("GBC Dark Green →A"),
+        "palettes off changed what a Game Boy cart gets today"
+    );
+}
+
+#[test]
+fn only_a_cart_without_the_colour_flag_is_game_boy_only() {
+    let d = tempfile::tempdir().unwrap();
+    let rom = |name: &str, cgb: u8| {
+        let mut bytes = vec![0u8; 0x8000];
+        bytes[0x143] = cgb;
+        let p = d.path().join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    };
+    assert!(slot::core::dmg_only(&rom("dmg.gb", 0x00)));
+    assert!(!slot::core::dmg_only(&rom("dual.gbc", 0x80)));
+    assert!(!slot::core::dmg_only(&rom("cgb.gbc", 0xC0)));
+    assert!(!slot::core::dmg_only(&d.path().join("missing.gb")));
+}
+
+#[test]
+fn a_linked_game_never_takes_a_named_palette() {
+    let d = tempfile::tempdir().unwrap();
+    let mut bytes = vec![0u8; 0x8000];
+    bytes[0x146] = 0x03;
+    let rom = d.path().join("sgb.gb");
+    std::fs::write(&rom, bytes).unwrap();
+    let p = slot_store::GbPalette::DEFAULT;
+    let gb = slot_store::Platform::Gb;
+    assert_eq!(slot::core::palette_for(Some(p), gb, &rom, None), Some(p));
+    for player in [0, 1] {
+        assert_eq!(
+            slot::core::palette_for(Some(p), gb, &rom, Some(player)),
+            None,
+            "player {player}: a linked pair would run two models of one cart"
+        );
+    }
+    assert_eq!(slot::core::palette_for(None, gb, &rom, None), None);
+    assert_eq!(
+        slot::core::palette_for(Some(p), slot_store::Platform::Gba, &rom, None),
+        None
     );
 }

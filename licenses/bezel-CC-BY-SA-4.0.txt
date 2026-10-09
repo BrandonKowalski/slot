@@ -1,0 +1,12 @@
+System/bezels/640x480.png
+
+"Perfect GBA SP (no grid)" by mugwomp93
+https://github.com/mugwomp93/Knulli_Customization
+as collected in knulli-bezels by chrizzo-hb
+https://github.com/chrizzo-hb/knulli-bezels
+
+Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: scaled from 1024x768 to 640x480, and the logo recoloured to a flat silver.
+This adapted image is shared under the same license.

@@ -146,3 +146,37 @@ fn the_power_menu_takes_the_motor_down() {
         "the cart kept buzzing under the power menu"
     );
 }
+
+#[test]
+fn the_motor_rides_through_short_gaps_and_stops_after_a_long_one() {
+    let d = tmp_root_with_real_carts(&["Advance Wars", "Emerald"]);
+    let (mut s, motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    let core = s.core_rumble().expect("a seated cart has a core").clone();
+    core.set(0, STRONG, 20_000);
+    step(&mut s, &mut now);
+    assert_eq!(motor.last(), 20_000);
+
+    core.set(0, STRONG, 0);
+    let gap = s.app().now();
+    while s.app().now() + 2 * FRAME_MS < gap + slot::session::RUMBLE_HOLD_MS {
+        step(&mut s, &mut now);
+        let held = s.app().now() - gap;
+        assert_eq!(motor.last(), 20_000, "a gap of {held} ms stopped the motor");
+    }
+    core.set(0, STRONG, 9_000);
+    step(&mut s, &mut now);
+    assert_eq!(motor.last(), 9_000, "the next pulse did not take over");
+
+    core.set(0, STRONG, 0);
+    let gap = s.app().now();
+    while s.app().now() < gap + slot::session::RUMBLE_HOLD_MS + FRAME_MS {
+        step(&mut s, &mut now);
+    }
+    assert_eq!(
+        motor.last(),
+        0,
+        "the motor kept running after the game stopped asking"
+    );
+}

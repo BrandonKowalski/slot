@@ -1,4 +1,5 @@
 use slot_gfx::OUT_W;
+use slot_store::GbPalette;
 
 use crate::hud::{HUD_INK, PLATE_H};
 use crate::icon::{haloed, HALO_PX};
@@ -16,10 +17,16 @@ pub enum Toast {
     BiosMismatch,
     ColourOn,
     ColourOff,
+    ShaderOff,
+    ShaderLcd3x,
+    ShaderGrid,
+    ShaderDot,
+    ShaderSimpletex,
+    Palette(GbPalette),
 }
 
 impl Toast {
-    pub const ALL: [Toast; 9] = [
+    const FIXED: [Toast; 14] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
@@ -29,10 +36,25 @@ impl Toast {
         Toast::BiosMismatch,
         Toast::ColourOn,
         Toast::ColourOff,
+        Toast::ShaderOff,
+        Toast::ShaderLcd3x,
+        Toast::ShaderGrid,
+        Toast::ShaderDot,
+        Toast::ShaderSimpletex,
     ];
 
+    pub fn all() -> Vec<Toast> {
+        Self::FIXED
+            .into_iter()
+            .chain(GbPalette::all().map(Toast::Palette))
+            .collect()
+    }
+
     pub fn index(self) -> usize {
-        self as usize
+        match self {
+            Toast::Palette(p) => Self::FIXED.len() + p.index(),
+            fixed => Self::FIXED.iter().position(|t| *t == fixed).unwrap_or(0),
+        }
     }
 
     pub fn text(self) -> &'static str {
@@ -46,6 +68,12 @@ impl Toast {
             Toast::BiosMismatch => "BIOS does not match",
             Toast::ColourOn => "Correction On",
             Toast::ColourOff => "Correction Off",
+            Toast::ShaderOff => "Shader: Off",
+            Toast::ShaderLcd3x => "Shader: LCD3x",
+            Toast::ShaderGrid => "Shader: Grid",
+            Toast::ShaderDot => "Shader: Dot",
+            Toast::ShaderSimpletex => "Shader: Simpletex",
+            Toast::Palette(p) => p.label(),
         }
     }
 }
@@ -163,7 +191,7 @@ mod tests {
     #[test]
     fn every_toast_is_set_at_full_size() {
         let font = text::label_font().expect("label font");
-        for t in Toast::ALL {
+        for t in Toast::all() {
             let layout = text::fit(font, t.text(), TOAST_W as f32, 1, TOAST_PX, TOAST_MIN_PX);
             assert_eq!(
                 layout.px,

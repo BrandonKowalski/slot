@@ -6,7 +6,7 @@ use common::{
 };
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
-use slot_store::{read_slot_state, write_slot_state, SlotState};
+use slot_store::{read_slot_state, write_slot_state, Shader, SlotState};
 use slot_ui::{
     edge, Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, MENU_PAD, OUT_W, QUICK_EDGE,
     QUICK_PITCH, QUICK_TOP,
@@ -43,8 +43,15 @@ fn press(a: &mut App, btn: Btn) {
 
 fn open_at(a: &mut App, row: QuickRow) {
     a.apply(Action::QuickMenu);
-    for _ in 0..row.index() {
+    let parent = row.parent();
+    for _ in 0..parent.unwrap_or(row).position() {
         press(a, Btn::Down);
+    }
+    if parent.is_some() {
+        press(a, Btn::A);
+        for _ in 0..row.position() {
+            press(a, Btn::Down);
+        }
     }
     assert_eq!(a.quick_menu(), Some(row), "the bar never reached {row:?}");
 }
@@ -53,13 +60,13 @@ fn open_at(a: &mut App, row: QuickRow) {
 fn menu_opens_the_quick_menu_with_its_top_row_selected_every_time() {
     let (_d, mut a, _) = on_carousel();
     a.apply(Action::QuickMenu);
-    assert_eq!(a.quick_menu(), Some(QuickRow::FastForward));
+    assert_eq!(a.quick_menu(), Some(QuickRow::MAIN[0]));
     press(&mut a, Btn::Down);
     a.apply(Action::QuickMenu);
     a.apply(Action::QuickMenu);
     assert_eq!(
         a.quick_menu(),
-        Some(QuickRow::FastForward),
+        Some(QuickRow::MAIN[0]),
         "the menu opened where it was last left"
     );
 }
@@ -109,13 +116,11 @@ fn up_and_down_move_the_bar_and_wrap_at_the_ends() {
         "up from the top did not wrap to the bottom"
     );
     for want in [
-        QuickRow::FastForward,
-        QuickRow::FastForwardSound,
-        QuickRow::ColourCorrection,
-        QuickRow::Rumble,
+        QuickRow::Screen,
+        QuickRow::Game,
         QuickRow::DateTime,
         QuickRow::About,
-        QuickRow::FastForward,
+        QuickRow::Screen,
     ] {
         press(&mut a, Btn::Down);
         assert_eq!(a.quick_menu(), Some(want));
@@ -123,19 +128,19 @@ fn up_and_down_move_the_bar_and_wrap_at_the_ends() {
 }
 
 #[test]
-fn fast_forward_steps_through_its_speeds_and_saves_each_one() {
+fn fast_forward_steps_through_its_speeds_wraps_at_both_ends_and_saves_each_one() {
     let (d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::FastForward);
     for (btn, want) in [
         (Btn::Left, 4),
         (Btn::Left, 3),
         (Btn::Left, 2),
-        (Btn::Left, 2),
+        (Btn::Left, 6),
+        (Btn::Right, 2),
         (Btn::Right, 3),
         (Btn::Right, 4),
         (Btn::Right, 6),
-        (Btn::Right, 6),
-        (Btn::Left, 4),
+        (Btn::Right, 2),
     ] {
         press(&mut a, btn);
         assert_eq!(a.ff_speed(), want, "{btn:?}");
@@ -163,6 +168,7 @@ fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     );
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, true));
+    press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Right);
@@ -203,6 +209,87 @@ fn colour_correction_flips_on_either_arrow_and_saves() {
             Some(QuickValue::flag(want))
         );
     }
+}
+
+#[test]
+fn the_game_page_flips_eject_save_turbo_and_rewind_and_saves_each() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::Rewind);
+    let card = |d: &TempDir| {
+        let s = read_slot_state(d.path());
+        (s.eject_save, s.turbo, s.rewind)
+    };
+    assert_eq!(card(&d), (true, true, true));
+    press(&mut a, Btn::Right);
+    assert_eq!(card(&d), (true, true, false));
+    assert!(!a.may_rewind(), "rewind still offered with it off");
+    press(&mut a, Btn::Down);
+    press(&mut a, Btn::Left);
+    assert_eq!(card(&d), (true, false, false));
+    assert!(!a.turbo());
+    press(&mut a, Btn::Down);
+    press(&mut a, Btn::Down);
+    press(&mut a, Btn::Right);
+    assert_eq!(card(&d), (false, false, false));
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Game));
+}
+
+#[test]
+fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
+    let (_d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::Screen);
+    press(&mut a, Btn::A);
+    assert_eq!(a.quick_menu(), Some(QuickRow::GbaShader));
+    for want in [
+        QuickRow::GbShader,
+        QuickRow::ColourCorrection,
+        QuickRow::GbPalettes,
+        QuickRow::GbaShader,
+    ] {
+        press(&mut a, Btn::Down);
+        assert_eq!(
+            a.quick_menu(),
+            Some(want),
+            "the page did not wrap on itself"
+        );
+    }
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), None);
+}
+
+#[test]
+fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::GbaShader);
+    assert_eq!(a.quick_value(QuickRow::GbaShader), Some(QuickValue::Grid));
+    assert_eq!(
+        a.quick_value(QuickRow::GbShader),
+        Some(QuickValue::Simpletex)
+    );
+    for (btn, want, shown) in [
+        (Btn::Right, Shader::Dot, QuickValue::Dot),
+        (Btn::Right, Shader::Off, QuickValue::Off),
+        (Btn::Left, Shader::Dot, QuickValue::Dot),
+        (Btn::Left, Shader::Grid, QuickValue::Grid),
+        (Btn::Left, Shader::Lcd3x, QuickValue::Lcd3x),
+        (Btn::Left, Shader::Off, QuickValue::Off),
+    ] {
+        press(&mut a, btn);
+        assert_eq!(a.quick_value(QuickRow::GbaShader), Some(shown), "{btn:?}");
+        assert_eq!(
+            read_slot_state(d.path()).shader_gba,
+            want,
+            "{btn:?} never reached the card"
+        );
+    }
+    assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Simpletex);
+    press(&mut a, Btn::Down);
+    press(&mut a, Btn::Left);
+    assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Grid);
+    assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Off);
 }
 
 #[test]
@@ -406,7 +493,7 @@ fn the_legend_says_change_on_a_value_row_and_open_on_a_row_that_opens() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
     a.apply(Action::QuickMenu);
-    for row in QuickRow::ALL {
+    for row in QuickRow::MAIN {
         assert_eq!(a.quick_menu(), Some(row));
         let out = frame(&a);
         assert!(drawn(&out, 400), "no B BACK on {row:?}");
@@ -420,7 +507,7 @@ fn the_legend_says_change_on_a_value_row_and_open_on_a_row_that_opens() {
 fn the_arrows_stand_only_around_the_selected_rows_value() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
-    a.apply(Action::QuickMenu);
+    open_at(&mut a, QuickRow::FastForward);
     let out = frame(&a);
     assert!(
         drawn(&out, 300) && drawn(&out, 301),
@@ -438,9 +525,11 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
         drawn(&out, value(QuickValue::On, false)),
         "rumble's ON is not grey"
     );
+    press(&mut a, Btn::B);
+    let out = frame(&a);
     assert!(drawn(&out, 500), "the date and time is not grey");
 
-    for _ in 0..QuickRow::DateTime.index() {
+    for _ in QuickRow::Game.position()..QuickRow::DateTime.position() {
         press(&mut a, Btn::Down);
     }
     let out = frame(&a);
@@ -449,10 +538,6 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
         "arrows on a row that opens"
     );
     assert!(drawn(&out, 501), "the date and time in hand is not lit");
-    assert!(
-        drawn(&out, value(QuickValue::Speed6, false)),
-        "6× stayed lit after the bar left it"
-    );
 }
 
 #[test]
@@ -460,7 +545,7 @@ fn the_bar_runs_edge_to_edge_behind_the_selected_row() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
     a.apply(Action::QuickMenu);
-    for row in QuickRow::ALL {
+    for row in QuickRow::MAIN {
         let bars: Vec<_> = frame(&a)
             .into_iter()
             .filter_map(|d| match d {
@@ -468,7 +553,7 @@ fn the_bar_runs_edge_to_edge_behind_the_selected_row() {
                 _ => None,
             })
             .collect();
-        let top = QUICK_TOP + QUICK_PITCH * row.index() as f32;
+        let top = QUICK_TOP + QUICK_PITCH * row.position() as f32;
         assert_eq!(
             bars,
             vec![[0.0, top + 4.0, OUT_W as f32, QUICK_PITCH - 8.0]],
@@ -482,10 +567,10 @@ fn the_bar_runs_edge_to_edge_behind_the_selected_row() {
 fn labels_start_and_values_end_thirty_two_pixels_in() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
-    a.apply(Action::QuickMenu);
+    open_at(&mut a, QuickRow::FastForward);
     let out = frame(&a);
     let right = OUT_W as f32 - QUICK_EDGE;
-    for row in QuickRow::ALL {
+    for row in QuickRow::GAME {
         let [x, ..] = placed(&out, 100 + row.index()).expect("a label was not drawn");
         assert_eq!(x + MENU_PAD as f32, QUICK_EDGE, "{row:?}'s label");
     }
@@ -519,4 +604,23 @@ fn only_the_clock_from_the_menu_offers_b_back() {
         !drawn(&out, 400),
         "the first boot clock offers a way back it does not have"
     );
+}
+
+#[test]
+fn gb_palettes_flips_on_either_arrow_and_saves() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::GbPalettes);
+    assert_eq!(a.quick_value(QuickRow::GbPalettes), Some(QuickValue::Off));
+    for (btn, want) in [(Btn::Right, true), (Btn::Left, false), (Btn::Left, true)] {
+        press(&mut a, btn);
+        assert_eq!(
+            read_slot_state(d.path()).gb_palettes,
+            want,
+            "{btn:?} never reached the card"
+        );
+        assert_eq!(
+            a.quick_value(QuickRow::GbPalettes),
+            Some(QuickValue::flag(want))
+        );
+    }
 }

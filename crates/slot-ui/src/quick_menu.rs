@@ -8,48 +8,135 @@ use crate::text;
 pub enum QuickRow {
     FastForward,
     FastForwardSound,
-    ColourCorrection,
+    Screen,
     Rumble,
     DateTime,
     About,
+    GbaShader,
+    GbShader,
+    ColourCorrection,
+    Game,
+    EjectSave,
+    Turbo,
+    Rewind,
+    GbPalettes,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 6] = [
+    pub const ALL: [QuickRow; 14] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
-        QuickRow::ColourCorrection,
+        QuickRow::Screen,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::About,
+        QuickRow::GbaShader,
+        QuickRow::GbShader,
+        QuickRow::ColourCorrection,
+        QuickRow::Game,
+        QuickRow::EjectSave,
+        QuickRow::Turbo,
+        QuickRow::Rewind,
+        QuickRow::GbPalettes,
+    ];
+
+    pub const MAIN: [QuickRow; 4] = [
+        QuickRow::Screen,
+        QuickRow::Game,
+        QuickRow::DateTime,
+        QuickRow::About,
+    ];
+
+    pub const SCREEN: [QuickRow; 4] = [
+        QuickRow::GbaShader,
+        QuickRow::GbShader,
+        QuickRow::ColourCorrection,
+        QuickRow::GbPalettes,
+    ];
+
+    pub const GAME: [QuickRow; 6] = [
+        QuickRow::FastForward,
+        QuickRow::FastForwardSound,
+        QuickRow::Rewind,
+        QuickRow::Turbo,
+        QuickRow::Rumble,
+        QuickRow::EjectSave,
     ];
 
     pub fn index(self) -> usize {
         self as usize
     }
 
+    pub fn page(self) -> &'static [QuickRow] {
+        match self {
+            QuickRow::GbaShader
+            | QuickRow::GbShader
+            | QuickRow::ColourCorrection
+            | QuickRow::GbPalettes => &QuickRow::SCREEN,
+            QuickRow::FastForward
+            | QuickRow::FastForwardSound
+            | QuickRow::Rewind
+            | QuickRow::Turbo
+            | QuickRow::Rumble
+            | QuickRow::EjectSave => &QuickRow::GAME,
+            _ => &QuickRow::MAIN,
+        }
+    }
+
+    pub fn parent(self) -> Option<QuickRow> {
+        match self.page()[0] {
+            QuickRow::GbaShader => Some(QuickRow::Screen),
+            QuickRow::FastForward => Some(QuickRow::Game),
+            _ => None,
+        }
+    }
+
+    pub fn child(self) -> Option<QuickRow> {
+        match self {
+            QuickRow::Screen => Some(QuickRow::SCREEN[0]),
+            QuickRow::Game => Some(QuickRow::GAME[0]),
+            _ => None,
+        }
+    }
+
+    pub fn position(self) -> usize {
+        self.page().iter().position(|r| *r == self).unwrap_or(0)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             QuickRow::FastForward => "Fast Forward",
             QuickRow::FastForwardSound => "Fast Forward Sound",
-            QuickRow::ColourCorrection => "Colour Correction",
+            QuickRow::Screen => "Screen",
             QuickRow::Rumble => "Rumble",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
+            QuickRow::GbaShader => "GBA Shader",
+            QuickRow::GbShader => "GB / GBC Shader",
+            QuickRow::ColourCorrection => "Color Correction",
+            QuickRow::Game => "Gameplay",
+            QuickRow::EjectSave => "Auto Save on Eject",
+            QuickRow::Turbo => "Turbo Buttons",
+            QuickRow::Rewind => "Rewind",
+            QuickRow::GbPalettes => "GB Palettes",
         }
     }
 
     pub fn opens(self) -> bool {
-        matches!(self, QuickRow::DateTime | QuickRow::About)
+        matches!(
+            self,
+            QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game
+        )
     }
 
     pub fn up(self) -> QuickRow {
-        let n = QuickRow::ALL.len();
-        QuickRow::ALL[(self.index() + n - 1) % n]
+        let page = self.page();
+        page[(self.position() + page.len() - 1) % page.len()]
     }
 
     pub fn down(self) -> QuickRow {
-        QuickRow::ALL[(self.index() + 1) % QuickRow::ALL.len()]
+        let page = self.page();
+        page[(self.position() + 1) % page.len()]
     }
 }
 
@@ -61,16 +148,24 @@ pub enum QuickValue {
     Speed6,
     On,
     Off,
+    Lcd3x,
+    Grid,
+    Dot,
+    Simpletex,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 6] = [
+    pub const ALL: [QuickValue; 10] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
         QuickValue::Speed6,
         QuickValue::On,
         QuickValue::Off,
+        QuickValue::Lcd3x,
+        QuickValue::Grid,
+        QuickValue::Dot,
+        QuickValue::Simpletex,
     ];
 
     pub fn index(self) -> usize {
@@ -85,6 +180,10 @@ impl QuickValue {
             QuickValue::Speed6 => "6×",
             QuickValue::On => "On",
             QuickValue::Off => "Off",
+            QuickValue::Lcd3x => "LCD3x",
+            QuickValue::Grid => "Grid",
+            QuickValue::Dot => "Dot",
+            QuickValue::Simpletex => "Simpletex",
         }
     }
 
@@ -108,13 +207,14 @@ impl QuickValue {
 }
 
 pub const QUICK_PITCH: f32 = 52.0;
-pub const QUICK_TOP: f32 = (OUT_H as f32 - QUICK_PITCH * QuickRow::ALL.len() as f32) / 2.0;
+pub const QUICK_TOP: f32 = (OUT_H as f32 - QUICK_PITCH * QuickRow::MAIN.len() as f32) / 2.0;
 pub const QUICK_EDGE: f32 = 32.0;
 const BAR_INSET: f32 = 4.0;
 const TYPE_DROP: f32 = 4.0;
 const CARET_GAP: f32 = 14.0;
 const CARET_PX: f32 = 24.0;
 const LEGEND_Y: f32 = 427.0;
+pub const QUICK_SPLIT: f32 = LEGEND_Y - 2.0;
 const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
 
 pub fn quick_label_face(row: QuickRow) -> UndoFace {
@@ -221,7 +321,7 @@ impl QuickMenu<'_> {
             return;
         };
         let (right, pad) = (OUT_W as f32 - QUICK_EDGE, MENU_PAD as f32);
-        for row in QuickRow::ALL {
+        for &row in self.row.page() {
             let y = row_top(row) + TYPE_DROP;
             let lit = row == self.row;
             if let Some(&(tex, w, h)) = faces.labels.get(row.index()) {
@@ -256,7 +356,8 @@ impl QuickMenu<'_> {
 }
 
 fn row_top(row: QuickRow) -> f32 {
-    QUICK_TOP + QUICK_PITCH * row.index() as f32
+    let top = (OUT_H as f32 - QUICK_PITCH * row.page().len() as f32) / 2.0;
+    top + QUICK_PITCH * row.position() as f32
 }
 
 fn push(out: &mut Vec<Draw>, tex: TexId, x: f32, y: f32, w: u32, h: u32) {

@@ -43,8 +43,11 @@ fn a_select_held_past_the_window_reaches_the_game_then() {
 fn a_game_button_under_select_hands_select_over_first() {
     let mut g = Gestures::new();
     assert!(g.feed(Down(Select), 0).is_empty());
-    assert_eq!(g.feed(Down(A), 100), vec![GbaDown(Select), GbaDown(A)]);
-    assert_eq!(g.feed(Up(A), 200), vec![GbaUp(A)]);
+    assert_eq!(
+        g.feed(Down(Start), 100),
+        vec![GbaDown(Select), GbaDown(Start)]
+    );
+    assert_eq!(g.feed(Up(Start), 200), vec![GbaUp(Start)]);
     assert!(
         g.tick(SELECT_CHORD_MS).is_empty(),
         "SELECT was pressed twice"
@@ -465,4 +468,51 @@ fn y_on_its_own_is_untouched_by_the_colour_chord() {
     let mut g = Gestures::new();
     assert_eq!(g.feed(Down(Y), 0), vec![GbaDown(Y)]);
     assert_eq!(g.feed(Up(Y), 40), vec![GbaUp(Y)]);
+}
+
+#[test]
+fn select_and_l2_or_r2_steps_the_palette_without_rewinding_or_fast_forwarding() {
+    let mut g = Gestures::new();
+    assert!(g.feed(Down(Select), 0).is_empty());
+    assert_eq!(g.feed(Down(R2), 10), vec![PaletteNext]);
+    assert!(g.feed(Up(R2), 40).is_empty());
+    assert_eq!(g.feed(Down(L2), 60), vec![PalettePrev]);
+    assert!(g.feed(Up(L2), 90).is_empty());
+    assert!(g.feed(Up(Select), 200).is_empty());
+}
+
+#[test]
+fn l2_and_r2_on_their_own_still_rewind_and_fast_forward() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(L2), 0), vec![RewindStart]);
+    assert_eq!(g.feed(Up(L2), 40), vec![RewindStop]);
+    assert!(!g.feed(Down(R2), 60).contains(&PaletteNext));
+    assert!(!g.feed(Up(R2), 90).contains(&PaletteNext));
+}
+
+#[test]
+fn select_and_a_or_b_steps_the_shader_and_costs_the_game_nothing() {
+    let mut g = Gestures::new();
+    assert!(g.feed(Down(Select), 0).is_empty());
+    assert_eq!(g.feed(Down(A), 10), vec![ShaderNext]);
+    assert!(g.feed(Up(A), 40).is_empty());
+    assert_eq!(g.feed(Down(B), 60), vec![ShaderPrev]);
+    assert!(g.feed(Up(B), 90).is_empty());
+    assert!(g.feed(Up(Select), 200).is_empty());
+}
+
+#[test]
+fn a_and_b_on_their_own_are_untouched_by_the_shader_chord() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(A), 0), vec![GbaDown(A)]);
+    assert_eq!(g.feed(Up(A), 40), vec![GbaUp(A)]);
+    assert_eq!(g.feed(Down(B), 60), vec![GbaDown(B)]);
+    assert_eq!(g.feed(Up(B), 90), vec![GbaUp(B)]);
+}
+
+#[test]
+fn x_under_select_reaches_the_game() {
+    let mut g = Gestures::new();
+    assert!(g.feed(Down(Select), 0).is_empty());
+    assert_eq!(g.feed(Down(X), 10), vec![GbaDown(Select), GbaDown(X)]);
 }

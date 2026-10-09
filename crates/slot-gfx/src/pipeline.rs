@@ -1,4 +1,4 @@
-use crate::lcd3x::mask_texture_rgba8;
+use crate::lcd3x::ScreenEffect;
 use crate::power::{screen_brightness, screen_rect};
 use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
@@ -13,10 +13,18 @@ pub const WHOLE_TEXTURE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 pub struct GamePass {
     prog: gl::types::GLuint,
     game: gl::types::GLuint,
-    mask: gl::types::GLuint,
     u_rect: gl::types::GLint,
     u_bright: gl::types::GLint,
     u_uv: gl::types::GLint,
+    u_mode: gl::types::GLint,
+    u_paper_size: gl::types::GLint,
+    u_fbo: gl::types::GLint,
+    fbo_scale: [f32; 2],
+    u_pic: gl::types::GLint,
+    pic: [f32; 4],
+    paper: gl::types::GLuint,
+    paper_size: f32,
+    effect: ScreenEffect,
     power: f32,
     src: [f32; 4],
 }
@@ -25,19 +33,11 @@ impl GamePass {
     pub fn new() -> Result<Self, GfxError> {
         let prog = crate::shaders::program(RECT_VERT, GAME_FRAG)?;
         let game = crate::gl::texture(SRC_W, SRC_H, gl::NEAREST, gl::CLAMP_TO_EDGE, gl::BGRA, None);
-        let mask = crate::gl::texture(
-            3,
-            3,
-            gl::NEAREST,
-            gl::REPEAT,
-            gl::RGBA,
-            Some(&mask_texture_rgba8()),
-        );
-        let (u_rect, u_bright, u_uv);
+        let paper = crate::gl::texture(1, 1, gl::NEAREST, gl::REPEAT, gl::RGBA, Some(&[255; 4]));
+        let (u_rect, u_bright, u_uv, u_mode, u_paper_size, u_pic, u_fbo);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_game"), 0);
-            gl::Uniform1i(crate::gl::uniform_location(prog, "u_mask"), 1);
             gl::Uniform2f(
                 crate::gl::uniform_location(prog, "u_src"),
                 SRC_W as f32,
@@ -51,14 +51,27 @@ impl GamePass {
             u_rect = crate::gl::uniform_location(prog, "u_rect");
             u_bright = crate::gl::uniform_location(prog, "u_bright");
             u_uv = crate::gl::uniform_location(prog, "u_uv");
+            gl::Uniform1i(crate::gl::uniform_location(prog, "u_paper"), 1);
+            u_mode = crate::gl::uniform_location(prog, "u_mode");
+            u_paper_size = crate::gl::uniform_location(prog, "u_paper_size");
+            u_fbo = crate::gl::uniform_location(prog, "u_fbo");
+            u_pic = crate::gl::uniform_location(prog, "u_pic");
         }
         Ok(GamePass {
             prog,
             game,
-            mask,
             u_rect,
             u_bright,
             u_uv,
+            u_mode,
+            u_paper_size,
+            u_fbo,
+            fbo_scale: [1.0, 1.0],
+            u_pic,
+            pic: WHOLE_TEXTURE,
+            paper,
+            paper_size: 1.0,
+            effect: ScreenEffect::Lcd3x,
             power: 1.0,
             src: WHOLE_TEXTURE,
         })
@@ -66,6 +79,25 @@ impl GamePass {
 
     pub fn set_power(&mut self, t: f32) {
         self.power = t.clamp(0.0, 1.0);
+    }
+
+    pub fn set_picture(&mut self, rect: [f32; 4]) {
+        self.pic = rect;
+    }
+
+    pub fn set_fbo_scale(&mut self, x: f32, y: f32) {
+        self.fbo_scale = [x, y];
+    }
+
+    pub fn set_effect(&mut self, effect: ScreenEffect) {
+        self.effect = effect;
+    }
+
+    pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
+        let tex = crate::gl::texture(size, size, gl::NEAREST, gl::REPEAT, gl::RGBA, Some(rgba));
+        unsafe { gl::DeleteTextures(1, &self.paper) };
+        self.paper = tex;
+        self.paper_size = size as f32;
     }
 
     pub fn set_source_rect(&mut self, rect: [f32; 4]) {
@@ -94,7 +126,11 @@ impl GamePass {
     }
 
     pub fn draw(&self, quad: &Quad) {
-        self.draw_source(self.game, quad, self.src);
+        let src = match self.effect {
+            ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
+            _ => self.src,
+        };
+        self.draw_source(self.game, quad, src);
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {
@@ -108,21 +144,47 @@ impl GamePass {
             gl::Uniform4f(self.u_rect, x, y, w, h);
             gl::Uniform4f(self.u_uv, src[0], src[1], src[2], src[3]);
             gl::Uniform1f(self.u_bright, screen_brightness(self.power));
+            gl::Uniform1f(self.u_mode, self.effect.mode());
+            gl::Uniform1f(self.u_paper_size, self.paper_size);
+            gl::Uniform2f(self.u_fbo, self.fbo_scale[0], self.fbo_scale[1]);
+            gl::Uniform4f(
+                self.u_pic,
+                self.pic[0],
+                self.pic[1],
+                self.pic[2],
+                self.pic[3],
+            );
+            gl::ActiveTexture(gl::TEXTURE1);
+            gl::BindTexture(gl::TEXTURE_2D, self.paper);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, tex);
-            gl::ActiveTexture(gl::TEXTURE1);
-            gl::BindTexture(gl::TEXTURE_2D, self.mask);
-            gl::ActiveTexture(gl::TEXTURE0);
         }
         quad.draw();
     }
+}
+
+fn whole_scale_source(src: [f32; 4], fbo: [f32; 2]) -> [f32; 4] {
+    let (x, w) = whole_scale(src[0], src[2], SRC_W as f32, OUT_W as f32 * fbo[0]);
+    let (y, h) = whole_scale(src[1], src[3], SRC_H as f32, OUT_H as f32 * fbo[1]);
+    [x, y, w, h]
+}
+
+fn whole_scale(at: f32, len: f32, texels: f32, out: f32) -> (f32, f32) {
+    let shown = len * texels;
+    let scale = (out / shown).ceil();
+    let trim = scale * shown - out;
+    if trim >= 0.1 * shown {
+        return (at, len);
+    }
+    let top = (trim / 2.0).floor();
+    (at + top / scale / texels, out / scale / texels)
 }
 
 impl Drop for GamePass {
     fn drop(&mut self) {
         unsafe {
             gl::DeleteTextures(1, &self.game);
-            gl::DeleteTextures(1, &self.mask);
+            gl::DeleteTextures(1, &self.paper);
             gl::DeleteProgram(self.prog);
         }
     }

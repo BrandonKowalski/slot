@@ -164,6 +164,7 @@ a.tab{text-decoration:none}
 .admonition p{margin:0;color:var(--muted);line-height:1.65}
 .admonition p + p{margin-top:10px}
 .admonition .admonition-title{color:var(--warn);font-weight:700}
+.install-steps .admonition{margin:14px 0 0}
 .install-note{
   max-width:64ch;
   margin:4px 0 0;
@@ -399,6 +400,13 @@ kbd{
 .faq .qa:last-child{margin-bottom:0}
 .faq dt{font-weight:600;font-size:20px;color:var(--ink);margin-bottom:7px}
 .faq dd{margin:0;font-size:19px;line-height:1.7;color:var(--muted)}
+.devices{border-collapse:collapse;font-size:17px;line-height:1.5}
+.devices th,.devices td{text-align:left;vertical-align:top;padding:8px 32px 8px 0;border-bottom:1px solid var(--rule)}
+.devices th{color:var(--ink);font-weight:600}
+.devices + p,.devices + p + p{margin:14px 0 0}
+.devices td:first-child{color:var(--ink);white-space:nowrap}
+.devices td.yes{color:var(--ink);font-weight:600}
+@media (max-width:560px){.devices{font-size:15px}.devices th,.devices td{padding-right:14px}}
 
 .endnote{
   padding:clamp(26px,4vh,52px) 0;

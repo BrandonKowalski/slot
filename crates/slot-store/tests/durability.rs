@@ -2,8 +2,8 @@ mod common;
 
 use common::tmp_root;
 use slot_store::{
-    atomic_write, read_slot_state, write_slot_state, Platform, SlotState, FF_SPEEDS,
-    FF_SPEED_DEFAULT,
+    atomic_write, read_slot_state, write_slot_state, GbPalette, Platform, Shader, SlotState,
+    FF_SPEEDS, FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -165,6 +165,8 @@ fn a_first_boot_rumbles_and_fast_forwards_silently_at_the_default() {
     assert_eq!(s.ff_speed, FF_SPEED_DEFAULT);
     assert!(!s.ff_sound, "boots with fast forward audible");
     assert!(!s.colour_correction, "boots with the picture tinted");
+    assert_eq!(s.shader_gba, Shader::Grid);
+    assert_eq!(s.shader_gb, Shader::Simpletex);
 }
 
 #[test]
@@ -192,6 +194,13 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
             colour_correction: false,
+            shader_gba: Shader::Grid,
+            shader_gb: Shader::Simpletex,
+            eject_save: true,
+            turbo: true,
+            rewind: true,
+            gb_palettes: false,
+            gb_palette: GbPalette::DEFAULT,
         }
     );
 }
@@ -205,6 +214,13 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         ff_speed: 2,
         ff_sound: true,
         colour_correction: true,
+        shader_gba: Shader::Dot,
+        shader_gb: Shader::Off,
+        eject_save: false,
+        turbo: false,
+        rewind: false,
+        gb_palettes: true,
+        gb_palette: GbPalette::parse("GBC Dark Green →A").unwrap(),
         ..SlotState::default()
     };
     write_slot_state(d.path(), &s).unwrap();
@@ -215,6 +231,13 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "ff_speed=2",
         "ff_sound=1",
         "colour_correction=1",
+        "shader_gba=dot",
+        "shader_gb=off",
+        "eject_save=0",
+        "turbo=0",
+        "rewind=0",
+        "gb_palettes=1",
+        "gb_palette=GBC Dark Green →A",
     ] {
         assert!(text.lines().any(|l| l == line), "no {line} in {text:?}");
     }
@@ -355,5 +378,27 @@ fn an_offset_outside_the_range_of_real_zones_reads_as_default() {
     ] {
         std::fs::write(d.path().join("Config/slot.state"), body).unwrap();
         assert_eq!(read_slot_state(d.path()), SlotState::default(), "{body}");
+    }
+}
+
+#[test]
+fn a_missing_or_unknown_palette_falls_back_to_dmg_green() {
+    let d = tmp_root();
+    let known = "cart=Emerald\nbrightness=3\nblue_light=1\nvolume=40\nmuted=0\nclock_set=1\nutc_offset_min=0\n";
+    for bad in [
+        "",
+        "gb_palette=\n",
+        "gb_palette=Purple\n",
+        "gb_palettes=2\ngb_palette=dmg green\n",
+    ] {
+        std::fs::write(d.path().join("Config/slot.state"), format!("{known}{bad}")).unwrap();
+        let s = read_slot_state(d.path());
+        assert_eq!(
+            s.cart.as_deref(),
+            Some("Emerald"),
+            "{bad:?} lost the other settings"
+        );
+        assert!(!s.gb_palettes, "{bad:?} turned palettes on");
+        assert_eq!(s.gb_palette, GbPalette::DEFAULT, "{bad:?}");
     }
 }

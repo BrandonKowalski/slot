@@ -3,6 +3,7 @@ mod alsa;
 mod host;
 mod ring;
 mod sfx;
+mod silence;
 mod sink;
 mod stub;
 pub mod volume;
@@ -12,6 +13,7 @@ pub use alsa::AlsaSink;
 pub use host::HostAudio;
 pub use ring::{ring_capacity, Ring};
 pub use sfx::Sfx;
+pub use silence::Silence;
 pub use sink::{AudioError, AudioSink};
 pub use stub::StubSink;
 

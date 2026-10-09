@@ -10,6 +10,10 @@ pub fn wallpaper_face(path: &Path) -> Option<Vec<u8>> {
     art::cover(path, OUT_W, OUT_H)
 }
 
+pub fn bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
+    art::cover(path, w, h)
+}
+
 pub fn draw_backdrop(face: Option<TexId>, out: &mut Vec<Draw>) {
     let Some(tex) = face else {
         return;

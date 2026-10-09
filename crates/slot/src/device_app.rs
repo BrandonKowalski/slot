@@ -86,6 +86,7 @@ pub fn run() {
     platform.trace_boot();
     let mut frontend = Frontend::boot(Box::new(platform));
     frontend.upload_faces(&mut compositor);
+    frontend.upload_bezel(&mut compositor, surface.window_size());
     let mut input = DeviceInput::open(&root);
     let card = root.clone();
     let _ = std::thread::Builder::new()

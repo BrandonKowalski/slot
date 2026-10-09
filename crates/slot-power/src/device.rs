@@ -261,6 +261,30 @@ extern "C" {
     fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
 }
 
+fn upload(node: &fs::File, id: i16) -> Option<i16> {
+    let mut effect = FfEffect {
+        kind: FF_RUMBLE,
+        id,
+        direction: 0,
+        trigger: FfTrigger::default(),
+        replay: FfReplay::default(),
+        _align: 0,
+        rumble: FfRumble {
+            strong: u16::MAX,
+            weak: u16::MAX,
+        },
+        _tail: [0; 28],
+    };
+    let rc = unsafe {
+        ioctl(
+            node.as_raw_fd(),
+            EVIOCSFF,
+            &mut effect as *mut FfEffect as *mut c_void,
+        )
+    };
+    (rc >= 0).then_some(effect.id)
+}
+
 impl Motor {
     fn open(sysfs: &Path) -> Option<Motor> {
         let name = rumble_node(sysfs)?;
@@ -270,39 +294,29 @@ impl Motor {
             .open(Path::new(DEV_INPUT).join(&name))
             .map_err(|e| eprintln!("slot: rumble {name}: {e}"))
             .ok()?;
-        let mut effect = FfEffect {
-            kind: FF_RUMBLE,
-            id: -1,
-            direction: 0,
-            trigger: FfTrigger::default(),
-            replay: FfReplay::default(),
-            _align: 0,
-            rumble: FfRumble {
-                strong: u16::MAX,
-                weak: u16::MAX,
-            },
-            _tail: [0; 28],
-        };
-        let rc = unsafe {
-            ioctl(
-                node.as_raw_fd(),
-                EVIOCSFF,
-                &mut effect as *mut FfEffect as *mut c_void,
-            )
-        };
-        if rc < 0 {
+        let Some(id) = upload(&node, -1) else {
             eprintln!("slot: rumble {name}: {}", std::io::Error::last_os_error());
             return None;
-        }
+        };
         Some(Motor {
             node,
             name,
-            id: effect.id,
+            id,
             running: false,
         })
     }
 
     fn play(&mut self, on: bool) {
+        if on {
+            match upload(&self.node, self.id).or_else(|| upload(&self.node, -1)) {
+                Some(id) => self.id = id,
+                None => eprintln!(
+                    "slot: rumble {}: {}",
+                    self.name,
+                    std::io::Error::last_os_error()
+                ),
+            }
+        }
         let ev = FfEvent {
             sec: 0,
             usec: 0,

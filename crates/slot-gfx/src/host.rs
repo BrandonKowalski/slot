@@ -27,6 +27,16 @@ fn err<E: std::fmt::Display>(e: E) -> GfxError {
     GfxError::Context(e.to_string())
 }
 
+fn size() -> (u32, u32) {
+    std::env::var("SLOT_WINDOW")
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        })
+        .unwrap_or((DEFAULT_W, DEFAULT_H))
+}
+
 fn bare() -> bool {
     std::env::var_os("SLOT_BARE").is_some_and(|v| v != "0")
 }
@@ -35,7 +45,7 @@ impl HostSurface {
     pub fn new(events: &ActiveEventLoop) -> Result<Self, GfxError> {
         let mut attrs = Window::default_attributes()
             .with_title("slot.")
-            .with_inner_size(winit::dpi::PhysicalSize::new(DEFAULT_W, DEFAULT_H));
+            .with_inner_size(winit::dpi::PhysicalSize::<u32>::from(size()));
         if bare() {
             attrs = attrs.with_decorations(false);
         }

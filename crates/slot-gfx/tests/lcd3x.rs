@@ -1,4 +1,4 @@
-use slot_gfx::{lcd3x_mask, mask_texture_rgba8};
+use slot_gfx::{lcd3x_factors, lcd3x_mask};
 use std::f64::consts::PI;
 
 const SRC_W: usize = 240;
@@ -28,7 +28,8 @@ fn render_reference(src: &[u8]) -> Vec<u8> {
         for ox in 0..OUT_W {
             for c in 0..3 {
                 let xfactor = (BRIGHTEN_LCD
-                    + (PI * (ox as f64 + 0.5) * 2.0 / 3.0 + c as f64 * 2.0 * PI / 3.0).sin())
+                    + (PI * (ox as f64 + 0.5) * 2.0 / 3.0 + PI * (0.5 - c as f64 * 2.0 / 3.0))
+                        .sin())
                     / (BRIGHTEN_LCD + 1.0);
                 let texel = src[((oy / SCALE) * SRC_W + ox / SCALE) * 3 + c] as f64;
                 out[(oy * OUT_W + ox) * 3 + c] = (texel * yfactor * xfactor).round() as u8;
@@ -70,40 +71,29 @@ fn mask_matches_reference_shader_exactly() {
 }
 
 #[test]
-fn mask_phase_puts_one_rgb_triad_per_source_pixel() {
+fn every_column_of_a_source_pixel_dims_exactly_one_channel() {
     for row in lcd3x_mask() {
-        let reds: Vec<f32> = row.iter().map(|cell| cell[0]).collect();
-        let brightest = reds.iter().cloned().fold(f32::MIN, f32::max);
-        assert_eq!(
-            reds.iter().filter(|v| **v == brightest).count(),
-            1,
-            "exactly one column should be the red-dominant one"
-        );
+        for cell in row {
+            let dimmest = cell.iter().cloned().fold(f32::MAX, f32::min);
+            assert_eq!(
+                cell.iter().filter(|v| **v == dimmest).count(),
+                1,
+                "{cell:?}"
+            );
+        }
     }
 }
 
 #[test]
-fn quantised_mask_texture_stays_within_one_lsb_of_the_reference() {
-    let src = pseudorandom_240x160();
-    let reference = render_reference(&src);
-    let tex = mask_texture_rgba8();
-    let mut mask = [[[0.0f32; 3]; 3]; 3];
-    for (y, row) in mask.iter_mut().enumerate() {
-        for (x, cell) in row.iter_mut().enumerate() {
-            for (c, v) in cell.iter_mut().enumerate() {
-                *v = tex[(y * 3 + x) * 4 + c] as f32 / 255.0;
+fn the_pattern_repeats_once_per_source_pixel_at_any_scale() {
+    for scale in [2.0f32, 2.6667, 3.0, 4.5] {
+        for i in 0..20 {
+            let x = i as f32 / scale;
+            let a = lcd3x_factors(x, 0.25);
+            let b = lcd3x_factors(x + 1.0, 0.25);
+            for c in 0..3 {
+                assert!((a[c] - b[c]).abs() < 1e-4, "scale {scale}");
             }
         }
     }
-    let optimized = render_with_mask(&src, &mask);
-    let worst = reference
-        .iter()
-        .zip(&optimized)
-        .map(|(a, b)| (*a as i32 - *b as i32).abs())
-        .max()
-        .unwrap();
-    assert!(
-        worst <= 1,
-        "max channel deviation {worst} from the 8 bit mask"
-    );
 }

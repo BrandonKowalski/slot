@@ -36,3 +36,20 @@ fn the_shake_is_symmetric_about_the_centred_rect() {
 fn no_shake_is_the_plain_centred_rect() {
     assert_eq!(blit_rect((1500, 1000), 0.0), slot_gfx::fit_rect(1500, 1000));
 }
+
+#[test]
+fn a_4_by_3_panel_fills_its_width_from_the_top() {
+    assert!(slot_gfx::framed((640, 480)));
+    assert!(!slot_gfx::framed((720, 480)));
+    assert_eq!(slot_gfx::screen_rect((640, 480)), (0, 0, 640, 427));
+    assert_eq!(blit_rect((640, 480), 0.0), (0, 53, 640, 427));
+    assert_eq!(blit_rect((1280, 960), 0.0), (0, 107, 1280, 853));
+}
+
+#[test]
+fn the_shelf_sits_at_the_bottom_and_a_game_rises_to_the_top() {
+    assert_eq!(slot_gfx::lifted_rect((640, 480), 0.0), (0, 53, 640, 427));
+    assert_eq!(slot_gfx::lifted_rect((640, 480), 1.0), (0, 0, 640, 427));
+    let mid = slot_gfx::lifted_rect((640, 480), 0.5).1;
+    assert!(0 < mid && mid < 53);
+}

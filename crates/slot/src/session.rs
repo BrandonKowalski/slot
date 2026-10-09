@@ -6,6 +6,8 @@ use slot_retro::Rumble;
 use slot_store::Platform;
 use slot_ui::FfState;
 
+pub const RUMBLE_HOLD_MS: Millis = 100;
+
 use crate::app::{App, Phase};
 use crate::audio::{open_sink, AudioSink, Ring, Sfx, GBA_HZ};
 use crate::core::open_core;
@@ -24,6 +26,7 @@ pub struct Session {
     rewinding: bool,
     fast: bool,
     motor: u16,
+    pulse: Option<(Millis, u16)>,
     reloading: bool,
     driven: bool,
 }
@@ -44,6 +47,7 @@ impl Session {
             rewinding: false,
             fast: false,
             motor: 0,
+            pulse: None,
             reloading: false,
             driven: false,
         }
@@ -218,6 +222,11 @@ impl Session {
                 None => eprintln!("slot: link: a transport arrived with no core to run it"),
             }
         }
+        if let Some(p) = self.app.take_gb_palette() {
+            if let Some(emu) = &self.emu {
+                emu.set_option("mgba_gb_colors", p.core_name());
+            }
+        }
         if let Some(on) = self.app.take_colour_correction() {
             if let Some((key, value)) = crate::core::colour_option(self.app.core(), on) {
                 if let Some(emu) = &self.emu {
@@ -257,8 +266,19 @@ impl Session {
     }
 
     fn sync_rumble(&mut self) {
-        let want = match &self.emu {
+        let asked = match &self.emu {
             Some(emu) if self.playing() && self.app.rumble_enabled() => emu.rumble().strength(),
+            _ => {
+                self.pulse = None;
+                return self.rumble(0);
+            }
+        };
+        let now = self.app.now();
+        if asked > 0 {
+            self.pulse = Some((now, asked));
+        }
+        let want = match self.pulse {
+            Some((at, strength)) if now.saturating_sub(at) < RUMBLE_HOLD_MS => strength,
             _ => 0,
         };
         self.rumble(want);
@@ -339,6 +359,8 @@ impl Session {
                 },
             );
             emu.set_rewinding(self.actually_rewinding());
+            emu.set_turbo(self.app.turbo());
+            emu.set_rewind_recording(self.app.records_rewind());
         }
     }
 
@@ -364,7 +386,14 @@ impl Session {
         }
         match self.emu.as_ref().map(EmuHandle::state) {
             Some(CoreState::Loading) => {}
-            Some(CoreState::Ready) => self.app.on_core_ready(),
+            Some(CoreState::Ready) => {
+                if let (true, Some(p), Some(emu)) =
+                    (self.app.palette_live(), self.app.gb_palette(), &self.emu)
+                {
+                    emu.set_option("mgba_gb_colors", p.core_name());
+                }
+                self.app.on_core_ready()
+            }
             Some(CoreState::Failed) | None => {
                 self.emu = None;
                 self.app.on_core_failed();
@@ -391,11 +420,14 @@ impl Session {
             .then(|| persist::read_resume(&self.root, platform, core, stem))
             .flatten();
         let player = self.app.link_player();
+        let palette = crate::core::palette_for(self.app.gb_palette(), platform, &rom, player);
+        self.app.set_palette_live(palette.is_some());
         let opened = open_core(
             &self.root,
             core,
             serial,
             self.app.colour_correction(),
+            palette,
             player,
         );
         self.app.set_named_core(opened.named);

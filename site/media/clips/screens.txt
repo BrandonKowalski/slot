@@ -1,0 +1,47 @@
+# cart:
+# state: gb_palettes=1
+# state: gb_palette=DMG Green
+# state: shader_gb=simpletex
+# Game Boy: start Catrap fresh, then SELECT + A steps the shaders (shaders) and SELECT + R2 the
+# palettes (palettes).
+wait 60
+tap r1
+wait 40
+tap right
+wait 40
+hold a 40
+wait 420
+rec shaders
+wait 60
+down select
+tap a
+up select
+wait 70
+down select
+tap a
+up select
+wait 70
+down select
+tap a
+up select
+wait 70
+cut
+rec palettes
+wait 30
+down select
+tap r2
+up select
+wait 60
+down select
+tap r2
+up select
+wait 60
+down select
+tap r2
+up select
+wait 60
+down select
+tap r2
+up select
+wait 70
+cut

@@ -1,3 +1,4 @@
+use slot_store::GbPalette;
 use slot_ui::{toast_face, toast_rect, Draw, Hud, HudKind, Toast, OUT_W, PLATE_H};
 
 #[test]
@@ -22,8 +23,9 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 
 #[test]
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
+    let all = Toast::all();
     assert_eq!(
-        Toast::ALL,
+        all[..14],
         [
             Toast::StateSaved,
             Toast::StateLoaded,
@@ -34,10 +36,20 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::BiosMismatch,
             Toast::ColourOn,
             Toast::ColourOff,
+            Toast::ShaderOff,
+            Toast::ShaderLcd3x,
+            Toast::ShaderGrid,
+            Toast::ShaderDot,
+            Toast::ShaderSimpletex,
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );
-    for (i, t) in Toast::ALL.iter().enumerate() {
+    assert_eq!(
+        all[14..],
+        GbPalette::all().map(Toast::Palette).collect::<Vec<_>>()[..],
+        "the palette banners do not follow the fixed ones in palette order"
+    );
+    for (i, t) in all.iter().enumerate() {
         assert_eq!(t.index(), i, "{t:?} does not answer to its own place");
         let f = toast_face(*t);
         assert!(
@@ -59,7 +71,7 @@ fn no_toast_is_shrunk_to_fit_its_box() {
         (first, last)
     };
     let (top, bottom) = rows(Toast::StateSaved);
-    for t in Toast::ALL {
+    for t in Toast::all() {
         let (a, b) = rows(t);
         assert!(
             a.abs_diff(top) <= 1 && b.abs_diff(bottom) <= 1,
@@ -148,4 +160,10 @@ fn a_toast_takes_the_band_from_the_bar() {
         both.len() < bars,
         "the bar is still drawn underneath the toast"
     );
+}
+
+#[test]
+fn a_palette_banner_names_the_palette_without_its_boot_combo() {
+    let p = GbPalette::parse("GBC Dark Green →A").unwrap();
+    assert_eq!(Toast::Palette(p).text(), "GBC Dark Green");
 }

@@ -38,6 +38,10 @@ pub enum Action {
     GameMenu,
     MuteToggle,
     ColourCorrectionToggle,
+    PaletteNext,
+    PalettePrev,
+    ShaderNext,
+    ShaderPrev,
     PowerPress,
     PowerTap,
     PowerHold,
@@ -61,7 +65,7 @@ enum Select {
 #[derive(Default)]
 pub struct Gestures {
     select: Select,
-    chord_held: u8,
+    chord_held: u16,
     menu_down_at: Option<Millis>,
     menu_last_tap: Option<Millis>,
     menu_eject_fired: bool,
@@ -157,6 +161,11 @@ impl Gestures {
     }
 
     fn down(&mut self, b: Btn, now: Millis) -> Vec<Action> {
+        if let (true, Some((bit, action))) = (self.chording(now), chord(b)) {
+            self.mark_chorded();
+            self.chord_held |= bit;
+            return vec![action];
+        }
         match b {
             Btn::Select => self.select_down(now),
             Btn::Menu => self.menu_down(now),
@@ -170,11 +179,6 @@ impl Gestures {
             Btn::L2 => self.rewind_start(),
             Btn::R2 => self.ff_down(now),
             _ => {
-                if let (true, Some((bit, action))) = (self.chording(now), chord(b)) {
-                    self.mark_chorded();
-                    self.chord_held |= bit;
-                    return vec![action];
-                }
                 let mut out = self.hand_over_select(now);
                 out.push(Action::GbaDown(b));
                 out
@@ -183,6 +187,12 @@ impl Gestures {
     }
 
     fn up(&mut self, b: Btn, now: Millis) -> Vec<Action> {
+        if let Some((bit, _)) = chord(b) {
+            if self.chord_held & bit != 0 {
+                self.chord_held &= !bit;
+                return Vec::new();
+            }
+        }
         match b {
             Btn::Select => self.select_up(now),
             Btn::Menu => self.menu_up(now),
@@ -191,15 +201,7 @@ impl Gestures {
             Btn::VolUp | Btn::VolDown => self.volume_release(b),
             Btn::L2 => self.rewind_stop(),
             Btn::R2 => self.ff_up(now),
-            _ => {
-                if let Some((bit, _)) = chord(b) {
-                    if self.chord_held & bit != 0 {
-                        self.chord_held &= !bit;
-                        return Vec::new();
-                    }
-                }
-                vec![Action::GbaUp(b)]
-            }
+            _ => vec![Action::GbaUp(b)],
         }
     }
 
@@ -404,7 +406,7 @@ impl Gestures {
     }
 }
 
-fn chord(b: Btn) -> Option<(u8, Action)> {
+fn chord(b: Btn) -> Option<(u16, Action)> {
     Some(match b {
         Btn::Up => (1, Action::BrightnessUp),
         Btn::Down => (2, Action::BrightnessDown),
@@ -413,6 +415,10 @@ fn chord(b: Btn) -> Option<(u8, Action)> {
         Btn::L1 => (16, Action::LoadState),
         Btn::R1 => (32, Action::SaveState),
         Btn::Y => (64, Action::ColourCorrectionToggle),
+        Btn::L2 => (128, Action::PalettePrev),
+        Btn::R2 => (256, Action::PaletteNext),
+        Btn::A => (512, Action::ShaderNext),
+        Btn::B => (1024, Action::ShaderPrev),
         _ => return None,
     })
 }

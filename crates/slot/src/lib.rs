@@ -1,8 +1,10 @@
 pub mod app;
 pub mod audio;
+pub mod bezel;
 pub mod bootlogo;
 pub mod build_info;
 pub mod cable;
+pub mod cart_faces;
 pub mod core;
 pub mod core_picker;
 pub mod drc;
@@ -11,6 +13,7 @@ pub mod face_builder;
 pub mod frames;
 pub mod frontend;
 pub mod input;
+pub mod label_cache;
 pub mod latency;
 pub mod link_art_builder;
 pub mod link_kind;
