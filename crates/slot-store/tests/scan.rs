@@ -30,7 +30,31 @@ fn a_png_in_labels_is_paired_to_its_rom_by_stem() {
         carts[1].label.is_some(),
         "a label in Labels/ was not picked up"
     );
-    assert_eq!(carts[1].title, "POKEMON EMER");
+    let mut emerald = carts[1].clone();
+    emerald.read_header();
+    assert_eq!(emerald.title, "POKEMON EMER");
+}
+
+#[test]
+fn a_label_pairs_with_its_rom_whatever_the_case_of_its_name() {
+    let d = tmp_root();
+    write_rom(&d, "GBA/Pokemon Emerald.gba", "POKEMON EMER");
+    write_png(&d, "GBA/pokemon emerald.PNG");
+    let carts = scan(d.path()).unwrap();
+    assert_eq!(
+        carts[0].label.as_deref(),
+        Some(d.path().join("Labels/GBA/pokemon emerald.PNG").as_path())
+    );
+}
+
+#[test]
+fn a_scan_reads_names_and_leaves_the_rom_headers_for_later() {
+    let d = tmp_root();
+    write_rom(&d, "GBA/Advance Wars.gba", "ADVANCEWARS");
+    let mut cart = scan(d.path()).unwrap().remove(0);
+    assert!(cart.title.is_empty());
+    cart.read_header();
+    assert_eq!(cart.title, "ADVANCEWARS");
 }
 
 #[test]
@@ -55,7 +79,9 @@ fn an_appledouble_sidecar_is_not_shelved_as_a_cart() {
 fn header_title_of_a_truncated_rom_is_none_not_a_panic() {
     let d = tmp_root();
     std::fs::write(d.path().join("Games/GBA/Tiny.gba"), [0u8; 8]).unwrap();
-    assert!(scan(d.path()).unwrap()[0].title.is_empty());
+    let mut cart = scan(d.path()).unwrap().remove(0);
+    cart.read_header();
+    assert!(cart.title.is_empty());
 }
 
 #[test]
@@ -64,7 +90,9 @@ fn a_header_title_that_is_not_text_is_dropped_rather_than_mangled() {
     let mut rom = vec![0u8; 0x100];
     rom[0xa0..0xac].copy_from_slice(&[0xffu8; 12]);
     std::fs::write(d.path().join("Games/GBA/Garbage.gba"), rom).unwrap();
-    assert!(scan(d.path()).unwrap()[0].title.is_empty());
+    let mut cart = scan(d.path()).unwrap().remove(0);
+    cart.read_header();
+    assert!(cart.title.is_empty());
 }
 
 #[test]

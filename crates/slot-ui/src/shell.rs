@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use slot_store::gb::Class;
 use slot_store::{Cart, Platform, ShellFinish};
@@ -86,9 +88,24 @@ pub fn shell_for(cart: &Cart) -> Shell {
         return shell(choice.colour, finish);
     }
     match cart.platform {
-        Platform::Gba => gba_shell_for(&cart.code),
+        Platform::Gba => gba_shell_for(&gba_code(cart)),
         Platform::Gb | Platform::Gbc => gb_shell_for(&cart.rom),
     }
+}
+
+fn gba_code(cart: &Cart) -> String {
+    if !cart.code.is_empty() {
+        return cart.code.clone();
+    }
+    static CODES: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
+    let mut codes = CODES
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    codes
+        .entry(cart.rom.clone())
+        .or_insert_with(|| slot_store::header_code(&cart.rom).unwrap_or_default())
+        .clone()
 }
 
 pub fn gba_shell_for(code: &str) -> Shell {

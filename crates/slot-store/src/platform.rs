@@ -1,6 +1,6 @@
 use std::path::Path;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Platform {
     #[default]
     Gba,

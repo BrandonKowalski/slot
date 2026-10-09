@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -56,7 +57,17 @@ pub fn fresh(root: &Path, cart: &Cart) -> bool {
 }
 
 pub fn stale<'a>(root: &Path, carts: impl Iterator<Item = &'a Cart>) -> Vec<Cart> {
-    carts.filter(|c| !fresh(root, c)).cloned().collect()
+    let mut cached = HashMap::new();
+    carts
+        .filter(|c| c.label.is_some())
+        .filter(|c| {
+            !cached
+                .entry(c.platform)
+                .or_insert_with(|| slot_store::listing(&root.join(DIR).join(c.platform.dir_name())))
+                .contains_key(&format!("{}.rgba", c.stem).to_lowercase())
+        })
+        .cloned()
+        .collect()
 }
 
 pub fn cache_path(root: &Path, cart: &Cart) -> PathBuf {

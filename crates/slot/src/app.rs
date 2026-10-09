@@ -2392,12 +2392,11 @@ impl App {
         if !self.on_shelf() {
             return;
         }
-        let Some(cart) = self
-            .shelf()
-            .carts
-            .get(self.shelf().index)
-            .map(|c| c.stem.clone())
-        else {
+        let at = self.shelf().index;
+        let Some(cart) = self.shelf_mut().carts.get_mut(at).map(|c| {
+            c.read_header();
+            c.stem.clone()
+        }) else {
             return;
         };
         self.play_held = None;
