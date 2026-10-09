@@ -6,7 +6,7 @@ use slot_retro::Rumble;
 use slot_store::Platform;
 use slot_ui::FfState;
 
-pub const RUMBLE_HOLD_MS: Millis = 100;
+pub const RUMBLE_MIN_MS: Millis = 100;
 
 use crate::app::{App, Phase};
 use crate::audio::{open_sink, AudioSink, Ring, Sfx, GBA_HZ};
@@ -274,12 +274,20 @@ impl Session {
             }
         };
         let now = self.app.now();
-        if asked > 0 {
-            self.pulse = Some((now, asked));
-        }
-        let want = match self.pulse {
-            Some((at, strength)) if now.saturating_sub(at) < RUMBLE_HOLD_MS => strength,
-            _ => 0,
+        let want = match (asked, self.pulse) {
+            (0, Some((at, strength))) if now.saturating_sub(at) < RUMBLE_MIN_MS => strength,
+            (0, _) => {
+                self.pulse = None;
+                0
+            }
+            (asked, Some((at, _))) => {
+                self.pulse = Some((at, asked));
+                asked
+            }
+            (asked, None) => {
+                self.pulse = Some((now, asked));
+                asked
+            }
         };
         self.rumble(want);
     }
