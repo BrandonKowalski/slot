@@ -195,16 +195,24 @@ struct Playback {
     alsa: Alsa,
     pcm: Option<*mut c_void>,
     rate: u32,
+    failing: bool,
 }
 
 fn play(ring: &Arc<Ring>, sample_rate: u32) -> Result<Playback, AudioError> {
     let alsa = Alsa::load()?;
-    let pcm = alsa.open_pcm(sample_rate)?;
+    let pcm = match alsa.open_pcm(sample_rate) {
+        Ok(pcm) => Some(pcm),
+        Err(e) => {
+            eprintln!("slot: audio: {e}, retrying");
+            None
+        }
+    };
     ring.reopen(sample_rate);
     Ok(Playback {
         alsa,
-        pcm: Some(pcm),
+        pcm,
         rate: sample_rate,
+        failing: pcm.is_none(),
     })
 }
 
@@ -222,10 +230,15 @@ impl Playback {
                     eprintln!("slot: audio released after silence");
                 }
                 (None, true) => match self.alsa.open_pcm(self.rate) {
-                    Ok(pcm) => self.pcm = Some(pcm),
+                    Ok(pcm) => {
+                        self.pcm = Some(pcm);
+                        self.failing = false;
+                    }
                     Err(e) => {
-                        eprintln!("slot: audio: {e}");
-                        return;
+                        if !self.failing {
+                            eprintln!("slot: audio: {e}, retrying");
+                            self.failing = true;
+                        }
                     }
                 },
                 _ => {}
