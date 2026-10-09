@@ -13,10 +13,12 @@ fn levels_clamp_and_persist() {
     for _ in 0..20 {
         a.apply(Action::BrightnessUp);
     }
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).brightness, 9);
     for _ in 0..20 {
         a.apply(Action::BrightnessDown);
     }
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).brightness, 0);
 }
 
@@ -25,10 +27,12 @@ fn volume_moves_five_per_press() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = boot(d.path());
     a.apply(Action::VolumeUp);
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).volume, 65);
     for _ in 0..20 {
         a.apply(Action::VolumeDown);
     }
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).volume, 0);
 }
 
@@ -38,6 +42,7 @@ fn levels_work_on_the_shelf_not_only_in_game() {
     let mut a = boot(d.path());
     assert!(matches!(a.phase(), Phase::Shelf));
     a.apply(Action::BlueLightUp);
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).blue_light, 1);
 }
 
@@ -47,6 +52,7 @@ fn adjusting_a_level_in_game_leaves_the_game_running() {
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::VolumeDown);
     assert!(matches!(a.phase(), Phase::Playing { .. }));
+    a.flush_state();
     assert_eq!(read_slot_state(d.path()).volume, 55);
 }
 

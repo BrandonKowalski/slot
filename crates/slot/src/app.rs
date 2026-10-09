@@ -341,6 +341,7 @@ pub struct App {
     last_led: Option<LedState>,
     powering_off: bool,
     radio: Box<dyn RadioJobs>,
+    state_writer: crate::state_writer::StateWriter,
 }
 
 const FACE_AHEAD: i32 = 8;
@@ -375,6 +376,7 @@ impl App {
             .unwrap_or(0);
         App {
             radio: radio_jobs(),
+            state_writer: crate::state_writer::StateWriter::spawn(),
             phase: Phase::Shelf,
             shelves,
             shelf_at,
@@ -1465,7 +1467,7 @@ impl App {
             power.set_backlight(value);
         }
         if moved || unmuted {
-            self.persist();
+            self.persist_soon();
         }
         true
     }
@@ -1494,7 +1496,7 @@ impl App {
         *self.muted_mut() = muted;
         self.hud
             .show(HudKind::Volume, self.output_volume(), muted, now);
-        self.persist();
+        self.persist_soon();
     }
 
     fn hud_value(&self, kind: HudKind, value: u8) -> u8 {
@@ -1818,9 +1820,20 @@ impl App {
         let Some(root) = &self.root else {
             return;
         };
+        self.state_writer.flush();
         if let Err(e) = write_slot_state(root, &self.state) {
             eprintln!("slot: slot.state: {e}");
         }
+    }
+
+    fn persist_soon(&self) {
+        if let Some(root) = &self.root {
+            self.state_writer.save(root, &self.state);
+        }
+    }
+
+    pub fn flush_state(&self) {
+        self.state_writer.flush();
     }
 
     pub fn on_core_ready(&mut self) {
@@ -2487,6 +2500,7 @@ impl App {
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
+        self.state_writer.flush();
         self.flush_resume();
         let cart = match &mut self.phase {
             Phase::Playing { cart } | Phase::Polaroids { cart } => Some(std::mem::take(cart)),
@@ -2957,6 +2971,7 @@ impl App {
     }
 
     pub fn settle_saves(&mut self) {
+        self.state_writer.flush();
         if let Some(h) = self.pending_save.take() {
             let _ = h.join();
         }

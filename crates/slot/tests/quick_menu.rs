@@ -428,6 +428,7 @@ fn brightness_and_volume_still_answer_over_the_quick_menu() {
     let before = read_slot_state(d.path());
     a.apply(Action::BrightnessUp);
     a.apply(Action::VolumeDown);
+    a.flush_state();
     let after = read_slot_state(d.path());
     assert_eq!(
         (after.brightness, after.volume),

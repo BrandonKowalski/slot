@@ -94,6 +94,7 @@ fn a_cart_that_is_gone_takes_its_shelf_out_of_the_slot_with_it() {
     .unwrap();
     let mut a = App::boot(d.path());
     a.apply(Action::MuteToggle);
+    a.flush_state();
     let s = read_slot_state(d.path());
     assert_eq!(s.cart, None);
     assert_eq!(

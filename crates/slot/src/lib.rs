@@ -28,6 +28,7 @@ pub mod resample;
 pub mod rewind;
 pub mod root;
 pub mod session;
+pub mod state_writer;
 pub mod thumb;
 pub mod video_mode;
 pub mod wallpaper;
