@@ -188,3 +188,12 @@ fn the_arrows_are_faces_the_height_of_a_value() {
         assert_eq!(caret.h, quick_value_face("On", true).h);
     }
 }
+
+#[test]
+fn the_two_carets_point_different_ways() {
+    assert_ne!(
+        slot_ui::quick_caret_face(false).rgba,
+        slot_ui::quick_caret_face(true).rgba,
+        "a caret glyph is missing from the symbols font"
+    );
+}
