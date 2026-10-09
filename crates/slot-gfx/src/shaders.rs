@@ -64,6 +64,9 @@ uniform vec4 u_pic;
 varying vec2 v_uv;
 const vec3 offsets = vec3(3.141592654) * vec3(1.0 / 2.0, 1.0 / 2.0 - 2.0 / 3.0, 1.0 / 2.0 - 4.0 / 3.0);
 const vec3 luma_coeff = vec3(0.2126, 0.7152, 0.0722);
+vec2 grid_band(vec2 x) {
+    return floor(x) / 3.0 + min(fract(x), vec2(1.0 / 3.0));
+}
 float dot_weight(vec2 f, vec2 o, float bloom) {
     return exp(-4.0 * length(f - (o + vec2(0.5))) * bloom);
 }
@@ -98,7 +101,7 @@ void main() {
         c = mix(1.2 * c * mid, c * sum, 0.85);
     } else if (u_mode > 1.5) {
         vec2 hp = 0.5 * u_uv.zw * u_src / (u_rect.zw * u_fbo);
-        vec2 edge = max(step(f - hp, vec2(1e-4)), step(vec2(1.0) + 1e-4, f + hp));
+        vec2 edge = (grid_band(f + hp) - grid_band(f - hp)) / (2.0 * hp);
         c *= 1.0 - 0.75 * max(edge.x, edge.y);
     } else if (u_mode > 0.5) {
         vec2 angle = f * 6.283185307;
