@@ -3,7 +3,7 @@ use std::path::Path;
 use slot_gfx::{SRC_H, SRC_W, WHOLE_TEXTURE};
 use slot_store::{ini, Platform};
 
-pub const VIDEO_MODE_FILE: &str = "Config/video_mode.ini";
+pub const VIDEO_MODE_FILE: &str = "Config/video_mode.txt";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum VideoMode {

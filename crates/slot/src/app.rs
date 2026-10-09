@@ -863,7 +863,7 @@ impl App {
             return;
         };
         if let Err(e) = video_mode::write_video_mode(&root, cart, mode) {
-            eprintln!("slot: video: could not write video_mode.ini: {e}");
+            eprintln!("slot: video: could not write video_mode.txt: {e}");
         }
     }
 
@@ -2916,7 +2916,7 @@ impl App {
             return;
         };
         if let Err(e) = slot_store::write_selected_core(&root, &cart.stem, core) {
-            eprintln!("slot: core: could not write selected_core.ini: {e}");
+            eprintln!("slot: core: could not write selected_core.txt: {e}");
         }
     }
 

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::Platform;
 
-pub const SELECTED_CORE_FILE: &str = "Config/selected_core.ini";
+pub const SELECTED_CORE_FILE: &str = "Config/selected_core.txt";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Core {
