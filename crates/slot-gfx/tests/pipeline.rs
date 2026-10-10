@@ -757,3 +757,27 @@ fn simpletex_shows_a_grey_paper_as_grey() {
         "white through a 0x60 paper came out {got:?}"
     );
 }
+
+#[test]
+fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    c.fit((OUT_W, OUT_H));
+    c.set_screen_effect(ScreenEffect::Dot);
+    c.set_screen_power(1.0);
+    c.begin_frame();
+    c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
+    c.draw_game();
+    let frame = c.read_frame();
+    let (x0, y0) = (OUT_W as usize / 2 / 3 * 3, OUT_H as usize / 2 / 3 * 3);
+    let mean = (0..3)
+        .flat_map(|dy| (0..3).map(move |dx| (x0 + dx, y0 + dy)))
+        .map(|(x, y)| px(&frame, x, y)[1] as f32 / 255.0)
+        .sum::<f32>()
+        / 9.0;
+    assert!(
+        (0.50..0.56).contains(&mean),
+        "a white cell averages {mean} under the dot shader"
+    );
+}

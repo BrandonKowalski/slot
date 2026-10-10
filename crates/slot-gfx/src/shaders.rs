@@ -98,7 +98,7 @@ void main() {
                 sum += dot_weight(f, vec2(float(i), float(j)), bloom);
             }
         }
-        c = mix(1.2 * c * mid, c * sum, 0.85);
+        c = mix(c, mix(1.2 * c * mid, c * sum, 0.85), 0.85);
     } else if (u_mode > 1.5) {
         vec2 hp = 0.5 * u_uv.zw * u_src / (u_rect.zw * u_fbo);
         vec2 edge = (grid_band(f + hp) - grid_band(f - hp)) / (2.0 * hp);
