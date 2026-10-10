@@ -516,3 +516,21 @@ fn x_under_select_reaches_the_game() {
     assert!(g.feed(Down(Select), 0).is_empty());
     assert_eq!(g.feed(Down(X), 10), vec![GbaDown(Select), GbaDown(X)]);
 }
+
+#[test]
+fn select_and_either_volume_key_mutes_for_a_volume_wheel_with_no_chord() {
+    for vol in [VolUp, VolDown] {
+        let mut g = Gestures::new();
+        assert!(g.feed(Down(Select), 0).is_empty());
+        assert_eq!(g.feed(Down(vol), 100), vec![MuteToggle], "{vol:?}");
+        assert!(
+            g.tick(100 + VOLUME_REPEAT_DELAY_MS * 3).is_empty(),
+            "{vol:?} ramped the volume under SELECT"
+        );
+        assert!(g.feed(Up(vol), 900).is_empty(), "{vol:?}");
+        assert!(
+            g.feed(Up(Select), 950).is_empty(),
+            "the mute chord's SELECT reached the game"
+        );
+    }
+}
