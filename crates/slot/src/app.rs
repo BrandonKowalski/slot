@@ -1027,6 +1027,13 @@ impl App {
         self.state.runahead
     }
 
+    pub fn runahead_in_play(&self) -> u8 {
+        match (self.core, self.platform) {
+            (Core::Mgba, Platform::Gba) => self.state.runahead,
+            _ => 0,
+        }
+    }
+
     pub fn screen_shader(&self) -> Shader {
         match self.platform {
             Platform::Gba => self.state.shader_gba,

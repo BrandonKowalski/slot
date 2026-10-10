@@ -12,7 +12,7 @@ use slot_input::Millis;
 use slot_retro::{
     AvInfo, ButtonMask, CoreError, LibretroCore, LinkChannel, LoopbackLink, MockCore, RetroCore,
 };
-use slot_store::{write_slot_state, SlotState};
+use slot_store::{write_selected_core, write_slot_state, Core, Platform, SlotState};
 
 const PANEL: Duration = Duration::from_micros(16_760);
 const PRESENTS: u64 = 30;
@@ -389,28 +389,44 @@ fn a_cable_session_with_run_ahead_on_steps_both_consoles_and_neither_rolls_back(
 }
 
 #[test]
-fn the_run_ahead_setting_reaches_the_emulator() {
-    let d = common::tmp_root_with_carts(&["Emerald"]);
-    write_slot_state(
-        d.path(),
-        &SlotState {
-            cart: Some("Emerald".into()),
-            clock_set: true,
-            runahead: 2,
-            ..Default::default()
-        },
-    )
-    .expect("write slot.state");
-    let mut s = Session::boot(d.path().to_path_buf());
-    let mut now: Millis = 0;
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !matches!(s.app().phase(), Phase::Playing { .. }) {
-        assert!(Instant::now() < deadline, "the cart never seated");
-        now += 16;
-        s.feed(None, now);
-        s.update(1.0 / 60.0);
-        std::thread::sleep(Duration::from_millis(1));
+fn run_ahead_reaches_the_core_only_for_gba_games_on_mgba() {
+    for (platform, core, want) in [
+        (Platform::Gba, Core::Mgba, 2),
+        (Platform::Gba, Core::Gpsp, 0),
+        (Platform::Gb, Core::Mgba, 0),
+    ] {
+        let d = match platform {
+            Platform::Gba => common::tmp_root_with_carts(&["Emerald"]),
+            _ => common::tmp_root_with_gb_carts(&["Emerald"]),
+        };
+        write_selected_core(d.path(), "Emerald", core).expect("write core");
+        write_slot_state(
+            d.path(),
+            &SlotState {
+                cart: Some("Emerald".into()),
+                cart_platform: Some(platform),
+                clock_set: true,
+                runahead: 2,
+                ..Default::default()
+            },
+        )
+        .expect("write slot.state");
+        let mut s = Session::boot(d.path().to_path_buf());
+        let mut now: Millis = 0;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !matches!(s.app().phase(), Phase::Playing { .. }) {
+            assert!(Instant::now() < deadline, "the cart never seated");
+            now += 16;
+            s.feed(None, now);
+            s.update(1.0 / 60.0);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let emu = s.emu().expect("a seated cart has a core");
+        assert_eq!(
+            emu.runahead(),
+            want,
+            "{platform:?} on {core:?} got run-ahead {}",
+            emu.runahead()
+        );
     }
-    let emu = s.emu().expect("a seated cart has a core");
-    assert_eq!(emu.runahead(), 2, "the setting never reached the core");
 }
