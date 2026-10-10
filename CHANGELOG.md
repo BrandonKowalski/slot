@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- New setting: Run-Ahead, on the Gameplay page, makes games answer the buttons 1 or 2 frames sooner. Off by default.
+- New setting: Run-Ahead, on the Gameplay page, makes GBA games on mGBA answer the buttons 1 or 2 frames sooner. Off by default, and gpSP, Game Boy and Game Boy Color games always play without it.
 
 ## [1.5.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.5.0)
 
