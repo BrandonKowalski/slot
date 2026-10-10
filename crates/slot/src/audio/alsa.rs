@@ -231,6 +231,7 @@ impl Playback {
                 }
                 (None, true) => match self.alsa.open_pcm(self.rate) {
                     Ok(pcm) => {
+                        eprintln!("slot: audio reopened at {:.1} ms", crate::boot_time::ms());
                         self.pcm = Some(pcm);
                         self.failing = false;
                     }
