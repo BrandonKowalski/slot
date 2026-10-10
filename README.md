@@ -42,13 +42,13 @@ Release notes can be found in the [changelog](CHANGELOG.md).
 
 # Supported Devices
 
-| Device             | Supported | Since Version |
-|--------------------|-----------|---------------|
-| Anbernic RG SP     | Yes       | Always        |
-| Anbernic RG34XX    | Untested  | N/A           |
-| Anbernic RG34XXSP  | Untested  | N/A           |
-| Anbernic RG35XXSP  | Yes       | 1.5.0         |
-| Anbernic 35XX Plus | Yes       | 1.5.0         |
+| Device             | Supported                  | Since Version |
+|--------------------|----------------------------|---------------|
+| Anbernic RG SP     | Yes                        | Always        |
+| Anbernic RG34XX    | Yes                        | 1.4.0         |
+| Anbernic RG34XXSP  | Yes (No Stick Support Yet) | 1.4.0         |
+| Anbernic RG35XXSP  | Yes                        | 1.5.0         |
+| Anbernic 35XX Plus | Yes                        | 1.5.0         |
 
 The RG34XX will likely work from 1.4.0. The RG34XXSP may not map its sticks correctly.
 
