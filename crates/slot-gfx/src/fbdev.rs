@@ -71,6 +71,20 @@ pub struct FbdevSurface {
     _window: Box<FbdevWindow>,
 }
 
+const FBIOGET_VSCREENINFO: std::ffi::c_ulong = 0x4600;
+
+extern "C" {
+    fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
+}
+
+fn visible_size() -> Option<(u32, u32)> {
+    use std::os::unix::io::AsRawFd;
+    let fb = std::fs::File::open("/dev/fb0").ok()?;
+    let mut info = [0u32; 40];
+    let rc = unsafe { ioctl(fb.as_raw_fd(), FBIOGET_VSCREENINFO, info.as_mut_ptr()) };
+    (rc == 0 && info[0] > 0 && info[1] > 0).then_some((info[0], info[1]))
+}
+
 pub fn panel_mode(text: &str) -> Option<(u32, u32)> {
     let body = text.lines().next()?.rsplit(':').next()?;
     let (w, rest) = body.split_once('x')?;
@@ -137,8 +151,10 @@ impl FbdevSurface {
             .as_deref()
             .and_then(panel_mode)
             .or_else(|| attr("modes").as_deref().and_then(panel_mode))
+            .or_else(visible_size)
             .or_else(|| attr("virtual_size").as_deref().and_then(panel_size))
             .unwrap_or(FALLBACK_PANEL);
+        eprintln!("slot: fb0 hint {}x{}", hint.0, hint.1);
         FbdevSurface::open(hint)
     }
 

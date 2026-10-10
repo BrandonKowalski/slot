@@ -2,10 +2,18 @@ use crate::draw::{Draw, Sprites, TexId};
 use crate::grade::blue_light_gain;
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
-use crate::shaders::{BEZEL_FRAG, BLIT_FRAG, BLIT_VERT};
+use crate::shaders::{BEZEL_FRAG, BLIT_FRAG, BLIT_VERT, TURN_VERT};
 use crate::surface::{blit_rect, GfxError, Surface, OUT_H, OUT_W};
 
 pub const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+
+struct Turn {
+    panel: (u32, u32),
+    prog: gl::types::GLuint,
+    fbo: gl::types::GLuint,
+    tex: gl::types::GLuint,
+    size: (u32, u32),
+}
 
 pub struct Compositor {
     fbo: gl::types::GLuint,
@@ -26,6 +34,7 @@ pub struct Compositor {
     u_bezel_gain: gl::types::GLint,
     u_bezel_alpha: gl::types::GLint,
     bezel: Option<gl::types::GLuint>,
+    turn: Option<Turn>,
 }
 
 impl Compositor {
@@ -90,8 +99,30 @@ impl Compositor {
                 u_bezel_gain,
                 u_bezel_alpha,
                 bezel: None,
+                turn: None,
             })
         }
+    }
+
+    pub fn set_panel_turn(&mut self, panel: (u32, u32), ccw: bool) -> Result<(), GfxError> {
+        let prog = crate::shaders::program(TURN_VERT, BLIT_FRAG)?;
+        unsafe {
+            gl::UseProgram(prog);
+            gl::Uniform1i(crate::gl::uniform_location(prog, "u_tex"), 0);
+            gl::Uniform3f(crate::gl::uniform_location(prog, "u_gain"), 1.0, 1.0, 1.0);
+            gl::Uniform1f(
+                crate::gl::uniform_location(prog, "u_ccw"),
+                if ccw { 1.0 } else { 0.0 },
+            );
+        }
+        self.turn = Some(Turn {
+            panel,
+            prog,
+            fbo: 0,
+            tex: 0,
+            size: (0, 0),
+        });
+        Ok(())
     }
 
     pub fn upload_game(&mut self, xrgb8888: &[u8]) {
@@ -258,6 +289,51 @@ impl Compositor {
     }
 
     pub fn end_frame(&mut self, window: (u32, u32)) {
+        let Some(mut turn) = self.turn.take() else {
+            self.output(window, 0);
+            return;
+        };
+        if turn.size != window {
+            unsafe {
+                if turn.fbo != 0 {
+                    gl::DeleteFramebuffers(1, &turn.fbo);
+                    gl::DeleteTextures(1, &turn.tex);
+                }
+                turn.tex = crate::gl::texture(
+                    window.0,
+                    window.1,
+                    gl::NEAREST,
+                    gl::CLAMP_TO_EDGE,
+                    gl::RGBA,
+                    None,
+                );
+                gl::GenFramebuffers(1, &mut turn.fbo);
+                gl::BindFramebuffer(gl::FRAMEBUFFER, turn.fbo);
+                gl::FramebufferTexture2D(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
+                    gl::TEXTURE_2D,
+                    turn.tex,
+                    0,
+                );
+            }
+            turn.size = window;
+        }
+        self.output(window, turn.fbo);
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+            gl::Viewport(0, 0, turn.panel.0 as i32, turn.panel.1 as i32);
+            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl::UseProgram(turn.prog);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, turn.tex);
+        }
+        self.quad.draw();
+        self.turn = Some(turn);
+    }
+
+    fn output(&mut self, window: (u32, u32), target: gl::types::GLuint) {
         let framed = crate::bezel::framed(window);
         let (x, mut y, w, h) = blit_rect(window, self.shake);
         let drop = if framed {
@@ -267,7 +343,7 @@ impl Compositor {
         };
         y -= drop;
         unsafe {
-            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+            gl::BindFramebuffer(gl::FRAMEBUFFER, target);
             gl::Viewport(0, 0, window.0 as i32, window.1 as i32);
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
@@ -348,6 +424,13 @@ impl Drop for Compositor {
             gl::DeleteProgram(self.bezel_prog);
             if let Some(tex) = self.bezel {
                 gl::DeleteTextures(1, &tex);
+            }
+            if let Some(turn) = &self.turn {
+                gl::DeleteProgram(turn.prog);
+                if turn.fbo != 0 {
+                    gl::DeleteFramebuffers(1, &turn.fbo);
+                    gl::DeleteTextures(1, &turn.tex);
+                }
             }
         }
     }
