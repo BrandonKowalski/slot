@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.6.0)
+
+- Runs on the RG28XX: its panel is mounted portrait, so slot turns the picture onto it. (#35)
+- Pokémon Pinball: Ruby & Sapphire rumble. mGBA now sees the game's Game Boy Player check. You still need to turn rumble on in game settings. (#25)
+- A red alarm shows when the SD card turns read-only or a save fails to write.
+- A new shortcut for mute: SELECT + VOL+ / VOL-. The 34XX has a fake volume wheel so VOL+ + VOL- isn't possible. (#39)
+- Game Boy cartridge clocks are kept in the .sav. (#22)
+- The GBA cartridge clock keeps running on gpSP while the game is off.
+- Large libraries now should boot faster, and the first frame shows sooner.
+- Games start faster: resting on a cart reads its ROM ahead, so big ROMs no longer wait on the SD card when you insert them.
+- Wallpapers are dealt from a shuffled deck, so none repeats until all have shown.
+- PNG art is turned the way its EXIF orientation tag says.
+- When slot crashes it logs where, and keeps that run's log in `crash/` to attach to a bug report.
+- The BaseOS startup sound no longer leaves slot silent. (#20)
+- A user defined `Config/bootlogo.bmp` will take precedence over the shipped one. (#30)
+- Cart shell, core and video mode files are now `.txt` instead of `.ini`, so Chrome on Windows opens them. slot renames them on first boot. (#15)
+- The grid shader's lines stay even on the RG34XX and at fractional scales, and the dot shader no longer darkens a white screen as much. (#26, #36)
+
 ## [1.5.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.5.0)
 
 - Rumble regression fixed.
