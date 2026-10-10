@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 use crate::cable::{self, Cable};
 use slot_retro::{
-    ButtonMask, Link, LinkChannel, RetroCore, Rumble, GBA_H, GBA_W, NETPACKET_RELIABLE,
+    ButtonMask, CoreError, Link, LinkChannel, RetroCore, Rumble, GBA_H, GBA_W, NETPACKET_RELIABLE,
 };
+use slot_store::RUN_AHEAD_MAX;
 
 use crate::audio::Ring;
 use crate::drc::{drc_ratio, drc_target};
@@ -95,6 +96,7 @@ struct Shared {
     volume: AtomicU8,
     fast_steps: AtomicU32,
     ff_sound: AtomicBool,
+    runahead: AtomicU8,
     published: AtomicU64,
     resume_refused: AtomicBool,
     sav_refused: AtomicBool,
@@ -162,6 +164,7 @@ impl EmuHandle {
             volume: AtomicU8::new(100),
             fast_steps: AtomicU32::new(FAST_STEPS),
             ff_sound: AtomicBool::new(false),
+            runahead: AtomicU8::new(0),
             published: AtomicU64::new(0),
             resume_refused: AtomicBool::new(false),
             sav_refused: AtomicBool::new(false),
@@ -346,6 +349,12 @@ impl EmuHandle {
 
     pub fn ff_sound(&self) -> bool {
         self.shared.ff_sound.load(Ordering::Relaxed)
+    }
+
+    pub fn set_runahead(&self, frames: u8) {
+        self.shared
+            .runahead
+            .store(frames.min(RUN_AHEAD_MAX), Ordering::Relaxed);
     }
 
     pub fn set_rewinding(&self, on: bool) {
@@ -540,6 +549,7 @@ impl Worker {
         let mut cable_core = Duration::ZERO;
         let mut cable_wait = Duration::ZERO;
         let mut ff = (0u32, 0u32, Duration::ZERO, Instant::now());
+        let mut runahead = RunAhead::default();
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
@@ -606,6 +616,13 @@ impl Worker {
                 rate.restart(deadline, self.current_tick());
                 self.shared.clocked.notify_all();
             }
+            let ahead =
+                if speed == Speed::Normal && !rewinding && transport.is_none() && !runahead.refused
+                {
+                    u32::from(self.shared.runahead.load(Ordering::Relaxed))
+                } else {
+                    0
+                };
             let input = ButtonMask(self.shared.input.load(Ordering::Relaxed));
             crate::latency::emu_frame(input.0);
             let mut span = 1u32;
@@ -638,6 +655,7 @@ impl Worker {
                 let began = Instant::now();
                 let mut ran = 0u32;
                 let (mut skipped, mut drawn) = (None::<Duration>, Duration::ZERO);
+                let mut shown = false;
                 loop {
                     ran += 1;
                     let last = ran >= ceiling || cost.last(began.elapsed(), budget);
@@ -686,6 +704,13 @@ impl Worker {
                                 }
                             }
                         }
+                        None if ahead > 0 => match runahead.run(core.as_mut(), input, ahead) {
+                            Ok(()) => shown = true,
+                            Err(e) => {
+                                eprintln!("slot: run-ahead: {e}, off for this game");
+                                runahead.refused = true;
+                            }
+                        },
                         None => core.run_frame(input),
                     }
                     let took = frame_began.elapsed();
@@ -699,7 +724,9 @@ impl Worker {
                     }
                 }
                 let core_time = began.elapsed();
-                cost.measured(skipped, drawn);
+                if ahead == 0 {
+                    cost.measured(skipped, drawn);
+                }
                 if cable.is_some() {
                     cable_presents += 1;
                     cable_core += core_time;
@@ -740,7 +767,11 @@ impl Worker {
                     }
                 }
                 flush_outbound(&mut transport, &link);
-                self.publish(core.video_xrgb8888());
+                self.publish(if shown {
+                    &runahead.video
+                } else {
+                    core.video_xrgb8888()
+                });
                 self.frame_done(served);
 
                 since_snapshot += 1;
@@ -760,7 +791,11 @@ impl Worker {
                     }
                 }
 
-                let audio = core.take_audio();
+                let audio = if shown {
+                    std::mem::take(&mut runahead.audio)
+                } else {
+                    core.take_audio()
+                };
                 if speed == Speed::Normal || ff_sound {
                     let target = drc_target(ring.capacity_frames());
                     let queued = ring.queued_frames();
@@ -1043,6 +1078,36 @@ impl FrameCost {
             Some(skip) => follow(self.skip, skip),
             None => self.skip.min(self.draw),
         };
+    }
+}
+
+#[derive(Default)]
+struct RunAhead {
+    state: Vec<u8>,
+    video: Vec<u8>,
+    audio: Vec<i16>,
+    refused: bool,
+}
+
+impl RunAhead {
+    fn run(
+        &mut self,
+        core: &mut dyn RetroCore,
+        input: ButtonMask,
+        frames: u32,
+    ) -> Result<(), CoreError> {
+        core.set_frame_skip(true);
+        core.run_frame(input);
+        self.state = core.serialize()?;
+        for left in (0..frames).rev() {
+            let _ = core.take_audio();
+            core.set_frame_skip(left > 0);
+            core.run_frame(input);
+        }
+        self.audio = core.take_audio();
+        self.video.clear();
+        self.video.extend_from_slice(core.video_xrgb8888());
+        core.unserialize(&self.state)
     }
 }
 
