@@ -42,16 +42,18 @@ Release notes can be found in the [changelog](CHANGELOG.md).
 
 # Supported Devices
 
-| Device | Supported | Since Version |
-| --- | --- | --- |
-| Anbernic RG SP | Yes | Always |
-| Anbernic RG34XX | Untested | N/A |
-| Anbernic RG34XXSP | Untested | N/A |
-| Anbernic RG35XXSP | Yes | 1.5.0 |
+| Device             | Supported | Since Version |
+|--------------------|-----------|---------------|
+| Anbernic RG SP     | Yes       | Always        |
+| Anbernic RG34XX    | Untested  | N/A           |
+| Anbernic RG34XXSP  | Untested  | N/A           |
+| Anbernic RG35XXSP  | Yes       | 1.5.0         |
+| Anbernic 35XX Plus | Yes       | 1.5.0         |
 
 The RG34XX will likely work from 1.4.0. The RG34XXSP may not map its sticks correctly.
 
-If you have one of the Untested devices, or have tried slot on a device not listed, please [open an issue on GitHub](https://github.com/BrandonKowalski/slot/issues) and let me know how it went.
+If you have one of the Untested devices, or have tried slot on a device not listed,
+please [open an issue on GitHub](https://github.com/BrandonKowalski/slot/issues) and let me know how it went.
 
 ---
 
