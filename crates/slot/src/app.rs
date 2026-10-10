@@ -644,6 +644,7 @@ impl App {
             QuickRow::EjectSave => Some(QuickValue::flag(self.state.eject_save)),
             QuickRow::Turbo => Some(QuickValue::flag(self.state.turbo)),
             QuickRow::Rewind => Some(QuickValue::flag(self.state.rewind)),
+            QuickRow::RunAhead => None,
             QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game => None,
         }
     }
@@ -1334,6 +1335,7 @@ impl App {
             | QuickRow::GbaShader
             | QuickRow::GbShader
             | QuickRow::GbPalettes
+            | QuickRow::RunAhead
             | QuickRow::Rumble => {}
         }
     }
@@ -1372,6 +1374,7 @@ impl App {
             QuickRow::Turbo => s.turbo = !s.turbo,
             QuickRow::Rewind => s.rewind = !s.rewind,
             QuickRow::GbPalettes => s.gb_palettes = !s.gb_palettes,
+            QuickRow::RunAhead => return,
             QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game => return,
         }
         self.persist();

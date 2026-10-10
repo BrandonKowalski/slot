@@ -168,9 +168,9 @@ fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     );
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, true));
-    press(&mut a, Btn::Down);
-    press(&mut a, Btn::Down);
-    press(&mut a, Btn::Down);
+    for _ in QuickRow::FastForwardSound.position()..QuickRow::Rumble.position() {
+        press(&mut a, Btn::Down);
+    }
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, false));
     assert!(!a.rumble_enabled());
@@ -223,6 +223,7 @@ fn the_game_page_flips_eject_save_turbo_and_rewind_and_saves_each() {
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (true, true, false));
     assert!(!a.may_rewind(), "rewind still offered with it off");
+    press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Left);
     assert_eq!(card(&d), (true, false, false));
