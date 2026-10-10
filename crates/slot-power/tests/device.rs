@@ -56,7 +56,51 @@ fn the_backlight_steps_span_whatever_range_the_kernel_reports() {
     assert_eq!(brightness(&d), 255);
     p.set_backlight(5);
     let mid = brightness(&d);
-    assert!((110..=160).contains(&mid), "step 5 of 9 wrote {mid} of 255");
+    assert!((40..=80).contains(&mid), "step 5 of 9 wrote {mid} of 255");
+}
+
+#[test]
+fn step_one_is_the_dimmest_lit_value() {
+    let d = sysfs("255", "87");
+    let mut p = platform(&d);
+    p.set_backlight(1);
+    assert_eq!(brightness(&d), 1);
+}
+
+#[test]
+fn the_steps_follow_the_curve_from_the_floor_to_full() {
+    let d = sysfs("255", "87");
+    let mut p = platform(&d);
+    let wrote: Vec<u32> = (0..=9)
+        .map(|step| {
+            p.set_backlight(step);
+            brightness(&d)
+        })
+        .collect();
+    assert_eq!(wrote, [0, 1, 8, 23, 47, 77, 113, 155, 202, 255]);
+}
+
+#[test]
+fn every_step_is_brighter_than_the_one_below() {
+    let d = sysfs("255", "87");
+    let mut p = platform(&d);
+    let mut last = 0;
+    for step in 1..=9 {
+        p.set_backlight(step);
+        let now = brightness(&d);
+        assert!(now > last, "step {step} wrote {now}, not above {last}");
+        last = now;
+    }
+}
+
+#[test]
+fn a_small_range_still_lights_step_one() {
+    let d = sysfs("10", "87");
+    let mut p = platform(&d);
+    p.set_backlight(1);
+    assert_eq!(brightness(&d), 1);
+    p.set_backlight(9);
+    assert_eq!(brightness(&d), 10);
 }
 
 #[test]

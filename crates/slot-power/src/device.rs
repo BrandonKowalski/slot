@@ -10,6 +10,10 @@ use crate::{Battery, Charge, LedState, Platform};
 
 const TOP_STEP: u32 = 9;
 
+const BACKLIGHT_FLOOR: f64 = 1.0;
+
+const BACKLIGHT_CURVE: f64 = 1.75;
+
 const DEV_INPUT: &str = "/dev/input";
 
 const RUN_DIR: &str = "/run";
@@ -380,6 +384,16 @@ fn headphones_in(gpio: &str) -> bool {
         .is_some_and(|(_, state)| state.split_whitespace().nth(1) == Some("hi"))
 }
 
+fn backlight_value(step: u8, max: u32) -> u32 {
+    let step = u32::from(step).min(TOP_STEP);
+    if step == 0 {
+        return 0;
+    }
+    let t = f64::from(step - 1) / f64::from(TOP_STEP - 1);
+    let span = f64::from(max) - BACKLIGHT_FLOOR;
+    (BACKLIGHT_FLOOR + span * t.powf(BACKLIGHT_CURVE)).round() as u32
+}
+
 impl Platform for DevicePlatform {
     fn headphones(&self) -> bool {
         fs::read_to_string(self.sysfs.join("kernel/debug/gpio")).is_ok_and(|g| headphones_in(&g))
@@ -393,8 +407,7 @@ impl Platform for DevicePlatform {
         let Some(backlight) = &self.backlight else {
             return;
         };
-        let step = u32::from(step).min(TOP_STEP);
-        let value = self.max_brightness * step / TOP_STEP;
+        let value = backlight_value(step, self.max_brightness);
         let write = |file: PathBuf, body: String| {
             if let Err(e) = fs::write(&file, body) {
                 eprintln!("slot: {}: {e}", file.display());
