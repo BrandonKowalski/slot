@@ -1,12 +1,14 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slot::audio::{AudioSink, StubSink};
 use slot::emu::{CoreState, EmuHandle, Speed};
-use slot_retro::{AvInfo, ButtonMask, CoreError, LibretroCore, MockCore, RetroCore};
+use slot_retro::{
+    AvInfo, ButtonMask, CoreError, LibretroCore, LinkChannel, LoopbackLink, MockCore, RetroCore,
+};
 
 const PANEL: Duration = Duration::from_micros(16_760);
 const PRESENTS: u64 = 30;
@@ -81,6 +83,20 @@ impl RetroCore for Recorder {
     fn av_info(&self) -> AvInfo {
         self.inner.av_info()
     }
+}
+
+fn calls(log: &Log) -> Vec<Call> {
+    log.lock().expect("the call log").clone()
+}
+
+fn loads(calls: &[Call]) -> Vec<u64> {
+    calls
+        .iter()
+        .filter_map(|c| match *c {
+            Call::Load(frame) => Some(frame),
+            _ => None,
+        })
+        .collect()
 }
 
 fn counter(state: &[u8]) -> u64 {
@@ -241,5 +257,129 @@ fn every_frame_of_a_present_gets_the_same_buttons_and_turbo_keeps_its_beat() {
             .zip(t..)
             .all(|(&mask, f)| ButtonMask(mask) == held.turbo(f))),
         "turbo no longer flips once every 3 presents: {beat:?}"
+    );
+}
+
+fn calls_once_it_settles(log: &Log) -> Vec<Call> {
+    std::thread::sleep(Duration::from_millis(50));
+    log.lock().expect("the call log").clear();
+    std::thread::sleep(Duration::from_millis(200));
+    calls(log)
+}
+
+#[test]
+fn fast_forward_with_run_ahead_on_never_rolls_back() {
+    let (core, log) = Recorder::new();
+    let emu = spawn(core, PathBuf::from("mock"));
+    emu.set_runahead(2);
+    emu.set_speed(Speed::Fast);
+    let calls = calls_once_it_settles(&log);
+    assert!(
+        calls.iter().any(|c| matches!(c, Call::Run { .. })),
+        "fast forward ran nothing"
+    );
+    assert_eq!(loads(&calls), [], "fast forward rolled the game back");
+}
+
+#[test]
+fn rewind_with_run_ahead_on_walks_back_through_frames_the_game_really_played() {
+    let (core, log) = Recorder::new();
+    let emu = driven(core, PathBuf::from("mock"), 2);
+    for _ in 0..PRESENTS {
+        present(&emu);
+    }
+    let reached = emu.published_count();
+    log.lock().expect("the call log").clear();
+    emu.set_rewinding(true);
+    std::thread::sleep(Duration::from_millis(150));
+    let calls = calls(&log);
+    emu.set_rewinding(false);
+    let landed = loads(&calls);
+    assert!(!landed.is_empty(), "rewind never ran");
+    assert!(
+        landed.iter().all(|&frame| frame <= reached),
+        "rewind landed on {landed:?}, past frame {reached}, the last the game played: it kept \
+         a frame run-ahead only showed"
+    );
+    assert!(
+        !calls.iter().any(|c| matches!(c, Call::Save(_))),
+        "the game was saved while rewinding: {calls:?}"
+    );
+}
+
+#[test]
+fn a_link_session_with_run_ahead_on_never_rolls_back() {
+    let (core, log) = Recorder::new();
+    let emu = spawn(core, PathBuf::from("mock"));
+    emu.set_runahead(2);
+    emu.begin_link(1, Box::new(LoopbackLink::default()));
+    emu.set_speed(Speed::Normal);
+    let calls = calls_once_it_settles(&log);
+    assert!(
+        calls.iter().any(|c| matches!(c, Call::Run { .. })),
+        "the linked game ran nothing"
+    );
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c, Call::Load(_) | Call::Run { drawn: false, .. })),
+        "a linked game ran a frame it never showed or rolled back: {calls:?}"
+    );
+}
+
+struct Wire {
+    tx: mpsc::Sender<Vec<u8>>,
+    rx: mpsc::Receiver<Vec<u8>>,
+}
+
+impl LinkChannel for Wire {
+    fn send(&mut self, _flags: i32, buf: &[u8]) {
+        let _ = self.tx.send(buf.to_vec());
+    }
+
+    fn try_recv(&mut self) -> Option<Vec<u8>> {
+        self.rx.try_recv().ok()
+    }
+}
+
+#[test]
+fn a_cable_session_with_run_ahead_on_steps_both_consoles_and_neither_rolls_back() {
+    let (host_core, host_log) = Recorder::new();
+    let (join_core, join_log) = Recorder::new();
+    let host = spawn(host_core, PathBuf::from("mock"));
+    let join = spawn(join_core, PathBuf::from("mock"));
+    let (to_join, from_host) = mpsc::channel();
+    let (to_host, from_join) = mpsc::channel();
+    for (emu, player, wire) in [
+        (
+            &host,
+            0,
+            Wire {
+                tx: to_join,
+                rx: from_join,
+            },
+        ),
+        (
+            &join,
+            1,
+            Wire {
+                tx: to_host,
+                rx: from_host,
+            },
+        ),
+    ] {
+        emu.set_runahead(2);
+        emu.begin_cable(player, Box::new(wire));
+        emu.set_speed(Speed::Normal);
+    }
+    assert!(
+        wait_for(|| host.linked_frames() >= 30 && join.linked_frames() >= 30),
+        "the consoles never stepped together"
+    );
+    assert_eq!(loads(&calls(&host_log)), [], "the host rolled back");
+    assert!(
+        loads(&calls(&join_log)).len() <= 1,
+        "the second console loaded more than the host's game: {:?}",
+        calls(&join_log)
     );
 }
