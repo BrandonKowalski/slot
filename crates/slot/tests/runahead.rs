@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use slot::app::Phase;
-use slot::audio::{AudioSink, StubSink};
+use slot::app::{runahead_for, Phase};
+use slot::audio::{AudioSink, Ring, StubSink};
+use slot::core::apply_core_options;
 use slot::emu::{CoreState, EmuHandle, Speed};
 use slot::session::Session;
 use slot_input::Millis;
@@ -448,5 +449,127 @@ fn run_ahead_reaches_the_core_only_for_gba_games_on_mgba() {
             "{platform:?} on {core:?} got run-ahead {}",
             emu.runahead()
         );
+    }
+}
+
+const RING_PRESENTS: usize = 240;
+
+fn sound_in_ring(
+    core: Box<dyn RetroCore>,
+    rom: PathBuf,
+    resume: Option<Vec<u8>>,
+    ahead: u8,
+) -> usize {
+    let ring = Arc::new(Ring::new(1 << 22));
+    let emu = EmuHandle::spawn(core, rom, ring.clone(), None, resume);
+    assert!(
+        wait_for(|| emu.state() != CoreState::Loading),
+        "the core never finished loading"
+    );
+    assert_eq!(emu.state(), CoreState::Ready);
+    emu.set_runahead(ahead);
+    emu.set_driven(true);
+    emu.set_speed(Speed::Normal);
+    assert!(
+        wait_for(|| emu.locked()),
+        "the worker never locked to the display"
+    );
+    let before = emu.published_count();
+    for _ in 0..RING_PRESENTS {
+        emu.tick(PANEL);
+        assert!(
+            emu.wait_frame(Duration::from_secs(2)),
+            "a tick's frame never arrived"
+        );
+    }
+    assert_eq!(
+        emu.published_count() - before,
+        RING_PRESENTS as u64,
+        "a tick came late and the worker ran a frame of its own, so the runs are not comparable"
+    );
+    drop(emu);
+    assert_eq!(ring.overruns(), 0, "the ring overflowed");
+    ring.queued_frames()
+}
+
+#[test]
+fn every_run_ahead_setting_hands_the_ring_as_much_sound_as_off() {
+    for ahead in 1..=2u8 {
+        let off_from_there = sound_in_ring(
+            Box::new(MockCore::new()),
+            PathBuf::from("mock"),
+            Some(u64::from(ahead).to_le_bytes().to_vec()),
+            0,
+        );
+        let run_ahead = sound_in_ring(
+            Box::new(MockCore::new()),
+            PathBuf::from("mock"),
+            None,
+            ahead,
+        );
+        assert_eq!(
+            run_ahead, off_from_there,
+            "over {RING_PRESENTS} presents run-ahead {ahead} gave the ring {run_ahead} frames of \
+             sound, off showing the same frames gave {off_from_there}"
+        );
+    }
+}
+
+fn local_roms() -> Vec<(Platform, PathBuf)> {
+    [
+        (Platform::Gba, "GBA", "gba"),
+        (Platform::Gb, "GB", "gb"),
+        (Platform::Gbc, "GBC", "gbc"),
+    ]
+    .into_iter()
+    .filter_map(|(platform, dir, ext)| {
+        std::fs::read_dir(common::repo_root().join("sdcard/Games").join(dir))
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == ext))
+            .map(|p| (platform, p))
+    })
+    .collect()
+}
+
+#[test]
+fn on_mgba_with_local_roms_the_ring_gets_as_much_sound_as_off_at_every_setting() {
+    let _g = common::core_lock();
+    let roms = local_roms();
+    let Some(dylib) = common::vendored_core().filter(|_| !roms.is_empty()) else {
+        eprintln!("no vendored mGBA core or no rom under sdcard/Games, skipping");
+        return;
+    };
+    let root = tempfile::tempdir().expect("a temporary root");
+    let open = || -> Box<dyn RetroCore> {
+        let mut core = LibretroCore::open_with(&dylib, root.path(), root.path())
+            .expect("the vendored core would not open, is another one still running?");
+        apply_core_options(&mut core, Core::Mgba, "auto", false, false, None);
+        Box::new(core)
+    };
+    for (platform, rom) in roms {
+        let state_at = |frames: u8| {
+            let mut core = open();
+            core.load(&rom).expect("the rom would not load");
+            for _ in 0..frames {
+                core.run_frame(ButtonMask(0));
+                let _ = core.take_audio();
+            }
+            core.serialize().expect("mGBA would not save")
+        };
+        for setting in 1..=2u8 {
+            let ahead = runahead_for(Core::Mgba, platform, setting);
+            let start = state_at(ahead);
+            let off_from_there = sound_in_ring(open(), rom.clone(), Some(start), 0);
+            let played = sound_in_ring(open(), rom.clone(), None, ahead);
+            assert_eq!(
+                played,
+                off_from_there,
+                "{platform:?} at a run-ahead setting of {setting} ({ahead} in play) gave the ring \
+                 {played} frames of sound over {RING_PRESENTS} presents, off showing the same frames \
+                 gave {off_from_there}"
+            );
+        }
     }
 }

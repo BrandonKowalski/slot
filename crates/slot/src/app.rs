@@ -1028,10 +1028,7 @@ impl App {
     }
 
     pub fn runahead_in_play(&self) -> u8 {
-        match (self.core, self.platform) {
-            (Core::Mgba, Platform::Gba) => self.state.runahead,
-            _ => 0,
-        }
+        runahead_for(self.core, self.platform, self.state.runahead)
     }
 
     pub fn screen_shader(&self) -> Shader {
@@ -3335,6 +3332,13 @@ fn shader_value(shader: Shader) -> QuickValue {
         Shader::Grid => QuickValue::Grid,
         Shader::Dot => QuickValue::Dot,
         Shader::Simpletex => QuickValue::Simpletex,
+    }
+}
+
+pub fn runahead_for(core: Core, platform: Platform, frames: u8) -> u8 {
+    match (core, platform) {
+        (Core::Mgba, Platform::Gba) => frames,
+        _ => 0,
     }
 }
 
