@@ -153,6 +153,26 @@ fn fast_forward_steps_through_its_speeds_wraps_at_both_ends_and_saves_each_one()
 }
 
 #[test]
+fn run_ahead_steps_through_its_frames_wraps_at_both_ends_and_saves_each_one() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::RunAhead);
+    assert_eq!(a.quick_value(QuickRow::RunAhead), Some(QuickValue::Off));
+    for (btn, want) in [
+        (Btn::Right, 1),
+        (Btn::Right, 2),
+        (Btn::Right, 0),
+        (Btn::Left, 2),
+        (Btn::Left, 1),
+        (Btn::Left, 0),
+    ] {
+        press(&mut a, btn);
+        assert_eq!(a.runahead(), want, "{btn:?}");
+        assert_eq!(read_slot_state(d.path()).runahead, want, "not on the card");
+        assert_eq!(a.quick_value(QuickRow::RunAhead), QuickValue::frames(want));
+    }
+}
+
+#[test]
 fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     let (d, mut a, _) = on_carousel();
     let card = |d: &TempDir| {

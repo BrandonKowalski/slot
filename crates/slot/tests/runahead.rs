@@ -4,11 +4,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use slot::app::Phase;
 use slot::audio::{AudioSink, StubSink};
 use slot::emu::{CoreState, EmuHandle, Speed};
+use slot::session::Session;
+use slot_input::Millis;
 use slot_retro::{
     AvInfo, ButtonMask, CoreError, LibretroCore, LinkChannel, LoopbackLink, MockCore, RetroCore,
 };
+use slot_store::{write_slot_state, SlotState};
 
 const PANEL: Duration = Duration::from_micros(16_760);
 const PRESENTS: u64 = 30;
@@ -382,4 +386,31 @@ fn a_cable_session_with_run_ahead_on_steps_both_consoles_and_neither_rolls_back(
         "the second console loaded more than the host's game: {:?}",
         calls(&join_log)
     );
+}
+
+#[test]
+fn the_run_ahead_setting_reaches_the_emulator() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            runahead: 2,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        now += 16;
+        s.feed(None, now);
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let emu = s.emu().expect("a seated cart has a core");
+    assert_eq!(emu.runahead(), 2, "the setting never reached the core");
 }

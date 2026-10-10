@@ -357,6 +357,10 @@ impl EmuHandle {
             .store(frames.min(RUN_AHEAD_MAX), Ordering::Relaxed);
     }
 
+    pub fn runahead(&self) -> u8 {
+        self.shared.runahead.load(Ordering::Relaxed)
+    }
+
     pub fn set_rewinding(&self, on: bool) {
         self.shared.rewind.store(on, Ordering::Relaxed);
     }

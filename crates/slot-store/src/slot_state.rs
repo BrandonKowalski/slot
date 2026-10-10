@@ -38,6 +38,7 @@ pub struct SlotState {
     pub eject_save: bool,
     pub turbo: bool,
     pub rewind: bool,
+    pub runahead: u8,
     pub gb_palettes: bool,
     pub gb_palette: GbPalette,
 }
@@ -110,6 +111,7 @@ impl Default for SlotState {
             eject_save: true,
             turbo: true,
             rewind: true,
+            runahead: 0,
             gb_palettes: false,
             gb_palette: GbPalette::DEFAULT,
         }
@@ -130,7 +132,7 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\n",
+        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\nrunahead={}\ngb_palettes={}\ngb_palette={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
@@ -150,6 +152,7 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.eject_save as u8,
         s.turbo as u8,
         s.rewind as u8,
+        s.runahead,
         s.gb_palettes as u8,
         s.gb_palette.core_name()
     );
@@ -176,6 +179,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut eject_save = None;
     let mut turbo = None;
     let mut rewind = None;
+    let mut runahead = None;
     let mut gb_palettes = None;
     let mut gb_palette = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
@@ -201,6 +205,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "eject_save" => eject_save = flag(value),
             "turbo" => turbo = flag(value),
             "rewind" => rewind = flag(value),
+            "runahead" => runahead = level(value, RUN_AHEAD_MAX),
             "gb_palettes" => gb_palettes = flag(value),
             "gb_palette" => gb_palette = GbPalette::parse(value),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
@@ -229,6 +234,7 @@ fn parse(text: &str) -> Option<SlotState> {
         eject_save: eject_save.unwrap_or(fallback.eject_save),
         turbo: turbo.unwrap_or(fallback.turbo),
         rewind: rewind.unwrap_or(fallback.rewind),
+        runahead: runahead.unwrap_or(fallback.runahead),
         gb_palettes: gb_palettes.unwrap_or(fallback.gb_palettes),
         gb_palette: gb_palette.unwrap_or(fallback.gb_palette),
     })
