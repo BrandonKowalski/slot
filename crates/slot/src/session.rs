@@ -7,6 +7,7 @@ use slot_store::Platform;
 use slot_ui::FfState;
 
 pub const RUMBLE_MIN_MS: Millis = 100;
+pub const RUMBLE_MAX_MS: Millis = 150;
 
 use crate::app::{App, Phase};
 use crate::audio::{opened_sink, AudioSink, Ring, Sfx};
@@ -282,7 +283,11 @@ impl Session {
             }
             (asked, Some((at, _))) => {
                 self.pulse = Some((at, asked));
-                asked
+                if now.saturating_sub(at) < RUMBLE_MAX_MS {
+                    asked
+                } else {
+                    0
+                }
             }
             (asked, None) => {
                 self.pulse = Some((now, asked));
