@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
@@ -16,27 +17,38 @@ type Shared = Arc<(Mutex<Queue>, Condvar)>;
 pub struct StateWriter {
     shared: Shared,
     threaded: bool,
+    failing: Arc<AtomicBool>,
 }
 
 impl StateWriter {
     pub fn spawn() -> Self {
         let shared: Shared = Arc::default();
+        let failing: Arc<AtomicBool> = Arc::default();
         let worker = shared.clone();
+        let flag = failing.clone();
         let threaded = thread::Builder::new()
             .name("slot-state".into())
-            .spawn(move || work(&worker))
+            .spawn(move || work(&worker, &flag))
             .is_ok();
-        StateWriter { shared, threaded }
+        StateWriter {
+            shared,
+            threaded,
+            failing,
+        }
     }
 
     pub fn save(&self, root: &Path, state: &SlotState) {
         if !self.threaded {
-            return write(root, state);
+            return write(root, state, &self.failing);
         }
         let (lock, wake) = &*self.shared;
         let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
         q.next = Some((root.to_path_buf(), state.clone()));
         wake.notify_all();
+    }
+
+    pub fn card_failing(&self) -> Arc<AtomicBool> {
+        self.failing.clone()
     }
 
     pub fn flush(&self) {
@@ -57,7 +69,7 @@ impl Drop for StateWriter {
     }
 }
 
-fn work(shared: &Shared) {
+fn work(shared: &Shared, failing: &AtomicBool) {
     let (lock, wake) = &**shared;
     loop {
         let (root, state) = {
@@ -73,14 +85,16 @@ fn work(shared: &Shared) {
                 q = wake.wait(q).unwrap_or_else(|e| e.into_inner());
             }
         };
-        write(&root, &state);
+        write(&root, &state, failing);
         lock.lock().unwrap_or_else(|e| e.into_inner()).busy = false;
         wake.notify_all();
     }
 }
 
-fn write(root: &Path, state: &SlotState) {
-    if let Err(e) = write_slot_state(root, state) {
+fn write(root: &Path, state: &SlotState, failing: &AtomicBool) {
+    let written = write_slot_state(root, state);
+    if let Err(e) = &written {
         eprintln!("slot: slot.state: {e}");
     }
+    failing.store(written.is_err(), Ordering::Relaxed);
 }

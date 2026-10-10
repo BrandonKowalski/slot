@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use slot_power::{motor_change, rumble_node, Battery, Charge, DevicePlatform, LedState, Platform};
 use tempfile::TempDir;
@@ -334,4 +334,31 @@ fn headphones_follow_the_detection_pin() {
     assert!(platform(&d).headphones());
     with_jack(&d, "lo");
     assert!(!platform(&d).headphones());
+}
+
+const MOUNTS: &str = "\
+/dev/mmcblk0p5 / ext4 rw,noatime 0 0
+/dev/mmcblk0p7 /mnt/sdcard vfat ro,noatime,fmask=0022,errors=remount-ro 0 0
+tmpfs /mnt/sdcard/System/slot tmpfs rw,relatime 0 0
+/dev/mmcblk1p1 /mnt/other exfat rw,noatime,errors=remount-ro 0 0
+";
+
+#[test]
+fn a_card_the_kernel_remounted_read_only_reads_as_read_only() {
+    assert!(slot_power::read_only_in(MOUNTS, Path::new("/mnt/sdcard")));
+}
+
+#[test]
+fn the_closest_mount_decides_not_the_root() {
+    assert!(!slot_power::read_only_in(MOUNTS, Path::new("/mnt/other")));
+    assert!(!slot_power::read_only_in(
+        MOUNTS,
+        Path::new("/mnt/sdcard/System/slot")
+    ));
+}
+
+#[test]
+fn an_option_that_merely_mentions_ro_is_not_read_only() {
+    let m = "/dev/x /mnt/card vfat rw,errors=remount-ro 0 0\n";
+    assert!(!slot_power::read_only_in(m, Path::new("/mnt/card")));
 }

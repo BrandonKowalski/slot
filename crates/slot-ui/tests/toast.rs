@@ -1,5 +1,7 @@
 use slot_store::GbPalette;
-use slot_ui::{toast_face, toast_rect, Draw, Hud, HudKind, Toast, OUT_W, PLATE_H};
+use slot_ui::{
+    toast_face, toast_rect, Draw, Hud, HudKind, Toast, ALARM_BAND_H, OUT_H, OUT_W, PLATE_H,
+};
 
 #[test]
 fn saving_and_loading_say_which_one_happened() {
@@ -25,7 +27,7 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     let all = Toast::all();
     assert_eq!(
-        all[..14],
+        all[..15],
         [
             Toast::StateSaved,
             Toast::StateLoaded,
@@ -41,11 +43,12 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::ShaderGrid,
             Toast::ShaderDot,
             Toast::ShaderSimpletex,
+            Toast::CardUnwritable,
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );
     assert_eq!(
-        all[14..],
+        all[15..],
         GbPalette::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
     );
@@ -71,7 +74,7 @@ fn no_toast_is_shrunk_to_fit_its_box() {
         (first, last)
     };
     let (top, bottom) = rows(Toast::StateSaved);
-    for t in Toast::all() {
+    for t in Toast::all().into_iter().filter(|t| !t.alarm()) {
         let (a, b) = rows(t);
         assert!(
             a.abs_diff(top) <= 1 && b.abs_diff(bottom) <= 1,
@@ -107,7 +110,7 @@ fn a_second_banner_replaces_the_first() {
 
 #[test]
 fn a_toast_is_centred() {
-    let (x, _, w, _) = toast_rect();
+    let (x, _, w, _) = toast_rect(Toast::StateSaved);
     assert_eq!(x + w / 2.0, OUT_W as f32 / 2.0);
 }
 
@@ -138,7 +141,7 @@ fn a_toast_sits_in_the_plate_band_and_is_backed_by_it() {
     assert!(colour[3] > 0.6, "the plate is too faint to give contrast");
     assert!((*ph - PLATE_H).abs() < 0.01, "the plate is not the band");
 
-    let (_, y, _, th) = toast_rect();
+    let (_, y, _, th) = toast_rect(Toast::StateSaved);
     assert!(
         y >= 0.0 && y + th <= PLATE_H,
         "the toast at {y} is outside the band"
@@ -166,4 +169,116 @@ fn a_toast_takes_the_band_from_the_bar() {
 fn a_palette_banner_names_the_palette_without_its_boot_combo() {
     let p = GbPalette::parse("GBC Dark Green →A").unwrap();
     assert_eq!(Toast::Palette(p).text(), "GBC Dark Green");
+}
+
+fn band(h: &Hud, now: u64) -> Option<(f32, f32, [f32; 4])> {
+    let mut out = Vec::new();
+    h.draw(now, &mut out);
+    out.iter().rev().find_map(|d| match d {
+        Draw::Rect {
+            y, w, h, colour, ..
+        } if *w == OUT_W as f32 && *h == ALARM_BAND_H => Some((*y, *h, *colour)),
+        _ => None,
+    })
+}
+
+#[test]
+fn the_card_alarm_stays_up_until_it_is_cleared() {
+    let mut h = Hud::new();
+    h.set_alarm(true, 1_000);
+    assert!(
+        band(&h, 3_600_000).is_some(),
+        "the alarm went away by itself"
+    );
+    h.set_alarm(false, 3_600_001);
+    let mut out = Vec::new();
+    h.draw(3_600_002, &mut out);
+    assert!(out.is_empty(), "the alarm outlived a write that landed");
+}
+
+#[test]
+fn the_card_alarm_is_a_red_band_across_the_middle_that_pulses() {
+    let mut h = Hud::new();
+    h.set_alarm(true, 0);
+    let (y, bh, bright) = band(&h, 0).expect("no alarm band");
+    let middle = OUT_H as f32 / 2.0;
+    assert!(
+        (y + bh / 2.0 - middle).abs() < 0.5,
+        "the band is not centred"
+    );
+    assert!(
+        bright[0] > 2.0 * bright[1] && bright[0] > 2.0 * bright[2],
+        "{bright:?} is not red"
+    );
+    let (_, _, dim) = band(&h, 250).unwrap();
+    assert!(
+        dim[0] < bright[0] - 0.2,
+        "the band did not pulse: {bright:?} then {dim:?}"
+    );
+}
+
+#[test]
+fn a_second_failure_does_not_restart_the_pulse() {
+    let mut h = Hud::new();
+    h.set_alarm(true, 0);
+    h.set_alarm(true, 250);
+    let mut fresh = Hud::new();
+    fresh.set_alarm(true, 0);
+    assert_eq!(band(&h, 500), band(&fresh, 500));
+}
+
+#[test]
+fn the_card_alarm_text_is_large_and_inside_its_band() {
+    let alarm = toast_face(Toast::CardUnwritable);
+    let toast = toast_face(Toast::StateSaved);
+    assert!(alarm.h > toast.h && alarm.w > toast.w);
+    let (x, y, w, th) = toast_rect(Toast::CardUnwritable);
+    let top = (OUT_H as f32 - ALARM_BAND_H) / 2.0;
+    assert!(
+        y >= top && y + th <= top + ALARM_BAND_H,
+        "the alarm text overhangs its band"
+    );
+    assert_eq!(x + w / 2.0, OUT_W as f32 / 2.0);
+}
+
+#[test]
+fn the_card_alarm_is_drawn_over_the_volume_bar() {
+    let mut h = Hud::new();
+    h.set_alarm(true, 0);
+    h.show(HudKind::Volume, 50, false, 1_000);
+    let mut out = Vec::new();
+    h.draw(1_100, &mut out);
+    let alarm = out
+        .iter()
+        .position(|d| matches!(d, Draw::Rect { h, .. } if *h == ALARM_BAND_H))
+        .expect("the bar hid the alarm");
+    assert!(alarm > 0, "the bar was not drawn under the alarm");
+    assert!(
+        out[alarm + 1..]
+            .iter()
+            .all(|d| matches!(d, Draw::Tex { .. })),
+        "something was drawn over the alarm band"
+    );
+}
+
+#[test]
+fn the_card_alarm_says_what_failed_and_what_it_costs() {
+    assert_eq!(Toast::CardUnwritable.text(), "Can't write to SD card");
+    assert_eq!(
+        Toast::CardUnwritable.detail(),
+        Some("Progress is not being saved")
+    );
+    assert_eq!(Toast::StateSaved.detail(), None);
+}
+
+#[test]
+fn the_card_alarm_inks_both_of_its_lines() {
+    let f = toast_face(Toast::CardUnwritable);
+    let inked = |rows: std::ops::Range<u32>| {
+        rows.into_iter()
+            .any(|y| (0..f.w).any(|x| f.rgba[((y * f.w + x) * 4 + 3) as usize] > 0x80))
+    };
+    let half = f.h / 2;
+    assert!(inked(0..half), "the first line is blank");
+    assert!(inked(half + 8..f.h), "the second line is blank");
 }

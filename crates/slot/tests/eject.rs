@@ -338,3 +338,15 @@ fn the_core_stops_before_the_cart_moves() {
         "the core kept running while the picture was out"
     );
 }
+
+#[test]
+fn an_eject_the_card_refuses_puts_up_a_banner() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    let states = d.path().join("States");
+    let _ = std::fs::remove_dir_all(&states);
+    std::fs::write(&states, b"").unwrap();
+    a.apply(Action::Eject);
+    a.tick_ms(10);
+    assert!(a.card_alarm(), "a refused eject raised no alarm");
+}

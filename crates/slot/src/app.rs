@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use slot_gfx::{OUT_H, OUT_W};
 use slot_input::{Action, Btn, MUTE_CHORD_MS};
@@ -44,6 +46,7 @@ const POWER_OFF_S: f32 = 0.16;
 const VOLUME_STEP: u8 = 5;
 
 const AUTOSAVE_MS: Millis = 60_000;
+const CARD_CHECK_MS: Millis = 2_000;
 
 const BATTERY_CRITICAL: u8 = 5;
 
@@ -333,6 +336,9 @@ pub struct App {
     woke_on_press: bool,
     autosave_at: Millis,
     pending_save: Option<std::thread::JoinHandle<()>>,
+    card_failing: Arc<AtomicBool>,
+    card_read_only: bool,
+    card_check_at: Millis,
     battery_at: Millis,
     charge_at: Millis,
     headphones: bool,
@@ -374,9 +380,11 @@ impl App {
             .iter()
             .position(|(_, s)| !s.carts.is_empty())
             .unwrap_or(0);
+        let state_writer = crate::state_writer::StateWriter::spawn();
+        let card_failing = state_writer.card_failing();
         App {
             radio: radio_jobs(),
-            state_writer: crate::state_writer::StateWriter::spawn(),
+            state_writer,
             phase: Phase::Shelf,
             shelves,
             shelf_at,
@@ -453,6 +461,9 @@ impl App {
             woke_on_press: false,
             autosave_at: AUTOSAVE_MS,
             pending_save: None,
+            card_failing,
+            card_read_only: false,
+            card_check_at: 0,
             battery_at: BATTERY_POLL_MS,
             charge_at: CHARGE_POLL_MS,
             headphones: false,
@@ -867,9 +878,11 @@ impl App {
         let (Some(root), Phase::Playing { cart }) = (self.root.clone(), &self.phase) else {
             return;
         };
-        if let Err(e) = video_mode::write_video_mode(&root, cart, mode) {
+        let written = video_mode::write_video_mode(&root, cart, mode);
+        if let Err(e) = &written {
             eprintln!("slot: video: could not write video_mode.txt: {e}");
         }
+        self.card_failing.store(written.is_err(), Ordering::Relaxed);
     }
 
     pub fn set_link_loaded(&mut self, serial: &'static str) {
@@ -1733,6 +1746,19 @@ impl App {
         if self.now() >= self.autosave_at {
             self.autosave();
         }
+        if self.now() >= self.card_check_at {
+            self.card_check_at = self.now() + CARD_CHECK_MS;
+            self.card_read_only = self.power.as_ref().is_some_and(|p| p.card_read_only());
+        }
+        let failing = self.card_failing.load(Ordering::Relaxed) || self.card_read_only;
+        if failing != self.hud.alarmed() {
+            eprintln!(
+                "slot: card: alarm {} (read-only {})",
+                if failing { "on" } else { "off" },
+                self.card_read_only
+            );
+        }
+        self.hud.set_alarm(failing, self.now());
         if self.now() >= self.battery_at {
             self.battery_at = self.now() + BATTERY_POLL_MS;
             self.battery = self.power.as_ref().and_then(|p| p.battery());
@@ -1821,9 +1847,11 @@ impl App {
             return;
         };
         self.state_writer.flush();
-        if let Err(e) = write_slot_state(root, &self.state) {
+        let written = write_slot_state(root, &self.state);
+        if let Err(e) = &written {
             eprintln!("slot: slot.state: {e}");
         }
+        self.card_failing.store(written.is_err(), Ordering::Relaxed);
     }
 
     fn persist_soon(&self) {
@@ -2486,8 +2514,12 @@ impl App {
             Ok(()) => {
                 self.state.cart = None;
                 self.state.cart_platform = None;
+                self.card_failing.store(false, Ordering::Relaxed);
             }
-            Err(e) => eprintln!("slot: eject: {e}"),
+            Err(e) => {
+                eprintln!("slot: eject: {e}");
+                self.card_failing.store(true, Ordering::Relaxed);
+            }
         }
     }
 
@@ -2991,17 +3023,20 @@ impl App {
         let (state, sav) = trusted_write(snapshot.as_ref(), state, "autosave");
         let (root, platform, core, cart) =
             (root.clone(), self.platform, self.core, cart.to_owned());
+        let failing = self.card_failing.clone();
         let write = move || {
-            if let Err(e) = persist::flush(
+            let written = persist::flush(
                 &root,
                 platform,
                 core,
                 &cart,
                 state.as_deref(),
                 sav.as_deref(),
-            ) {
+            );
+            if let Err(e) = &written {
                 eprintln!("slot: autosave: {e}");
             }
+            failing.store(written.is_err(), Ordering::Relaxed);
         };
         match std::thread::Builder::new()
             .name("slot-autosave".into())
@@ -3024,16 +3059,18 @@ impl App {
             return;
         };
         let (state, sav) = trusted_write(snapshot.as_ref(), state, "flush");
-        if let Err(e) = persist::flush(
+        let written = persist::flush(
             root,
             self.platform,
             self.core,
             cart,
             state.as_deref(),
             sav.as_deref(),
-        ) {
+        );
+        if let Err(e) = &written {
             eprintln!("slot: flush: {e}");
         }
+        self.card_failing.store(written.is_err(), Ordering::Relaxed);
     }
 
     fn ring(&self) -> Option<StateRing> {
@@ -3224,6 +3261,10 @@ impl App {
 
     pub fn toast(&self) -> Option<Toast> {
         self.hud.said(self.now())
+    }
+
+    pub fn card_alarm(&self) -> bool {
+        self.hud.alarmed()
     }
 
     pub fn undo(&mut self, now: Millis) {
