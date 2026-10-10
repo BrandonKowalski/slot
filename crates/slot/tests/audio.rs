@@ -307,3 +307,49 @@ fn silence_releases_the_device_only_after_three_quiet_seconds() {
     );
     assert!(s.hear(&quiet, period), "one sound did not restart the wait");
 }
+
+#[test]
+fn a_released_device_drains_at_the_audio_clock_despite_late_wakeups() {
+    let span = Duration::from_secs_f64(512.0 / GBA_HZ as f64);
+    let mut pace = slot::audio::Pacer::new(span);
+    let start = Instant::now();
+    let mut now = start;
+    let periods = 1_000u32;
+    for _ in 0..periods {
+        now += Duration::from_micros(200);
+        now += pace.wait(now) + Duration::from_micros(500);
+    }
+    let drift = (now - start).abs_diff(span * periods);
+    assert!(
+        drift < span,
+        "{periods} periods took {drift:?} longer than the audio they drained"
+    );
+}
+
+#[test]
+fn a_released_device_resyncs_after_a_long_stall_instead_of_bursting() {
+    let span = Duration::from_millis(10);
+    let mut pace = slot::audio::Pacer::new(span);
+    let start = Instant::now();
+    assert_eq!(pace.wait(start), span);
+    assert_eq!(
+        pace.wait(start + span * 2),
+        Duration::ZERO,
+        "a short lag was not caught up"
+    );
+    assert_eq!(
+        pace.wait(start + Duration::from_secs(2)),
+        span,
+        "a stall was paid back by draining without sleeping"
+    );
+}
+
+#[test]
+fn reopening_the_device_forgets_the_released_schedule() {
+    let span = Duration::from_millis(10);
+    let mut pace = slot::audio::Pacer::new(span);
+    let start = Instant::now();
+    pace.wait(start);
+    pace.reset();
+    assert_eq!(pace.wait(start + span * 3), span);
+}
