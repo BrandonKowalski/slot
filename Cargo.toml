@@ -12,6 +12,7 @@ lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 png = "0.17"
 fontdue = "0.9"
 libloading = "0.8"
+libc = "0.2"
 winit = "0.30"
 glutin = "0.32"
 glutin-winit = "0.5"

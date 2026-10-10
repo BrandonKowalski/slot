@@ -18,7 +18,7 @@ setup() {
 
 run() {
 	printf '%s' "$2" | AGS_CARD="$TMP/card" AGS_MOUNTPOINT="$TMP/mountpoint" \
-		AGS_CORE_EXE="$1" sh "$SCRIPT" "${3:-4321}" "${4:-11}" "${5:-slot-emu}" 0
+		AGS_CORE_EXE="$1" AGS_CORE_CMDLINE="${CMDLINE:-$1}" sh "$SCRIPT" "${3:-4321}" "${4:-11}" "${5:-slot-emu}" 0
 }
 
 setup
@@ -40,6 +40,27 @@ run /mnt/sdcard/System/slot "second core"
 	|| { echo "left a half-written core behind" >&2; exit 1; }
 [ "$(grep -c . "$TMP/card/crash/cores.log")" = "2" ] \
 	|| { echo "cores.log did not record both crashes" >&2; exit 1; }
+
+setup
+CMDLINE="/lib/ld-linux-aarch64.so.1 /mnt/sdcard/System/slot" \
+	run /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 "loader core"
+[ "$(cat "$TMP/card/crash/slot.core" 2>/dev/null)" = "loader core" ] \
+	|| { echo "slot run through ld-linux crashed and its core was thrown away" >&2; exit 1; }
+
+setup
+echo "slot: crash: SIGSEGV in thread slot-emu" > "$TMP/card/slot.log"
+run /mnt/sdcard/System/slot "core with a log"
+grep -q "slot: crash: SIGSEGV in thread slot-emu" "$TMP/card/crash/"slot-*.log 2>/dev/null \
+	|| { echo "the log of the run that crashed was not kept" >&2; exit 1; }
+run /usr/bin/busybox "not a frontend core"
+[ "$(ls "$TMP/card/crash/" | grep -c '^slot-.*\.log$')" = "1" ] \
+	|| { echo "kept a slot log for a crash that was not slot's" >&2; exit 1; }
+
+setup
+CMDLINE="/lib/ld-linux-aarch64.so.1 /mnt/sdcard/System/slot-label-check" \
+	run /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 "helper core"
+[ ! -f "$TMP/card/crash/slot.core" ] \
+	|| { echo "kept a helper's core as the frontend's" >&2; exit 1; }
 
 setup
 cat > "$TMP/mountpoint" <<-SH

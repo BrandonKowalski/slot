@@ -446,10 +446,12 @@ enum Wait {
 
 impl Drop for EmuHandle {
     fn drop(&mut self) {
+        eprintln!("slot: emu: stopping at {:.1} ms", crate::boot_time::ms());
         self.shared.stop.store(true, Ordering::Relaxed);
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        eprintln!("slot: emu: stopped at {:.1} ms", crate::boot_time::ms());
     }
 }
 
@@ -483,6 +485,11 @@ impl Worker {
         resume: Option<Vec<u8>>,
         link: Link,
     ) {
+        eprintln!(
+            "slot: emu: loading {} at {:.1} ms",
+            rom.display(),
+            crate::boot_time::ms()
+        );
         if let Err(e) = core.load(&rom) {
             eprintln!("slot: {e}");
             self.shared
@@ -491,12 +498,22 @@ impl Worker {
             return;
         }
         if let Some(sav) = sav {
+            eprintln!(
+                "slot: emu: save ram, {} bytes, at {:.1} ms",
+                sav.len(),
+                crate::boot_time::ms()
+            );
             if let Err(e) = core.load_save_ram(&sav) {
                 eprintln!("slot: save ram: {e}");
                 self.shared.sav_refused.store(true, Ordering::Release);
             }
         }
         if let Some(resume) = resume {
+            eprintln!(
+                "slot: emu: resume state, {} bytes, at {:.1} ms",
+                resume.len(),
+                crate::boot_time::ms()
+            );
             if let Err(e) = core.unserialize(&self.for_core(resume)) {
                 eprintln!("slot: resume: {e}");
                 self.shared.resume_refused.store(true, Ordering::Release);
@@ -516,6 +533,7 @@ impl Worker {
         self.shared
             .state
             .store(CoreState::Ready as u8, Ordering::Release);
+        eprintln!("slot: emu: ready at {:.1} ms", crate::boot_time::ms());
 
         let mut out = Vec::new();
         let mut gated = (false, false);

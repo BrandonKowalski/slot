@@ -7,7 +7,7 @@ fn root_with(ini: Option<&str>) -> tempfile::TempDir {
     let d = tempdir().unwrap();
     std::fs::create_dir(d.path().join("Config")).unwrap();
     if let Some(text) = ini {
-        std::fs::write(d.path().join("Config/selected_core.ini"), text).unwrap();
+        std::fs::write(d.path().join("Config/selected_core.txt"), text).unwrap();
     }
     d
 }
@@ -121,7 +121,7 @@ fn writing_a_core_replaces_that_carts_line_and_leaves_the_rest_alone() {
     )));
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).unwrap();
 
-    let text = std::fs::read_to_string(d.path().join("Config/selected_core.ini")).unwrap();
+    let text = std::fs::read_to_string(d.path().join("Config/selected_core.txt")).unwrap();
     assert!(
         text.contains("# my notes"),
         "a hand-written comment was destroyed"
@@ -152,7 +152,7 @@ fn writing_the_default_still_records_it() {
     let d = root_with(Some("Emerald = gpsp\n"));
     slot_store::write_selected_core(d.path(), "Emerald", Core::Mgba).unwrap();
     assert_eq!(core_for(d.path(), "Emerald"), Core::Mgba);
-    let text = std::fs::read_to_string(d.path().join("Config/selected_core.ini")).unwrap();
+    let text = std::fs::read_to_string(d.path().join("Config/selected_core.txt")).unwrap();
     assert!(text.contains("Emerald = mgba"));
 }
 

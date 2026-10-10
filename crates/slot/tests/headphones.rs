@@ -49,6 +49,7 @@ fn speaker_and_headphones_keep_their_own_volume() {
         "the headphone level was not remembered"
     );
 
+    a.flush_state();
     let saved = read_slot_state(d.path());
     assert_eq!((saved.volume, saved.volume_hp), (speaker, headphones));
 }
@@ -80,6 +81,7 @@ fn muting_the_headphones_leaves_the_speaker_alone() {
         "the headphones forgot they were muted"
     );
 
+    a.flush_state();
     let saved = read_slot_state(d.path());
     assert_eq!((saved.muted, saved.muted_hp), (false, true));
 }

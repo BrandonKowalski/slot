@@ -21,6 +21,7 @@ winit = { workspace = true, optional = true }
 cpal = { workspace = true, optional = true }
 gilrs = { workspace = true, optional = true }
 libloading = { workspace = true }
+libc = { workspace = true }
 lz4_flex = { workspace = true }
 png = { workspace = true }
 

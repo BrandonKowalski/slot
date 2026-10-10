@@ -178,6 +178,7 @@ pub fn apply_core_options(
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
+        core.set_option("mgba_force_gbp", "ON");
         match palette {
             Some(p) => {
                 core.set_option("mgba_gb_model", "Game Boy");
@@ -196,6 +197,7 @@ pub fn apply_core_options(
     }
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
+        core.set_option("gpsp_rtc_time_source", "system");
         if bios {
             core.set_option("gpsp_boot_mode", "bios");
         }

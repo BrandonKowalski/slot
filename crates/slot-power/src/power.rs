@@ -38,6 +38,10 @@ impl Power {
         self.platform.headphones()
     }
 
+    pub fn card_read_only(&self) -> bool {
+        self.platform.card_read_only()
+    }
+
     pub fn set_led(&mut self, state: LedState) {
         self.platform.set_led(state)
     }

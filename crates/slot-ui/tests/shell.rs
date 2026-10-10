@@ -260,7 +260,7 @@ fn chosen(dir: &str, cgb: u8, code: &str, line: Option<&str>) -> (TempDir, slot_
     std::fs::write(d.path().join(format!("Games/{dir}/Pak.{ext}")), rom).expect("rom");
     if let Some(line) = line {
         std::fs::write(
-            d.path().join("Config/cart_shell.ini"),
+            d.path().join("Config/cart_shell.txt"),
             format!("Pak = {line}\n"),
         )
         .expect("ini");

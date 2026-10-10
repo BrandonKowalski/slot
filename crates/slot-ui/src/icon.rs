@@ -233,6 +233,11 @@ fn frame(font: &Font, px: f32) -> Frame {
     }
 }
 
+pub fn warm_fonts() {
+    let _ = symbols_font();
+    let _ = crate::text::label_font();
+}
+
 pub(crate) fn symbols_font() -> Option<&'static Font> {
     static FONT: OnceLock<Option<Font>> = OnceLock::new();
     FONT.get_or_init(|| Font::from_bytes(SYMBOLS_TTF, FontSettings::default()).ok())

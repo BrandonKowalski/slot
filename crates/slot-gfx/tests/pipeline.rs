@@ -615,20 +615,83 @@ fn the_grid_draws_one_dark_line_per_game_pixel_at_3x() {
 }
 
 #[test]
-fn the_grid_marks_every_game_pixel_edge_on_a_4_by_3_panel() {
+fn the_grid_lines_hold_still_under_a_hair_of_texture_drift() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    for drift in [-3e-4f32, 3e-4] {
+        c.set_game_source_rect([drift / SRC_W as f32, drift / SRC_H as f32, 1.0, 1.0]);
+        let (frame, w, h) = grid_frame(&mut c, (OUT_W, OUT_H));
+        let (cols, rows) = grid_lines(&frame, w, h);
+        assert!(
+            cols.iter().all(|x| x % 3 == 0),
+            "drift {drift}: columns {cols:?}"
+        );
+        assert!(
+            rows.iter().all(|y| y % 3 == 0),
+            "drift {drift}: rows {rows:?}"
+        );
+    }
+}
+
+fn grid_profile(frame: &[u8], w: usize, h: usize, across: bool) -> Vec<f32> {
+    let g = |x: usize, y: usize| frame[(y * w + x) * 4 + 1] as f32;
+    let (len, lines) = if across { (w, h) } else { (h, w) };
+    let at = |i: usize, line: usize| if across { g(i, line) } else { g(line, i) };
+    let line = (0..lines)
+        .max_by(|a, b| {
+            let sum = |l: usize| (0..len).map(|i| at(i, l)).sum::<f32>();
+            sum(*a).total_cmp(&sum(*b))
+        })
+        .unwrap();
+    let lit = (0..len).map(|i| at(i, line)).fold(0.0, f32::max);
+    (0..len).map(|i| at(i, line) / lit).collect()
+}
+
+fn cell_means(profile: &[f32], cells: usize) -> Vec<f32> {
+    let span = profile.len() as f32 / cells as f32;
+    (0..cells)
+        .map(|k| {
+            let (a, b) = (k as f32 * span, (k + 1) as f32 * span);
+            let lit: f32 = (a.floor() as usize..(b.ceil() as usize).min(profile.len()))
+                .map(|x| (b.min(x as f32 + 1.0) - a.max(x as f32)).max(0.0) * profile[x])
+                .sum();
+            lit / span
+        })
+        .collect()
+}
+
+fn assert_even(profile: &[f32], cells: usize, spread: f32, what: &str) {
+    let means = cell_means(profile, cells);
+    let (lo, hi) = means
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(lo, hi), m| (lo.min(*m), hi.max(*m)));
+    assert!(hi < 0.97, "{what}: a cell has no grid line, mean {hi}");
+    assert!(
+        hi - lo < spread,
+        "{what}: cells run from {lo} to {hi}, unevenly lined"
+    );
+}
+
+#[test]
+fn the_grid_lines_every_game_pixel_evenly_on_a_4_by_3_panel() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
     let (frame, w, h) = grid_frame(&mut c, (640, 480));
     assert_eq!((w, h), (640, 427));
-    let (cols, rows) = grid_lines(&frame, w, h);
-    assert_eq!(cols.len(), SRC_W as usize, "dark columns: {cols:?}");
-    assert_eq!(rows.len(), SRC_H as usize, "dark rows: {rows:?}");
-    assert!(
-        cols.windows(2).all(|p| p[1] - p[0] >= 2),
-        "columns: {cols:?}"
+    assert_even(
+        &grid_profile(&frame, w, h, true),
+        SRC_W as usize,
+        0.18,
+        "columns",
     );
-    assert!(rows.windows(2).all(|p| p[1] - p[0] >= 2), "rows: {rows:?}");
+    assert_even(
+        &grid_profile(&frame, w, h, false),
+        SRC_H as usize,
+        0.18,
+        "rows",
+    );
 }
 
 fn stretched_gb_grid(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize, usize) {
@@ -650,22 +713,13 @@ fn stretched_gb_grid(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize,
 }
 
 #[test]
-fn the_grid_marks_every_game_boy_pixel_edge_when_stretched() {
+fn the_grid_lines_every_game_boy_pixel_evenly_when_stretched() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
     let (frame, w, h) = stretched_gb_grid(&mut c, (OUT_W, OUT_H));
-    let (cols, rows) = grid_lines(&frame, w, h);
-    assert_eq!(cols.len(), GB_W, "dark columns: {cols:?}");
-    assert_eq!(rows.len(), GB_H, "dark rows: {rows:?}");
-    assert!(
-        cols.windows(2).all(|p| (4..=5).contains(&(p[1] - p[0]))),
-        "columns: {cols:?}"
-    );
-    assert!(
-        rows.windows(2).all(|p| (3..=4).contains(&(p[1] - p[0]))),
-        "rows: {rows:?}"
-    );
+    assert_even(&grid_profile(&frame, w, h, true), GB_W, 0.12, "columns");
+    assert_even(&grid_profile(&frame, w, h, false), GB_H, 0.15, "rows");
 }
 
 #[test]
@@ -683,4 +737,47 @@ fn the_grid_keeps_game_boy_rows_even_when_stretched_on_a_4_by_3_panel() {
     );
     assert!(rows.windows(2).all(|p| p[1] - p[0] == 3), "rows: {rows:?}");
     assert_eq!(rows.len(), 142, "dark rows: {rows:?}");
+}
+
+#[test]
+fn simpletex_shows_a_grey_paper_as_grey() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    c.set_paper(4, &[0x60; 16]);
+    c.fit((OUT_W, OUT_H));
+    c.set_screen_effect(ScreenEffect::Simpletex);
+    c.set_screen_power(1.0);
+    c.begin_frame();
+    c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
+    c.draw_game();
+    let got = px(&c.read_frame(), OUT_W as usize / 2, OUT_H as usize / 2);
+    assert!(
+        got.iter().all(|ch| ch.abs_diff(0x60) <= 2),
+        "white through a 0x60 paper came out {got:?}"
+    );
+}
+
+#[test]
+fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    c.fit((OUT_W, OUT_H));
+    c.set_screen_effect(ScreenEffect::Dot);
+    c.set_screen_power(1.0);
+    c.begin_frame();
+    c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
+    c.draw_game();
+    let frame = c.read_frame();
+    let (x0, y0) = (OUT_W as usize / 2 / 3 * 3, OUT_H as usize / 2 / 3 * 3);
+    let mean = (0..3)
+        .flat_map(|dy| (0..3).map(move |dx| (x0 + dx, y0 + dy)))
+        .map(|(x, y)| px(&frame, x, y)[1] as f32 / 255.0)
+        .sum::<f32>()
+        / 9.0;
+    assert!(
+        (0.50..0.56).contains(&mean),
+        "a white cell averages {mean} under the dot shader"
+    );
 }

@@ -1,4 +1,6 @@
-use slot::bootlogo::{compose, decode, encode, install, size, Bmp, Outcome};
+use slot::bootlogo::{
+    chosen, compose, decode, encode, install, size, Bmp, Outcome, CARD_LOGO, USER_LOGO,
+};
 
 const BG: [u8; 3] = [11, 14, 17];
 const INK: [u8; 3] = [240, 240, 240];
@@ -123,4 +125,35 @@ fn the_shipped_wordmark_fits_every_panel_baseos_supports() {
     for panel in [(720, 480), (640, 480), (720, 720), (480, 640)] {
         assert!(compose(&m, panel).is_some(), "{panel:?}");
     }
+}
+
+fn card_with(logos: &[(&str, &[u8])]) -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    for (name, bytes) in logos {
+        let path = d.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+    d
+}
+
+#[test]
+fn a_logo_in_config_wins_over_the_shipped_one() {
+    let user = screen(640, 480, 9);
+    let card = card_with(&[(CARD_LOGO, &encode(&mark())), (USER_LOGO, &user)]);
+    assert_eq!(chosen(card.path()), Some(user));
+}
+
+#[test]
+fn the_shipped_logo_is_used_without_one_in_config() {
+    let shipped = encode(&mark());
+    let card = card_with(&[(CARD_LOGO, &shipped)]);
+    assert_eq!(chosen(card.path()), Some(shipped));
+}
+
+#[test]
+fn a_config_logo_that_is_not_a_24_bit_bmp_falls_back_to_the_shipped_one() {
+    let shipped = encode(&mark());
+    let card = card_with(&[(CARD_LOGO, &shipped), (USER_LOGO, b"not a bmp")]);
+    assert_eq!(chosen(card.path()), Some(shipped));
 }

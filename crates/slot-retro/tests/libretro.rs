@@ -141,3 +141,68 @@ fn the_bios_intro_plays_when_a_bios_is_present() {
         "{lit} of {all} pixels are lit: the rom is already painting and the intro was skipped"
     );
 }
+
+const RTC_SRAM: usize = 0x2000;
+const RTC_BLOCK: usize = 48;
+
+fn rtc_rom() -> PathBuf {
+    let mut rom = vec![0u8; 0x8000];
+    rom[0x100..0x104].copy_from_slice(&[0x00, 0xc3, 0x50, 0x01]);
+    rom[0x104..0x108].copy_from_slice(&[0xce, 0xed, 0x66, 0x66]);
+    rom[0x134..0x13d].copy_from_slice(b"SLOT RTC\0");
+    rom[0x147] = 0x10;
+    rom[0x148] = 0x00;
+    rom[0x149] = 0x02;
+    rom[0x14d] = rom[0x134..0x14d]
+        .iter()
+        .fold(0u8, |a, b| a.wrapping_sub(*b).wrapping_sub(1));
+    rom[0x150..0x152].copy_from_slice(&[0x18, 0xfe]);
+    let p = Path::new(env!("CARGO_TARGET_TMPDIR")).join("slot-rtc.gbc");
+    std::fs::write(&p, rom).expect("write rtc rom");
+    p
+}
+
+fn rtc_sav(days: u32, unix: u64) -> Vec<u8> {
+    let mut sav = vec![0x5a; RTC_SRAM];
+    let regs = [12u32, 34, 5, days, 0];
+    for r in regs.iter().chain(regs.iter()) {
+        sav.extend_from_slice(&r.to_le_bytes());
+    }
+    sav.extend_from_slice(&unix.to_le_bytes());
+    assert_eq!(sav.len(), RTC_SRAM + RTC_BLOCK);
+    sav
+}
+
+fn booted_with(sav: &[u8]) -> Option<LibretroCore> {
+    let mut c = test_core()?;
+    c.load(&rtc_rom()).unwrap();
+    c.load_save_ram(sav).unwrap();
+    for _ in 0..5 {
+        c.run_frame(ButtonMask::default());
+    }
+    Some(c)
+}
+
+#[test]
+fn a_cartridge_clock_rides_along_in_the_save_ram() {
+    let _g = lock();
+    let sav = rtc_sav(100, 1_700_000_000);
+    let Some(c) = booted_with(&sav) else { return };
+    assert_eq!(c.save_ram().as_deref(), Some(&sav[..]));
+}
+
+#[test]
+fn the_cartridge_clock_in_a_save_reaches_the_game() {
+    let _g = lock();
+    let Some(mut a) = booted_with(&rtc_sav(100, 1_700_000_000)) else {
+        return;
+    };
+    let state = a.serialize().unwrap();
+    drop(a);
+    let mut b = booted_with(&rtc_sav(200, 1_700_000_000)).unwrap();
+    assert_ne!(
+        state,
+        b.serialize().unwrap(),
+        "the save's clock never reached the core"
+    );
+}

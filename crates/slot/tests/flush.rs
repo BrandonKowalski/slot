@@ -363,3 +363,68 @@ fn a_lid_close_right_after_an_autosave_leaves_the_lids_state() {
         "the autosave landed over the lid's save"
     );
 }
+
+fn lock_the_card(root: &std::path::Path) {
+    let states = root.join("States");
+    let _ = std::fs::remove_dir_all(&states);
+    std::fs::write(&states, b"").unwrap();
+}
+
+#[test]
+fn an_autosave_the_card_refuses_puts_up_a_banner() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    lock_the_card(d.path());
+    a.tick_ms(60_000);
+    a.settle_saves();
+    a.tick_ms(60_010);
+    assert!(a.card_alarm(), "a refused autosave raised no alarm");
+    a.tick_ms(3_600_000);
+    assert!(
+        a.card_alarm(),
+        "the alarm went away while the card still refused"
+    );
+}
+
+#[test]
+fn the_alarm_clears_once_the_card_takes_a_write_again() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    lock_the_card(d.path());
+    a.tick_ms(60_000);
+    a.settle_saves();
+    a.tick_ms(60_010);
+    assert!(a.card_alarm());
+    std::fs::remove_file(d.path().join("States")).unwrap();
+    a.tick_ms(120_000);
+    a.settle_saves();
+    a.tick_ms(120_010);
+    assert!(!a.card_alarm(), "the alarm stayed after a write landed");
+}
+
+#[test]
+fn an_autosave_that_lands_puts_up_no_banner() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_in(d.path(), "Emerald");
+    a.tick_ms(60_000);
+    a.settle_saves();
+    a.tick_ms(60_010);
+    assert!(!a.card_alarm());
+}
+
+#[test]
+fn a_card_the_kernel_made_read_only_raises_the_alarm_without_a_save() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let (mut a, read_only) = common::app_playing_with_card(d.path(), "Emerald");
+    a.tick_ms(1_000);
+    assert!(!a.card_alarm());
+    read_only.store(true, Ordering::Relaxed);
+    a.tick_ms(3_100);
+    assert!(a.card_alarm(), "a read-only card went unnoticed");
+    read_only.store(false, Ordering::Relaxed);
+    a.tick_ms(5_200);
+    assert!(
+        !a.card_alarm(),
+        "the alarm stayed once the card was writable"
+    );
+}

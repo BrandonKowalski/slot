@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const CARD_LOGO: &str = "System/bootlogo.bmp";
+pub const USER_LOGO: &str = "Config/bootlogo.bmp";
 const LOGO: &str = "bootlogo.bmp";
 const ORIGINAL: &str = "bootlogo.baseos.bmp";
 const PARTITION: &str = "boot-resource";
@@ -166,14 +167,23 @@ fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
+pub fn chosen(card: &Path) -> Option<Vec<u8>> {
+    for name in [USER_LOGO, CARD_LOGO] {
+        let Ok(logo) = fs::read(card.join(name)) else {
+            continue;
+        };
+        if decode(&logo).is_some() {
+            return Some(logo);
+        }
+        eprintln!("slot: bootlogo: {name} is not a 24-bit bmp, skipping it");
+    }
+    None
+}
+
 pub fn refresh(card: &Path) {
-    let Ok(logo) = fs::read(card.join(CARD_LOGO)) else {
+    let Some(logo) = chosen(card) else {
         return;
     };
-    if decode(&logo).is_none() {
-        eprintln!("slot: bootlogo: {CARD_LOGO} is not a 24-bit bmp, leaving the boot logo alone");
-        return;
-    }
     let Some(device) = partition(PARTITION) else {
         eprintln!("slot: bootlogo: no {PARTITION} partition");
         return;

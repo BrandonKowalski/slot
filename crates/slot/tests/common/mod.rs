@@ -283,6 +283,7 @@ pub struct StubPlatform {
     led: Arc<AtomicU8>,
     led_writes: Arc<AtomicUsize>,
     headphones: Arc<std::sync::atomic::AtomicBool>,
+    read_only: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub fn led_code(state: LedState) -> u8 {
@@ -360,6 +361,7 @@ fn rig_with_led(
         led: led.clone(),
         led_writes: led_writes.clone(),
         headphones: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        read_only: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     (
         Power::new(Box::new(platform), timeout),
@@ -445,6 +447,10 @@ impl Platform for StubPlatform {
     fn headphones(&self) -> bool {
         self.headphones.load(Ordering::Relaxed)
     }
+
+    fn card_read_only(&self) -> bool {
+        self.read_only.load(Ordering::Relaxed)
+    }
 }
 
 pub fn clocked(root: &Path) {
@@ -474,9 +480,28 @@ pub fn app_playing_with_jack(root: &Path, stem: &str) -> (App, Arc<std::sync::at
         led: Arc::new(AtomicU8::new(u8::MAX)),
         led_writes: Arc::new(AtomicUsize::new(0)),
         headphones: jack.clone(),
+        read_only: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     a.set_power(Power::new(Box::new(platform), Duration::from_secs(300)));
     (a, jack)
+}
+
+pub fn app_playing_with_card(root: &Path, stem: &str) -> (App, Arc<std::sync::atomic::AtomicBool>) {
+    let mut a = app_playing_with(root, stem, StubSnapshot::boxed());
+    let read_only = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let platform = StubPlatform {
+        backlight: Arc::new(AtomicU8::new(0)),
+        root: root.to_path_buf(),
+        clock: Clock::at(CLOCK_IS_SET),
+        charge: Arc::new(AtomicU8::new(0)),
+        percent: Arc::new(AtomicU8::new(50)),
+        led: Arc::new(AtomicU8::new(u8::MAX)),
+        led_writes: Arc::new(AtomicUsize::new(0)),
+        headphones: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        read_only: read_only.clone(),
+    };
+    a.set_power(Power::new(Box::new(platform), Duration::from_secs(300)));
+    (a, read_only)
 }
 
 pub fn app_playing_with_charge(root: &Path, stem: &str) -> (App, Arc<AtomicU8>, Arc<AtomicU8>) {

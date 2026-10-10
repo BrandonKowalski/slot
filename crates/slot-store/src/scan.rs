@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::gba::{header_code, header_title};
+use crate::gba::header_title_code;
 use crate::platform::Platform;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -13,6 +14,24 @@ pub struct Cart {
     pub title: String,
     pub code: String,
     pub shell: Option<crate::ShellChoice>,
+}
+
+impl Cart {
+    pub fn read_header(&mut self) {
+        match self.platform {
+            Platform::Gba => {
+                if let Some((title, code)) = header_title_code(&self.rom) {
+                    self.title = title;
+                    self.code = code;
+                }
+            }
+            _ => {
+                if let Some(title) = crate::gb::title(&self.rom) {
+                    self.title = title;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -53,35 +72,29 @@ pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
                 continue;
             }
         };
+        let labels_dir = root.join("Labels").join(platform.dir_name());
+        let labels = listing(&labels_dir);
         for entry in entries {
             let Ok(entry) = entry else {
                 continue;
             };
             let rom = entry.path();
-            if is_hidden(&rom) || !rom.is_file() || !platform.accepts(&rom) {
+            if is_hidden(&rom) || !platform.accepts(&rom) || !is_file(&entry) {
                 continue;
             }
             let Some(stem) = rom.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            let label = root
-                .join("Labels")
-                .join(platform.dir_name())
-                .join(format!("{stem}.png"));
-            let (title, code) = match platform {
-                Platform::Gba => (
-                    header_title(&rom).unwrap_or_default(),
-                    header_code(&rom).unwrap_or_default(),
-                ),
-                _ => (crate::gb::title(&rom).unwrap_or_default(), String::new()),
-            };
+            let label = labels
+                .get(&format!("{stem}.png").to_lowercase())
+                .map(|name| labels_dir.join(name));
             carts.push(Cart {
                 platform,
                 stem: stem.to_string(),
-                title,
-                code,
+                title: String::new(),
+                code: String::new(),
                 shell: shells.get(&crate::cart_shell::key(stem)).copied(),
-                label: label.is_file().then_some(label),
+                label,
                 rom,
             });
         }
@@ -90,6 +103,25 @@ pub fn scan(root: &Path) -> Result<Vec<Cart>, StoreError> {
         (a.platform as u8, sort_key(&a.stem)).cmp(&(b.platform as u8, sort_key(&b.stem)))
     });
     Ok(carts)
+}
+
+pub fn listing(dir: &Path) -> HashMap<String, String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return HashMap::new();
+    };
+    entries
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|name| !name.starts_with('.'))
+        .map(|name| (name.to_lowercase(), name))
+        .collect()
+}
+
+fn is_file(entry: &std::fs::DirEntry) -> bool {
+    match entry.file_type() {
+        Ok(t) if t.is_symlink() => entry.path().is_file(),
+        Ok(t) => t.is_file(),
+        Err(_) => false,
+    }
 }
 
 pub fn sort_key(stem: &str) -> (u8, String) {

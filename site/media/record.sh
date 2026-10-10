@@ -31,7 +31,7 @@ for f in os.listdir(sys.argv[2]):
 		mv "$work/state" "$work/card/Config/slot.state"
 	done
 	core=$(sed -n 's/^# core: *//p' "$here/clips/$name.txt")
-	[ -n "$core" ] && echo "$cart = $core" >> "$work/card/Config/selected_core.ini"
+	[ -n "$core" ] && echo "$cart = $core" >> "$work/card/Config/selected_core.txt"
 	clips=$(sed -n 's/^rec \([a-z0-9-]*\)$/\1/p' "$here/clips/$name.txt")
 	out="$here/$name.mp4"
 	[ -n "$clips" ] && out="$here"

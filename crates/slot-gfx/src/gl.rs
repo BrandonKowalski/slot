@@ -18,10 +18,27 @@ pub fn es() -> bool {
     ES.load(Ordering::Relaxed)
 }
 
-pub fn internal_format(format: gl::types::GLenum) -> gl::types::GLint {
+const LUMINANCE: gl::types::GLenum = 0x1909;
+
+pub fn gray_format() -> gl::types::GLenum {
     match es() {
-        true => format as gl::types::GLint,
-        false => gl::RGBA8 as gl::types::GLint,
+        true => LUMINANCE,
+        false => gl::RED,
+    }
+}
+
+pub fn internal_format(format: gl::types::GLenum) -> gl::types::GLint {
+    match (es(), format) {
+        (true, _) => format as gl::types::GLint,
+        (false, gl::RED) => gl::R8 as gl::types::GLint,
+        (false, _) => gl::RGBA8 as gl::types::GLint,
+    }
+}
+
+fn bytes_per_pixel(format: gl::types::GLenum) -> u32 {
+    match format {
+        gl::RED | LUMINANCE => 1,
+        _ => 4,
     }
 }
 
@@ -111,7 +128,9 @@ pub fn texture(
     data: Option<&[u8]>,
 ) -> gl::types::GLuint {
     let pixels = match data {
-        Some(d) if d.len() >= (w * h * 4) as usize => d.as_ptr() as *const std::ffi::c_void,
+        Some(d) if d.len() >= (w * h * bytes_per_pixel(format)) as usize => {
+            d.as_ptr() as *const std::ffi::c_void
+        }
         _ => std::ptr::null(),
     };
     unsafe {

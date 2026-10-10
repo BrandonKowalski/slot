@@ -111,6 +111,7 @@ fn the_whole_pass_from_boot_to_resume() {
     p.chord(Btn::Up);
     p.chord(Btn::Right);
     p.tap(Btn::VolUp);
+    p.session.app().flush_state();
     let levels = read_slot_state(root);
     assert_eq!(levels.brightness, 6);
     assert_eq!(levels.blue_light, 1);

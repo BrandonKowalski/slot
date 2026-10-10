@@ -319,6 +319,10 @@
           <dt><kbd>VOL+</kbd> + <kbd>VOL&minus;</kbd></dt>
           <dd>Toggle mute</dd>
         </div>
+        <div class="key">
+          <dt><kbd>SELECT</kbd> + <kbd>VOL+</kbd> / <kbd>VOL&minus;</kbd></dt>
+          <dd>Toggle mute</dd>
+        </div>
       </dl>
     </div>
 
@@ -463,13 +467,15 @@
               <thead><tr><th>Device</th><th>Supported</th><th>Since Version</th></tr></thead>
               <tbody>
                 <tr><td>Anbernic RG&nbsp;SP</td><td class="yes">Yes</td><td>Always</td></tr>
-                <tr><td>Anbernic RG34XX</td><td>Untested</td><td>N/A</td></tr>
-                <tr><td>Anbernic RG34XXSP</td><td>Untested</td><td>N/A</td></tr>
+                <tr><td>Anbernic RG34XX</td><td>Yes</td><td>1.4.0</td></tr>
+                <tr><td>Anbernic RG34XXSP</td><td>Yes (No Stick Support Yet)</td><td>1.4.0</td></tr>
                 <tr><td>Anbernic RG35XXSP</td><td class="yes">Yes</td><td>1.5.0</td></tr>
+                <tr><td>Anbernic 35XX Plus</td><td class="yes">Yes</td><td>1.5.0</td></tr>
+                <tr><td>Anbernic RG28XX</td><td class="yes">Yes</td><td>1.6.0</td></tr>
               </tbody>
             </table>
-            <p>The RG34XX will likely work from 1.4.0. The RG34XXSP may not map its sticks correctly.</p>
-            <p>If you have one of the Untested devices, or have tried slot on a device not listed, please <a href="https://github.com/BrandonKowalski/slot/issues">open an issue on GitHub</a> and let me know how it went.</p>
+            <p>RG28XX support was contributed by <a href="https://github.com/GamerAnim">GamerAnim</a>. Its panel is mounted portrait, so slot turns the picture onto it. If it comes out upside down, add <code>export SLOT_ROTATE=ccw</code> to <code>System/launch_frontend.sh</code>.</p>
+            <p>If you have one of the untested devices, or have tried slot on a device not listed, please <a href="https://github.com/BrandonKowalski/slot/issues">open an issue on GitHub</a> and let me know how it went.</p>
           </dd>
         </div>
         <div class="qa">

@@ -1,4 +1,4 @@
-use slot_gfx::{Draw, TexId, OUT_W};
+use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, VOLUME_MAX};
 
 use crate::icon::icon_box;
@@ -9,9 +9,13 @@ pub type Millis = u64;
 
 pub const HUD_MS: Millis = 1500;
 const FADE_MS: Millis = 250;
+const PULSE_MS: Millis = 500;
 
 pub const PLATE_H: f32 = 40.0;
 pub(crate) const PLATE: [f32; 4] = [0.0, 0.0, 0.0, 0.72];
+pub const ALARM_BAND_H: f32 = 120.0;
+const ALARM_BRIGHT: [f32; 4] = [0.82, 0.10, 0.10, 0.94];
+const ALARM_DIM: [f32; 4] = [0.40, 0.03, 0.03, 0.94];
 
 pub const HUD_ICON_PX: f32 = 24.0;
 pub const HUD_INK: [u8; 3] = [0xf5, 0xf2, 0xef];
@@ -135,6 +139,7 @@ pub struct Hud {
     headphones: bool,
     ff: FfState,
     said: Option<(Toast, Millis)>,
+    alarm: Option<Millis>,
     icons: Vec<TexId>,
     toasts: Vec<TexId>,
     link: LinkBadge,
@@ -156,6 +161,18 @@ impl Hud {
 
     pub fn toast(&mut self, toast: Toast, now: Millis) {
         self.said = Some((toast, now));
+    }
+
+    pub fn set_alarm(&mut self, on: bool, now: Millis) {
+        self.alarm = match (on, self.alarm) {
+            (true, Some(since)) => Some(since),
+            (true, None) => Some(now),
+            (false, _) => None,
+        };
+    }
+
+    pub fn alarmed(&self) -> bool {
+        self.alarm.is_some()
     }
 
     pub fn toast_visible(&self, now: Millis) -> bool {
@@ -226,11 +243,11 @@ impl Hud {
                 h: PLATE_H,
                 colour: faded(PLATE, alpha.max(toast)),
             });
-        }
-        if toast > 0.0 {
-            self.draw_toast(now, out);
-        } else if alpha > 0.0 {
-            self.draw_bar(alpha, out);
+            if toast > 0.0 {
+                self.draw_toast(now, out);
+            } else {
+                self.draw_bar(alpha, out);
+            }
         }
         let link = self
             .link
@@ -239,6 +256,9 @@ impl Hud {
         let ff = ff_badge(self.ff).and_then(|i| self.icons.get(i.index()).copied());
         if let Some(tex) = link.or(ff) {
             self.place_badge(tex, out);
+        }
+        if let Some(since) = self.alarm {
+            self.draw_alarm(now.saturating_sub(since), out);
         }
     }
 
@@ -285,6 +305,29 @@ impl Hud {
         });
     }
 
+    fn draw_alarm(&self, age: Millis, out: &mut Vec<Draw>) {
+        out.push(Draw::Rect {
+            x: 0.0,
+            y: (OUT_H as f32 - ALARM_BAND_H) / 2.0,
+            w: OUT_W as f32,
+            h: ALARM_BAND_H,
+            colour: pulse(age),
+        });
+        let alarm = Toast::CardUnwritable;
+        let Some(tex) = self.toasts.get(alarm.index()).copied() else {
+            return;
+        };
+        let (x, y, w, h) = toast_rect(alarm);
+        out.push(Draw::Tex {
+            x,
+            y,
+            w,
+            h,
+            tex,
+            alpha: 1.0,
+        });
+    }
+
     fn draw_toast(&self, now: Millis, out: &mut Vec<Draw>) {
         let alpha = self.toast_alpha(now);
         if alpha <= 0.0 {
@@ -297,7 +340,10 @@ impl Hud {
         else {
             return;
         };
-        let (x, y, w, h) = toast_rect();
+        let Some((said, _)) = self.said else {
+            return;
+        };
+        let (x, y, w, h) = toast_rect(said);
         out.push(Draw::Tex {
             x,
             y,
@@ -344,6 +390,12 @@ fn fade(shown: Millis, now: Millis) -> f32 {
         return 0.0;
     }
     ((HUD_MS - age) as f32 / FADE_MS as f32).min(1.0)
+}
+
+fn pulse(age: Millis) -> [f32; 4] {
+    let phase = (age % PULSE_MS) as f32 / PULSE_MS as f32;
+    let t = 0.5 + 0.5 * (phase * std::f32::consts::TAU).cos();
+    std::array::from_fn(|i| ALARM_DIM[i] + (ALARM_BRIGHT[i] - ALARM_DIM[i]) * t)
 }
 
 fn faded(colour: [f32; 4], alpha: f32) -> [f32; 4] {

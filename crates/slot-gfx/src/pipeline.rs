@@ -33,7 +33,14 @@ impl GamePass {
     pub fn new() -> Result<Self, GfxError> {
         let prog = crate::shaders::program(RECT_VERT, GAME_FRAG)?;
         let game = crate::gl::texture(SRC_W, SRC_H, gl::NEAREST, gl::CLAMP_TO_EDGE, gl::BGRA, None);
-        let paper = crate::gl::texture(1, 1, gl::NEAREST, gl::REPEAT, gl::RGBA, Some(&[255; 4]));
+        let paper = crate::gl::texture(
+            1,
+            1,
+            gl::NEAREST,
+            gl::REPEAT,
+            crate::gl::gray_format(),
+            Some(&[255]),
+        );
         let (u_rect, u_bright, u_uv, u_mode, u_paper_size, u_pic, u_fbo);
         unsafe {
             gl::UseProgram(prog);
@@ -93,8 +100,15 @@ impl GamePass {
         self.effect = effect;
     }
 
-    pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
-        let tex = crate::gl::texture(size, size, gl::NEAREST, gl::REPEAT, gl::RGBA, Some(rgba));
+    pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
+        let tex = crate::gl::texture(
+            size,
+            size,
+            gl::NEAREST,
+            gl::REPEAT,
+            crate::gl::gray_format(),
+            Some(gray),
+        );
         unsafe { gl::DeleteTextures(1, &self.paper) };
         self.paper = tex;
         self.paper_size = size as f32;
