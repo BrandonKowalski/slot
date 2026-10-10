@@ -787,7 +787,11 @@ impl Worker {
                 }
                 if since_snapshot >= SNAPSHOT_EVERY {
                     since_snapshot = 0;
-                    if let Ok(state) = core.serialize() {
+                    let state = match shown {
+                        true => Ok(std::mem::take(&mut runahead.state)),
+                        false => core.serialize(),
+                    };
+                    if let Ok(state) = state {
                         rewind.push(state);
                         self.shared
                             .rewind_fill

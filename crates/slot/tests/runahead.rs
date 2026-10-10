@@ -286,6 +286,26 @@ fn fast_forward_with_run_ahead_on_never_rolls_back() {
 }
 
 #[test]
+fn run_ahead_saves_once_a_present_and_rewind_keeps_that_save() {
+    let (core, log) = Recorder::new();
+    let emu = driven(core, PathBuf::from("mock"), 1);
+    log.lock().expect("the call log").clear();
+    let before = emu.published_count();
+    for _ in 0..PRESENTS {
+        present(&emu);
+    }
+    let presents = emu.published_count() - before;
+    let saves = calls(&log)
+        .iter()
+        .filter(|c| matches!(c, Call::Save(_)))
+        .count();
+    assert_eq!(
+        saves as u64, presents,
+        "{saves} saves over {presents} presents: the rewind history saved the game again"
+    );
+}
+
+#[test]
 fn rewind_with_run_ahead_on_walks_back_through_frames_the_game_really_played() {
     let (core, log) = Recorder::new();
     let emu = driven(core, PathBuf::from("mock"), 2);
