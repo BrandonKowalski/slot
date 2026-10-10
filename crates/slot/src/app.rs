@@ -2436,6 +2436,14 @@ impl App {
         matches!(self.phase, Phase::Shelf)
     }
 
+    pub fn browsed_rom(&self) -> Option<&std::path::Path> {
+        if !self.on_shelf() {
+            return None;
+        }
+        let shelf = self.shelf();
+        shelf.carts.get(shelf.index).map(|c| c.rom.as_path())
+    }
+
     fn insert(&mut self, clean: bool) {
         if !self.on_shelf() {
             return;

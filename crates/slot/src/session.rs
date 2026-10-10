@@ -16,6 +16,7 @@ use crate::emu::{CoreState, EmuHandle, Speed};
 use crate::frames::FrameRef;
 use crate::input::Pad;
 use crate::persist;
+use crate::prefetch::Prefetch;
 
 pub struct Session {
     root: PathBuf,
@@ -28,6 +29,7 @@ pub struct Session {
     fast: bool,
     motor: u16,
     pulse: Option<(Millis, u16)>,
+    prefetch: Prefetch,
     reloading: bool,
     driven: bool,
 }
@@ -49,6 +51,7 @@ impl Session {
             fast: false,
             motor: 0,
             pulse: None,
+            prefetch: Prefetch::default(),
             reloading: false,
             driven: false,
         }
@@ -79,6 +82,10 @@ impl Session {
         }
         self.motor = strength;
         self.app.set_rumble(strength);
+    }
+
+    pub fn prefetching(&self) -> Option<&std::path::Path> {
+        self.prefetch.reading()
     }
 
     pub fn core_rumble(&self) -> Option<&Rumble> {
@@ -267,6 +274,8 @@ impl Session {
         self.sync_ff_hud();
         self.sync_rumble();
         self.sync_pad();
+        let now = self.app.now();
+        self.prefetch.browse(self.app.browsed_rom(), now);
     }
 
     fn sync_rumble(&mut self) {
