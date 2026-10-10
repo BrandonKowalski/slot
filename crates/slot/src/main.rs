@@ -13,6 +13,7 @@ fn main() {
         slot::root::ensure(std::path::Path::new(&dir));
         return;
     }
+    slot::crash::install();
 
     #[cfg(feature = "host")]
     host_app::run();
