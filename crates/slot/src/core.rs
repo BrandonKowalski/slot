@@ -197,6 +197,7 @@ pub fn apply_core_options(
     }
     if which == Core::Gpsp {
         core.set_option("gpsp_serial", serial);
+        core.set_option("gpsp_rtc_time_source", "system");
         if bios {
             core.set_option("gpsp_boot_mode", "bios");
         }

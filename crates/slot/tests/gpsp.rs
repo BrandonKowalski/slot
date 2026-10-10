@@ -672,3 +672,66 @@ fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_the_platform_default() {
         "a Game Boy cart's state was filed under States/GB/gpsp"
     );
 }
+
+fn cart_clock(state: &[u8]) -> Option<u32> {
+    let at = state.windows(8).rposition(|w| w == b"RTCPROBE")?;
+    let t = &state[at + 8..at + 15];
+    let bcd = |b: u8| u32::from(b >> 4) * 10 + u32::from(b & 0xf);
+    Some(bcd(t[4] & 0x3f) * 3600 + bcd(t[5]) * 60 + bcd(t[6]))
+}
+
+fn seconds_of_day() -> u32 {
+    let out = std::process::Command::new("date")
+        .arg("+%H %M %S")
+        .output()
+        .expect("date");
+    let f: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .map(|n| n.parse().unwrap())
+        .collect();
+    f[0] * 3600 + f[1] * 60 + f[2]
+}
+
+fn keeps_time_while_off(which: Core) {
+    use slot_retro::{ButtonMask, RetroCore};
+    let path = dylib_for(which);
+    if !path.exists() {
+        eprintln!("no {} dylib on this host, skipping", which.as_str());
+        return;
+    }
+    let rom =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/rtc_probe/probe.gba");
+    let _g = common::core_lock();
+    let boot = |state: Option<&[u8]>| {
+        let mut core = slot_retro::LibretroCore::open(&path).expect("open the core");
+        slot::core::apply_core_options(&mut core, which, "auto", false, false, None);
+        core.load(&rom).expect("load the probe");
+        if let Some(s) = state {
+            core.unserialize(s).expect("resume");
+        }
+        for _ in 0..30 {
+            core.run_frame(ButtonMask::default());
+        }
+        core.serialize().expect("state")
+    };
+    let state = boot(None);
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let resumed = boot(Some(&state));
+    let cart = cart_clock(&resumed).expect("the probe wrote no time");
+    let wall = seconds_of_day();
+    assert!(
+        wall.abs_diff(cart) <= 1,
+        "{}: the cart reads {cart} s into the day where the wall clock reads {wall}: the time spent off was lost",
+        which.as_str()
+    );
+}
+
+#[test]
+fn the_gpsp_cartridge_clock_keeps_time_while_the_game_is_off() {
+    keeps_time_while_off(Core::Gpsp);
+}
+
+#[test]
+fn the_mgba_cartridge_clock_keeps_time_while_the_game_is_off() {
+    keeps_time_while_off(Core::Mgba);
+}
