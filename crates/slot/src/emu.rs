@@ -1162,7 +1162,7 @@ fn drain_transport(transport: &mut dyn LinkChannel, link: &Link, cap: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use slot_retro::LoopbackLink;
+    use slot_retro::{LoopbackLink, MockCore};
 
     const PANEL: Duration = Duration::from_micros(16_760);
 
@@ -1195,6 +1195,38 @@ mod tests {
             seeded: false,
         };
         assert_eq!(cost.span(ms(11.9), 6), 1);
+    }
+
+    #[test]
+    fn run_ahead_keeps_the_picture_and_sound_it_shows_and_puts_the_game_back() {
+        for frames in 1..=u32::from(RUN_AHEAD_MAX) {
+            let mut core = MockCore::new();
+            let mut runahead = RunAhead::default();
+            for real in 1..=3u64 {
+                runahead
+                    .run(&mut core, ButtonMask(0), frames)
+                    .expect("the mock always saves and loads");
+                let shown = real + u64::from(frames);
+                let mut reference = MockCore::new();
+                reference
+                    .unserialize(&(shown - 1).to_le_bytes())
+                    .expect("the reference refused its frame");
+                reference.run_frame(ButtonMask(0));
+                assert_eq!(
+                    core.serialize().expect("the mock always saves"),
+                    real.to_le_bytes(),
+                    "at {frames} the game is not back on frame {real}"
+                );
+                assert!(
+                    runahead.video == reference.video_xrgb8888(),
+                    "at {frames} the picture kept is not frame {shown}"
+                );
+                assert!(
+                    runahead.audio == reference.take_audio(),
+                    "at {frames} the sound kept is not frame {shown}'s alone"
+                );
+            }
+        }
     }
 
     fn ms(ms: f64) -> Duration {
