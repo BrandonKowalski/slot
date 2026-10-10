@@ -1,6 +1,6 @@
 mod common;
 
-use common::{boot, tmp_root_with_carts};
+use common::{boot, tmp_root_with_carts, write_gb_cart};
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{read_slot_state, write_slot_state, Platform, SlotState};
@@ -386,4 +386,25 @@ fn a_resumed_cart_starts_seated() {
     .unwrap();
     let a = App::boot(d.path());
     assert_eq!(a.seat(), 1.0, "the resumed cart is still sliding in");
+}
+
+#[test]
+fn boot_rests_each_shelf_on_its_own_last_cart() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion", "Ruby"]);
+    write_gb_cart(&d, "Tetris", "TETRIS");
+    write_gb_cart(&d, "Zelda", "ZELDA");
+    let mut state = SlotState {
+        clock_set: true,
+        ..Default::default()
+    };
+    state.set_last_cart(Platform::Gba, "Fusion".into());
+    state.set_last_cart(Platform::Gb, "Zelda".into());
+    write_slot_state(d.path(), &state).unwrap();
+    let mut a = App::boot(d.path());
+    assert!(matches!(a.phase(), Phase::Shelf));
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy"));
+    assert_eq!(a.selected_stem(), Some("Zelda"));
+    a.apply(Action::GbaDown(Btn::R1));
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy Advance"));
+    assert_eq!(a.selected_stem(), Some("Fusion"));
 }

@@ -106,6 +106,8 @@ impl WallpaperPick {
 pub struct SlotState {
     pub cart: Option<String>,
     pub cart_platform: Option<Platform>,
+    pub last_carts: [Option<String>; 3],
+    pub last_cart_platform: Option<Platform>,
     pub brightness: u8,
     pub blue_light: u8,
     pub volume: u8,
@@ -193,11 +195,31 @@ impl Shader {
     }
 }
 
+impl SlotState {
+    pub fn last_cart(&self, platform: Platform) -> Option<&str> {
+        self.last_carts[platform_index(platform)].as_deref()
+    }
+
+    pub fn set_last_cart(&mut self, platform: Platform, stem: String) {
+        self.last_carts[platform_index(platform)] = Some(stem);
+        self.last_cart_platform = Some(platform);
+    }
+}
+
+fn platform_index(platform: Platform) -> usize {
+    Platform::ALL
+        .iter()
+        .position(|&p| p == platform)
+        .unwrap_or(0)
+}
+
 impl Default for SlotState {
     fn default() -> Self {
         SlotState {
             cart: None,
             cart_platform: None,
+            last_carts: Default::default(),
+            last_cart_platform: None,
             brightness: 5,
             blue_light: 0,
             volume: 60,
@@ -240,9 +262,41 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let mut text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\nrunahead={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\n",
+        "cart={}
+cart_platform={}
+last_cart_gba={}
+last_cart_gb={}
+last_cart_gbc={}
+last_cart_platform={}
+brightness={}
+blue_light={}
+volume={}
+volume_hp={}
+muted={}
+muted_hp={}
+clock_set={}
+utc_offset_min={}
+rumble={}
+ff_speed={}
+ff_sound={}
+colour_correction={}
+shader_gba={}
+shader_gb={}
+eject_save={}
+turbo={}
+rewind={}
+runahead={}
+gb_palettes={}
+gb_palette={}
+appearance={}
+wallpaper={}
+",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
+        s.last_cart(Platform::Gba).unwrap_or(""),
+        s.last_cart(Platform::Gb).unwrap_or(""),
+        s.last_cart(Platform::Gbc).unwrap_or(""),
+        s.last_cart_platform.map_or(String::new(), platform_key),
         s.brightness,
         s.blue_light,
         s.volume,
@@ -276,6 +330,8 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
 fn parse(text: &str) -> Option<SlotState> {
     let mut cart = None;
     let mut cart_platform = None;
+    let mut last_carts: [Option<String>; 3] = Default::default();
+    let mut last_cart_platform = None;
     let mut brightness = None;
     let mut blue_light = None;
     let mut volume = None;
@@ -307,6 +363,10 @@ fn parse(text: &str) -> Option<SlotState> {
         match key {
             "cart" => cart = Some(value.to_string()),
             "cart_platform" => cart_platform = platform_value(value),
+            "last_cart_gba" => last_carts[platform_index(Platform::Gba)] = stem(value),
+            "last_cart_gb" => last_carts[platform_index(Platform::Gb)] = stem(value),
+            "last_cart_gbc" => last_carts[platform_index(Platform::Gbc)] = stem(value),
+            "last_cart_platform" => last_cart_platform = platform_value(value),
             "brightness" => brightness = Some(level(value, BRIGHTNESS_MAX)?),
             "blue_light" => blue_light = Some(level(value, BLUE_LIGHT_MAX)?),
             "volume" => volume = Some(level(value, VOLUME_MAX)?),
@@ -339,6 +399,8 @@ fn parse(text: &str) -> Option<SlotState> {
     Some(SlotState {
         cart: (!cart.is_empty()).then_some(cart),
         cart_platform,
+        last_carts,
+        last_cart_platform,
         brightness: brightness?,
         blue_light: blue_light?,
         volume: volume?,
@@ -383,6 +445,10 @@ fn platform_value(value: &str) -> Option<Platform> {
     Platform::ALL
         .into_iter()
         .find(|p| value.eq_ignore_ascii_case(p.dir_name()))
+}
+
+fn stem(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn offset(value: &str) -> Option<i16> {

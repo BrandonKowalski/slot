@@ -183,6 +183,8 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
         SlotState {
             cart: Some("Emerald".into()),
             cart_platform: None,
+            last_carts: Default::default(),
+            last_cart_platform: None,
             brightness: 3,
             blue_light: 1,
             volume: 40,
@@ -429,4 +431,22 @@ fn a_missing_or_unknown_palette_falls_back_to_dmg_green() {
         assert!(!s.gb_palettes, "{bad:?} turned palettes on");
         assert_eq!(s.gb_palette, GbPalette::DEFAULT, "{bad:?}");
     }
+}
+
+#[test]
+fn each_platform_keeps_its_own_last_cart() {
+    let d = tmp_root();
+    let mut s = SlotState {
+        clock_set: true,
+        ..SlotState::default()
+    };
+    s.set_last_cart(Platform::Gba, "Emerald".into());
+    s.set_last_cart(Platform::Gbc, "Crystal".into());
+    write_slot_state(d.path(), &s).unwrap();
+    let back = read_slot_state(d.path());
+    assert_eq!(back, s);
+    assert_eq!(back.last_cart(Platform::Gba), Some("Emerald"));
+    assert_eq!(back.last_cart(Platform::Gb), None);
+    assert_eq!(back.last_cart(Platform::Gbc), Some("Crystal"));
+    assert_eq!(back.last_cart_platform, Some(Platform::Gbc));
 }
