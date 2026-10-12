@@ -5,7 +5,7 @@ use crate::battery::{draw_gauge, GAUGE_H};
 use crate::plate::HINT_H;
 use crate::slot_chrome::MOUTH_H;
 
-const FOOTER_Y: f32 = OUT_H as f32 - MOUTH_H + (MOUTH_H - HINT_H as f32) / 2.0;
+pub const FOOTER_Y: f32 = OUT_H as f32 - MOUTH_H + (MOUTH_H - HINT_H as f32) / 2.0;
 const FOOTER_MARGIN: f32 = 24.0;
 
 #[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
@@ -28,10 +28,11 @@ pub fn draw_footer(
     percent: Printed,
     bolt: Option<TexId>,
     clock: Printed,
+    ink: [u8; 3],
     out: &mut Vec<Draw>,
 ) {
     let y = FOOTER_Y + (HINT_H as f32 - GAUGE_H) / 2.0;
-    draw_gauge(FOOTER_MARGIN, y, battery, percent, bolt, out);
+    draw_gauge(FOOTER_MARGIN, y, battery, percent, bolt, ink, out);
     printed(OUT_W as f32 - FOOTER_MARGIN - clock.w as f32, clock, out);
 }
 

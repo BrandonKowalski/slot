@@ -1,5 +1,5 @@
 use slot_power::{Battery, Charge};
-use slot_ui::{draw_gauge, Draw, Printed, TexId, GAUGE_W, WALL};
+use slot_ui::{draw_gauge, Draw, Printed, TexId, GAUGE_W, HUD_INK, WALL};
 
 fn percent_face() -> Printed {
     Printed { face: None, w: 30 }
@@ -28,6 +28,7 @@ fn nothing_moves_when_the_charge_state_changes() {
         at(68, Charge::Discharging),
         percent_face(),
         None,
+        HUD_INK,
         &mut idle,
     );
     draw_gauge(
@@ -36,6 +37,7 @@ fn nothing_moves_when_the_charge_state_changes() {
         at(68, Charge::Charging),
         percent_face(),
         Some(TexId::from_raw(7)),
+        HUD_INK,
         &mut charging,
     );
     let idle = quads(&idle);
@@ -56,6 +58,7 @@ fn the_bolt_never_reaches_the_capsule() {
         at(68, Charge::Charging),
         percent_face(),
         Some(TexId::from_raw(7)),
+        HUD_INK,
         &mut out,
     );
     let bolt_right = out
@@ -88,6 +91,7 @@ fn the_bolt_is_only_drawn_while_charging() {
             at(68, charge),
             percent_face(),
             Some(TexId::from_raw(7)),
+            HUD_INK,
             &mut out,
         );
         out.iter()
@@ -110,6 +114,7 @@ fn the_fill_tracks_the_percent_and_never_leaves_the_capsule() {
             at(percent, Charge::Discharging),
             percent_face(),
             None,
+            HUD_INK,
             &mut out,
         );
         let capsule_left = out
@@ -143,6 +148,6 @@ fn the_fill_tracks_the_percent_and_never_leaves_the_capsule() {
 #[test]
 fn no_reading_draws_nothing() {
     let mut out = Vec::new();
-    draw_gauge(24.0, 400.0, None, percent_face(), None, &mut out);
+    draw_gauge(24.0, 400.0, None, percent_face(), None, HUD_INK, &mut out);
     assert!(out.is_empty());
 }

@@ -15,6 +15,79 @@ pub const FF_SPEEDS: [u8; 4] = [2, 3, 4, 6];
 
 pub const FF_SPEED_DEFAULT: u8 = 6;
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Appearance {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Appearance {
+    pub fn light(self) -> bool {
+        matches!(self, Appearance::Light)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Appearance::Dark => "dark",
+            Appearance::Light => "light",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Appearance> {
+        match name {
+            "dark" => Some(Appearance::Dark),
+            "light" => Some(Appearance::Light),
+            _ => None,
+        }
+    }
+
+    pub fn toggle(self) -> Appearance {
+        match self {
+            Appearance::Dark => Appearance::Light,
+            Appearance::Light => Appearance::Dark,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum WallpaperPick {
+    None,
+    #[default]
+    Default,
+    File(String),
+}
+
+impl WallpaperPick {
+    pub fn key(&self) -> String {
+        match self {
+            WallpaperPick::None => "none".to_string(),
+            WallpaperPick::Default => "default".to_string(),
+            WallpaperPick::File(name) => name.clone(),
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            WallpaperPick::None => "None".to_string(),
+            WallpaperPick::Default => "Default".to_string(),
+            WallpaperPick::File(name) => name
+                .rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or(name)
+                .to_string(),
+        }
+    }
+
+    pub fn parse(value: &str) -> WallpaperPick {
+        match value {
+            "none" => WallpaperPick::None,
+            "" | "default" => WallpaperPick::Default,
+            other => WallpaperPick::File(other.to_string()),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
     pub cart: Option<String>,
@@ -38,6 +111,8 @@ pub struct SlotState {
     pub rewind: bool,
     pub gb_palettes: bool,
     pub gb_palette: GbPalette,
+    pub appearance: Appearance,
+    pub wallpaper: WallpaperPick,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -110,6 +185,8 @@ impl Default for SlotState {
             rewind: true,
             gb_palettes: false,
             gb_palette: GbPalette::DEFAULT,
+            appearance: Appearance::Dark,
+            wallpaper: WallpaperPick::Default,
         }
     }
 }
@@ -128,7 +205,7 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\n",
+        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
@@ -149,7 +226,9 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.turbo as u8,
         s.rewind as u8,
         s.gb_palettes as u8,
-        s.gb_palette.core_name()
+        s.gb_palette.core_name(),
+        s.appearance.name(),
+        s.wallpaper.key()
     );
     atomic_write(&state_path(root), text.as_bytes())
 }
@@ -176,6 +255,8 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut rewind = None;
     let mut gb_palettes = None;
     let mut gb_palette = None;
+    let mut appearance = None;
+    let mut wallpaper = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -201,6 +282,8 @@ fn parse(text: &str) -> Option<SlotState> {
             "rewind" => rewind = flag(value),
             "gb_palettes" => gb_palettes = flag(value),
             "gb_palette" => gb_palette = GbPalette::parse(value),
+            "appearance" => appearance = Appearance::parse(value),
+            "wallpaper" => wallpaper = Some(WallpaperPick::parse(value)),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
             _ => {}
         }
@@ -229,6 +312,8 @@ fn parse(text: &str) -> Option<SlotState> {
         rewind: rewind.unwrap_or(fallback.rewind),
         gb_palettes: gb_palettes.unwrap_or(fallback.gb_palettes),
         gb_palette: gb_palette.unwrap_or(fallback.gb_palette),
+        appearance: appearance.unwrap_or(fallback.appearance),
+        wallpaper: wallpaper.unwrap_or(fallback.wallpaper),
     })
 }
 

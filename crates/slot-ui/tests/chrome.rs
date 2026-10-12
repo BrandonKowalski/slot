@@ -147,6 +147,7 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
         dim: 0.5,
         screen: 0.0,
         game: true,
+        over: true,
     }
     .draw(out);
 }
@@ -176,6 +177,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
             dim: 0.0,
             screen: 0.0,
             game: false,
+            over: true,
         }
         .draw(&mut out);
         out.iter()
@@ -232,6 +234,7 @@ fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
         dim: 0.0,
         screen: t,
         game: true,
+        over: true,
     }
     .draw(out);
 }
@@ -642,6 +645,7 @@ fn the_empty_slot_is_the_same_slot_the_chrome_draws() {
         dim: 0.0,
         screen: 0.0,
         game: false,
+        over: true,
     }
     .draw(&mut seated);
 

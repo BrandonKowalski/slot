@@ -23,19 +23,27 @@ fn failed(since: u64) -> GameMenu {
 
 #[test]
 fn pick_hangs_the_plug_above_the_port() {
-    assert_eq!(plug_tip(GameMenu::Pick(LinkRow::Host), 0), 330.0);
+    assert_eq!(plug_tip(GameMenu::Pick(LinkRow::Host), 0), 367.0);
+    let bottom = adapter_base(GameMenu::Pick(LinkRow::Join), 0) - ADAPTER_BASE_Y + ADAPTER_H as f32;
+    assert!(
+        (plug_tip(GameMenu::Pick(LinkRow::Host), 0) - bottom).abs() < 0.01,
+        "the resting plug bottom is not level with the adapter"
+    );
 }
 
 #[test]
 fn working_seats_the_plug_in_200ms_and_holds_it_there() {
     let m = working(LinkRow::Host, 1000);
-    assert_eq!(plug_tip(m, 1000), 330.0);
-    assert!((plug_tip(m, 1200) - 419.0).abs() < 0.01);
+    assert_eq!(plug_tip(m, 1000), 367.0);
+    assert!((plug_tip(m, 1200) - (PORT_Y + 31.0)).abs() < 0.01);
     let held: Vec<f32> = (0..3000)
         .step_by(50)
         .map(|t| plug_tip(m, 1200 + t))
         .collect();
-    assert!(held.iter().all(|y| (y - 419.0).abs() < 0.01), "{held:?}");
+    assert!(
+        held.iter().all(|y| (y - (PORT_Y + 31.0)).abs() < 0.01),
+        "{held:?}"
+    );
 }
 
 #[test]
@@ -52,7 +60,7 @@ fn linked_seats_the_plug_from_where_it_was_and_clicks_as_it_lands() {
         (plug_tip(m, since) - before).abs() < 0.01,
         "the plug jumped"
     );
-    assert!((plug_tip(m, since + 160) - 419.0).abs() < 0.01);
+    assert!((plug_tip(m, since + 160) - (PORT_Y + 31.0)).abs() < 0.01);
     assert_eq!(clicks_alpha(m, since + 100), 0.0);
     assert_eq!(clicks_alpha(m, since + 160), 1.0);
 }
@@ -128,7 +136,7 @@ fn a_searching_plug_sits_in_the_port() {
         .position(|d| matches!(d, Draw::Tex { tex, .. } if *tex == s.plug_host.tex))
         .expect("no plug");
     assert!(
-        matches!(out[plug], Draw::Tex { y, .. } if y == 419.0 - PLUG_H as f32),
+        matches!(out[plug], Draw::Tex { y, .. } if y == PORT_Y + 31.0 - PLUG_H as f32),
         "the plug is not seated in the port: {:?}",
         out[plug]
     );
@@ -232,18 +240,18 @@ fn unplug_pulls_the_plug_back_out_of_the_port_and_leaves_it_there() {
         since: 1000,
     };
     assert!(
-        (plug_tip(m, 1000) - 419.0).abs() < 0.01,
+        (plug_tip(m, 1000) - (PORT_Y + 31.0)).abs() < 0.01,
         "the unplug did not start from where a seated plug sits"
     );
     assert!(
-        (plug_tip(m, 1260) - 330.0).abs() < 0.01,
+        (plug_tip(m, 1260) - 367.0).abs() < 0.01,
         "the plug is not back where it was picked up"
     );
     let held: Vec<f32> = (0..2000)
         .step_by(100)
         .map(|t| plug_tip(m, 1260 + t))
         .collect();
-    assert!(held.iter().all(|y| (y - 330.0).abs() < 0.01), "{held:?}");
+    assert!(held.iter().all(|y| (y - 367.0).abs() < 0.01), "{held:?}");
 }
 
 #[test]

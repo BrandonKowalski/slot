@@ -2,7 +2,6 @@ use slot_gfx::{Draw, TexId};
 use slot_power::{Battery, Charge};
 
 use crate::footer::Printed;
-use crate::hud::HUD_INK;
 use crate::plate::HINT_H;
 
 pub const BOLT_PX: f32 = 18.0;
@@ -20,33 +19,27 @@ const BOLT_H: f32 = 14.0;
 const BOLT_GAP: f32 = 5.0;
 const _: () = assert!(BOLT_GAP > 0.0);
 
-const INK: [f32; 4] = [
-    HUD_INK[0] as f32 / 255.0,
-    HUD_INK[1] as f32 / 255.0,
-    HUD_INK[2] as f32 / 255.0,
-    1.0,
-];
-
 pub fn draw_gauge(
     x: f32,
     y: f32,
     battery: Option<Battery>,
     percent: Printed,
     bolt: Option<TexId>,
+    ink: [u8; 3],
     out: &mut Vec<Draw>,
 ) {
     let Some(b) = battery else {
         return;
     };
+    let colour = [
+        ink[0] as f32 / 255.0,
+        ink[1] as f32 / 255.0,
+        ink[2] as f32 / 255.0,
+        1.0,
+    ];
 
     let rect = |x: f32, y: f32, w: f32, h: f32, out: &mut Vec<Draw>| {
-        out.push(Draw::Rect {
-            x,
-            y,
-            w,
-            h,
-            colour: INK,
-        });
+        out.push(Draw::Rect { x, y, w, h, colour });
     };
 
     let cx = x + BOLT_W + BOLT_GAP;

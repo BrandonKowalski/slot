@@ -22,32 +22,34 @@ pub const CHIP_H: u32 = 41;
 pub const SLOT_W: u32 = 720;
 pub const SLOT_H: u32 = 58;
 pub const PORT_W: u32 = 720;
-pub const PORT_H: u32 = 92;
+pub const PORT_H: u32 = SLOT_H;
 pub const PLUG_W: u32 = 92;
 pub const PLUG_H: u32 = 244;
-pub const ADAPTER_W: u32 = 268;
-pub const ADAPTER_H: u32 = 182;
+pub const ADAPTER_W: u32 = 290;
+pub const ADAPTER_H: u32 = 180;
 pub const STICKER_W: u32 = 660;
 pub const STICKER_H: u32 = 228;
 
-const GBA_CART_PNG: &[u8] = include_bytes!("../../../templates/gba_cart.png");
-const GB_CART_PNG: &[u8] = include_bytes!("../../../templates/gb_cart.png");
-const GBC_CART_PNG: &[u8] = include_bytes!("../../../templates/gbc_cart.png");
-// Interiors and boards are hand drawn. templates/ holds only their size templates.
-const GBA_INTERIOR_PNG: &[u8] = include_bytes!("../../../handmade assets/gba_interior.png");
-const GB_INTERIOR_PNG: &[u8] = include_bytes!("../../../handmade assets/gb_interior.png");
-const GBC_INTERIOR_PNG: &[u8] = include_bytes!("../../../handmade assets/gbc_interior.png");
-const GB_BOARD_PNG: &[u8] = include_bytes!("../../../handmade assets/gb_board.png");
-const BOARD_PNG: &[u8] = include_bytes!("../../../handmade assets/board.png");
-const SOCKET_PNG: &[u8] = include_bytes!("../../../templates/socket.png");
-const CHIP_PNG: &[u8] = include_bytes!("../../../handmade assets/chip.png");
-const SLOT_BACK_PNG: &[u8] = include_bytes!("../../../templates/slot_back.png");
-const SLOT_FRONT_PNG: &[u8] = include_bytes!("../../../templates/slot_front.png");
-const PORT_PNG: &[u8] = include_bytes!("../../../templates/link_port.png");
-const PLUG_HOST_PNG: &[u8] = include_bytes!("../../../handmade assets/link_plug_host.png");
-const PLUG_JOIN_PNG: &[u8] = include_bytes!("../../../templates/link_plug_join.png");
-const ADAPTER_PNG: &[u8] = include_bytes!("../../../templates/link_adapter.png");
-const STICKER_PNG: &[u8] = include_bytes!("../../../templates/sticker.png");
+const GBA_CART_PNG: &[u8] = include_bytes!("../../../assets/gba_cart.png");
+const GB_CART_PNG: &[u8] = include_bytes!("../../../assets/gb_cart.png");
+const GBC_CART_PNG: &[u8] = include_bytes!("../../../assets/gbc_cart.png");
+const GBA_INTERIOR_PNG: &[u8] = include_bytes!("../../../assets/gba_interior.png");
+const GB_INTERIOR_PNG: &[u8] = include_bytes!("../../../assets/gb_interior.png");
+const GBC_INTERIOR_PNG: &[u8] = include_bytes!("../../../assets/gbc_interior.png");
+const GB_BOARD_PNG: &[u8] = include_bytes!("../../../assets/gb_board.png");
+const BOARD_PNG: &[u8] = include_bytes!("../../../assets/board.png");
+const SOCKET_PNG: &[u8] = include_bytes!("../../../assets/socket.png");
+const CHIP_PNG: &[u8] = include_bytes!("../../../assets/chip.png");
+const SLOT_BACK_DARK_PNG: &[u8] = include_bytes!("../../../assets/slot_back_dark.png");
+const SLOT_BACK_LIGHT_PNG: &[u8] = include_bytes!("../../../assets/slot_back_light.png");
+const SLOT_FRONT_DARK_PNG: &[u8] = include_bytes!("../../../assets/slot_front_dark.png");
+const SLOT_FRONT_LIGHT_PNG: &[u8] = include_bytes!("../../../assets/slot_front_light.png");
+const PORT_DARK_PNG: &[u8] = include_bytes!("../../../assets/link_port_dark.png");
+const PORT_LIGHT_PNG: &[u8] = include_bytes!("../../../assets/link_port_light.png");
+const PLUG_HOST_PNG: &[u8] = include_bytes!("../../../assets/link_plug_host.png");
+const PLUG_JOIN_PNG: &[u8] = include_bytes!("../../../assets/link_plug_join.png");
+const ADAPTER_PNG: &[u8] = include_bytes!("../../../assets/link_adapter.png");
+const STICKER_PNG: &[u8] = include_bytes!("../../../assets/sticker.png");
 
 fn load(bytes: &'static [u8], w: u32, h: u32, slot: &'static OnceLock<Vec<u8>>) -> &'static [u8] {
     slot.get_or_init(|| {
@@ -117,7 +119,7 @@ pub fn gbc_cart() -> &'static [u8] {
     load(GBC_CART_PNG, GB_CART_W, GB_CART_H, &P)
 }
 
-/// The inside of a GBA cart, from `handmade assets/gba_interior.png`. Same size as the cart and
+/// The inside of a GBA cart, from `assets/gba_interior.png`. Same size as the cart and
 /// the board, so the carousel can stack the three 1:1. Its colour is set by the game, with the
 /// same overlay blend the shells use.
 pub fn gba_interior() -> &'static [u8] {
@@ -125,19 +127,19 @@ pub fn gba_interior() -> &'static [u8] {
     load(GBA_INTERIOR_PNG, BOARD_W, BOARD_H, &P)
 }
 
-/// The back of a Game Boy pak, from `handmade assets/gb_interior.png`.
+/// The back of a Game Boy pak, from `assets/gb_interior.png`.
 pub fn gb_interior() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
     load(GB_INTERIOR_PNG, GB_CART_W, GB_CART_H, &P)
 }
 
-/// The back of a Game Boy Color pak, from `handmade assets/gbc_interior.png`.
+/// The back of a Game Boy Color pak, from `assets/gbc_interior.png`.
 pub fn gbc_interior() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
     load(GBC_INTERIOR_PNG, GB_CART_W, GB_CART_H, &P)
 }
 
-/// The Game Boy PCB, from `handmade assets/gb_board.png`, drawn between the pak's back and front plastic.
+/// The Game Boy PCB, from `assets/gb_board.png`, drawn between the pak's back and front plastic.
 pub fn gb_board() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
     load(GB_BOARD_PNG, GB_CART_W, GB_CART_H, &P)
@@ -160,17 +162,32 @@ pub fn chip() -> &'static [u8] {
 
 pub fn slot_back() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
-    load(SLOT_BACK_PNG, SLOT_W, SLOT_H, &P)
+    load(SLOT_BACK_DARK_PNG, SLOT_W, SLOT_H, &P)
+}
+
+pub fn slot_back_light() -> &'static [u8] {
+    static P: OnceLock<Vec<u8>> = OnceLock::new();
+    load(SLOT_BACK_LIGHT_PNG, SLOT_W, SLOT_H, &P)
 }
 
 pub fn slot_front() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
-    load(SLOT_FRONT_PNG, SLOT_W, SLOT_H, &P)
+    load(SLOT_FRONT_DARK_PNG, SLOT_W, SLOT_H, &P)
+}
+
+pub fn slot_front_light() -> &'static [u8] {
+    static P: OnceLock<Vec<u8>> = OnceLock::new();
+    load(SLOT_FRONT_LIGHT_PNG, SLOT_W, SLOT_H, &P)
 }
 
 pub fn link_port() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
-    load(PORT_PNG, PORT_W, PORT_H, &P)
+    load(PORT_DARK_PNG, PORT_W, PORT_H, &P)
+}
+
+pub fn link_port_light() -> &'static [u8] {
+    static P: OnceLock<Vec<u8>> = OnceLock::new();
+    load(PORT_LIGHT_PNG, PORT_W, PORT_H, &P)
 }
 
 pub fn link_plug_host() -> &'static [u8] {
@@ -195,12 +212,12 @@ pub fn sticker() -> &'static [u8] {
 
 // Shells are hand drawn. There is no Game Boy clear file yet, so a clear Game Boy pak uses
 // the neutral shell at 80%.
-const GBA_SHELL_PNG: &[u8] = include_bytes!("../../../handmade assets/gba_neutral.png");
-const GB_SHELL_PNG: &[u8] = include_bytes!("../../../handmade assets/gb_neutral.png");
-const GBC_SHELL_PNG: &[u8] = include_bytes!("../../../handmade assets/gbc_neutral.png");
-const GBA_CLEAR_PNG: &[u8] = include_bytes!("../../../handmade assets/gba_clear.png");
-const GB_CLEAR_PNG: &[u8] = include_bytes!("../../../handmade assets/gb_neutral.png");
-const GBC_CLEAR_PNG: &[u8] = include_bytes!("../../../handmade assets/gbc_clear.png");
+const GBA_SHELL_PNG: &[u8] = include_bytes!("../../../assets/gba_neutral.png");
+const GB_SHELL_PNG: &[u8] = include_bytes!("../../../assets/gb_neutral.png");
+const GBC_SHELL_PNG: &[u8] = include_bytes!("../../../assets/gbc_neutral.png");
+const GBA_CLEAR_PNG: &[u8] = include_bytes!("../../../assets/gba_clear.png");
+const GB_CLEAR_PNG: &[u8] = include_bytes!("../../../assets/gb_neutral.png");
+const GBC_CLEAR_PNG: &[u8] = include_bytes!("../../../assets/gbc_clear.png");
 
 /// The neutral shell asset for a mould, opaque or the separate clear one. The game's colour is
 /// blended onto it by the caller.

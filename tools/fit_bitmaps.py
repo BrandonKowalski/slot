@@ -1,7 +1,7 @@
 """Fit generated stand-in art to the pixel sizes Slot draws.
 
-Outputs RGBA PNGs in templates/. Replace any of those files with handmade
-art of the same width and height; Slot loads them directly.
+Outputs RGBA PNGs in templates/. Slot does not load that folder.
+The live art is assets/.
 """
 
 from __future__ import annotations
@@ -304,10 +304,10 @@ def fit_port() -> None:
     else:
         total = sum(i * n for i, n in enumerate(weights))
         cy = total // sum(weights)
-    band_h = max(8, int(round(w * 92 / 720)))
+    band_h = max(8, int(round(w * 58 / 720)))
     y0 = min(max(0, cy - band_h // 2), h - band_h)
-    band = im.crop((0, y0, w, y0 + band_h)).resize((720, 92), Image.Resampling.LANCZOS)
-    out = Image.new("RGBA", (720, 92))
+    band = im.crop((0, y0, w, y0 + band_h)).resize((720, 58), Image.Resampling.LANCZOS)
+    out = Image.new("RGBA", (720, 58))
     out.paste(band)
     save(out, "link_port.png")
 
@@ -426,7 +426,7 @@ def fit_sticker() -> None:
 
 def main() -> None:
     raise SystemExit(
-        "templates are rasterised from the SVGs:\n"
+        "the live pictures are in assets/. This script does not write them:\n"
         "  cargo run -p slot-ui --example raster_templates"
     )
     OUT.mkdir(parents=True, exist_ok=True)

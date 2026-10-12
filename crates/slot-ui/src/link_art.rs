@@ -1,25 +1,29 @@
+use slot_gfx::OUT_H;
+
 use crate::art::render_svg;
 use crate::bitmaps;
 use crate::cart::CartFace;
-use crate::text;
 
 pub const PORT_W: u32 = 720;
-pub const PORT_H: u32 = 92;
-pub const PORT_Y: f32 = 388.0;
+pub const PORT_H: u32 = bitmaps::PORT_H;
+pub const PORT_Y: f32 = (OUT_H - PORT_H) as f32;
 pub const PLUG_W: u32 = 92;
 pub const PLUG_H: u32 = 244;
 pub const PLUG_TIP_X: f32 = 46.0;
-pub const ADAPTER_W: u32 = 268;
-pub const ADAPTER_H: u32 = 182;
-pub const ADAPTER_BASE_X: f32 = 134.0;
-pub const ADAPTER_BASE_Y: f32 = 144.0;
+pub const ADAPTER_W: u32 = bitmaps::ADAPTER_W;
+pub const ADAPTER_H: u32 = bitmaps::ADAPTER_H;
+/// Centre of the connector. It is the same width as the plug tip and sits on the screen centre.
+pub const ADAPTER_BASE_X: f32 = 145.0;
+/// Top of the connector. The connector is the bottom 31px, so a seated base puts the tip at `PORT_Y + 31`, the same depth as a plug.
+pub const ADAPTER_BASE_Y: f32 = 149.0;
 pub const ARCS: [(f32, f32, u32, u32); 3] = [
-    (508.0, 290.0, 16, 56),
-    (530.0, 274.0, 20, 88),
-    (552.0, 258.0, 25, 120),
+    (508.0, 324.0, 16, 56),
+    (530.0, 308.0, 20, 88),
+    (552.0, 292.0, 25, 120),
 ];
 pub const CLICKS_X: f32 = 270.0;
-pub const CLICKS_Y: f32 = 360.0;
+/// Just above the port lip. The port used to start at y=388 with the clicks at 360.
+pub const CLICKS_Y: f32 = PORT_Y - 28.0;
 pub const CLICKS_W: u32 = 180;
 pub const CLICKS_H: u32 = 30;
 pub const ARROW_W: u32 = 16;
@@ -28,13 +32,11 @@ pub const ARROW_LEFT_X: f32 = 268.0;
 pub const ARROW_RIGHT_X: f32 = 436.0;
 pub const ARROW_Y: f32 = 52.0;
 
-const ADAPTER_SCALE: f32 = 1.75;
-const LABEL_INK: [u8; 3] = [0xec, 0xee, 0xef];
-const LOGO_INK: [u8; 3] = [0x7d, 0x85, 0x8e];
 const ARC_INK: &str = "#f6f4ef";
 
 pub struct LinkArt {
     pub port: CartFace,
+    pub port_light: CartFace,
     pub plug_host: CartFace,
     pub plug_join: CartFace,
     pub adapter: CartFace,
@@ -54,9 +56,10 @@ pub fn link_art() -> LinkArt {
     ];
     LinkArt {
         port: bitmap_face(bitmaps::link_port(), PORT_W, PORT_H),
+        port_light: bitmap_face(bitmaps::link_port_light(), PORT_W, PORT_H),
         plug_host: bitmap_face(bitmaps::link_plug_host(), PLUG_W, PLUG_H),
         plug_join: bitmap_face(bitmaps::link_plug_join(), PLUG_W, PLUG_H),
-        adapter: adapter_face(),
+        adapter: bitmap_face(bitmaps::link_adapter(), ADAPTER_W, ADAPTER_H),
         arcs_right,
         arcs_left,
         clicks: svg_face(
@@ -119,114 +122,3 @@ fn mirror(face: &CartFace) -> CartFace {
     }
 }
 
-#[derive(Copy, Clone)]
-enum Align {
-    Left,
-    Centre,
-    Right,
-}
-
-type LabelRow = (f32, f32, &'static str, f32, [u8; 3], Align);
-
-fn adapter_face() -> CartFace {
-    let mut face = bitmap_face(bitmaps::link_adapter(), ADAPTER_W, ADAPTER_H);
-    let at = |x: f32, y: f32| {
-        (
-            ADAPTER_BASE_X + x * ADAPTER_SCALE,
-            ADAPTER_BASE_Y + y * ADAPTER_SCALE,
-        )
-    };
-    let s = ADAPTER_SCALE;
-    let rows: [LabelRow; 6] = [
-        (0.0, -58.9, "SLOT", 5.6 * s, LOGO_INK, Align::Centre),
-        (
-            0.0,
-            -23.4,
-            "WIRELESS ADAPTER",
-            5.2 * s,
-            LABEL_INK,
-            Align::Centre,
-        ),
-        (
-            -37.0,
-            -15.8,
-            "RADIO : WLAN1 5GHZ   PORT : 7211",
-            3.4 * s,
-            LABEL_INK,
-            Align::Left,
-        ),
-        (
-            -37.0,
-            -11.8,
-            "MODEL NO. / MODELE NO. AGS-015",
-            3.4 * s,
-            LABEL_INK,
-            Align::Left,
-        ),
-        (
-            -37.0,
-            -7.8,
-            "MADE IN ITHACA",
-            2.7 * s,
-            LABEL_INK,
-            Align::Left,
-        ),
-        (
-            37.0,
-            -7.8,
-            "S/LOT-A-WA-USA",
-            2.7 * s,
-            LABEL_INK,
-            Align::Right,
-        ),
-    ];
-    for (x, baseline, line, px, ink, align) in rows {
-        let (fx, fy) = at(x, baseline);
-        stamp(&mut face, fx, fy, line, px, ink, align);
-    }
-    face
-}
-
-fn stamp(
-    face: &mut CartFace,
-    x: f32,
-    baseline: f32,
-    line: &str,
-    px: f32,
-    ink: [u8; 3],
-    align: Align,
-) {
-    let Some(font) = text::label_font() else {
-        return;
-    };
-    let layout = text::fit(font, line, f32::MAX, 1, px, px);
-    let width = layout
-        .lines
-        .first()
-        .map(|l| text::line_width(font, l, px, layout.tracking))
-        .unwrap_or(0.0);
-    let (bw, bh) = ((width.ceil() as u32).max(1), (px * 1.6).ceil() as u32);
-    let cov = text::coverage(bw, bh, &layout);
-    let left = match align {
-        Align::Left => x,
-        Align::Centre => x - bw as f32 / 2.0,
-        Align::Right => x - bw as f32,
-    }
-    .round() as i32;
-    let top = (baseline - px * 1.2).round() as i32;
-    for row in 0..bh as i32 {
-        for col in 0..bw as i32 {
-            let a = cov[(row as u32 * bw + col as u32) as usize] as u32;
-            let (dx, dy) = (left + col, top + row);
-            if a == 0 || dx < 0 || dy < 0 || dx >= face.w as i32 || dy >= face.h as i32 {
-                continue;
-            }
-            let d = ((dy as u32 * face.w + dx as u32) * 4) as usize;
-            for (k, c) in ink.iter().enumerate() {
-                face.rgba[d + k] =
-                    ((*c as u32 * a + face.rgba[d + k] as u32 * (255 - a)) / 255) as u8;
-            }
-            face.rgba[d + 3] = face.rgba[d + 3].max(a as u8);
-        }
-    }
-}

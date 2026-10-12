@@ -224,12 +224,20 @@ impl Compositor {
         self.game.set_power(t);
     }
 
+    pub fn set_game_fills_frame(&mut self, on: bool) {
+        self.game.set_fills_frame(on);
+    }
+
     pub fn set_game_source_rect(&mut self, rect: [f32; 4]) {
         self.game.set_source_rect(rect);
     }
 
     pub fn set_shake(&mut self, dx: f32) {
         self.shake = dx;
+    }
+
+    pub fn frame_size(&self) -> (u32, u32) {
+        self.size
     }
 
     pub fn read_frame(&self) -> Vec<u8> {

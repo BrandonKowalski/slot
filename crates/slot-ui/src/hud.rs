@@ -19,6 +19,17 @@ const ALARM_DIM: [f32; 4] = [0.40, 0.03, 0.03, 0.94];
 
 pub const HUD_ICON_PX: f32 = 24.0;
 pub const HUD_INK: [u8; 3] = [0xf5, 0xf2, 0xef];
+
+pub const FOOTER_INK: [u8; 3] = [0xff, 0xff, 0xff];
+pub const FOOTER_INK_LIGHT: [u8; 3] = [0x00, 0x00, 0x00];
+
+pub fn footer_ink(light: bool) -> [u8; 3] {
+    if light {
+        FOOTER_INK_LIGHT
+    } else {
+        FOOTER_INK
+    }
+}
 const ICON_GAP: f32 = 10.0;
 
 const BADGE_MARGIN: f32 = 12.0;

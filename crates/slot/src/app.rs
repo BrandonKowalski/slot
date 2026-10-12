@@ -9,16 +9,16 @@ use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, GbPalette, Platform, Shader,
-    SlotState, StateEntry, StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX,
-    VOLUME_MAX,
+    SlotState, StateEntry, StateRing, Theme, WallpaperPick, BLUE_LIGHT_MAX, BRIGHTNESS_MAX,
+    FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_slot_name,
-    draw_sticker, ease, grown, lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker,
-    Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice,
-    QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, SlotChrome, TexId, Toast,
-    BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, HOP_LIFT,
-    SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_slot_name,
+    draw_sticker, ease, footer_ink, grown, lid_at, lid_from, lift_of, on_board, shelf_cart_at,
+    ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids,
+    PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, SlotChrome,
+    TexId, Toast, BOARD_W, BOARD_X, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, FOOTER_Y, HINT_EDGE,
+    HINT_H, HOP_LIFT, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -72,12 +72,14 @@ const CORE_PICKER_RECEDE: f32 = 0.26;
 const SLOT_NAME_IN_MS: Millis = 200;
 const SLOT_NAME_HOLD_MS: Millis = 1200;
 const SLOT_NAME_OUT_MS: Millis = 800;
-const SLOT_NAME_ALPHA: f32 = 0.4;
-const CORE_PICKER_DIM: f32 = 0.614;
+const SLOT_NAME_ALPHA: f32 = 1.0;
+const CORE_PICKER_DIM: f32 = 0.25 / (1.0 - CORE_PICKER_RECEDE);
 const CORE_LEGEND_Y: f32 = 386.0;
 const LINK_TEXT_Y: f32 = 44.0;
-const LINK_LEGEND_Y: f32 = 422.0;
+const LINK_LEGEND_Y: f32 = FOOTER_Y;
+pub const LINK_SCRIM: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 const LINK_LEGEND_GAP: f32 = 40.0;
+const LINK_LEGEND_EDGE: f32 = 24.0;
 const LID_SHADOW_W: f32 = 168.0;
 const LID_SHADOW_H: f32 = 18.0;
 const LID_SHADOW_DROP: f32 = 27.1;
@@ -282,6 +284,7 @@ pub struct App {
     core_legend_faces: Vec<(TexId, u32)>,
     game_menu: Option<GameMenu>,
     link_sprites: Option<LinkSprites>,
+    link_shot: Option<TexId>,
     link_hardware: LinkKind,
     last_role: LinkRow,
     link_choices: HashMap<String, LinkKind>,
@@ -318,7 +321,9 @@ pub struct App {
     clock_faces: Option<(TexId, TexId)>,
     quick_menu_faces: Option<QuickMenuFaces>,
     quick_clock_faces: Option<[(TexId, u32, u32); 2]>,
+    quick_wallpaper_faces: Option<[(TexId, u32, u32); 2]>,
     sticker_face: Option<TexId>,
+    ground: Option<TexId>,
     wallpaper: Option<TexId>,
     battery_percent: slot_ui::Printed,
     bolt: Option<TexId>,
@@ -408,6 +413,7 @@ impl App {
             core_legend_faces: Vec::new(),
             game_menu: None,
             link_sprites: None,
+            link_shot: None,
             link_hardware: LinkKind::Cable,
             last_role: LinkRow::Host,
             link_choices: HashMap::new(),
@@ -444,7 +450,9 @@ impl App {
             clock_faces: None,
             quick_menu_faces: None,
             quick_clock_faces: None,
+            quick_wallpaper_faces: None,
             sticker_face: None,
+            ground: None,
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
             bolt: None,
@@ -662,7 +670,16 @@ impl App {
             QuickRow::EjectSave => Some(QuickValue::flag(self.state.eject_save)),
             QuickRow::Turbo => Some(QuickValue::flag(self.state.turbo)),
             QuickRow::Rewind => Some(QuickValue::flag(self.state.rewind)),
-            QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game => None,
+            QuickRow::Theme => Some(if self.light() {
+                QuickValue::Light
+            } else {
+                QuickValue::Dark
+            }),
+            QuickRow::DateTime
+            | QuickRow::About
+            | QuickRow::Screen
+            | QuickRow::Game
+            | QuickRow::Wallpaper => None,
         }
     }
 
@@ -672,6 +689,50 @@ impl App {
 
     pub fn set_quick_clock_faces(&mut self, dim: (TexId, u32, u32), lit: (TexId, u32, u32)) {
         self.quick_clock_faces = Some([dim, lit]);
+    }
+
+    pub fn set_quick_wallpaper_faces(&mut self, dim: (TexId, u32, u32), lit: (TexId, u32, u32)) {
+        self.quick_wallpaper_faces = Some([dim, lit]);
+    }
+
+    pub fn wallpaper_files(&self) -> Vec<String> {
+        self.root().map(crate::wallpaper::list).unwrap_or_default()
+    }
+
+    pub fn wallpaper(&self) -> WallpaperPick {
+        self.state.wallpaper.clone()
+    }
+
+    pub fn resolved_wallpaper(&self) -> WallpaperPick {
+        match &self.state.wallpaper {
+            WallpaperPick::File(name) if !self.wallpaper_files().iter().any(|n| n == name) => {
+                WallpaperPick::Default
+            }
+            other => other.clone(),
+        }
+    }
+
+    fn cycle_wallpaper(&mut self, right: bool) {
+        let mut choices = vec![WallpaperPick::None, WallpaperPick::Default];
+        choices.extend(self.wallpaper_files().into_iter().map(WallpaperPick::File));
+        let key = self.resolved_wallpaper().key();
+        let at = choices.iter().position(|c| c.key() == key).unwrap_or(1);
+        let n = choices.len();
+        let next = if right {
+            (at + 1) % n
+        } else {
+            (at + n - 1) % n
+        };
+        self.state.wallpaper = choices[next].clone();
+    }
+
+    fn draw_background(&self, out: &mut Vec<Draw>) {
+        let face = match &self.state.wallpaper {
+            WallpaperPick::None => None,
+            WallpaperPick::Default => self.ground,
+            WallpaperPick::File(_) => self.wallpaper.or(self.ground),
+        };
+        draw_ground(face, out);
     }
 
     pub fn set_sticker_face(&mut self, face: TexId) {
@@ -706,6 +767,10 @@ impl App {
             shelf.set_gb_backing(GbShell::Notched, notched);
             shelf.set_gb_backing(GbShell::Rounded, rounded);
         }
+    }
+
+    pub fn set_ground(&mut self, face: TexId) {
+        self.ground = Some(face);
     }
 
     pub fn set_wallpaper(&mut self, face: TexId) {
@@ -1071,6 +1136,10 @@ impl App {
         self.state.colour_correction
     }
 
+    pub fn light(&self) -> bool {
+        self.state.appearance.light()
+    }
+
     pub fn powering_off(&self) -> bool {
         self.powering_off
     }
@@ -1372,11 +1441,18 @@ impl App {
             | QuickRow::GbaShader
             | QuickRow::GbShader
             | QuickRow::GbPalettes
-            | QuickRow::Rumble => {}
+            | QuickRow::Rumble
+            | QuickRow::Theme
+            | QuickRow::Wallpaper => {}
         }
     }
 
     fn change_setting(&mut self, row: QuickRow, right: bool) {
+        if row == QuickRow::Wallpaper {
+            self.cycle_wallpaper(right);
+            self.persist();
+            return;
+        }
         let s = &mut self.state;
         match row {
             QuickRow::FastForward => {
@@ -1410,7 +1486,12 @@ impl App {
             QuickRow::Turbo => s.turbo = !s.turbo,
             QuickRow::Rewind => s.rewind = !s.rewind,
             QuickRow::GbPalettes => s.gb_palettes = !s.gb_palettes,
-            QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game => return,
+            QuickRow::Theme => s.appearance = s.appearance.toggle(),
+            QuickRow::Wallpaper
+            | QuickRow::DateTime
+            | QuickRow::About
+            | QuickRow::Screen
+            | QuickRow::Game => return,
         }
         self.persist();
     }
@@ -2016,11 +2097,12 @@ impl App {
                 row: *row,
                 values: QuickRow::ALL.map(|r| self.quick_value(r)),
                 clock: self.quick_clock_faces,
+                wallpaper: self.quick_wallpaper_faces,
                 faces: self.quick_menu_faces.as_ref(),
             }
             .draw(out),
             Phase::Shelf => {
-                draw_backdrop(self.wallpaper, out);
+                self.draw_background(out);
                 match (self.core_picker_shown(), self.selected_stem()) {
                     (Some(picker), Some(stem)) => {
                         let open = ease(picker.openness(self.now()));
@@ -2039,29 +2121,33 @@ impl App {
                     self.battery_percent,
                     self.bolt,
                     self.shelf_clock,
+                    footer_ink(self.light()),
                     out,
                 );
             }
             Phase::About => {
-                draw_backdrop(self.wallpaper, out);
+                self.draw_background(out);
                 draw_sticker(self.sticker_face, out);
                 return;
             }
             Phase::Inserting { cart, resumed, .. } => {
                 if !resumed {
-                    draw_backdrop(self.wallpaper, out);
+                    self.draw_background(out);
                     self.shelf()
                         .draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
                 }
-                self.chrome(cart, self.seat(), out);
+                self.chrome(cart, 0.0, out);
             }
             Phase::Ejecting { cart, .. } => {
-                draw_backdrop(self.wallpaper, out);
+                self.draw_background(out);
                 self.shelf()
                     .draw_row(Some(cart), 0.0, self.seat(), 1.0, out);
-                self.chrome(cart, self.seat(), out);
+                self.chrome(cart, 0.0, out);
             }
-            Phase::Playing { cart } if self.screen < 1.0 => self.chrome(cart, 0.0, out),
+            Phase::Playing { cart } if self.screen < 1.0 => {
+                self.draw_background(out);
+                self.chrome(cart, 0.0, out);
+            }
             Phase::Playing { .. } => self.push_game(out),
             Phase::Polaroids { .. } => {
                 self.push_game(out);
@@ -2136,6 +2222,12 @@ impl App {
             dim,
             screen: self.screen,
             game: self.game_ready,
+            over: !matches!(
+                &self.phase,
+                Phase::Inserting { resumed: true, .. }
+                    | Phase::Playing { .. }
+                    | Phase::Ejecting { .. }
+            ),
         }
         .draw(out);
     }
@@ -2217,6 +2309,16 @@ impl App {
 
     pub fn set_link_sprites(&mut self, sprites: LinkSprites) {
         self.link_sprites = Some(sprites);
+    }
+
+    pub fn set_link_shot(&mut self, tex: Option<TexId>) {
+        self.link_shot = tex;
+    }
+
+    pub fn set_link_port(&mut self, tex: TexId) {
+        if let Some(sprites) = &mut self.link_sprites {
+            sprites.port.tex = tex;
+        }
     }
 
     pub fn link_sprites_ready(&self) -> bool {
@@ -2392,12 +2494,22 @@ impl App {
     }
 
     fn draw_game_menu(&self, menu: GameMenu, out: &mut Vec<Draw>) {
+        if let Some(tex) = self.link_shot {
+            out.push(Draw::Tex {
+                x: 0.0,
+                y: 0.0,
+                w: OUT_W as f32,
+                h: OUT_H as f32,
+                tex,
+                alpha: 1.0,
+            });
+        }
         out.push(Draw::Rect {
             x: 0.0,
             y: 0.0,
             w: OUT_W as f32,
             h: OUT_H as f32,
-            colour: slot_ui::opening(),
+            colour: LINK_SCRIM,
         });
         if let Some(sprites) = &self.link_sprites {
             crate::link_screen::draw_link_art(menu, self.link_hardware, self.now(), sprites, out);
@@ -2425,28 +2537,40 @@ impl App {
             });
         }
         let switchable = self.seated().is_some_and(|stem| self.link_switchable(stem));
-        let keys: &[LinkLegend] = match menu {
-            GameMenu::Pick(_) if switchable => &[
-                LinkLegend::Cancel,
-                LinkLegend::Mode,
-                LinkLegend::Swap,
-                LinkLegend::Link,
-            ],
-            GameMenu::Pick(_) => &[LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link],
-            GameMenu::Working { .. } => &[LinkLegend::Cancel],
-            GameMenu::Linked { opened: true, .. } => &[LinkLegend::Back, LinkLegend::EndLink],
-            GameMenu::Linked { .. } => &[],
-            GameMenu::Failed { .. } => &[LinkLegend::Ok],
-            GameMenu::Unplug { .. } => &[],
+        // Cancel and Mode stay on the left of the footer, Swap and Link on the right, so the
+        // socket in the middle of the strip stays clear.
+        let (left, right): (&[LinkLegend], &[LinkLegend]) = match menu {
+            GameMenu::Pick(_) if switchable => (
+                &[LinkLegend::Cancel, LinkLegend::Mode],
+                &[LinkLegend::Swap, LinkLegend::Link],
+            ),
+            GameMenu::Pick(_) => (&[LinkLegend::Cancel], &[LinkLegend::Swap, LinkLegend::Link]),
+            GameMenu::Working { .. } => (&[LinkLegend::Cancel], &[]),
+            GameMenu::Linked { opened: true, .. } => (&[LinkLegend::Back], &[LinkLegend::EndLink]),
+            GameMenu::Linked { .. } => (&[], &[]),
+            GameMenu::Failed { .. } => (&[], &[LinkLegend::Ok]),
+            GameMenu::Unplug { .. } => (&[], &[]),
         };
+        self.draw_link_keys(left, false, out);
+        self.draw_link_keys(right, true, out);
+    }
+
+    fn draw_link_keys(&self, keys: &[LinkLegend], right: bool, out: &mut Vec<Draw>) {
         let faces: Vec<(TexId, u32)> = keys
             .iter()
             .filter_map(|k| self.link_legend_faces.get(k.index()).copied())
             .collect();
+        if faces.is_empty() {
+            return;
+        }
         let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
-        let total: f32 = faces.iter().map(|(_, w)| seen(*w)).sum::<f32>()
+        let total = faces.iter().map(|(_, w)| seen(*w)).sum::<f32>()
             + LINK_LEGEND_GAP * faces.len().saturating_sub(1) as f32;
-        let mut x = ((OUT_W as f32 - total) / 2.0).round();
+        let mut x = if right {
+            (OUT_W as f32 - LINK_LEGEND_EDGE - total).round()
+        } else {
+            LINK_LEGEND_EDGE
+        };
         for (tex, w) in faces {
             out.push(Draw::Tex {
                 x,
@@ -2456,7 +2580,7 @@ impl App {
                 tex,
                 alpha: 1.0,
             });
-            x += (seen(w) + LINK_LEGEND_GAP).round();
+            x += seen(w) + LINK_LEGEND_GAP;
         }
     }
 

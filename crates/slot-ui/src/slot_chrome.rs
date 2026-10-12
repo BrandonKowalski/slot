@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
@@ -35,10 +35,14 @@ const CX: f32 = OUT_W as f32 / 2.0;
 const SCOOP_FLAT: f32 = 4.0;
 
 static THEME: OnceLock<Theme> = OnceLock::new();
-static SLOT_BITMAPS: OnceLock<(TexId, TexId)> = OnceLock::new();
+static SLOT_BITMAPS: Mutex<Option<(TexId, TexId)>> = Mutex::new(None);
 
 pub fn set_slot_bitmaps(back: TexId, front: TexId) {
-    let _ = SLOT_BITMAPS.set((back, front));
+    *SLOT_BITMAPS.lock().unwrap_or_else(|e| e.into_inner()) = Some((back, front));
+}
+
+fn slot_bitmaps() -> Option<(TexId, TexId)> {
+    *SLOT_BITMAPS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 pub fn set_theme(theme: Theme) {
@@ -96,6 +100,8 @@ pub struct SlotChrome<'a> {
     pub dim: f32,
     pub screen: f32,
     pub game: bool,
+    /// When set, the picture opens behind a fading slot. A resumed boot, the picture opening, and the eject back to the shelf keep the cart between the slot back and front.
+    pub over: bool,
 }
 
 impl SlotChrome<'_> {
@@ -113,8 +119,15 @@ impl SlotChrome<'_> {
         }
 
         let chrome = 1.0 - self.screen.clamp(0.0, 1.0);
+        let opening = self.screen > 0.0;
+        let held = opening && !self.over;
+        let slot_alpha = if held { 1.0 } else { chrome };
 
-        draw_slot_back(chrome, out);
+        if self.game && opening && self.over {
+            out.push(Draw::Game);
+        }
+
+        draw_slot_back(slot_alpha, out);
 
         let (cw, ch) = cart_box(self.cart.platform);
         let (cw, ch) = (cw as f32, ch as f32);
@@ -131,7 +144,7 @@ impl SlotChrome<'_> {
         let centre = self.rest + w0 / 2.0;
         let x = centre + (CX - centre) * k - cw / 2.0;
         let y = foot0 + (seated_foot - foot0) * travel - ch;
-        let cart_alpha = if seat >= 1.0 { chrome } else { 1.0 };
+        let cart_alpha = if seat >= 1.0 && !held { chrome } else { 1.0 };
         out.push(match self.face {
             Some(tex) => Draw::Tex {
                 x,
@@ -171,7 +184,7 @@ impl SlotChrome<'_> {
             });
         }
 
-        if chrome < 1.0 {
+        if self.over && chrome < 1.0 && slot_bitmaps().is_none() {
             front_bands(|x, y, w, h, _| {
                 out.push(Draw::Rect {
                     x,
@@ -182,12 +195,11 @@ impl SlotChrome<'_> {
                 });
             });
         }
+        draw_slot_front(if self.over { chrome } else { slot_alpha }, out);
 
-        if self.game && self.screen > 0.0 {
+        if self.game && opening && !self.over {
             out.push(Draw::Game);
         }
-
-        draw_slot_front(chrome, out);
     }
 }
 
@@ -202,13 +214,13 @@ fn band(x: f32, y: f32, w: f32, h: f32, c: [f32; 4], alpha: f32) -> Draw {
 }
 
 fn draw_slot_back(alpha: f32, out: &mut Vec<Draw>) {
-    if let Some((back, _)) = SLOT_BITMAPS.get() {
+    if let Some((back, _)) = slot_bitmaps() {
         out.push(Draw::Tex {
             x: 0.0,
             y: BAND_Y,
             w: OUT_W as f32,
             h: MOUTH_H,
-            tex: *back,
+            tex: back,
             alpha,
         });
         return;
@@ -223,13 +235,13 @@ fn draw_slot_back(alpha: f32, out: &mut Vec<Draw>) {
 }
 
 fn draw_slot_front(alpha: f32, out: &mut Vec<Draw>) {
-    if let Some((_, front)) = SLOT_BITMAPS.get() {
+    if let Some((_, front)) = slot_bitmaps() {
         out.push(Draw::Tex {
             x: 0.0,
             y: BAND_Y,
             w: OUT_W as f32,
             h: MOUTH_H,
-            tex: *front,
+            tex: front,
             alpha,
         });
         return;
@@ -273,15 +285,20 @@ fn for_each_scoop_span(mut span: impl FnMut(f32, f32, f32)) {
     }
 }
 
+const SLOT_NAME_GAP: f32 = 6.0;
+
+pub fn slot_name_y() -> f32 {
+    OUT_H as f32 - MOUTH_H - HINT_H as f32 - SLOT_NAME_GAP
+}
+
 pub fn draw_slot_name(name: Printed, alpha: f32, out: &mut Vec<Draw>) {
     let (Some(tex), true) = (name.face, alpha > 0.0) else {
         return;
     };
     let (w, h) = (name.w as f32, HINT_H as f32);
-    let hole = SCOOP_Y + SCOOP_D - SLIT_Y;
     out.push(Draw::Tex {
         x: CX - w / 2.0,
-        y: SLIT_Y + (hole - h) / 2.0,
+        y: slot_name_y(),
         w,
         h,
         tex,

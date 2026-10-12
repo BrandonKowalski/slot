@@ -13,8 +13,8 @@ use slot_input::{Action, Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    cart_box, cart_face, edge, housing, label_colour, label_text, opening, recess, rest_y, Draw,
-    SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, PLATE_H,
+    cart_box, cart_face, edge, housing, label_colour, label_text, opening, recess, rest_y,
+    slot_name_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, HINT_H, PLATE_H,
 };
 
 struct Script(VecDeque<Vec<RawEvent>>);
@@ -71,7 +71,12 @@ fn hud_ink(px: &[u8]) -> usize {
 }
 
 fn name_window() -> (usize, usize, usize, usize) {
-    (OUT_W as usize / 2 - 70, OUT_H as usize - 49, 140, 27)
+    (
+        OUT_W as usize / 2 - 70,
+        slot_name_y() as usize,
+        140,
+        HINT_H as usize,
+    )
 }
 
 fn name_pixels(px: &[u8]) -> Vec<[u8; 3]> {
@@ -85,8 +90,12 @@ fn name_pixels(px: &[u8]) -> Vec<[u8; 3]> {
 fn name_ink(px: &[u8]) -> usize {
     name_pixels(px)
         .iter()
-        .filter(|c| u32::from(c[0]) > GROUND[0] + 0x10)
+        .filter(|c| c.iter().all(|ch| *ch > 0xc0))
         .count()
+}
+
+fn field(px: &[u8]) -> [u32; 3] {
+    patch(px, 12, 12)
 }
 
 fn let_the_name_in(f: &mut Frontend, c: &mut Compositor, input: &mut Script) {
@@ -152,7 +161,6 @@ fn alone_label() -> (usize, usize) {
 const SIDE_LEFT: (usize, usize) = (90, 250);
 const SIDE_RIGHT: (usize, usize) = (630, 250);
 const MIDDLE: (usize, usize) = (360, 250);
-const GROUND: [u32; 3] = [0x05, 0x05, 0x08];
 
 #[test]
 fn the_shoulders_ring_over_a_shelf_for_each_system() {
@@ -187,7 +195,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     let middle = patch(&gba, MIDDLE.0, MIDDLE.1);
     for (name, slot) in [("left", left), ("middle", middle), ("right", right)] {
         assert!(
-            apart(slot, GROUND) > 60,
+            apart(slot, field(&gba)) > 60,
             "the {name} slot of a two-cart shelf is bare ground: {slot:?}"
         );
     }
@@ -215,13 +223,13 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
         let (lx, ly) = alone_label();
         let label = patch(&px, lx, ly);
         assert!(
-            apart(cart, GROUND) > 60,
+            apart(cart, field(&px)) > 60,
             "no cart in the middle of the {banner} shelf: {cart:?}"
         );
         for (side, (x, y)) in [("left", SIDE_LEFT), ("right", SIDE_RIGHT)] {
             let beside = patch(&px, x, y);
             assert!(
-                apart(beside, GROUND) < 30,
+                apart(beside, field(&px)) < 30,
                 "the {banner} shelf holds one cart but drew something on its {side}: {beside:?}"
             );
         }
@@ -296,7 +304,7 @@ fn a_card_nobody_has_organised_comes_up_an_empty_shelf() {
 
     let plate = patch(&empty, 150, 470);
     assert!(
-        apart(plate, GROUND) > 20,
+        apart(plate, field(&empty)) > 20,
         "the bottom plate is not there, so this is a blank screen rather than an empty shelf: \
          {plate:?}"
     );
@@ -312,7 +320,7 @@ fn a_card_nobody_has_organised_comes_up_an_empty_shelf() {
     ] {
         let slot = patch(&empty, x, y);
         assert!(
-            apart(slot, GROUND) < 30,
+            apart(slot, field(&empty)) < 30,
             "the {name} slot of an unorganised card is holding something: {slot:?}"
         );
     }
@@ -328,7 +336,7 @@ fn a_card_nobody_has_organised_comes_up_an_empty_shelf() {
     ] {
         let slot = patch(&later, x, y);
         assert!(
-            apart(slot, GROUND) < 30,
+            apart(slot, field(&later)) < 30,
             "a cart appeared in the {name} slot a second after an unorganised card booted: \
              {slot:?}"
         );
@@ -342,7 +350,7 @@ fn a_card_nobody_has_organised_comes_up_an_empty_shelf() {
     let full = composed(&mut f, &mut c, "organised-card");
     let middle = patch(&full, MIDDLE.0, MIDDLE.1);
     assert!(
-        apart(middle, GROUND) > 60,
+        apart(middle, field(&full)) > 60,
         "the organised card's own shelf is bare too, so this test cannot see a cart at all: \
          {middle:?}"
     );
@@ -422,7 +430,7 @@ fn a_cart_going_in_from_a_repeated_row_takes_both_copies_of_its_neighbour_with_i
 
     for (side, slot) in [("left", west), ("right", east)] {
         assert!(
-            apart(slot, GROUND) > 60,
+            apart(slot, field(&standing)) > 60,
             "the {side} of the selection is bare ground: {slot:?}"
         );
     }
@@ -449,7 +457,7 @@ fn a_cart_going_in_from_a_repeated_row_takes_both_copies_of_its_neighbour_with_i
     for (side, (x, y)) in [("left", SIDE_LEFT), ("right", SIDE_RIGHT)] {
         let slot = patch(&seated, x, y);
         assert!(
-            apart(slot, GROUND) < 30,
+            apart(slot, field(&seated)) < 30,
             "the {side} copy of the other cart is still on the row with the chosen one \
              seated: {slot:?}"
         );
@@ -701,6 +709,7 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
                 dim: 0.0,
                 screen: 0.0,
                 game: false,
+                over: true,
             }
             .draw(&mut out);
             let px = frame(&mut c, &out, &format!("insert-{name}-{beat}"));
@@ -767,6 +776,7 @@ fn no_frame_of_the_travel_jumps_further_than_the_cartridge_is_tall() {
                     dim: 0.0,
                     screen: 0.0,
                     game: false,
+                    over: true,
                 }
                 .draw(&mut out);
                 out.iter()

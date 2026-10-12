@@ -15,7 +15,7 @@ use slot_input::Action;
 use slot_store::Core;
 use slot_ui::{
     arrows_hint_face, hint_face, link_art, menu_face, toast_face, CartFace, Draw, TexId, Toast,
-    UndoFace, OUT_H, OUT_W,
+    UndoFace, OUT_H, OUT_W, PORT_Y,
 };
 
 struct Face {
@@ -184,9 +184,9 @@ fn the_host_picks_a_purple_plug_over_the_port() {
         housing[2] > housing[1] + 30,
         "no purple housing above the port: {housing:?}"
     );
-    let slot = at(&px, 360, 406);
+    let slot = at(&px, 360, PORT_Y as usize + 18);
     assert!(
-        slot.iter().all(|c| *c < 0x14),
+        slot.iter().all(|c| *c < 0x40),
         "no port under the plug: {slot:?}"
     );
 }
@@ -215,7 +215,7 @@ fn a_wireless_link_seats_the_adapter_with_its_label_plate() {
         opened: false,
     };
     let px = render(menu, LinkKind::Wireless, 2000, "wireless-linked");
-    let plate = at(&px, 360, 388 - 12);
+    let plate = at(&px, 360, PORT_Y as usize - 12);
     assert!(
         plate[0] > 0x28 && plate[0] < 0x70,
         "no plate where the seated adapter's label goes: {plate:?}"

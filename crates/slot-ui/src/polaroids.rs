@@ -5,7 +5,7 @@ use slot_store::{parse_stamp, StateEntry};
 use crate::art;
 use crate::battery::{draw_gauge, GAUGE_H};
 use crate::footer::{draw_printed, Printed};
-use crate::hud::{PLATE, PLATE_H};
+use crate::hud::{HUD_INK, PLATE, PLATE_H};
 use crate::plate::{hint_quad, hint_row, hint_width, Hint, HINT_GAP, HINT_H, TITLE_H, TITLE_W};
 
 pub const PHOTO_W: u32 = 240;
@@ -189,6 +189,7 @@ impl Polaroids {
             battery,
             battery_percent,
             bolt,
+            HUD_INK,
             out,
         );
         if clock.w > 0 {

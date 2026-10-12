@@ -1,15 +1,14 @@
 use std::path::{Path, PathBuf};
 
+pub fn list(root: &Path) -> Vec<String> {
+    let mut files = pngs(&root.join("Wallpapers"));
+    files.sort();
+    files
+}
+
 pub fn pick(root: &Path, seed: u64) -> Option<PathBuf> {
     let dir = root.join("Wallpapers");
-    let mut files: Vec<String> = std::fs::read_dir(&dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| !slot_store::is_hidden(p))
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")))
-        .filter_map(|p| Some(p.file_name()?.to_str()?.to_owned()))
-        .collect();
+    let mut files = pngs(&dir);
     if files.is_empty() {
         return None;
     }
@@ -43,6 +42,19 @@ pub fn pick(root: &Path, seed: u64) -> Option<PathBuf> {
         eprintln!("slot: wallpaper.deck: {e}");
     }
     Some(dir.join(next))
+}
+
+fn pngs(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| !slot_store::is_hidden(p))
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")))
+        .filter_map(|p| Some(p.file_name()?.to_str()?.to_owned()))
+        .collect()
 }
 
 fn read_deck(path: &Path) -> (Vec<String>, Vec<String>) {

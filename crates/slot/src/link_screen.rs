@@ -26,8 +26,9 @@ pub struct LinkSprites {
     pub arrow_right: Sprite,
 }
 
-const PICK_TIP: f32 = 330.0;
-const SEATED_TIP: f32 = 419.0;
+/// How far the seated tip sits below the top of the port. The port used to start at y=388 with the tip at 419.
+const PLUG_IN_PORT: f32 = 31.0;
+const SEATED_TIP: f32 = PORT_Y + PLUG_IN_PORT;
 const FAILED_TIP: f32 = 276.0;
 const FAILED_TURN_DEG: f32 = 14.0;
 const FAILED_ALPHA: f32 = 0.45;
@@ -36,6 +37,8 @@ const SEAT_MS: Millis = 160;
 const LIFT_MS: Millis = 250;
 const UNPLUG_MS: Millis = 260;
 const PICK_BASE: f32 = 336.0;
+/// The plug's bottom is its tip. The adapter's connector hangs `PLUG_IN_PORT` below its base, so this puts the two bottoms level.
+const PICK_TIP: f32 = PICK_BASE + PLUG_IN_PORT;
 const ARC_MS: f32 = 1200.0;
 const ARC_STAGGER_MS: f32 = 300.0;
 const ARROW_ALPHA: f32 = 0.7;

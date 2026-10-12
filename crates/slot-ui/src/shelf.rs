@@ -9,7 +9,7 @@ use crate::silhouette::GbShell;
 use crate::slot_chrome::{draw_empty_slot, MOUTH_H};
 
 const SIDE_SCALE: f32 = 0.78;
-const SIDE_ALPHA: f32 = 0.55;
+const SIDE_ALPHA: f32 = 1.0;
 
 static SLACK: AtomicU32 = AtomicU32::new(0);
 

@@ -1,4 +1,4 @@
-//! Rasterise the original SVGs into templates/ at the sizes Slot draws.
+//! Rasterise the original SVGs. Slot loads the pictures in the repo's `assets/` folder, not this output.
 
 use slot_ui::{neutral_shell, Mould};
 
@@ -49,11 +49,11 @@ fn main() {
     save("chip.png", render(&assets.join("chip.svg"), 59, 41), 59, 41);
     save(
         "link_port.png",
-        render(&assets.join("link_port.svg"), 720, 92),
+        render(&assets.join("link_port.svg"), 720, 58),
         720,
-        92,
+        58,
     );
-    // Size template only. The live host plug is handmade assets/link_plug_host.png.
+    // Size template only. The live host plug is assets/link_plug_host.png.
     save(
         "link_plug_host.png",
         render(&assets.join("link_plug_host.svg"), 92, 244),
@@ -66,12 +66,14 @@ fn main() {
         92,
         244,
     );
+    // Size template only. The live adapter is assets/link_adapter.png.
     save(
         "link_adapter.png",
         render(&assets.join("link_adapter.svg"), 268, 182),
         268,
         182,
     );
+    // Size template only. The live sticker is assets/sticker.png.
     save(
         "sticker.png",
         render(&assets.join("sticker.svg"), 660, 228),
@@ -80,7 +82,7 @@ fn main() {
     );
 
     let pcb = with_viewbox(&board_src, "16 26 208 98");
-    // Size template only. The live interior is handmade assets/gba_interior.png.
+    // Size template only. The live interior is assets/gba_interior.png.
     // Cart, interior and board share 360×212 so the carousel can stack them 1:1.
     save(
         "gba_interior.png",
@@ -88,7 +90,7 @@ fn main() {
         360,
         212,
     );
-    // templates/gb_board.png is the pak PCB, edited by hand. Do not overwrite it.
+    // assets/gb_board.png is the pak PCB, edited by hand. Do not overwrite it.
     let gb_mask = render(&assets.join("gb_cart.svg"), 312, 337);
     let gbc_mask = render(&assets.join("gbc_cart.svg"), 312, 337);
     save(

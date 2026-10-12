@@ -1,7 +1,10 @@
 mod art;
 pub use art::cover;
 mod bitmaps;
-pub use bitmaps::{slot_back, slot_front, Mould, SLOT_H, SLOT_W};
+pub use bitmaps::{
+    link_port, link_port_light, slot_back, slot_back_light, slot_front, slot_front_light, Mould,
+    SLOT_H, SLOT_W,
+};
 mod backdrop;
 mod barcode;
 mod battery;
@@ -27,7 +30,7 @@ mod sticker;
 pub mod text;
 mod toast;
 
-pub use backdrop::{bezel_face, draw_backdrop, wallpaper_face};
+pub use backdrop::{bezel_face, default_background, draw_backdrop, draw_ground, wallpaper_face};
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
 pub use board::{
@@ -46,10 +49,10 @@ pub use cart::{
 };
 pub use clock::{clock_label, date_time_text, hhmm, set_clock_hint_face, ClockPicker, Field};
 pub use draw::{Draw, TexId, OUT_H, OUT_W};
-pub use footer::{draw_footer, Printed};
+pub use footer::{draw_footer, Printed, FOOTER_Y};
 pub use hud::{
-    badge_at, ff_badge, FfState, Hud, HudKind, LinkBadge, Millis, ALARM_BAND_H, HUD_ICON_PX,
-    HUD_INK, HUD_MS, LINK_HOST_INK, LINK_JOIN_INK, PLATE_H,
+    badge_at, ff_badge, footer_ink, FfState, Hud, HudKind, LinkBadge, Millis, ALARM_BAND_H,
+    HUD_ICON_PX, HUD_INK, HUD_MS, LINK_HOST_INK, LINK_JOIN_INK, PLATE_H,
 };
 pub use icon::{badge_face, icon_box, icon_face, warm_fonts, Badge, Icon};
 pub use link_art::{
@@ -58,9 +61,10 @@ pub use link_art::{
     PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
 };
 pub use plate::{
-    arrows_hint_face, arrows_hint_width, cap_width, centred_hints, hint_face, hint_quad, hint_row,
-    hint_width, title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP,
-    HINT_EDGE, HINT_GAP, HINT_H, LEGEND_GAP, TITLE_H, TITLE_W,
+    arrows_hint_coloured, arrows_hint_face, arrows_hint_width, cap_width, centred_hints,
+    hint_coloured, hint_face, hint_quad, hint_row, hint_width, title_face, word_face, word_ink,
+    word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP, HINT_EDGE, HINT_GAP, HINT_H, LEGEND_GAP,
+    TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
 pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
@@ -79,7 +83,7 @@ pub use shell::{
 pub use silhouette::{gb_silhouette, silhouette, GbShell};
 pub use slot_chrome::{
     draw_empty_slot, draw_slot_name, ease, edge, housing, opening, recess, set_slot_bitmaps,
-    set_theme, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
+    set_theme, slot_name_y, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
 };
 pub use sticker::{
     draw_sticker, head_rows, sticker_face, sticker_lines, StickerFields, COPYRIGHT, CREDITS, DC,

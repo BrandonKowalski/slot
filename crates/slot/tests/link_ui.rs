@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use slot::app::{
-    App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS, UNPLUG_HOLD_MS,
+    App, GameMenu, LinkLegend, LinkRow, Phase, LINKED_HOLD_MS, LINK_LOST_MS, LINK_SCRIM,
+    UNPLUG_HOLD_MS,
 };
 use slot::emu::{CoreState, EmuHandle, Speed};
 use slot::link_kind::LinkKind;
@@ -19,7 +20,7 @@ use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
 use slot_retro::{ButtonMask, LinkChannel};
 use slot_store::{write_slot_state, Core, Platform, SlotState};
-use slot_ui::{arrows_hint_face, hint_face, opening, Draw, TexId, Toast, HINT_EDGE, OUT_H, OUT_W};
+use slot_ui::{arrows_hint_face, hint_face, Draw, TexId, Toast, FOOTER_Y, HINT_EDGE, OUT_H, OUT_W};
 use tempfile::TempDir;
 
 const BAIL: Duration = Duration::from_secs(5);
@@ -478,21 +479,30 @@ fn a_peer_ending_the_link_unplugs_on_this_device_too() {
 fn the_link_screen_draws_its_role_over_the_game() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     let roles = fake_roles(&mut app);
+    let shot = TexId::from_raw(7);
+    app.set_link_shot(Some(shot));
     app.apply(Action::GameMenu);
     let mut out = Vec::new();
     app.draw(&mut out);
+    let shot_at = out
+        .iter()
+        .position(|d| {
+            matches!(*d, Draw::Tex { tex, w, h, .. }
+                if tex == shot && w == OUT_W as f32 && h == OUT_H as f32)
+        })
+        .expect("the screen drew no screenshot of the game");
     let scrim = out
         .iter()
         .position(|d| {
             matches!(*d, Draw::Rect { w, h, colour, .. }
-        if w == OUT_W as f32 && h == OUT_H as f32 && colour == opening())
+        if w == OUT_W as f32 && h == OUT_H as f32 && colour == LINK_SCRIM)
         })
-        .expect("the screen drew no ground over the game");
+        .expect("the screen drew no scrim over the game");
     let host = out
         .iter()
         .position(|d| matches!(*d, Draw::Tex { tex, .. } if tex == roles[0].0))
         .expect("HOST never reached the frame");
-    assert!(host > scrim);
+    assert!(shot_at < scrim && scrim < host);
 }
 
 fn session_playing_on_gpsp() -> (Session, TempDir, Millis) {
@@ -1226,19 +1236,19 @@ fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
     app.apply(Action::GameMenu);
     let mut out = Vec::new();
     app.draw(&mut out);
-    let mut keys: Vec<(f32, f32, LinkLegend)> = out
+    let mut keys: Vec<(f32, f32, f32, LinkLegend)> = out
         .iter()
         .filter_map(|d| match *d {
-            Draw::Tex { x, w, tex, .. } => LinkLegend::ALL
+            Draw::Tex { x, y, w, tex, .. } => LinkLegend::ALL
                 .iter()
                 .find(|k| faces[k.index()].0 == tex)
-                .map(|k| (x, w, *k)),
+                .map(|k| (x, y, w, *k)),
             _ => None,
         })
         .collect();
     keys.sort_by(|a, b| a.0.total_cmp(&b.0));
     assert_eq!(
-        keys.iter().map(|k| k.2).collect::<Vec<_>>(),
+        keys.iter().map(|k| k.3).collect::<Vec<_>>(),
         [
             LinkLegend::Cancel,
             LinkLegend::Mode,
@@ -1246,16 +1256,26 @@ fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
             LinkLegend::Link
         ],
     );
+    assert!(
+        keys.iter().all(|k| k.1 == FOOTER_Y),
+        "the keys are not on the carousel footer line"
+    );
     let left = keys[0].0;
-    let (x, w, _) = keys[keys.len() - 1];
+    let (x, _, w, _) = keys[keys.len() - 1];
     let right = x + w - HINT_EDGE as f32;
-    println!(
-        "pick legend: faces {:?} wide, drawn from x {left} to {right} of {OUT_W}",
-        keys.iter().map(|k| k.1).collect::<Vec<_>>()
+    assert!(
+        (left - 24.0).abs() < 1.0,
+        "Cancel is not on the left of the strip: {left}"
     );
     assert!(
-        left >= 0.0 && right <= OUT_W as f32,
-        "the legend runs off the strip: {left}..{right}"
+        (right - (OUT_W as f32 - 24.0)).abs() < 1.0,
+        "Link is not on the right of the strip: {right}"
+    );
+    let mode_end = keys[1].0 + keys[1].2 - HINT_EDGE as f32;
+    let swap_start = keys[2].0;
+    assert!(
+        swap_start - mode_end > 80.0,
+        "no gap between Mode and Swap for the socket: {mode_end}..{swap_start}"
     );
 }
 

@@ -79,7 +79,14 @@ fn the_fast_forward_row_offers_the_four_ceilings_the_card_can_hold() {
 fn the_rows_run_in_the_order_the_user_chose() {
     assert_eq!(
         QuickRow::MAIN.map(QuickRow::label),
-        ["Screen", "Gameplay", "Date & Time", "About"]
+        [
+            "Screen",
+            "Gameplay",
+            "Theme",
+            "Wallpaper",
+            "Date & Time",
+            "About"
+        ]
     );
     assert_eq!(
         QuickRow::SCREEN.map(QuickRow::label),
@@ -136,7 +143,9 @@ fn the_values_read_as_the_menu_prints_them() {
             "LCD3x",
             "Grid",
             "Dot",
-            "Simpletex"
+            "Simpletex",
+            "Dark",
+            "Light",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);

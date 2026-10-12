@@ -200,7 +200,10 @@ fn the_lid_keeps_its_proportions_all_the_way_open() {
 fn the_board_fills_the_cart_so_opening_does_not_squash_it() {
     let cart = shelf_cart();
     let board = board_in(cart);
-    assert_eq!(board, cart, "the back half is shorter than the lid: {board:?}");
+    assert_eq!(
+        board, cart,
+        "the back half is shorter than the lid: {board:?}"
+    );
     assert_eq!(board_at(0.0), cart);
     assert!(
         board_at(1.0).h <= cart.h,

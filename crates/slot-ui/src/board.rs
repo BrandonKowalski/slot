@@ -10,7 +10,7 @@ use crate::text;
 pub const BOARD_W: u32 = CART_W;
 pub const BOARD_H: u32 = CART_H;
 
-/// The black ROM chip on `handmade assets/board.png`: x 61..132, y 48..138.
+/// The black ROM chip on `assets/board.png`: x 61..132, y 48..138.
 pub const ROM_X: u32 = 61;
 pub const ROM_Y: u32 = 48;
 pub const ROM_W: u32 = 71;

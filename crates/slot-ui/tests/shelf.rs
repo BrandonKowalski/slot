@@ -1,8 +1,8 @@
 use slot_power::{Battery, Charge};
 use slot_store::{Cart, Platform};
 use slot_ui::{
-    draw_footer, label_colour, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W, GB_CART_H,
-    GB_CART_W, OUT_W,
+    draw_footer, footer_ink, label_colour, rest_y, Draw, GbShell, Printed, Shelf, TexId, CART_W,
+    GB_CART_H, GB_CART_W, OUT_W,
 };
 
 fn shelf_with(n: usize) -> Shelf {
@@ -466,6 +466,32 @@ fn the_other_direction_letting_go_does_not_stop_the_repeat() {
 }
 
 #[test]
+fn the_gauge_is_white_in_dark_mode_and_black_in_light_mode() {
+    let gauge = |light| {
+        let mut out = Vec::new();
+        draw_footer(
+            Some(Battery {
+                percent: 68,
+                charge: Charge::Discharging,
+            }),
+            Printed { face: None, w: 30 },
+            None,
+            Printed { face: None, w: 40 },
+            footer_ink(light),
+            &mut out,
+        );
+        out.into_iter()
+            .find_map(|d| match d {
+                Draw::Rect { colour, .. } => Some(colour),
+                _ => None,
+            })
+            .expect("the gauge did not draw")
+    };
+    assert_eq!(gauge(false), [1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(gauge(true), [0.0, 0.0, 0.0, 1.0]);
+}
+
+#[test]
 fn the_gauge_starts_at_the_case_margin() {
     let mut out = Vec::new();
     draw_footer(
@@ -476,6 +502,7 @@ fn the_gauge_starts_at_the_case_margin() {
         Printed { face: None, w: 30 },
         Some(TexId::from_raw(1)),
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut out,
     );
     let leftmost = out
@@ -499,6 +526,7 @@ fn the_band_prints_the_charge_at_one_margin_and_the_clock_at_the_other() {
         Printed { face: None, w: 30 },
         Some(TexId::from_raw(1)),
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut out,
     );
     let xs: Vec<(f32, f32)> = out
@@ -546,6 +574,7 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
         Printed { face: None, w: 30 },
         None,
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut idle,
     );
     let mut charging = Vec::new();
@@ -557,6 +586,7 @@ fn the_footer_does_not_move_the_gauge_when_the_charge_state_changes() {
         Printed { face: None, w: 30 },
         Some(TexId::from_raw(2)),
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut charging,
     );
     for d in &idle {
@@ -575,6 +605,7 @@ fn the_clock_stays_at_the_right_margin() {
         Printed::default(),
         None,
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut out,
     );
     let rightmost = out
@@ -595,6 +626,7 @@ fn a_band_with_no_gauge_still_draws_its_clock() {
         Printed::default(),
         None,
         Printed { face: None, w: 40 },
+        [255, 255, 255],
         &mut out,
     );
     assert_eq!(out.len(), 1);
@@ -739,6 +771,23 @@ fn dim_darkens_a_side_carts_face_and_not_the_black_under_it() {
         dimmed_under, under,
         "the black under the side cart changed with the dim"
     );
+}
+
+#[test]
+fn a_cart_off_centre_stays_opaque() {
+    let mut s = shelf_with(3);
+    let side = TexId::from_raw(11);
+    s.set_faces(vec![TexId::from_raw(10), side, TexId::from_raw(12)]);
+    let mut out = Vec::new();
+    s.draw_row(Some("Game 0"), 0.0, 0.0, 1.0, &mut out);
+    let alpha = out
+        .iter()
+        .find_map(|d| match *d {
+            Draw::Tex { tex, alpha, .. } if tex == side => Some(alpha),
+            _ => None,
+        })
+        .expect("the side cart is not drawn");
+    assert_eq!(alpha, 1.0, "an off-centre cart faded to {alpha}");
 }
 
 fn gb_shelf_with(n: usize) -> Shelf {

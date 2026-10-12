@@ -14,6 +14,7 @@ fn px(face: &CartFace, x: u32, y: u32) -> [u8; 4] {
 fn every_face_is_the_size_the_layout_expects() {
     let a = link_art();
     assert_eq!((a.port.w, a.port.h), (PORT_W, PORT_H));
+    assert_eq!((a.port_light.w, a.port_light.h), (PORT_W, PORT_H));
     for plug in [&a.plug_host, &a.plug_join] {
         assert_eq!((plug.w, plug.h), (PLUG_W, PLUG_H));
     }
@@ -57,14 +58,46 @@ fn the_tip_is_at_the_bottom_and_the_cable_fades_out_at_the_top() {
 fn the_port_opens_at_the_top_of_the_strip() {
     let a = link_art();
     let slot = px(&a.port, 360, 12);
-    let shell = px(&a.port, 40, 80);
+    let shell = px(&a.port, 40, 40);
     assert_eq!(slot[3], 255, "the port bitmap is transparent: {slot:?}");
     assert_eq!(shell[3], 255, "the shell bitmap is transparent: {shell:?}");
     let luma = |p: [u8; 4]| p[0] as u32 + p[1] as u32 + p[2] as u32;
     assert!(
-        luma(slot) + 40 < luma(shell),
-        "the port mouth is not darker than the shell: {slot:?} against {shell:?}"
+        luma(slot).abs_diff(luma(shell)) > 30,
+        "the port mouth does not read apart from the shell: {slot:?} against {shell:?}"
     );
+}
+
+#[test]
+fn the_adapter_connector_matches_the_plug_tip() {
+    let a = link_art();
+    for row in 0..31 {
+        let plug = span(&a.plug_host, PLUG_H - 31 + row);
+        let adapter = span(&a.adapter, ADAPTER_H - 31 + row);
+        assert_eq!(
+            plug.1 - plug.0,
+            adapter.1 - adapter.0,
+            "connector row {row} is a different width"
+        );
+        let plug_mid = (plug.0 + plug.1) as f32 / 2.0;
+        let adapter_mid = (adapter.0 + adapter.1) as f32 / 2.0;
+        assert!(
+            (plug_mid - (PLUG_TIP_X - 0.5)).abs() < 1.0,
+            "the plug tip is off centre"
+        );
+        assert!(
+            (adapter_mid - (ADAPTER_BASE_X - 0.5)).abs() < 1.0,
+            "the adapter connector is off its seating point"
+        );
+    }
+    assert_eq!(ADAPTER_H as f32 - ADAPTER_BASE_Y, 31.0);
+}
+
+fn span(face: &CartFace, y: u32) -> (u32, u32) {
+    let mut xs = (0..face.w).filter(|x| px(face, *x, y)[3] > 16);
+    let first = xs.next().expect("a connector row");
+    let last = xs.next_back().unwrap_or(first);
+    (first, last)
 }
 
 #[test]

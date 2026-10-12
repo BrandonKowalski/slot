@@ -15,7 +15,7 @@ pub const GB_CART_W: u32 = 312;
 
 pub const GB_CART_H: u32 = (GB_CART_W * GB_SEATED_H + SEATED_W / 2) / SEATED_W;
 
-/// The GBA cart's label box, as drawn in `handmade assets/gba_neutral.png`: x 48..312, y 50..186
+/// The GBA cart's label box, as drawn in `assets/gba_neutral.png`: x 48..312, y 50..186
 /// of 360x212.
 pub const fn label_panel(w: u32, h: u32) -> (u32, u32, u32, u32) {
     (
@@ -48,7 +48,7 @@ pub const GB_LABEL_W: u32 = gb_label_panel(GB_CART_W, GB_CART_H).2 - GB_LABEL_X;
 pub const GB_LABEL_H: u32 = gb_label_panel(GB_CART_W, GB_CART_H).3 - GB_LABEL_Y;
 
 /// The Game Boy Color pak's label box: exactly the flat label well drawn in
-/// `handmade assets/gbc_neutral.png`, x 45..267, y 110..308 of 312x337. It is the same 223x199
+/// `assets/gbc_neutral.png`, x 45..267, y 110..308 of 312x337. It is the same 223x199
 /// well as the Game Boy's (x 44..266, y 95..293), 1px right and 15px lower.
 pub const GBC_LABEL_X: u32 = 45;
 pub const GBC_LABEL_Y: u32 = 110;
@@ -353,8 +353,7 @@ fn shade_of(paint: &[u8], w: u32, h: u32, label: (u32, u32, u32, u32)) -> Vec<u3
 
 /// The neutral shell asset for a mould: 50% grey plastic with the console name embossed on the
 /// shoulder and the grey label box. `clear` makes the see-through variant, which is its own
-/// asset with a rim and a sheen. These are what `templates/shells/*.png` are baked from; at
-/// runtime the game's colour is blended onto them by `overlay`.
+/// asset with a rim and a sheen. The game's colour is blended on by `overlay`.
 pub fn neutral_shell(mould: Mould, clear: bool) -> Vec<u8> {
     let shape = match mould {
         Mould::Gba => Shape::Gba,

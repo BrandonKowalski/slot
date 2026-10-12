@@ -6,7 +6,7 @@ use common::{
 };
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
-use slot_store::{read_slot_state, write_slot_state, Shader, SlotState};
+use slot_store::{read_slot_state, write_slot_state, Appearance, Shader, SlotState, WallpaperPick};
 use slot_ui::{
     edge, Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, MENU_PAD, OUT_W, QUICK_EDGE,
     QUICK_PITCH, QUICK_TOP,
@@ -106,6 +106,55 @@ fn the_quick_menu_is_only_on_the_carousel() {
 }
 
 #[test]
+fn wallpaper_cycles_none_default_and_the_folder_and_saves() {
+    let (d, mut a, _) = on_carousel();
+    let dir = d.path().join("Wallpapers");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("b.png"), b"png").unwrap();
+    std::fs::write(dir.join("a.png"), b"png").unwrap();
+    open_at(&mut a, QuickRow::Wallpaper);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Wallpaper));
+    assert_eq!(
+        a.resolved_wallpaper(),
+        WallpaperPick::Default,
+        "a new card did not start on Default"
+    );
+    press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::File("a.png".into()));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::File("b.png".into()));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::None);
+    assert_eq!(read_slot_state(d.path()).wallpaper, WallpaperPick::None);
+    press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::Default);
+    press(&mut a, Btn::Left);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::None);
+    press(&mut a, Btn::A);
+    assert_eq!(
+        a.quick_menu(),
+        Some(QuickRow::Wallpaper),
+        "wallpaper opened a page"
+    );
+}
+
+#[test]
+fn theme_switches_between_dark_and_light_and_saves() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::Theme);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Theme));
+    assert_eq!(a.quick_value(QuickRow::Theme), Some(QuickValue::Dark));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.quick_value(QuickRow::Theme), Some(QuickValue::Light));
+    assert_eq!(read_slot_state(d.path()).appearance, Appearance::Light);
+    press(&mut a, Btn::A);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Theme), "theme opened a page");
+    press(&mut a, Btn::Left);
+    assert_eq!(a.quick_value(QuickRow::Theme), Some(QuickValue::Dark));
+    assert_eq!(read_slot_state(d.path()).appearance, Appearance::Dark);
+}
+
+#[test]
 fn up_and_down_move_the_bar_and_wrap_at_the_ends() {
     let (_d, mut a, _) = on_carousel();
     a.apply(Action::QuickMenu);
@@ -118,6 +167,8 @@ fn up_and_down_move_the_bar_and_wrap_at_the_ends() {
     for want in [
         QuickRow::Screen,
         QuickRow::Game,
+        QuickRow::Theme,
+        QuickRow::Wallpaper,
         QuickRow::DateTime,
         QuickRow::About,
         QuickRow::Screen,
