@@ -129,6 +129,22 @@ impl Compositor {
         self.game.upload(xrgb8888);
     }
 
+    pub fn upload_video(&mut self, w: u32, h: u32, bgra: &[u8]) -> bool {
+        self.game.upload_video(w, h, bgra)
+    }
+
+    pub fn set_video_live(&mut self, on: bool) {
+        self.game.set_video_live(on);
+    }
+
+    pub fn set_video_fill(&mut self, fill: bool) {
+        self.game.set_video_fill(fill);
+    }
+
+    pub fn set_video_filter(&mut self, filter: crate::VideoFilter) {
+        self.game.set_video_filter(filter);
+    }
+
     pub fn draw_game(&mut self) {
         self.game.draw(&self.quad);
     }

@@ -113,6 +113,68 @@ void main() {
 }
 "#;
 
+pub const VIDEO_FRAG: &str = r#"
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform sampler2D u_game;
+uniform vec2 u_frame;
+uniform vec2 u_tex;
+uniform vec2 u_scale;
+uniform float u_mode;
+uniform float u_bright;
+uniform float u_frac;
+varying vec2 v_uv;
+vec3 fetch(vec2 texel) {
+    vec2 t = clamp(texel, vec2(0.5), u_frame - vec2(0.5));
+    return texture2D(u_game, t / u_tex).rgb;
+}
+vec2 sharp(vec2 texel, vec2 scale) {
+    vec2 sc = max(scale, vec2(1.0));
+    vec2 base = floor(texel);
+    vec2 d = texel - base - vec2(0.5);
+    vec2 reach = vec2(0.5) - vec2(0.5) / sc;
+    vec2 f = (d - clamp(d, -reach, reach)) * sc + vec2(0.5);
+    return base + f;
+}
+float scan_weight(float line_pos) {
+    float wave = 0.5 + 0.5 * cos(6.2831853 * (line_pos - 0.25));
+    float on = step(1.5, u_scale.y);
+    return mix(1.0, mix(0.55, 1.0, wave), on);
+}
+void main() {
+    float lo = (1.0 - u_frac) * 0.5;
+    if (v_uv.x < lo || v_uv.x > 1.0 - lo) {
+        FRAG_COLOR = vec4(0.0, 0.0, 0.0, 1.0);
+    } else {
+        vec2 q = vec2((v_uv.x - lo) / u_frac, v_uv.y);
+        vec2 texel = q * u_frame;
+        vec3 c;
+        if (u_mode < 0.5) {
+            c = fetch(floor(texel) + vec2(0.5));
+        } else if (u_mode < 1.5) {
+            c = fetch(sharp(texel, u_scale));
+        } else if (u_mode < 2.5) {
+            c = fetch(texel);
+        } else if (u_mode < 3.5) {
+            vec2 at = vec2(sharp(texel, u_scale).x, floor(texel.y) + 0.5);
+            c = fetch(at) * scan_weight(fract(texel.y)) * 1.18;
+        } else {
+            vec2 at = vec2(texel.x, floor(texel.y) + 0.5);
+            c = fetch(at) * scan_weight(fract(texel.y)) * 1.18;
+            float col = mod(floor(gl_FragCoord.x), 3.0);
+            vec3 tri = vec3(step(col, 0.5), step(0.5, col) * step(col, 1.5), step(1.5, col));
+            c *= (vec3(0.82) + 0.18 * tri) * 1.14;
+            vec2 v = q - vec2(0.5);
+            c *= 1.0 - 0.45 * dot(v, v);
+        }
+        FRAG_COLOR = vec4(clamp(c, 0.0, 1.0) * u_bright, 1.0);
+    }
+}
+"#;
+
 pub const SPRITE_FRAG: &str = r#"
 precision mediump float;
 uniform sampler2D u_tex;

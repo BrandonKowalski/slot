@@ -196,6 +196,8 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             colour_correction: false,
             shader_gba: Shader::Grid,
             shader_gb: Shader::Simpletex,
+            shader_ps1: Shader::Sharp,
+            ps1_fill: true,
             eject_save: true,
             turbo: true,
             rewind: true,

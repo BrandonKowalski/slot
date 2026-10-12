@@ -3,7 +3,9 @@
 ## Unreleased
 
 - PlayStation (experimental): `Games/PS1` takes `.cue`, `.chd`, `.m3u`, `.pbp` and `.iso` images, run by PCSX ReARMed (`System/pcsx_rearmed_libretro.so`). A PS1 game sits on the shelf as a disc with its cover art, not a cartridge.
-- PlayStation frames are fitted into slot's 240x160 picture as a 4:3 image, so they are softer than on a native 320x240 screen.
+- PlayStation games are drawn at the size the core renders them (320x240 is shown at an exact 2x, 640x480 on the 720x480 panel) instead of being squeezed into the 240x160 GBA buffer. A GPU that cannot run the new shader falls back to the old fitted picture.
+- SELECT with Y switches a disc between the whole screen (default) and a 4:3 picture with bars at the sides; the choice is remembered as `ps1_fill`.
+- Five scaling filters for discs: Sharp (default), Crisp, Smooth, Scanlines and CRT. SELECT with A or B steps through them in game, and the choice is remembered as `shader_ps1` in `Config/slot.state`.
 - L2 and R2 go to the PlayStation game. Rewind, fast-forward, screen shaders and the link cable are GBA and Game Boy features and stay off for discs.
 
 ## [1.6.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.6.0)

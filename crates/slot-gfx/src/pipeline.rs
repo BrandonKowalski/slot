@@ -3,6 +3,7 @@ use crate::power::{screen_brightness, screen_rect};
 use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
 use crate::surface::{GfxError, OUT_H, OUT_W};
+use crate::video::{VideoFilter, VideoPass};
 
 pub const SCALE: u32 = 3;
 pub const SRC_W: u32 = OUT_W / SCALE;
@@ -27,6 +28,11 @@ pub struct GamePass {
     effect: ScreenEffect,
     power: f32,
     src: [f32; 4],
+    video: Option<VideoPass>,
+    video_failed: bool,
+    video_live: bool,
+    video_filter: VideoFilter,
+    video_fill: bool,
 }
 
 impl GamePass {
@@ -81,6 +87,11 @@ impl GamePass {
             effect: ScreenEffect::Lcd3x,
             power: 1.0,
             src: WHOLE_TEXTURE,
+            video: None,
+            video_failed: false,
+            video_live: false,
+            video_filter: VideoFilter::Sharp,
+            video_fill: true,
         })
     }
 
@@ -139,7 +150,53 @@ impl GamePass {
         }
     }
 
+    /// Uploads a frame at its own size. False when this GPU cannot run the video pass, in which
+    /// case the 240x160 picture keeps being drawn.
+    pub fn upload_video(&mut self, w: u32, h: u32, bgra: &[u8]) -> bool {
+        if self.video_failed {
+            return false;
+        }
+        if self.video.is_none() {
+            match VideoPass::new() {
+                Ok(v) => self.video = Some(v),
+                Err(e) => {
+                    eprintln!("slot: gfx: video pass unavailable: {e}");
+                    self.video_failed = true;
+                    return false;
+                }
+            }
+        }
+        if let Some(v) = &mut self.video {
+            v.upload(w, h, bgra);
+        }
+        true
+    }
+
+    pub fn set_video_live(&mut self, on: bool) {
+        self.video_live = on && self.video.as_ref().is_some_and(|v| v.has_frame());
+    }
+
+    pub fn set_video_fill(&mut self, fill: bool) {
+        self.video_fill = fill;
+    }
+
+    pub fn set_video_filter(&mut self, filter: VideoFilter) {
+        self.video_filter = filter;
+    }
+
     pub fn draw(&self, quad: &Quad) {
+        if self.video_live {
+            if let Some(v) = &self.video {
+                v.draw(
+                    quad,
+                    self.video_filter,
+                    self.video_fill,
+                    self.power,
+                    self.fbo_scale,
+                );
+                return;
+            }
+        }
         let src = match self.effect {
             ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
             _ => self.src,

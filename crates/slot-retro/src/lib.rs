@@ -5,7 +5,10 @@ mod link;
 mod mock;
 mod rumble;
 
-pub use core::{AvInfo, ButtonMask, CoreError, RetroCore, GBA_H, GBA_W};
+pub use core::{
+    hires_active, hires_clear, hires_latest, hires_publish, AvInfo, ButtonMask, CoreError,
+    RetroCore, GBA_H, GBA_W,
+};
 pub use ffi::{
     NETPACKET_BROADCAST, NETPACKET_FLUSH_HINT, NETPACKET_RELIABLE, NETPACKET_UNRELIABLE,
     NETPACKET_UNSEQUENCED,

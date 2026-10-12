@@ -33,6 +33,7 @@ const ALERT_INK: [u8; 3] = [0xf0, 0xb4, 0x3c];
 
 pub struct Frontend {
     session: Session,
+    hires_seen: u64,
     start: Instant,
     last: Instant,
     draws: Vec<Draw>,
@@ -114,6 +115,7 @@ impl Frontend {
             .set_power(Power::new(platform, DOZE_TIMEOUT));
         Frontend {
             session,
+            hires_seen: 0,
             start: now,
             last: now,
             draws: Vec::new(),
@@ -334,6 +336,19 @@ impl Frontend {
             slot_store::Shader::Grid => ScreenEffect::Grid,
             slot_store::Shader::Dot => ScreenEffect::Dot,
             slot_store::Shader::Simpletex => ScreenEffect::Simpletex,
+            slot_store::Shader::Crisp
+            | slot_store::Shader::Sharp
+            | slot_store::Shader::Smooth
+            | slot_store::Shader::Scanlines
+            | slot_store::Shader::Crt => ScreenEffect::None,
+        });
+        compositor.set_video_fill(self.session.app().ps1_fill());
+        compositor.set_video_filter(match self.session.app().screen_shader() {
+            slot_store::Shader::Crisp => slot_gfx::VideoFilter::Crisp,
+            slot_store::Shader::Smooth => slot_gfx::VideoFilter::Smooth,
+            slot_store::Shader::Scanlines => slot_gfx::VideoFilter::Scanlines,
+            slot_store::Shader::Crt => slot_gfx::VideoFilter::Crt,
+            _ => slot_gfx::VideoFilter::Sharp,
         });
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
@@ -347,6 +362,14 @@ impl Frontend {
         if let Some(frame) = self.session.frame() {
             compositor.upload_game(&frame);
             crate::latency::taken();
+        }
+        if self.session.app().wants_hires() {
+            slot_retro::hires_latest(&mut self.hires_seen, |w, h, bgra| {
+                compositor.upload_video(w, h, bgra);
+            });
+            compositor.set_video_live(slot_retro::hires_active());
+        } else {
+            compositor.set_video_live(false);
         }
         self.cart_faces.sync(self.session.app_mut(), compositor);
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);

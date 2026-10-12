@@ -320,6 +320,7 @@ unsafe extern "C" fn video_refresh(
     with_host(|h| {
         if width > GBA_W || height > GBA_H {
             video_fit(h, data as *const u8, width as usize, height as usize, pitch);
+            video_publish(h, data as *const u8, width as usize, height as usize, pitch);
             return;
         }
         let cols = width.min(GBA_W) as usize;
@@ -347,6 +348,34 @@ unsafe extern "C" fn video_refresh(
                         h.video[o + 1] = (g << 2) | (g >> 4);
                         h.video[o + 2] = (r << 3) | (r >> 2);
                         h.video[o + 3] = 0;
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Keeps the frame at its own size for the renderer, as BGRA, next to the fitted copy.
+unsafe fn video_publish(h: &Host, data: *const u8, width: usize, height: usize, pitch: usize) {
+    if width == 0 || height == 0 || width > 1024 || height > 1024 {
+        return;
+    }
+    crate::core::hires_publish(width as u32, height as u32, |out| {
+        for y in 0..height {
+            let row = data.add(y * pitch);
+            let dst = &mut out[y * width * 4..(y + 1) * width * 4];
+            match h.format {
+                PixelFormat::Xrgb8888 => {
+                    ptr::copy_nonoverlapping(row, dst.as_mut_ptr(), width * 4);
+                }
+                PixelFormat::Rgb565 => {
+                    for x in 0..width {
+                        let p = ptr::read_unaligned((row as *const u16).add(x)) as u32;
+                        let (r5, g6, b5) = ((p >> 11) & 0x1f, (p >> 5) & 0x3f, p & 0x1f);
+                        dst[x * 4] = ((b5 << 3) | (b5 >> 2)) as u8;
+                        dst[x * 4 + 1] = ((g6 << 2) | (g6 >> 4)) as u8;
+                        dst[x * 4 + 2] = ((r5 << 3) | (r5 >> 2)) as u8;
+                        dst[x * 4 + 3] = 255;
                     }
                 }
             }
@@ -576,6 +605,7 @@ impl LibretroCore {
         let _a = Active::bind(&mut self.host);
         unsafe { (self.api.unload_game)() };
         self.loaded = false;
+        crate::core::hires_clear();
     }
 
     fn memory(&self, id: c_uint) -> Option<&[u8]> {
@@ -615,6 +645,7 @@ impl RetroCore for LibretroCore {
 
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.unload();
+        crate::core::hires_clear();
         let by_path = is_disc_image(rom);
         self.rom = if by_path {
             Vec::new()

@@ -67,6 +67,10 @@ copy `pcsx_rearmed_libretro.so` into `System/`. A BIOS from your own console (fo
 `scph5501.bin`) goes in `BIOS/`; without one the core falls back to a software BIOS that runs fewer
 games. Cover art goes in `Labels/PS1/<name>.png` and is printed on the disc.
 
+Discs are drawn at their own resolution, scaled by the GPU. While playing, hold SELECT and press A or B
+to change the filter: Sharp, Crisp, Smooth, Scanlines or CRT. SELECT and Y switch between a picture that
+fills the whole screen (slightly stretched) and a true 4:3 picture with black bars at the sides.
+
 For a game on several discs, keep each disc's `.cue` and `.bin` in a subfolder of `Games/PS1/`
 (slot only lists files at the top level) and add a `.m3u` that names the discs.
 

@@ -150,3 +150,52 @@ mod tests {
         assert_eq!(core.0, vec![ButtonMask(ButtonMask::A)]);
     }
 }
+
+/// The newest frame of a game too big for the 240x160 buffer (a PlayStation game), kept at its
+/// own size as BGRA. The 240x160 buffer still gets a fitted copy for thumbnails and stills.
+pub struct HiresFrame {
+    pub w: u32,
+    pub h: u32,
+    pub seq: u64,
+    pub bgra: Vec<u8>,
+}
+
+static HIRES: std::sync::Mutex<HiresFrame> = std::sync::Mutex::new(HiresFrame {
+    w: 0,
+    h: 0,
+    seq: 0,
+    bgra: Vec::new(),
+});
+
+pub fn hires_publish(w: u32, h: u32, fill: impl FnOnce(&mut [u8])) {
+    let Ok(mut f) = HIRES.lock() else {
+        return;
+    };
+    f.bgra.resize((w * h * 4) as usize, 0);
+    fill(&mut f.bgra);
+    f.w = w;
+    f.h = h;
+    f.seq += 1;
+}
+
+pub fn hires_clear() {
+    if let Ok(mut f) = HIRES.lock() {
+        f.w = 0;
+        f.h = 0;
+        f.seq += 1;
+    }
+}
+
+pub fn hires_active() -> bool {
+    HIRES.lock().map(|f| f.w > 0).unwrap_or(false)
+}
+
+/// Hands the newest frame to `take` when it is newer than the one `seen` names.
+pub fn hires_latest<R>(seen: &mut u64, take: impl FnOnce(u32, u32, &[u8]) -> R) -> Option<R> {
+    let f = HIRES.lock().ok()?;
+    if f.w == 0 || f.seq == *seen {
+        return None;
+    }
+    *seen = f.seq;
+    Some(take(f.w, f.h, &f.bgra))
+}

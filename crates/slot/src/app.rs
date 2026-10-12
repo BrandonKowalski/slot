@@ -1041,11 +1041,21 @@ impl App {
         self.state.ff_sound
     }
 
+    /// A PlayStation game is drawn at the size the core renders it, not in the 240x160 buffer.
+    pub fn wants_hires(&self) -> bool {
+        self.platform == Platform::Ps1
+    }
+
+    /// Whether a PlayStation picture is stretched over the whole screen instead of kept at 4:3.
+    pub fn ps1_fill(&self) -> bool {
+        self.state.ps1_fill
+    }
+
     pub fn screen_shader(&self) -> Shader {
         match self.platform {
             Platform::Gba => self.state.shader_gba,
             Platform::Gb | Platform::Gbc => self.state.shader_gb,
-            Platform::Ps1 => Shader::Off,
+            Platform::Ps1 => self.state.shader_ps1,
         }
     }
 
@@ -1409,7 +1419,7 @@ impl App {
         let (shader, choices) = match self.platform {
             Platform::Gba => (&mut self.state.shader_gba, &Shader::GBA[..]),
             Platform::Gb | Platform::Gbc => (&mut self.state.shader_gb, &Shader::GB[..]),
-            Platform::Ps1 => return,
+            Platform::Ps1 => (&mut self.state.shader_ps1, &Shader::PS1[..]),
         };
         *shader = shader.step(choices, right);
         let said = match *shader {
@@ -1418,6 +1428,11 @@ impl App {
             Shader::Grid => Toast::ShaderGrid,
             Shader::Dot => Toast::ShaderDot,
             Shader::Simpletex => Toast::ShaderSimpletex,
+            Shader::Crisp => Toast::FilterCrisp,
+            Shader::Sharp => Toast::FilterSharp,
+            Shader::Smooth => Toast::FilterSmooth,
+            Shader::Scanlines => Toast::FilterScanlines,
+            Shader::Crt => Toast::FilterCrt,
         };
         self.persist();
         self.hud.toast(said, self.now());
@@ -1443,6 +1458,16 @@ impl App {
                 self.persist();
                 self.hud.toast(Toast::Palette(to), self.now());
             }
+            return true;
+        }
+        if action == Action::ColourCorrectionToggle && self.platform == Platform::Ps1 {
+            self.state.ps1_fill = !self.state.ps1_fill;
+            self.persist();
+            let said = match self.state.ps1_fill {
+                true => Toast::PictureFill,
+                false => Toast::PictureFit,
+            };
+            self.hud.toast(said, self.now());
             return true;
         }
         if action == Action::ColourCorrectionToggle {
@@ -3395,6 +3420,9 @@ fn shader_value(shader: Shader) -> QuickValue {
         Shader::Grid => QuickValue::Grid,
         Shader::Dot => QuickValue::Dot,
         Shader::Simpletex => QuickValue::Simpletex,
+        Shader::Crisp | Shader::Sharp | Shader::Smooth | Shader::Scanlines | Shader::Crt => {
+            QuickValue::Off
+        }
     }
 }
 
