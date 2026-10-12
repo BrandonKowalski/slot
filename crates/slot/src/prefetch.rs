@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use slot_input::Millis;
+use slot_store::Platform;
 
 pub const PREFETCH_REST_MS: Millis = 500;
 
@@ -21,6 +22,7 @@ pub struct Prefetch {
 
 impl Prefetch {
     pub fn browse(&mut self, rom: Option<&Path>, now: Millis) {
+        let rom = rom.filter(|r| !Platform::Ps1.accepts(r));
         let Some(rom) = rom else {
             self.resting = None;
             self.read = None;

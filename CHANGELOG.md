@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- PlayStation (experimental): `Games/PS1` takes `.cue`, `.chd`, `.m3u`, `.pbp` and `.iso` images, run by PCSX ReARMed (`System/pcsx_rearmed_libretro.so`). A PS1 game sits on the shelf as a disc with its cover art, not a cartridge.
+- PlayStation frames are fitted into slot's 240x160 picture as a 4:3 image, so they are softer than on a native 320x240 screen.
+- L2 and R2 go to the PlayStation game. Rewind, fast-forward, screen shaders and the link cable are GBA and Game Boy features and stay off for discs.
+
 ## [1.6.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.6.0)
 
 - Runs on the RG28XX: its panel is mounted portrait, so slot turns the picture onto it. (#35)

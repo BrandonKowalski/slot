@@ -10,15 +10,19 @@ pub enum Core {
     #[default]
     Mgba,
     Gpsp,
+    Pcsx,
 }
 
 impl Core {
+    /// The cores a player can choose between for a GBA cart (the core picker).
+    /// Pcsx is picked by platform, never by the player, so it stays out of this list.
     pub const ALL: [Core; 2] = [Core::Mgba, Core::Gpsp];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Core::Mgba => "mgba",
             Core::Gpsp => "gpsp",
+            Core::Pcsx => "pcsx_rearmed",
         }
     }
 
@@ -30,6 +34,7 @@ impl Core {
         match self {
             Core::Mgba => "mGBA",
             Core::Gpsp => "gpSP",
+            Core::Pcsx => "PCSX",
         }
     }
 
@@ -37,20 +42,23 @@ impl Core {
         match s.trim().to_ascii_lowercase().as_str() {
             "mgba" => Some(Core::Mgba),
             "gpsp" => Some(Core::Gpsp),
+            "pcsx_rearmed" | "pcsx" => Some(Core::Pcsx),
             _ => None,
         }
     }
 
     pub fn runs(self, platform: Platform) -> bool {
         match self {
-            Core::Mgba => true,
+            Core::Mgba => platform != Platform::Ps1,
             Core::Gpsp => platform == Platform::Gba,
+            Core::Pcsx => platform == Platform::Ps1,
         }
     }
 
     pub fn default_for(platform: Platform) -> Core {
         match platform {
             Platform::Gba | Platform::Gb | Platform::Gbc => Core::Mgba,
+            Platform::Ps1 => Core::Pcsx,
         }
     }
 }

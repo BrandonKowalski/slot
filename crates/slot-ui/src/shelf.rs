@@ -1,5 +1,5 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
-use slot_store::Cart;
+use slot_store::{Cart, Platform};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::cart::{cart_box, gb_shell_of, label_colour, label_text, CART_H, CART_W};
@@ -335,6 +335,7 @@ impl Shelf {
             let y = foot_y(ch as f32) - h;
             if alpha < 1.0 {
                 let backing = match self.shells.get(i).copied().flatten() {
+                    _ if cart.platform == Platform::Ps1 => None,
                     None => self.shadow,
                     Some(GbShell::Notched) => self.gb_shadow,
                     Some(GbShell::Rounded) => self.gbc_shadow,

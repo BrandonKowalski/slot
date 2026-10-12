@@ -14,6 +14,9 @@ pub const CART_H: u32 = (CART_W * SEATED_H + SEATED_W / 2) / SEATED_W;
 
 pub const GB_CART_W: u32 = 312;
 
+pub const DISC_W: u32 = 312;
+pub const DISC_H: u32 = 312;
+
 pub const GB_CART_H: u32 = (GB_CART_W * GB_SEATED_H + SEATED_W / 2) / SEATED_W;
 
 pub const fn label_panel(w: u32, h: u32) -> (u32, u32, u32, u32) {
@@ -87,7 +90,7 @@ enum Shape {
 
 pub fn gb_shell_of(cart: &Cart) -> Option<GbShell> {
     match cart.platform {
-        Platform::Gba => None,
+        Platform::Gba | Platform::Ps1 => None,
         Platform::Gb | Platform::Gbc => Some(match cart.shell.map(|c| c.outline) {
             Some(Outline::Notched) => GbShell::Notched,
             Some(Outline::Rounded) => GbShell::Rounded,
@@ -155,14 +158,17 @@ pub fn seated_box(platform: Platform) -> (u32, u32) {
     match platform {
         Platform::Gba => (SEATED_W, SEATED_H),
         Platform::Gb | Platform::Gbc => (SEATED_W, GB_SEATED_H),
+        Platform::Ps1 => (SEATED_W, SEATED_W),
     }
 }
 
 pub fn cart_box(platform: Platform) -> (u32, u32) {
-    let s = spec(match platform {
+    let shape = match platform {
         Platform::Gba => Shape::Gba,
         Platform::Gb | Platform::Gbc => Shape::Gb(GbShell::Notched),
-    });
+        Platform::Ps1 => return (DISC_W, DISC_H),
+    };
+    let s = spec(shape);
     (s.w, s.h)
 }
 
@@ -189,11 +195,17 @@ pub fn cart_face(cart: &Cart) -> CartFace {
 }
 
 pub fn label_size(cart: &Cart) -> (u32, u32) {
+    if cart.platform == Platform::Ps1 {
+        return (DISC_W, DISC_H);
+    }
     let (_, _, lw, lh) = spec(shape_of(cart)).label;
     (lw, lh)
 }
 
 pub fn cart_face_with(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
+    if cart.platform == Platform::Ps1 {
+        return disc_face(cart, art);
+    }
     let s = spec(shape_of(cart));
     let shell = shell_for(cart);
     let mut face = shell_face(&s, &shell);
@@ -514,4 +526,82 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
         ((g + m) * 255.0).round() as u8,
         ((b + m) * 255.0).round() as u8,
     ]
+}
+
+const DISC_RIM: f32 = 3.0;
+const DISC_RIM_INK: [u8; 3] = [0x30, 0x32, 0x38];
+const DISC_RING_NEAR: [u8; 3] = [0xea, 0xed, 0xf1];
+const DISC_RING_FAR: [u8; 3] = [0xb2, 0xb7, 0xc0];
+
+/// A PlayStation disc: the cover art printed on a round face with a silver hub and a hole in the
+/// middle. Drawn per pixel, so it needs no silhouette asset and has no cartridge shell.
+fn disc_face(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
+    let (w, h) = (DISC_W, DISC_H);
+    let label = match art {
+        Some(rgba) if rgba.len() == (w * h * 4) as usize => rgba,
+        _ => generated_disc_label(&label_text(cart), w, h),
+    };
+    let backing = label_colour(&label_text(cart));
+    let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+    let outer = w.min(h) as f32 / 2.0 - 2.0;
+    let hole = outer * 0.125;
+    let print_from = outer * 0.40;
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+            let d = (dx * dx + dy * dy).sqrt();
+            let cover = (outer - d + 0.5).clamp(0.0, 1.0) * (d - hole + 0.5).clamp(0.0, 1.0);
+            if cover <= 0.0 {
+                continue;
+            }
+            let i = ((y * w + x) * 4) as usize;
+            let mut c = if d >= print_from {
+                let a = label[i + 3] as u32;
+                let mut c = [0u8; 3];
+                for k in 0..3 {
+                    c[k] = ((label[i + k] as u32 * a + backing[k] as u32 * (255 - a) + 127) / 255)
+                        as u8;
+                }
+                c
+            } else {
+                let t = ((d - hole) / (print_from - hole)).clamp(0.0, 1.0);
+                lerp(DISC_RING_NEAR, DISC_RING_FAR, (t * 255.0) as u32, 255)
+            };
+            let sheen = (-((dx - dy) / outer * 2.6).powi(2)).exp() * 0.14;
+            c = c.map(|v| v + ((255 - v) as f32 * sheen) as u8);
+            if (d - print_from).abs() < 0.9 {
+                c = c.map(|v| (v as f32 * 0.72) as u8);
+            }
+            if d > outer - DISC_RIM {
+                c = lerp(c, DISC_RIM_INK, 100, 255);
+            }
+            rgba[i] = c[0];
+            rgba[i + 1] = c[1];
+            rgba[i + 2] = c[2];
+            rgba[i + 3] = (cover * 255.0).round() as u8;
+        }
+    }
+    CartFace { rgba, w, h }
+}
+
+fn generated_disc_label(title: &str, w: u32, h: u32) -> Vec<u8> {
+    let bg = label_colour(title);
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for _ in 0..w * h {
+        rgba.extend_from_slice(&[bg[0], bg[1], bg[2], 255]);
+    }
+    if let Some(font) = text::label_font() {
+        let layout = text::fit_box(
+            font,
+            title,
+            w as f32 * 0.56,
+            h as f32 * 0.30,
+            MAX_LINES,
+            34.0,
+            MIN_PX,
+        );
+        text::draw_centred(&mut rgba, w, h, &layout, ink(bg));
+    }
+    rgba
 }

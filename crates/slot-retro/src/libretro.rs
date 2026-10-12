@@ -318,6 +318,10 @@ unsafe extern "C" fn video_refresh(
         return;
     }
     with_host(|h| {
+        if width > GBA_W || height > GBA_H {
+            video_fit(h, data as *const u8, width as usize, height as usize, pitch);
+            return;
+        }
         let cols = width.min(GBA_W) as usize;
         let rows = height.min(GBA_H) as usize;
         let ox = (GBA_W as usize - cols) / 2;
@@ -348,6 +352,52 @@ unsafe extern "C" fn video_refresh(
             }
         }
     });
+}
+
+/// Fits a frame larger than the 240x160 panel (a PlayStation game) into it as a 4:3 picture,
+/// averaging the source pixels that land on each output pixel, with black bars either side.
+unsafe fn video_fit(h: &mut Host, data: *const u8, width: usize, height: usize, pitch: usize) {
+    let (dw, dh) = (GBA_W as usize, GBA_H as usize);
+    let ow = (dh * 4 / 3).min(dw);
+    let ox = (dw - ow) / 2;
+    h.video.fill(0);
+    if width == 0 || height == 0 {
+        return;
+    }
+    for y in 0..dh {
+        let y0 = y * height / dh;
+        let y1 = ((y + 1) * height).div_ceil(dh).clamp(y0 + 1, height);
+        for x in 0..ow {
+            let x0 = x * width / ow;
+            let x1 = ((x + 1) * width).div_ceil(ow).clamp(x0 + 1, width);
+            let (mut b, mut g, mut r) = (0u32, 0u32, 0u32);
+            for sy in y0..y1 {
+                let row = data.add(sy * pitch);
+                for sx in x0..x1 {
+                    let (pb, pg, pr) = match h.format {
+                        PixelFormat::Xrgb8888 => {
+                            let p = ptr::read_unaligned((row as *const u32).add(sx));
+                            (p & 0xff, (p >> 8) & 0xff, (p >> 16) & 0xff)
+                        }
+                        PixelFormat::Rgb565 => {
+                            let p = ptr::read_unaligned((row as *const u16).add(sx)) as u32;
+                            let (r5, g6, b5) = ((p >> 11) & 0x1f, (p >> 5) & 0x3f, p & 0x1f);
+                            ((b5 << 3) | (b5 >> 2), (g6 << 2) | (g6 >> 4), (r5 << 3) | (r5 >> 2))
+                        }
+                    };
+                    b += pb;
+                    g += pg;
+                    r += pr;
+                }
+            }
+            let n = ((y1 - y0) * (x1 - x0)) as u32;
+            let o = (y * dw + ox + x) * 4;
+            h.video[o] = (b / n) as u8;
+            h.video[o + 1] = (g / n) as u8;
+            h.video[o + 2] = (r / n) as u8;
+            h.video[o + 3] = 0;
+        }
+    }
 }
 
 unsafe extern "C" fn audio_sample(left: i16, right: i16) {
@@ -391,6 +441,16 @@ pub struct LibretroCore {
     av: AvInfo,
     loaded: bool,
     _lib: Library,
+}
+
+/// Disc images are far too big to read into memory and the core opens its own tracks (a .cue
+/// names its .bin files), so a core gets the path alone, as libretro's `need_fullpath` says.
+fn is_disc_image(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+        ["cue", "chd", "m3u", "pbp", "iso"]
+            .iter()
+            .any(|d| ext.eq_ignore_ascii_case(d))
+    })
 }
 
 fn cdir(path: &Path) -> Result<CString, CoreError> {
@@ -555,15 +615,24 @@ impl RetroCore for LibretroCore {
 
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.unload();
-        self.rom = std::fs::read(rom)?;
+        let by_path = is_disc_image(rom);
+        self.rom = if by_path {
+            Vec::new()
+        } else {
+            std::fs::read(rom)?
+        };
         self.rom_path = Some(
             CString::new(rom.as_os_str().as_encoded_bytes())
                 .map_err(|_| CoreError::Load("rom path contains a nul".into()))?,
         );
         let info = GameInfo {
             path: self.rom_path.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
-            data: self.rom.as_ptr() as *const c_void,
-            size: self.rom.len(),
+            data: if by_path {
+                ptr::null()
+            } else {
+                self.rom.as_ptr() as *const c_void
+            },
+            size: if by_path { 0 } else { self.rom.len() },
             meta: ptr::null(),
         };
         let ok = {

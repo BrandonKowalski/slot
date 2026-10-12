@@ -852,7 +852,8 @@ impl App {
     }
 
     fn slot_owns_the_shoulders(&self) -> bool {
-        matches!(self.phase, Phase::Playing { .. }) && self.platform != Platform::Gba
+        matches!(self.phase, Phase::Playing { .. })
+            && matches!(self.platform, Platform::Gb | Platform::Gbc)
     }
 
     pub fn taken_buttons(&self) -> &'static [Btn] {
@@ -914,7 +915,7 @@ impl App {
     }
 
     pub fn may_rewind(&self) -> bool {
-        self.state.rewind && !self.link_active()
+        self.state.rewind && self.platform != Platform::Ps1 && !self.link_active()
     }
 
     pub fn turbo(&self) -> bool {
@@ -922,7 +923,7 @@ impl App {
     }
 
     pub fn records_rewind(&self) -> bool {
-        self.state.rewind
+        self.state.rewind && self.platform != Platform::Ps1
     }
 
     pub fn picture_rect(&self) -> [f32; 4] {
@@ -1044,6 +1045,7 @@ impl App {
         match self.platform {
             Platform::Gba => self.state.shader_gba,
             Platform::Gb | Platform::Gbc => self.state.shader_gb,
+            Platform::Ps1 => Shader::Off,
         }
     }
 
@@ -1407,6 +1409,7 @@ impl App {
         let (shader, choices) = match self.platform {
             Platform::Gba => (&mut self.state.shader_gba, &Shader::GBA[..]),
             Platform::Gb | Platform::Gbc => (&mut self.state.shader_gb, &Shader::GB[..]),
+            Platform::Ps1 => return,
         };
         *shader = shader.step(choices, right);
         let said = match *shader {

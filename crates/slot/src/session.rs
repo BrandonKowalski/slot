@@ -439,6 +439,10 @@ impl Session {
         launch(&format!("opening {stem} on {}", core.as_str()));
         self.app.set_core(core);
         self.app.set_platform(platform);
+        let stopped = self.gestures.set_triggers_to_game(platform == Platform::Ps1);
+        for action in stopped {
+            self.act(action);
+        }
         self.app
             .set_video_mode(crate::video_mode::video_mode_for(&self.root, stem));
         self.app.set_link_loaded(serial);

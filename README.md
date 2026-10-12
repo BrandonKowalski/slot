@@ -60,6 +60,16 @@ please [open an issue on GitHub](https://github.com/BrandonKowalski/slot/issues)
 
 ---
 
+# PlayStation (experimental)
+
+Put disc images of your own games in `Games/PS1/` (`.cue`, `.chd`, `.m3u`, `.pbp` or `.iso`) and
+copy `pcsx_rearmed_libretro.so` into `System/`. A BIOS from your own console (for example
+`scph5501.bin`) goes in `BIOS/`; without one the core falls back to a software BIOS that runs fewer
+games. Cover art goes in `Labels/PS1/<name>.png` and is printed on the disc.
+
+For a game on several discs, keep each disc's `.cue` and `.bin` in a subfolder of `Games/PS1/`
+(slot only lists files at the top level) and add a `.m3u` that names the discs.
+
 # AI Disclosure
 
 The Rust frontend was put together by Claude Opus. I reviewed everything that was

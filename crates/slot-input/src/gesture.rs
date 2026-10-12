@@ -82,6 +82,7 @@ pub struct Gestures {
     r2_refused: bool,
     r2_last_release: Option<Millis>,
     rewinding: bool,
+    triggers_to_game: bool,
 }
 
 fn ramp_due(down: Option<Millis>, last: Option<Millis>, now: Millis) -> bool {
@@ -97,6 +98,18 @@ fn ramp_due(down: Option<Millis>, last: Option<Millis>, now: Millis) -> bool {
 impl Gestures {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Hand L2 and R2 to the game instead of using them for rewind and fast-forward.
+    /// Games with analogue triggers or four shoulder buttons (the PlayStation) need them.
+    pub fn set_triggers_to_game(&mut self, on: bool) -> Vec<Action> {
+        if self.triggers_to_game == on {
+            return Vec::new();
+        }
+        self.triggers_to_game = on;
+        let mut out = self.rewind_stop();
+        out.extend(self.ff_clear());
+        out
     }
 
     pub fn ff_latched(&self) -> bool {
@@ -176,6 +189,11 @@ impl Gestures {
             }
             Btn::Lid => vec![Action::LidClose],
             Btn::VolUp | Btn::VolDown => self.volume_press(b, now),
+            Btn::L2 | Btn::R2 if self.triggers_to_game => {
+                let mut out = self.hand_over_select(now);
+                out.push(Action::GbaDown(b));
+                out
+            }
             Btn::L2 => self.rewind_start(),
             Btn::R2 => self.ff_down(now),
             _ => {
@@ -199,6 +217,7 @@ impl Gestures {
             Btn::Power => self.power_up(),
             Btn::Lid => vec![Action::LidOpen],
             Btn::VolUp | Btn::VolDown => self.volume_release(b),
+            Btn::L2 | Btn::R2 if self.triggers_to_game => vec![Action::GbaUp(b)],
             Btn::L2 => self.rewind_stop(),
             Btn::R2 => self.ff_up(now),
             _ => vec![Action::GbaUp(b)],

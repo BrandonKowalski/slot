@@ -125,7 +125,9 @@ pub fn palette_for(
     rom: &Path,
     link: Option<u8>,
 ) -> Option<GbPalette> {
-    chosen.filter(|_| link.is_none() && platform != Platform::Gba && dmg_only(rom))
+    chosen.filter(|_| {
+        link.is_none() && matches!(platform, Platform::Gb | Platform::Gbc) && dmg_only(rom)
+    })
 }
 
 pub fn dmg_only(rom: &Path) -> bool {
@@ -155,6 +157,7 @@ pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static st
             "gpsp_color_correction",
             if on { "enabled" } else { "disabled" },
         )),
+        Core::Pcsx => None,
     }
 }
 
@@ -175,7 +178,9 @@ pub fn apply_core_options(
     colour: bool,
     palette: Option<GbPalette>,
 ) {
-    core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
+    if which != Core::Pcsx {
+        core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
+    }
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
         core.set_option("mgba_force_gbp", "ON");
