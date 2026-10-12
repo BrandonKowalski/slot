@@ -139,6 +139,37 @@ pub fn table_keys() -> Vec<&'static str> {
     EXACT.iter().map(|(k, _)| *k).collect()
 }
 
+pub fn gba_plastics() -> Vec<[u8; 3]> {
+    let mut colours = vec![DEFAULT_SHELL.colour, FAMILY[0].1.colour];
+    colours.extend(EXACT.iter().map(|(_, s)| s.colour));
+    unique(colours)
+}
+
+pub fn gb_plastics() -> Vec<[u8; 3]> {
+    let mut colours = vec![
+        DMG_SHELL.colour,
+        DUAL_MODE_SHELL.colour,
+        GB_CLEAR_SHELL.colour,
+    ];
+    colours.extend(
+        GB_CODES
+            .iter()
+            .chain(GB_OVERSEAS_TITLES)
+            .map(|(_, s)| s.colour),
+    );
+    unique(colours)
+}
+
+fn unique(colours: Vec<[u8; 3]>) -> Vec<[u8; 3]> {
+    let mut out = Vec::new();
+    for colour in colours {
+        if !out.contains(&colour) {
+            out.push(colour);
+        }
+    }
+    out
+}
+
 pub fn gb_table_shells() -> Vec<Shell> {
     GB_CODES
         .iter()

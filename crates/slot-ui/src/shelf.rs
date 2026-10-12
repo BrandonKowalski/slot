@@ -2,7 +2,8 @@ use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::cart::{cart_box, gb_shell_of, label_colour, label_text, CART_H, CART_W};
+use crate::board::{board_in, Placed};
+use crate::cart::{cart_box, gb_shell_of, is_clear, label_colour, label_text, CART_H, CART_W};
 use crate::hud::Millis;
 use crate::silhouette::GbShell;
 use crate::slot_chrome::{draw_empty_slot, MOUTH_H};
@@ -30,7 +31,9 @@ pub fn rest_y(h: f32) -> f32 {
     } else {
         (OUT_H + CART_H) as f32 / 2.0 - h
     };
-    y - raise()
+    // A Game Boy pak is 337px in a 422px gap, which centres at 42.5. Snap to a
+    // whole pixel so the 312×337 bitmap hits the RG SP panel 1:1.
+    (y - raise()).round()
 }
 
 pub fn foot_y(h: f32) -> f32 {
@@ -49,10 +52,15 @@ pub struct Shelf {
     pub index: usize,
     pub scroll: f32,
     faces: Vec<Option<TexId>>,
+    interiors: Vec<Option<TexId>>,
     shadow: Option<TexId>,
     gb_shadow: Option<TexId>,
     gbc_shadow: Option<TexId>,
+    backing: Option<TexId>,
+    gb_backing: Option<TexId>,
+    gbc_backing: Option<TexId>,
     shells: Vec<Option<GbShell>>,
+    clears: Vec<bool>,
     ride: f32,
     vel: f32,
     held: Option<(i32, Millis, usize)>,
@@ -62,13 +70,18 @@ impl Shelf {
     pub fn new(carts: Vec<Cart>) -> Self {
         Shelf {
             shells: carts.iter().map(gb_shell_of).collect(),
+            clears: carts.iter().map(is_clear).collect(),
             faces: vec![None; carts.len()],
+            interiors: vec![None; carts.len()],
             carts,
             index: 0,
             scroll: 0.0,
             shadow: None,
             gb_shadow: None,
             gbc_shadow: None,
+            backing: None,
+            gb_backing: None,
+            gbc_backing: None,
             ride: 0.0,
             vel: 0.0,
             held: None,
@@ -93,6 +106,17 @@ impl Shelf {
         }
     }
 
+    pub fn set_backing(&mut self, face: TexId) {
+        self.backing = Some(face);
+    }
+
+    pub fn set_gb_backing(&mut self, shell: GbShell, face: TexId) {
+        match shell {
+            GbShell::Notched => self.gb_backing = Some(face),
+            GbShell::Rounded => self.gbc_backing = Some(face),
+        }
+    }
+
     pub fn set_faces(&mut self, faces: Vec<TexId>) {
         let mut faces = faces.into_iter();
         for face in &mut self.faces {
@@ -106,6 +130,14 @@ impl Shelf {
 
     pub fn set_face(&mut self, i: usize, tex: TexId) -> Option<TexId> {
         self.faces.get_mut(i).and_then(|f| f.replace(tex))
+    }
+
+    pub fn set_interior(&mut self, i: usize, tex: TexId) -> Option<TexId> {
+        self.interiors.get_mut(i).and_then(|f| f.replace(tex))
+    }
+
+    pub fn take_interior(&mut self, i: usize) -> Option<TexId> {
+        self.interiors.get_mut(i).and_then(Option::take)
     }
 
     pub fn take_face(&mut self, i: usize) -> Option<TexId> {
@@ -347,6 +379,47 @@ impl Shelf {
                         h,
                         tex,
                         alpha: recede_alpha(alpha),
+                    });
+                }
+            }
+            if self.clears.get(i).copied().unwrap_or(false) && self.face(i).is_some() {
+                let board = match self.shells.get(i).copied().flatten() {
+                    None => self.backing,
+                    Some(GbShell::Notched) => self.gb_backing,
+                    Some(GbShell::Rounded) => self.gbc_backing,
+                };
+                let gba = self.shells.get(i).copied().flatten().is_none();
+                // A GBA cart's board and back shell fill the cart's box, exactly where the
+                // picker lifts them from; a Game Boy pak's backing fills its box.
+                let Placed {
+                    x: bx,
+                    y: by,
+                    w: bw,
+                    h: bh,
+                } = if gba {
+                    board_in(Placed { x, y, w, h })
+                } else {
+                    Placed { x, y, w, h }
+                };
+                // Back plastic, then the board, then the front shell.
+                if let Some(tex) = self.interiors.get(i).copied().flatten() {
+                    out.push(Draw::Tex {
+                        x: bx,
+                        y: by,
+                        w: bw,
+                        h: bh,
+                        tex,
+                        alpha: alpha * dim,
+                    });
+                }
+                if let Some(tex) = board {
+                    out.push(Draw::Tex {
+                        x: bx,
+                        y: by,
+                        w: bw,
+                        h: bh,
+                        tex,
+                        alpha: alpha * dim,
                     });
                 }
             }

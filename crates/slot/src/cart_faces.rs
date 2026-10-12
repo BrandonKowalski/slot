@@ -6,7 +6,7 @@ use std::thread;
 
 use slot_gfx::{Compositor, TexId};
 use slot_store::Cart;
-use slot_ui::{cart_face_with, CartFace};
+use slot_ui::{cart_face_with, cart_interior, shows_interior, CartFace};
 
 use crate::app::{App, FaceWant};
 use crate::label_cache::label_art;
@@ -14,6 +14,9 @@ use crate::label_cache::label_art;
 const WORKERS: usize = 2;
 
 type Key = (usize, usize);
+
+/// A cart's face and, for a clear GBA cart, the game-coloured inside it is drawn over.
+type Built = (Key, CartFace, Option<CartFace>);
 
 #[derive(Default)]
 struct Queue {
@@ -25,7 +28,7 @@ type Shared = Arc<(Mutex<Queue>, Condvar)>;
 
 pub struct CartFaces {
     queue: Shared,
-    built: Receiver<(Key, CartFace)>,
+    built: Receiver<Built>,
     pending: HashSet<Key>,
     asked: Vec<FaceWant>,
     free: Vec<TexId>,
@@ -55,8 +58,8 @@ impl CartFaces {
 
     pub fn sync(&mut self, app: &mut App, compositor: &mut Compositor) {
         self.free.extend(app.shed_faces());
-        while let Ok((key, face)) = self.built.try_recv() {
-            self.place(app, compositor, key, face);
+        while let Ok((key, face, interior)) = self.built.try_recv() {
+            self.place(app, compositor, key, face, interior);
         }
         let wants = app.face_wants();
         if wants != self.asked {
@@ -70,11 +73,11 @@ impl CartFaces {
             .map(|w| (w.shelf, w.index))
             .collect();
         while !waiting.is_empty() {
-            let Ok((key, face)) = self.built.recv() else {
+            let Ok((key, face, interior)) = self.built.recv() else {
                 return;
             };
             waiting.retain(|k| *k != key);
-            self.place(app, compositor, key, face);
+            self.place(app, compositor, key, face, interior);
         }
     }
 
@@ -97,17 +100,32 @@ impl CartFaces {
         wake.notify_all();
     }
 
-    fn place(&mut self, app: &mut App, compositor: &mut Compositor, key: Key, face: CartFace) {
-        self.pending.remove(&key);
-        self.asked.retain(|w| (w.shelf, w.index) != key);
-        let tex = match self.free.pop() {
+    fn texture(&mut self, compositor: &mut Compositor, face: &CartFace) -> TexId {
+        match self.free.pop() {
             Some(tex) => {
                 compositor.update_texture(tex, face.w, face.h, &face.rgba);
                 tex
             }
             None => compositor.create_texture(face.w, face.h, &face.rgba),
-        };
+        }
+    }
+
+    fn place(
+        &mut self,
+        app: &mut App,
+        compositor: &mut Compositor,
+        key: Key,
+        face: CartFace,
+        interior: Option<CartFace>,
+    ) {
+        self.pending.remove(&key);
+        self.asked.retain(|w| (w.shelf, w.index) != key);
+        let tex = self.texture(compositor, &face);
         self.free.extend(app.set_cart_face(key.0, key.1, tex));
+        if let Some(interior) = interior {
+            let tex = self.texture(compositor, &interior);
+            self.free.extend(app.set_cart_interior(key.0, key.1, tex));
+        }
     }
 }
 
@@ -119,7 +137,7 @@ impl Drop for CartFaces {
     }
 }
 
-fn work(queue: &Shared, outbox: &Sender<(Key, CartFace)>, root: &Path) {
+fn work(queue: &Shared, outbox: &Sender<Built>, root: &Path) {
     let (lock, wake) = &**queue;
     loop {
         let (key, cart) = {
@@ -135,7 +153,8 @@ fn work(queue: &Shared, outbox: &Sender<(Key, CartFace)>, root: &Path) {
             }
         };
         let face = cart_face_with(&cart, label_art(root, &cart));
-        if outbox.send((key, face)).is_err() {
+        let interior = shows_interior(&cart).then(|| cart_interior(&cart));
+        if outbox.send((key, face, interior)).is_err() {
             return;
         }
     }

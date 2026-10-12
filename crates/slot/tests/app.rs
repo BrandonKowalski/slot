@@ -14,9 +14,9 @@ use slot_input::{Action, Btn, RawEvent};
 use slot_retro::ButtonMask;
 use slot_store::{write_slot_state, Cart, Core, Platform, SlotState};
 use slot_ui::{
-    board_at, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Icon, Placed, TexId,
-    BOARD_W, CART_H, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H, LID_TURN, SLIDE_UP,
-    SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    board_at, board_in, grown, lid_at, lid_from, on_board, opening, shelf_cart_at, Draw, Icon,
+    Placed, TexId, BOARD_W, CART_H, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HINT_H,
+    LID_TURN, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 fn play(a: &mut App) {
@@ -1341,7 +1341,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
     let seen = |w: u32| (w - HINT_EDGE) as f32;
-    assert_eq!(at(cancel.0), [174.0, 386.0, cancel.1 as f32, HINT_H as f32]);
+    assert_eq!(at(cancel.0), [180.0, 386.0, cancel.1 as f32, HINT_H as f32]);
     assert_eq!(
         at(swap.0)[0] + seen(swap.1) / 2.0,
         360.0,
@@ -1349,7 +1349,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     assert_eq!(
         at(choose.0)[0] + seen(choose.1),
-        546.0,
+        540.0,
         "Choose does not end at the cart's edge"
     );
     assert_eq!((at(swap.0)[1], at(choose.0)[1]), (386.0, 386.0));
@@ -1475,9 +1475,10 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         "the lid is not half way up its slide: {lid:?}"
     );
     let (_, board) = tex_at(&slid, f.board).expect("no board mid-slide");
+    let back = board_in(shelf);
     assert_eq!(
         board,
-        [shelf.x, shelf.y, shelf.w, shelf.h],
+        [back.x, back.y, back.w, back.h],
         "the back half moved while the front slid"
     );
     assert_eq!(
@@ -1499,9 +1500,16 @@ fn the_highlighted_cart_becomes_the_lid_rather_than_a_second_cart() {
         "the lid is not on its way up: {lid:?}"
     );
     let (_, [bx, by, bw, bh]) = tex_at(&lifting, f.board).expect("no board mid-lift");
+    let (start, rest) = (board_at(0.0), board_at(1.0));
+    assert_eq!(
+        (bw, bh),
+        (start.w, start.h),
+        "the board changed size mid-lift: {bw}x{bh}"
+    );
+    assert_eq!(bx, start.x, "the board slid sideways on the way down: {bx}");
     assert!(
-        bw > board_at(0.0).w && bw < board_at(1.0).w,
-        "the board is not growing: {bw}"
+        by > start.y && by < rest.y,
+        "the board is not on its way down: {by}"
     );
     assert_eq!(
         alpha_of(&lifting, f.board),
@@ -1600,9 +1608,16 @@ fn closing_puts_the_cart_back_on_the_shelf() {
     );
     assert!(lid[1] > lid_at(1.0).0.y, "the lid is not coming back down");
     let (_, [bx, by, bw, bh]) = tex_at(&partway, f.board).expect("the board vanished mid-close");
+    let (start, rest) = (board_at(0.0), board_at(1.0));
+    assert_eq!(
+        (bw, bh),
+        (start.w, start.h),
+        "the board changed size mid-close: {bw}x{bh}"
+    );
+    assert_eq!(bx, start.x, "the board slid sideways on the way back: {bx}");
     assert!(
-        bw < board_at(1.0).w && bw > board_at(0.0).w,
-        "the board is not shrinking: {bw}"
+        by < rest.y && by > start.y,
+        "the board is not on its way back up: {by}"
     );
     assert_eq!(
         alpha_of(&partway, f.board),

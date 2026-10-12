@@ -1,8 +1,8 @@
 use slot_store::{Cart, Core, Platform};
 use slot_ui::{
-    board_at, board_face, chip_face, chip_shadow_face, gba_shell_for, lid_at, lift_of, on_board,
-    padded, rom_marking, rom_marking_face, shelf_cart, slide_of, socket_face, CartFace, Placed,
-    BOARD_H, BOARD_W, CART_H, CHIP_H, CHIP_W, DEFAULT_SHELL, LID_TURN, ROM_H, ROM_W, SHADOW_H,
+    board_at, board_face, board_in, chip_face, chip_shadow_face, lid_at, lift_of, on_board, padded,
+    rom_marking, rom_marking_face, shelf_cart, slide_of, socket_face, CartFace, Placed, BOARD_H,
+    BOARD_W, CART_H, CART_W, CHIP_H, CHIP_W, LID_TURN, ROM_H, ROM_W, ROM_X, ROM_Y, SHADOW_H,
     SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_W, TURN_PAD,
 };
 
@@ -21,10 +21,6 @@ fn cart(stem: &str, code: &str) -> Cart {
 fn rgb(face: &CartFace, x: u32, y: u32) -> [u8; 3] {
     let i = ((y * face.w + x) * 4) as usize;
     [face.rgba[i], face.rgba[i + 1], face.rgba[i + 2]]
-}
-
-fn near(a: [u8; 3], b: [u8; 3]) -> bool {
-    (0..3).all(|k| (a[k] as i32 - b[k] as i32).abs() <= 3)
 }
 
 const EMERALD: &str = "Pokemon - Emerald Version (USA, Europe)";
@@ -78,46 +74,39 @@ fn the_marking_is_drawn_and_stays_on_the_chip() {
 }
 
 #[test]
-fn the_cell_carries_no_print() {
-    let face = board_face(&cart(EMERALD, "BPEE"));
-    let dark = (50..69)
-        .flat_map(|y| (307..326).map(move |x| (x, y)))
-        .filter(|&(x, y)| (x as i32 - 316).pow(2) + (y as i32 - 59).pow(2) <= 81)
-        .filter(|&(x, y)| rgb(&face, x, y)[0] < 150)
-        .count();
-    assert_eq!(dark, 0, "the cell still has {dark} dark pixels of print");
+fn the_board_bitmap_is_shared_outside_the_rom_window() {
+    let emerald = board_face(&cart(EMERALD, "BPEE"));
+    let other = board_face(&cart("Homebrew", ""));
+    for y in 0..emerald.h {
+        for x in 0..emerald.w {
+            let in_window =
+                (ROM_X..ROM_X + ROM_W).contains(&x) && (ROM_Y..ROM_Y + ROM_H).contains(&y);
+            if in_window {
+                continue;
+            }
+            assert_eq!(
+                rgb(&emerald, x, y),
+                rgb(&other, x, y),
+                "the shell bitmap changed at {x},{y}"
+            );
+        }
+    }
+    assert_ne!(emerald.rgba, other.rgba, "the rom title was not printed");
 }
 
 #[test]
 fn the_board_is_the_size_it_is_shown_at() {
     let face = board_face(&cart(EMERALD, "BPEE"));
     assert_eq!((face.w, face.h), (BOARD_W, BOARD_H));
-    assert_eq!((BOARD_W, BOARD_H), (372, 209));
-}
-
-#[test]
-fn the_back_shell_is_the_carts_own_plastic() {
-    let emerald = board_face(&cart(EMERALD, "BPEE"));
-    assert!(
-        near(rgb(&emerald, 14, 70), gba_shell_for("BPEE").colour),
-        "Emerald's wall is {:?}",
-        rgb(&emerald, 14, 70)
-    );
-    let unknown = board_face(&cart("Homebrew", ""));
-    assert!(
-        near(rgb(&unknown, 14, 70), DEFAULT_SHELL.colour),
-        "an unknown cart's wall is {:?}",
-        rgb(&unknown, 14, 70)
-    );
+    assert_eq!((BOARD_W, BOARD_H), (CART_W, CART_H));
 }
 
 #[test]
 fn the_board_itself_is_drawn() {
     let face = board_face(&cart(EMERALD, "BPEE"));
     assert!(
-        near(rgb(&face, 310, 108), [0x3a, 0x9a, 0x3c]),
-        "the board is {:?}",
-        rgb(&face, 310, 108)
+        alpha(&face, BOARD_W / 2, BOARD_H / 2) > 200,
+        "the circuit-board bitmap is empty"
     );
 }
 
@@ -136,14 +125,19 @@ fn the_open_cart_starts_as_the_shelf_cart_and_lands_where_the_mockup_has_it() {
             h: 212.0
         }
     );
-    assert_eq!(board_at(0.0), shelf_cart());
+    assert_eq!(board_at(0.0), board_in(shelf_cart()));
+    assert_eq!(
+        board_at(0.0).x,
+        board_at(1.0).x,
+        "the board slid sideways while it opened"
+    );
     assert_eq!(
         board_at(1.0),
         Placed {
-            x: 174.0,
+            x: 180.0,
             y: 150.0,
-            w: 372.0,
-            h: 209.0
+            w: CART_W as f32,
+            h: CART_H as f32,
         }
     );
     assert_eq!(board_at(1.7), board_at(1.0), "an overshoot kept growing");
@@ -153,14 +147,14 @@ fn the_open_cart_starts_as_the_shelf_cart_and_lands_where_the_mockup_has_it() {
 fn the_lid_leaves_level_and_rests_turned() {
     assert_eq!(lid_at(0.0), (shelf_cart(), 0.0));
     let (rest, turn) = lid_at(1.0);
-    assert_eq!(
-        rest,
-        Placed {
-            x: 288.0,
-            y: 30.0,
-            w: 144.0,
-            h: 81.0
-        }
+    assert_eq!((rest.x, rest.w), (288.0, 144.0));
+    assert!(
+        (rest.h - 144.0 * CART_H as f32 / CART_W as f32).abs() < 1e-3,
+        "the lid is squashed on landing: {rest:?}"
+    );
+    assert!(
+        (rest.y + rest.h / 2.0 - 70.5).abs() < 1e-3,
+        "the lid moved: {rest:?}"
     );
     assert_eq!(turn, LID_TURN);
     assert!(
@@ -181,8 +175,37 @@ fn the_beats_split_one_progress() {
 #[test]
 fn the_back_half_stays_on_the_shelf_while_the_front_slides() {
     for p in [0.0, 0.1, 0.25, SLIDE_SHARE] {
-        assert_eq!(board_at(p), shelf_cart(), "the back moved at progress {p}");
+        assert_eq!(
+            board_at(p),
+            board_in(shelf_cart()),
+            "the back moved at progress {p}"
+        );
     }
+}
+
+#[test]
+fn the_lid_keeps_its_proportions_all_the_way_open() {
+    let lid_ratio = CART_W as f32 / CART_H as f32;
+    for i in 0..=20 {
+        let p = i as f32 / 20.0;
+        let (l, _) = lid_at(p);
+        assert!(
+            (l.w / l.h - lid_ratio).abs() < 0.01,
+            "the lid is stretched at progress {p}: {l:?}"
+        );
+    }
+}
+
+#[test]
+fn the_board_fills_the_cart_so_opening_does_not_squash_it() {
+    let cart = shelf_cart();
+    let board = board_in(cart);
+    assert_eq!(board, cart, "the back half is shorter than the lid: {board:?}");
+    assert_eq!(board_at(0.0), cart);
+    assert!(
+        board_at(1.0).h <= cart.h,
+        "the resting board grew taller than the cart"
+    );
 }
 
 #[test]
@@ -212,41 +235,26 @@ fn the_lift_starts_where_the_slide_ends() {
 #[test]
 fn board_units_land_on_the_panel_at_one_and_a_half_times() {
     let board = board_at(1.0);
-    assert_eq!(on_board(board, 0.0, 0.0), (174.0, 150.0));
-    assert_eq!(on_board(board, 240.0, 135.0), (546.0, 359.0));
+    assert_eq!(on_board(board, 0.0, 0.0), (180.0, 150.0));
+    assert_eq!(on_board(board, 240.0, 135.0), (540.0, 362.0));
 }
 
 #[test]
-fn a_socket_names_its_core_at_half_strength() {
+fn a_socket_names_its_core_and_stays_open_in_the_middle() {
     for core in Core::ALL {
         let face = socket_face(core);
         assert_eq!((face.w, face.h), (SOCKET_W, SOCKET_H));
-        let strongest = (12..34)
-            .flat_map(|y| (16..48).map(move |x| (x, y)))
-            .map(|(x, y)| alpha(&face, x, y))
-            .max()
-            .unwrap();
-        assert!(
-            (60..=150).contains(&strongest),
-            "{core:?}'s name is at alpha {strongest}"
-        );
     }
-}
-
-#[test]
-fn a_partly_covered_socket_edge_pixel_keeps_the_outline_inks_brightness() {
-    let face = socket_face(Core::Mgba);
-    let (r, a) = (6..(face.h - 6))
-        .find_map(|y| {
-            let i = ((y * face.w) * 4) as usize;
-            let a = face.rgba[i + 3];
-            (a > 0 && a < 255).then(|| (face.rgba[i], a))
-        })
-        .expect("no partly covered pixel on the socket's left edge");
-    assert!(
-        r > 200,
-        "the outline ink darkened at partial coverage: R={r} at alpha={a}"
+    assert_ne!(
+        socket_face(Core::Mgba).rgba,
+        socket_face(Core::Gpsp).rgba,
+        "both sockets wear the same name"
     );
+    let open = socket_face(Core::Mgba)
+        .rgba
+        .chunks_exact(4)
+        .any(|p| p[3] == 0);
+    assert!(open, "the socket bitmap has no opening");
 }
 
 #[test]
@@ -273,17 +281,18 @@ fn the_chip_is_padded_clear_on_every_side() {
 
 #[test]
 fn a_seated_chip_wears_its_name_and_a_flying_one_is_blank() {
-    let light = |face: &CartFace| {
-        face.rgba
+    let differs = |a: &CartFace, b: &CartFace| {
+        a.rgba
             .chunks_exact(4)
-            .filter(|p| p[0] > 200 && p[1] > 200 && p[2] > 200 && p[3] > 200)
+            .zip(b.rgba.chunks_exact(4))
+            .filter(|(p, q)| p[..3] != q[..3])
             .count()
     };
+    let blank = chip_face(None);
     assert!(
-        light(&chip_face(Some(Core::Mgba))) > 20,
+        differs(&chip_face(Some(Core::Mgba)), &blank) > 20,
         "mGBA left no name"
     );
-    assert_eq!(light(&chip_face(None)), 0, "the blank chip says something");
     assert_ne!(
         chip_face(Some(Core::Mgba)).rgba,
         chip_face(Some(Core::Gpsp)).rgba,

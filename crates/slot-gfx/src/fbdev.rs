@@ -71,18 +71,27 @@ pub struct FbdevSurface {
     _window: Box<FbdevWindow>,
 }
 
+#[cfg(unix)]
 const FBIOGET_VSCREENINFO: std::ffi::c_ulong = 0x4600;
 
+#[cfg(unix)]
 extern "C" {
     fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
 }
 
 fn visible_size() -> Option<(u32, u32)> {
-    use std::os::unix::io::AsRawFd;
-    let fb = std::fs::File::open("/dev/fb0").ok()?;
-    let mut info = [0u32; 40];
-    let rc = unsafe { ioctl(fb.as_raw_fd(), FBIOGET_VSCREENINFO, info.as_mut_ptr()) };
-    (rc == 0 && info[0] > 0 && info[1] > 0).then_some((info[0], info[1]))
+    #[cfg(not(unix))]
+    {
+        None
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fb = std::fs::File::open("/dev/fb0").ok()?;
+        let mut info = [0u32; 40];
+        let rc = unsafe { ioctl(fb.as_raw_fd(), FBIOGET_VSCREENINFO, info.as_mut_ptr()) };
+        (rc == 0 && info[0] > 0 && info[1] > 0).then_some((info[0], info[1]))
+    }
 }
 
 pub fn panel_mode(text: &str) -> Option<(u32, u32)> {

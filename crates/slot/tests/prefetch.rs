@@ -84,7 +84,11 @@ fn resting_on_the_shelf_reads_the_selected_cart_and_inserting_lets_it_go() {
     while s.app().now() < start + PREFETCH_REST_MS + 32 {
         step(&mut s, &mut now, vec![]);
     }
-    let selected = s.app().browsed_rom().expect("no cart on the shelf").to_path_buf();
+    let selected = s
+        .app()
+        .browsed_rom()
+        .expect("no cart on the shelf")
+        .to_path_buf();
     assert_eq!(s.prefetching(), Some(selected.as_path()));
 
     step(&mut s, &mut now, vec![RawEvent::Down(Btn::A)]);

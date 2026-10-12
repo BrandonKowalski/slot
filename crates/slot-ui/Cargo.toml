@@ -15,5 +15,5 @@ slot-power = { path = "../slot-power" }
 slot-store = { path = "../slot-store" }
 
 [dev-dependencies]
-slot-gfx = { path = "../slot-gfx", features = ["test-support"] }
+slot-gfx = { path = "../slot-gfx", default-features = false, features = ["test-support"] }
 tempfile.workspace = true

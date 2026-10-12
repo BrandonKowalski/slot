@@ -2,20 +2,10 @@ use slot_store::{scan, Platform};
 use slot_ui::{
     cart_face, clean_label, foot_y, gb_label_panel, gb_silhouette, label_colour, label_panel,
     label_text, rest_y, seated_box, shell_for, silhouette, Finish, GbShell, CART_H, CART_W,
-    GB_CART_H, GB_CART_W, GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W,
+    GBC_LABEL_H, GBC_LABEL_W, GBC_LABEL_X, GBC_LABEL_Y, GB_CART_H, GB_CART_W, GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W,
     LABEL_X, LABEL_Y, MOUTH_H, OUT_H, PLATE_H,
 };
 use tempfile::TempDir;
-
-fn gx(v: u32) -> u32 {
-    let w = seated_box(Platform::Gb).0;
-    (v * GB_CART_W + w / 2) / w
-}
-
-fn gy(v: u32) -> u32 {
-    let h = seated_box(Platform::Gb).1;
-    (v * GB_CART_H + h / 2) / h
-}
 
 fn tmp_root() -> TempDir {
     let d = tempfile::tempdir().expect("tempdir");
@@ -79,15 +69,18 @@ fn label_pixel(face: &slot_ui::CartFace, x: u32, y: u32) -> [u8; 3] {
 }
 
 #[test]
-fn a_malformed_label_falls_back_to_a_generated_one() {
+fn a_malformed_label_leaves_the_coloured_shell() {
     let d = tmp_root();
     write_rom(&d, "Broken.gba", "BROKEN");
     std::fs::create_dir_all(d.path().join("Labels/GBA")).unwrap();
     std::fs::write(d.path().join("Labels/GBA/Broken.png"), b"not a png").unwrap();
-    let cart = &scan(d.path()).unwrap()[0];
-    let face = cart_face(cart);
+    let face = cart_face(&scan(d.path()).unwrap()[0]);
     assert_eq!((face.w, face.h), (CART_W, CART_H));
-    assert!(face.rgba.iter().any(|b| *b != 0), "face is blank");
+    let mid = label_pixel(&face, LABEL_W / 2, LABEL_H / 2);
+    assert!(
+        mid[0] == mid[1] && mid[1] == mid[2],
+        "a broken label file grew a generated sticker: {mid:?}"
+    );
 }
 
 #[test]
@@ -128,7 +121,7 @@ fn a_label_of_the_wrong_aspect_is_cropped_not_squashed() {
 }
 
 #[test]
-fn a_long_title_stays_inside_the_label() {
+fn a_cart_without_a_label_image_keeps_the_grey_well() {
     for stem in [
         "Supercalifragilisticexpialidocious Anniversary Edition",
         "Super Mario Kart",
@@ -136,25 +129,22 @@ fn a_long_title_stays_inside_the_label() {
         let d = tmp_root();
         std::fs::write(d.path().join(format!("Games/GBA/{stem}.gba")), [0u8; 8]).unwrap();
         let face = cart_face(&scan(d.path()).unwrap()[0]);
-        let bg = label_colour(stem);
-        let margin = 5;
-        for y in 0..LABEL_H {
-            for x in 0..LABEL_W {
-                let edge =
-                    x < margin || y < margin || x >= LABEL_W - margin || y >= LABEL_H - margin;
-                if edge {
-                    assert_eq!(
-                        label_pixel(&face, x, y),
-                        bg,
-                        "{stem}: text spills into the border at {x},{y}"
-                    );
-                }
+        let mid = label_pixel(&face, LABEL_W / 2, LABEL_H / 2);
+        assert!(
+            mid[0] == mid[1] && mid[1] == mid[2],
+            "{stem}: the label well is not the grey box: {mid:?}"
+        );
+        // The box has a drawn edge, so its corners are shades of grey and never a colour.
+        for y in [0, LABEL_H - 1] {
+            for x in [0, LABEL_W - 1] {
+                let [r, g, b] = label_pixel(&face, x, y);
+                assert!(
+                    r == g && g == b,
+                    "{stem}: the box edge at {x},{y} is coloured: {:?}",
+                    [r, g, b]
+                );
             }
         }
-        assert!(
-            (0..LABEL_H * LABEL_W).any(|i| label_pixel(&face, i % LABEL_W, i / LABEL_W) != bg),
-            "{stem}: no text was drawn"
-        );
     }
 }
 
@@ -306,14 +296,16 @@ fn two_regions_of_one_game_get_the_same_generated_colour() {
 }
 
 #[test]
-fn a_rom_with_no_header_title_is_labelled_from_its_stem() {
+fn a_rom_with_no_header_title_is_not_stamped_with_its_stem() {
     let d = tmp_root();
     std::fs::write(d.path().join("Games/GBA/Homebrew Demo.gba"), [0u8; 8]).unwrap();
-    let face = cart_face(&scan(d.path()).unwrap()[0]);
-    let bg = label_colour("Homebrew Demo");
+    let cart = &scan(d.path()).unwrap()[0];
+    assert_eq!(label_text(cart), "Homebrew Demo");
+    let face = cart_face(cart);
+    let mid = label_pixel(&face, LABEL_W / 2, LABEL_H / 2);
     assert!(
-        (0..LABEL_H * LABEL_W).any(|i| label_pixel(&face, i % LABEL_W, i / LABEL_W) != bg),
-        "an untitled rom got a blank label"
+        mid[0] == mid[1] && mid[1] == mid[2],
+        "the stem was painted into the label well: {mid:?}"
     );
 }
 
@@ -416,7 +408,7 @@ fn the_game_boy_label_well_is_near_square_and_sits_under_the_lettering_plate() {
 }
 
 #[test]
-fn the_colour_only_shell_has_a_rolled_top_edge_and_the_older_mould_does_not() {
+fn the_colour_only_shell_rounds_off_the_corner_the_older_mould_keeps() {
     let d = tmp_root();
     write_gb_rom(&d, "GBC", "Rolled.gbc", 0xc0);
     write_gb_rom(&d, "GB", "Flat.gb", 0x00);
@@ -429,37 +421,16 @@ fn the_colour_only_shell_has_a_rolled_top_edge_and_the_older_mould_does_not() {
                 .unwrap_or_else(|| panic!("no cart {stem}")),
         )
     };
-    let down = |f: &slot_ui::CartFace, y: u32| pixel(f, GB_CART_W / 2, y)[1] as i32;
-
     let rolled = face("Rolled");
-    let band = (gy(2)..=gy(9))
-        .map(|y| down(&rolled, y))
-        .min()
-        .expect("a band");
-    let brk = (gy(10)..=gy(13))
-        .map(|y| down(&rolled, y))
-        .min()
-        .expect("a break");
-    let shoulder = down(&rolled, gy(14));
-    assert!(
-        band > shoulder + 10,
-        "the class C top edge is {band} against a {shoulder} shoulder: the roll carries no light"
-    );
-    assert!(
-        brk < shoulder - 10,
-        "the break under the roll is {brk} against a {shoulder} shoulder: the roll does not turn, \
-         it just fades"
-    );
-
     let flat = face("Flat");
-    let shoulder = down(&flat, gy(14));
-    for y in 0..=gy(13) {
-        assert_eq!(
-            down(&flat, y),
-            shoulder,
-            "the class A/B top edge moved at row {y}: the roll is not class C only"
-        );
-    }
+    assert!(
+        pixel_alpha(&flat, 12, 0) > 128,
+        "the notched mould lost its top corner"
+    );
+    assert!(
+        pixel_alpha(&rolled, 12, 0) < 8,
+        "the rounded mould still has a square corner"
+    );
 }
 
 #[test]
@@ -479,9 +450,14 @@ fn every_cartridge_is_centred_on_the_row_and_clears_both_the_plate_and_the_slot(
         ("the Game Boy pak", GB_CART_H, lip),
     ] {
         let (top, foot) = (rest_y(h as f32), foot_y(h as f32));
+        assert_eq!(top, top.round(), "{name} top is off the pixel grid: {top}");
         assert_eq!(
-            top + foot,
-            span,
+            foot,
+            foot.round(),
+            "{name} foot is off the pixel grid: {foot}"
+        );
+        assert!(
+            (top + foot - span).abs() <= 1.0,
             "{name} stands at {top}..{foot}, which is not centred in {span}px"
         );
         assert!(
@@ -557,65 +533,42 @@ fn the_notch_follows_the_cgb_flag_and_not_the_folder() {
 }
 
 #[test]
-fn only_the_notched_shell_has_lines_across_its_shoulder() {
+fn notched_paks_share_one_bitmap_and_the_rounded_pak_does_not() {
     let d = tmp_root();
     write_gb_rom(&d, "GB", "Grey.gb", 0x00);
     write_gb_rom(&d, "GB", "Black.gb", 0x80);
     write_gb_rom(&d, "GBC", "Clear.gbc", 0xc0);
     let carts = scan(d.path()).unwrap();
-    let steps = |stem: &str| {
-        let cart = carts.iter().find(|c| c.stem == stem).expect("scanned");
-        let face = cart_face(cart);
-        let lum = |x: u32, y: u32| {
-            let p = pixel(&face, x, y);
-            p.iter().map(|c| u32::from(*c)).sum::<u32>() / 3
-        };
-        (gx(16)..gx(32))
-            .flat_map(|x| (gy(21)..gy(58)).map(move |y| (x, y)))
-            .filter(|(x, y)| lum(*x, *y).abs_diff(lum(*x, y - 1)) > 10)
-            .count()
-    };
-    for stem in ["Grey", "Black"] {
-        assert!(
-            steps(stem) > 200,
-            "the {stem} pak's shoulder came up smooth: {} stepped pixels, and five ribs a \
-             side should leave hundreds",
-            steps(stem)
-        );
-    }
+    let face = |stem: &str| cart_face(carts.iter().find(|c| c.stem == stem).expect("scanned"));
+    let (grey, black, clear) = (face("Grey"), face("Black"), face("Clear"));
+    assert_ne!(
+        pixel(&grey, 40, 50),
+        pixel(&black, 40, 50),
+        "the grey pak and the black pak were painted the same colour"
+    );
     assert!(
-        steps("Clear") < 10,
-        "the Colour pak has lines across its header, which that shell does not have: {}",
-        steps("Clear")
+        pixel_alpha(&grey, 12, 0) > 128 && pixel_alpha(&clear, 12, 0) < 8,
+        "the rounded bitmap kept the notched corner"
     );
 }
 
 #[test]
-fn the_clear_shell_lightens_at_its_rim_and_the_plain_one_does_not() {
+fn the_clear_shell_is_a_different_bitmap_from_the_plain_one() {
     let d = tmp_root();
     write_gb_rom(&d, "GB", "Tetris.gb", 0x00);
     write_gb_rom(&d, "GBC", "Colour Only.gbc", 0xc0);
     let carts = scan(d.path()).unwrap();
-    let luma = |face: &slot_ui::CartFace, x: u32, y: u32| {
-        let p = pixel(face, x, y);
-        p[0] as u32 + p[1] as u32 + p[2] as u32
-    };
-    let y = GB_CART_H / 2;
-    for cart in &carts {
-        let face = cart_face(cart);
-        let (rim, body) = (luma(&face, gx(8), y), luma(&face, gx(20), y));
-        match cart.stem.as_str() {
-            "Tetris" => assert_eq!(rim, body, "the plain pak has a lit rim"),
-            _ => assert!(
-                rim > body + 30,
-                "the clear pak's rim is {rim} against {body} inside: it reads as solid"
-            ),
-        }
-    }
+    let face = |stem: &str| cart_face(carts.iter().find(|c| c.stem == stem).expect("scanned"));
+    let (plain, clear) = (face("Tetris"), face("Colour Only"));
+    assert_ne!(
+        pixel_alpha(&plain, 12, 0),
+        pixel_alpha(&clear, 12, 0),
+        "the two moulds collapsed into one outline"
+    );
 }
 
 #[test]
-fn a_game_boy_title_stays_inside_its_near_square_label() {
+fn a_game_boy_pak_without_a_label_image_keeps_its_plastic() {
     for stem in [
         "Supercalifragilisticexpialidocious Anniversary Edition",
         "Wario Land 3",
@@ -624,28 +577,43 @@ fn a_game_boy_title_stays_inside_its_near_square_label() {
         let d = tmp_root();
         write_gb_rom(&d, "GB", &format!("{stem}.gb"), 0x00);
         let face = cart_face(&scan(d.path()).unwrap()[0]);
-        let bg = label_colour(stem);
         let at = |x: u32, y: u32| pixel(&face, GB_LABEL_X + x, GB_LABEL_Y + y);
-        let margin = 5;
-        for y in 0..GB_LABEL_H {
-            for x in 0..GB_LABEL_W {
-                let edge = x < margin
-                    || y < margin
-                    || x >= GB_LABEL_W - margin
-                    || y >= GB_LABEL_H - margin;
-                if edge {
-                    assert_eq!(
-                        at(x, y),
-                        bg,
-                        "{stem}: text spills into the border at {x},{y}"
-                    );
-                }
-            }
+        for (x, y) in [
+            (0, 0),
+            (GB_LABEL_W / 2, GB_LABEL_H / 2),
+            (GB_LABEL_W - 1, GB_LABEL_H - 1),
+        ] {
+            let [r, g, b] = at(x, y);
+            assert!(
+                r == g && g == b,
+                "{stem}: the label well is coloured at {x},{y}: {:?}",
+                [r, g, b]
+            );
         }
-        assert!(
-            (0..GB_LABEL_H * GB_LABEL_W).any(|i| at(i % GB_LABEL_W, i / GB_LABEL_W) != bg),
-            "{stem}: no text was drawn"
-        );
+    }
+}
+
+#[test]
+fn a_game_boy_color_label_sits_in_its_own_well_not_the_game_boys() {
+    // gbc_neutral.png's well is x 45..267, y 110..308: the Game Boy's size, 15px lower.
+    assert_eq!(
+        (GBC_LABEL_X, GBC_LABEL_Y, GBC_LABEL_W, GBC_LABEL_H),
+        (45, 110, 223, 199)
+    );
+    let d = tmp_root();
+    write_gb_rom(&d, "GBC", "Colour.gbc", 0xc0);
+    let face = cart_face(&scan(d.path()).unwrap()[0]);
+    assert_eq!(
+        slot_ui::label_size(&scan(d.path()).unwrap()[0]),
+        (GBC_LABEL_W, GBC_LABEL_H)
+    );
+    for (x, y) in [
+        (0, 0),
+        (GBC_LABEL_W / 2, GBC_LABEL_H / 2),
+        (GBC_LABEL_W - 1, GBC_LABEL_H - 1),
+    ] {
+        let [r, g, b] = pixel(&face, GBC_LABEL_X + x, GBC_LABEL_Y + y);
+        assert!(r == g && g == b, "the well is coloured at {x},{y}");
     }
 }
 
@@ -693,63 +661,47 @@ fn each_game_boy_shell_gets_a_black_shadow_of_its_own_exact_outline() {
 }
 
 #[test]
-fn a_clear_pak_shows_its_board_and_a_solid_one_does_not() {
+fn a_clear_pak_is_see_through_and_a_solid_one_is_not() {
     let d = tmp_root();
     write_gb_rom(&d, "GBC", "Clear.gbc", 0xc0);
     write_gb_rom(&d, "GB", "Grey.gb", 0x00);
     let carts = scan(d.path()).unwrap();
     let face = |stem: &str| cart_face(carts.iter().find(|c| c.stem == stem).expect("scanned"));
+    let beside_label = ((GB_CART_W * 24 + 120) / 240, GB_CART_H / 2);
     let (clear, grey) = (face("Clear"), face("Grey"));
-    let (board, contact) = ((gx(24), GB_CART_H / 2), (gx(26), GB_CART_H - gy(8)));
-
-    let [r, g, b] = pixel(&clear, board.0, board.1);
+    assert_eq!(pixel_alpha(&clear, beside_label.0, beside_label.1), 204);
+    assert_eq!(pixel_alpha(&grey, beside_label.0, beside_label.1), 255);
+    assert_eq!(
+        pixel_alpha(
+            &clear,
+            GBC_LABEL_X + GBC_LABEL_W / 2,
+            GBC_LABEL_Y + GBC_LABEL_H / 2
+        ),
+        255,
+        "the label of a clear pak is see-through"
+    );
+    let [r, g, b] = pixel(&clear, beside_label.0, beside_label.1);
     assert!(
-        g > r + 8 && g > b,
-        "no board beside the label: {:?}",
+        !(g > r + 8 && g > b),
+        "a board is baked into the clear pak: {:?}",
         [r, g, b]
     );
-    let [r, _, b] = pixel(&clear, contact.0, contact.1);
-    assert!(r > b + 20, "no gold contact at the bottom: {:?}", [r, b]);
-
-    for (x, y) in [board, contact] {
-        let [r, g, b] = pixel(&grey, x, y);
-        assert!(
-            r.abs_diff(g) < 12 && g.abs_diff(b) < 12,
-            "the grey pak shows something through it at {x},{y}: {:?}",
-            [r, g, b]
-        );
-    }
 }
 
 #[test]
-fn every_mould_is_lettered_with_its_platform() {
+fn each_mould_is_its_own_bitmap() {
     let d = tmp_root();
     write_rom(&d, "Advance.gba", "ADVANCE");
     write_gb_rom(&d, "GB", "Grey.gb", 0x00);
     write_gb_rom(&d, "GBC", "Clear.gbc", 0xc0);
     let carts = scan(d.path()).unwrap();
-    for (stem, rows, plain) in [
-        ("Advance", 19..28, (120, 3)),
-        ("Grey", 30..48, (197, 40)),
-        ("Clear", 26..44, (197, 40)),
-    ] {
-        let face = cart_face(carts.iter().find(|c| c.stem == stem).expect("scanned"));
-        let lum = |(x, y): (u32, u32)| {
-            pixel(&face, x, y)
-                .iter()
-                .map(|c| u32::from(*c))
-                .sum::<u32>()
-        };
-        let base = lum(plain);
-        let band: Vec<u32> = rows
-            .flat_map(|y| (60..180).map(move |x| (x, y)))
-            .map(lum)
-            .collect();
-        assert!(
-            band.iter().any(|l| *l > base + 30) && band.iter().any(|l| *l + 30 < base),
-            "the {stem} face has no raised lettering where its platform name goes"
-        );
-    }
+    let face = |stem: &str| cart_face(carts.iter().find(|c| c.stem == stem).expect("scanned"));
+    let (gba, grey, clear) = (face("Advance"), face("Grey"), face("Clear"));
+    assert_eq!((gba.w, gba.h), (CART_W, CART_H));
+    assert_eq!((grey.w, grey.h), (GB_CART_W, GB_CART_H));
+    assert!(pixel_alpha(&gba, CART_W / 2, CART_H / 2) > 250);
+    assert!(pixel_alpha(&grey, 12, 0) > 128);
+    assert!(pixel_alpha(&clear, 12, 0) < 8);
 }
 
 fn clear_gba(d: &TempDir) -> slot_ui::CartFace {
@@ -762,34 +714,42 @@ fn clear_gba(d: &TempDir) -> slot_ui::CartFace {
     cart_face(cart)
 }
 
-fn bevel() -> u32 {
-    (3 * CART_W + seated_box(Platform::Gba).0 / 2) / seated_box(Platform::Gba).0
-}
-
 #[test]
-fn a_clear_gba_cart_keeps_its_board_behind_the_label() {
+fn a_clear_gba_cart_keeps_its_label_on_the_bitmap() {
     let d = tmp_root();
     let face = clear_gba(&d);
-    let green = |[r, g, b]: [u8; 3]| g as i32 - (r as i32 + b as i32) / 2;
-    let y = LABEL_Y + LABEL_H / 2;
-    let beside = pixel(&face, LABEL_X - bevel() - 2, y);
-    let above = pixel(&face, LABEL_X - bevel() - 2, CART_H / 20);
+    assert!(pixel_alpha(&face, LABEL_X + 4, LABEL_Y + 4) > 250);
     assert!(
-        green(beside) - green(above) < 8,
-        "board shows beside the label: {beside:?} against plastic {above:?}"
+        pixel_alpha(&face, 2, 2) < 8,
+        "the bitmap was not clipped to the cartridge outline"
     );
 }
 
 #[test]
-fn a_clear_cart_lights_its_label_recess_no_brighter_than_its_plastic() {
+fn the_label_sits_inside_the_bitmap_and_the_corner_stays_clear() {
     let d = tmp_root();
     let face = clear_gba(&d);
-    let luma = |[r, g, b]: [u8; 3]| (r as u32 * 54 + g as u32 * 183 + b as u32 * 19) / 256;
-    let y = LABEL_Y + LABEL_H / 2;
-    let lit = pixel(&face, LABEL_X + LABEL_W + 1, y);
-    let plastic = pixel(&face, LABEL_X + LABEL_W + bevel() + 2, y);
+    assert!(pixel_alpha(&face, LABEL_X + LABEL_W / 2, LABEL_Y + LABEL_H / 2) > 250);
+    assert!(pixel_alpha(&face, 0, 0) < 8);
+}
+
+#[test]
+fn a_gba_cart_is_backed_by_the_whole_picker_board() {
+    let back = slot_ui::cart_backing(None);
+    assert_eq!((back.w, back.h), (CART_W, CART_H));
+    assert_eq!((back.w, back.h), (slot_ui::BOARD_W, slot_ui::BOARD_H));
+    let alpha = |x: u32, y: u32| back.rgba[((y * back.w + x) * 4) as usize + 3];
     assert!(
-        luma(lit) <= luma(plastic) * 13 / 10 + 4,
-        "the recess edge {lit:?} glares against the plastic {plastic:?}"
+        alpha(back.w / 2, back.h / 2) > 200,
+        "no board in the middle"
     );
+    assert_eq!(
+        alpha(0, 0),
+        0,
+        "the board is not a bare circuit board: its corner is painted"
+    );
+    let pak = slot_ui::cart_backing(Some(GbShell::Notched));
+    assert_eq!((pak.w, pak.h), (GB_CART_W, GB_CART_H));
+    let mid = pak.rgba[(((pak.h / 2) * pak.w + pak.w / 2) * 4 + 3) as usize];
+    assert!(mid > 200, "the pak board is empty in the middle");
 }

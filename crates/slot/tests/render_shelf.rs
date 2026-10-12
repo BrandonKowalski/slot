@@ -9,9 +9,8 @@ use slot_gfx::{Compositor, HeadlessSurface, TexId, OUT_H, OUT_W};
 use slot_input::{Action, Btn};
 use slot_store::{write_slot_state, Core, Platform, SlotState};
 use slot_ui::{
-    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, clean_label,
-    edge, gb_cart_shadow, hint_face, housing, label_colour, opening, padded, recess, socket_face,
-    GbShell, TURN_PAD,
+    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, edge,
+    gb_cart_shadow, hint_face, housing, opening, padded, recess, socket_face, GbShell, TURN_PAD,
 };
 use tempfile::TempDir;
 
@@ -204,17 +203,6 @@ fn the_card_says_which_tetris_is_in_the_slot() {
          Advance cartridge reads {dark:?}: the wrong cartridge came back"
     );
 
-    let ink = label_colour(&clean_label("Tetris"));
-    assert!(
-        paper(&gba, ink) > 200,
-        "the Game Boy Advance cartridge is in the slot without its label showing"
-    );
-    assert_eq!(
-        paper(&gb, ink),
-        0,
-        "a pak is seated and its label well is above the lip, which no pak's is"
-    );
-
     assert!(
         unstated == gba,
         "a card with no cart_platform line did not resume the Game Boy Advance cartridge"
@@ -258,10 +246,4 @@ fn cartridge_rows(px: &[u8]) -> Option<(usize, usize)> {
 fn centre(px: &[u8], row: usize) -> [u8; 3] {
     let o = (row * OUT_W as usize + (OUT_W / 2) as usize) * 4;
     [px[o], px[o + 1], px[o + 2]]
-}
-
-fn paper(px: &[u8], ink: [u8; 3]) -> usize {
-    px.chunks(4)
-        .filter(|p| (0..3).all(|k| p[k].abs_diff(ink[k]) <= 24))
-        .count()
 }

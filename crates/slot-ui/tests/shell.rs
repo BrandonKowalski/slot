@@ -1,8 +1,8 @@
 use slot_store::scan;
 use slot_ui::{
-    cart_face, gb_shell_of, gba_shell_for, lookup_order_is_exact_then_family_then_default,
-    shell_for, shell_presets, table_keys, Finish, GbShell, DEFAULT_SHELL, DMG_SHELL,
-    DUAL_MODE_SHELL,
+    cart_face, gb_plastics, gb_shell_of, gba_plastics, gba_shell_for,
+    lookup_order_is_exact_then_family_then_default, shell_for, shell_presets, table_keys, Finish,
+    GbShell, DEFAULT_SHELL, DMG_SHELL, DUAL_MODE_SHELL, LABEL_WELL, LABEL_Y,
 };
 use tempfile::TempDir;
 
@@ -222,7 +222,7 @@ fn an_unlisted_pak_keeps_its_flags_plastic() {
 }
 
 #[test]
-fn the_label_does_not_cover_the_whole_shell() {
+fn a_shell_without_a_label_image_is_one_plastic() {
     let d = tmp_root();
     write_rom_with_code(&d, "Drill Dozer.gba", "DRILL DOZER", "V49E");
     let cart = &scan(d.path()).unwrap()[0];
@@ -231,16 +231,31 @@ fn the_label_does_not_cover_the_whole_shell() {
         let i = ((y * f.w + x) * 4) as usize;
         [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2]]
     };
-    let shell = gba_shell_for("V49E").colour;
+    let flat = px(32, 40);
+    let mid = px(f.w / 2, f.h / 2);
     assert_eq!(
-        px(f.w / 2, 4),
-        shell,
-        "the label reaches the top edge, no shell shows"
+        flat,
+        [0xa9, 0x51, 0x3b],
+        "Drill Dozer is not its red plastic"
     );
-    assert_ne!(
-        px(f.w / 2, f.h / 2),
-        shell,
-        "the label is missing from the middle"
+    assert!(
+        mid[0] == mid[1] && mid[1] == mid[2],
+        "the label well is not the grey box: {mid:?}"
+    );
+    let mut letters = 0;
+    for y in 0..LABEL_Y {
+        for x in 0..f.w {
+            let i = ((y * f.w + x) * 4) as usize;
+            if f.rgba[i + 3] > 200
+                && [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2]] != [0xa9, 0x51, 0x3b]
+            {
+                letters += 1;
+            }
+        }
+    }
+    assert!(
+        letters > 80,
+        "the console name is missing from the shoulder: {letters} px"
     );
 }
 
@@ -345,69 +360,64 @@ fn greenish(face: &slot_ui::CartFace) -> usize {
 }
 
 #[test]
-fn a_clear_gba_cart_shows_its_board_through_the_plastic() {
+fn a_clear_gba_cart_has_no_board_baked_into_its_face() {
     let (_d, clear) = chosen("GBA", 0, "BPEE", Some("auto d9dbd8 clear"));
     let (_d2, solid) = chosen("GBA", 0, "BPEE", Some("auto d9dbd8 solid"));
+    assert_eq!(greenish(&cart_face(&solid)), 0);
     assert_eq!(
-        greenish(&cart_face(&solid)),
+        greenish(&cart_face(&clear)),
         0,
-        "solid plastic hides the board"
+        "a clear cart carries its own board, which would move with it"
     );
-    assert!(
-        greenish(&cart_face(&clear)) > 500,
-        "a clear GBA cart shows no board: {} green pixels",
-        greenish(&cart_face(&clear))
-    );
-}
-
-fn richness(clear: &slot_ui::CartFace, solid: &slot_ui::CartFace) -> (f32, f32) {
-    let spread = |p: &[u8]| {
-        let (hi, lo) = (*p[..3].iter().max().unwrap(), *p[..3].iter().min().unwrap());
-        if hi == 0 {
-            0.0
-        } else {
-            (hi - lo) as f32 / hi as f32
-        }
-    };
-    let (mut c, mut s, mut n) = (0.0, 0.0, 0.0);
-    for (a, b) in clear.rgba.chunks_exact(4).zip(solid.rgba.chunks_exact(4)) {
-        if a[3] > 0 && a[..3] != b[..3] {
-            c += spread(a);
-            s += spread(b);
-            n += 1.0;
-        }
-    }
-    (c / n, s / n)
 }
 
 #[test]
-fn clear_coloured_plastic_stays_as_rich_as_the_solid_kind() {
-    for colour in ["c2332e", "249c60"] {
-        let (_d, clear) = chosen("GBA", 0, "BPEE", Some(&format!("auto {colour} clear")));
-        let (_d2, solid) = chosen("GBA", 0, "BPEE", Some(&format!("auto {colour} solid")));
-        let (c, s) = richness(&cart_face(&clear), &cart_face(&solid));
-        assert!(
-            c >= 0.9 * s,
-            "clear {colour} is washed out: {c:.2} against solid {s:.2}"
-        );
-        let (c, s) = depth(&cart_face(&clear), &cart_face(&solid));
-        assert!(
-            c < 0.9 * s,
-            "clear {colour} is one thin layer: {c:.0} against solid {s:.0}"
-        );
+fn clear_plastic_is_eighty_percent_alpha_and_the_label_box_stays_opaque() {
+    let (_d, clear) = chosen("GBA", 0, "BPEE", Some("auto d9dbd8 clear"));
+    let (_d2, solid) = chosen("GBA", 0, "BPEE", Some("auto d9dbd8 solid"));
+    let (clear, solid) = (cart_face(&clear), cart_face(&solid));
+    let at = |f: &slot_ui::CartFace, x: u32, y: u32| {
+        let i = ((y * f.w + x) * 4) as usize;
+        [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2], f.rgba[i + 3]]
+    };
+
+    let mut see_through = 0u32;
+    for y in 0..clear.h {
+        for x in 0..clear.w {
+            let (c, s) = (at(&clear, x, y), at(&solid, x, y));
+            if s[3] == 255 && c[3] == 204 {
+                see_through += 1;
+            } else {
+                assert!(c[3] <= s[3], "the clear cart is more opaque at {x},{y}");
+            }
+        }
     }
+    assert!(
+        see_through > 10_000,
+        "the plastic is not see-through: {see_through} px"
+    );
+
+    assert_eq!(at(&clear, 40, 50)[3], 204, "the plastic is not 80%");
+    let well = at(&clear, clear.w / 2, LABEL_Y + 20);
+    assert!(
+        well[0] == well[1] && well[1] == well[2],
+        "the label well was washed: {:?}",
+        &well[..3]
+    );
+    assert_eq!(well[3], 255, "the label well is see-through");
 }
 
-fn depth(clear: &slot_ui::CartFace, solid: &slot_ui::CartFace) -> (f32, f32) {
-    let y = (clear.h as f32 * 0.06) as u32;
-    let lum = |f: &slot_ui::CartFace| {
-        let row = (clear.w * 3 / 10..clear.w * 7 / 10).map(|x| {
-            let i = ((y * f.w + x) * 4) as usize;
-            f.rgba[i] as f32 * 0.3 + f.rgba[i + 1] as f32 * 0.59 + f.rgba[i + 2] as f32 * 0.11
-        });
-        row.clone().sum::<f32>() / row.count() as f32
+#[test]
+fn a_clear_gbc_pak_is_see_through() {
+    let (_d, clear) = chosen("GBC", 0xc0, "", Some("auto ffffff clear"));
+    let (_d2, solid) = chosen("GBC", 0xc0, "", Some("auto ffffff solid"));
+    let (clear, solid) = (cart_face(&clear), cart_face(&solid));
+    let at = |f: &slot_ui::CartFace| {
+        let i = ((50 * f.w + 40) * 4) as usize;
+        f.rgba[i + 3]
     };
-    (lum(clear), lum(solid))
+    assert_eq!(at(&clear), 204, "the clear pak is not 80%");
+    assert_eq!(at(&solid), 255, "the solid pak is see-through");
 }
 
 #[test]
@@ -419,4 +429,176 @@ fn firered_and_leafgreen_are_solid() {
             "{code} is not solid"
         );
     }
+}
+
+#[test]
+fn each_table_plastic_is_the_neutral_shell_blended_with_its_colour() {
+    let sample = |cart: &slot_store::Cart| {
+        let f = cart_face(cart);
+        let i = ((40 * f.w + 32) * 4) as usize;
+        [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2]]
+    };
+    for colour in gba_plastics() {
+        let hex = format!("{:02x}{:02x}{:02x}", colour[0], colour[1], colour[2]);
+        let (_d, cart) = chosen("GBA", 0, "BPEE", Some(&format!("auto {hex} solid")));
+        assert_eq!(sample(&cart), colour, "gba {hex} was tinted or substituted");
+    }
+    for colour in gb_plastics() {
+        let hex = format!("{:02x}{:02x}{:02x}", colour[0], colour[1], colour[2]);
+        let (_d, cart) = chosen("GB", 0x00, "", Some(&format!("auto {hex} solid")));
+        let f = cart_face(&cart);
+        let i = ((20 * f.w + 20) * 4) as usize;
+        assert_eq!(
+            [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2]],
+            colour,
+            "gb {hex} was tinted or substituted"
+        );
+    }
+}
+
+#[test]
+fn any_colour_is_blended_onto_the_one_neutral_shell() {
+    let (_d, cart) = chosen("GBA", 0, "BPEE", Some("auto 123456 solid"));
+    assert_eq!(shell_for(&cart).colour, [0x12, 0x34, 0x56]);
+    let f = cart_face(&cart);
+    let at = |x: u32, y: u32| {
+        let i = ((y * f.w + x) * 4) as usize;
+        [f.rgba[i], f.rgba[i + 1], f.rgba[i + 2]]
+    };
+    assert_eq!(
+        at(32, 40),
+        [0x12, 0x34, 0x56],
+        "flat plastic is not the colour"
+    );
+    let well = at(f.w / 2, LABEL_Y + 20);
+    assert!(
+        well[0] == well[1] && well[1] == well[2],
+        "the label box was coloured: {well:?}"
+    );
+    let darker = (0..f.h)
+        .flat_map(|y| (0..f.w).map(move |x| (x, y)))
+        .map(|(x, y)| at(x, y))
+        .filter(|p| p[0] < 0x12 && p[1] < 0x34 && p[2] < 0x56)
+        .count();
+    assert!(
+        darker > 80,
+        "the embossed console name did not survive the blend"
+    );
+}
+
+#[test]
+fn fifty_percent_grey_keeps_the_colour_and_either_side_moves_it() {
+    let (_d, cart) = chosen("GBA", 0, "BPEE", Some("auto 606060 clear"));
+    let f = cart_face(&cart);
+    let (mut same, mut darker, mut lighter) = (0, 0, 0);
+    for px in f.rgba.chunks_exact(4).filter(|p| p[3] > 0) {
+        if px[..3] == LABEL_WELL {
+            continue;
+        }
+        match px[0].cmp(&0x60) {
+            std::cmp::Ordering::Equal => same += 1,
+            std::cmp::Ordering::Less => darker += 1,
+            std::cmp::Ordering::Greater => lighter += 1,
+        }
+    }
+    assert!(
+        same > 1_000,
+        "flat plastic is not the set colour: {same} px"
+    );
+    assert!(
+        darker > 500,
+        "nothing darker than 50% grey darkened it: {darker} px"
+    );
+    assert!(
+        lighter > 500,
+        "nothing lighter than 50% grey lightened it: {lighter} px"
+    );
+}
+
+#[test]
+fn glitter_specks_the_see_through_plastic() {
+    let glitter = pak_face(b"PM_CRYSTAL", b"BYTE", 0xc0, None);
+    let clear = pak_face(b"PM_CRYSTAL", b"BYTE", 0xc0, Some("auto 86b9bf clear"));
+    let mut flecks = 0usize;
+    let mut same = 0usize;
+    for (a, b) in glitter.rgba.chunks_exact(4).zip(clear.rgba.chunks_exact(4)) {
+        if a[3] == 0 {
+            continue;
+        }
+        if a[..3] == b[..3] {
+            same += 1;
+        } else {
+            flecks += 1;
+            assert!(
+                a[0] >= b[0] && a[1] >= b[1] && a[2] >= b[2],
+                "a glitter speck went darker: {:?} on {:?}",
+                &a[..3],
+                &b[..3]
+            );
+        }
+    }
+    assert!(flecks > 50, "glitter added no specks");
+    assert!(same > flecks * 20, "glitter repainted the shell");
+}
+
+fn pak_face(title: &[u8], code: &[u8], cgb: u8, line: Option<&str>) -> slot_ui::CartFace {
+    let d = tempfile::tempdir().expect("tempdir");
+    for sub in ["Games/GBC", "System", "Config"] {
+        std::fs::create_dir_all(d.path().join(sub)).expect("dir");
+    }
+    let mut rom = vec![0u8; 0x150];
+    rom[0x134..0x134 + title.len()].copy_from_slice(title);
+    rom[0x13f..0x13f + code.len()].copy_from_slice(code);
+    rom[0x143] = cgb;
+    std::fs::write(d.path().join("Games/GBC/Pak.gbc"), rom).expect("rom");
+    if let Some(line) = line {
+        std::fs::write(
+            d.path().join("Config/cart_shell.txt"),
+            format!("Pak = {line}\n"),
+        )
+        .expect("ini");
+    }
+    cart_face(&scan(d.path()).expect("scan").remove(0))
+}
+
+#[test]
+fn a_clear_gba_cart_has_a_game_coloured_interior_under_its_board() {
+    use slot_ui::{cart_interior, shows_interior, BOARD_H, BOARD_W, GB_CART_H, GB_CART_W};
+    let (_d, white) = chosen("GBA", 0, "BPEE", Some("auto ffffff clear"));
+    let (_d2, black) = chosen("GBA", 0, "BPEE", Some("auto 000000 clear"));
+    let (_d3, solid) = chosen("GBA", 0, "BPEE", Some("auto ffffff solid"));
+    let (_d4, pak) = chosen("GB", 0xc0, "", Some("auto ffffff clear"));
+    assert!(shows_interior(&white));
+    assert!(!shows_interior(&solid), "a solid cart shows no interior");
+    assert!(shows_interior(&pak), "a clear pak has no interior");
+
+    let (a, b) = (cart_interior(&white), cart_interior(&black));
+    assert_eq!((a.w, a.h), (BOARD_W, BOARD_H));
+    let mut differ = 0u32;
+    let mut strongest = 0u8;
+    for (p, q) in a.rgba.chunks_exact(4).zip(b.rgba.chunks_exact(4)) {
+        assert_eq!(p[3], q[3], "the blend changed the interior's shape");
+        differ += u32::from(p[..3] != q[..3]);
+        strongest = strongest.max(p[3]);
+    }
+    assert_eq!(strongest, 204, "the interior is not 80% opaque");
+    assert!(
+        differ > 10_000,
+        "the game's colour barely reaches the interior: {differ} px"
+    );
+
+    let (_d5, white_pak) = chosen("GB", 0xc0, "", Some("auto ffffff clear"));
+    let (_d6, black_pak) = chosen("GB", 0xc0, "", Some("auto 000000 clear"));
+    let (p, q) = (cart_interior(&white_pak), cart_interior(&black_pak));
+    assert_eq!((p.w, p.h), (GB_CART_W, GB_CART_H));
+    let differ = p
+        .rgba
+        .chunks_exact(4)
+        .zip(q.rgba.chunks_exact(4))
+        .filter(|(a, b)| a[..3] != b[..3])
+        .count();
+    assert!(
+        differ > 10_000,
+        "the pak's interior is not coloured: {differ} px"
+    );
 }

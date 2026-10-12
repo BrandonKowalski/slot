@@ -35,7 +35,7 @@ fn a_request_comes_back_as_the_open_carts_faces() {
     let got = collect(&builder, 1);
     assert_eq!(got.len(), 1, "the worker never answered");
     assert_eq!(got[0].stem, "Metroid Fusion");
-    assert_eq!((got[0].board.w, got[0].board.h), (372, 209));
+    assert_eq!((got[0].board.w, got[0].board.h), (CART_W, CART_H));
     assert_eq!(
         (got[0].lid.w, got[0].lid.h),
         (CART_W + 2 * TURN_PAD, CART_H + 2 * TURN_PAD)

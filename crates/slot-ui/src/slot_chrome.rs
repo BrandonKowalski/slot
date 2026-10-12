@@ -35,6 +35,11 @@ const CX: f32 = OUT_W as f32 / 2.0;
 const SCOOP_FLAT: f32 = 4.0;
 
 static THEME: OnceLock<Theme> = OnceLock::new();
+static SLOT_BITMAPS: OnceLock<(TexId, TexId)> = OnceLock::new();
+
+pub fn set_slot_bitmaps(back: TexId, front: TexId) {
+    let _ = SLOT_BITMAPS.set((back, front));
+}
 
 pub fn set_theme(theme: Theme) {
     let _ = THEME.set(theme);
@@ -197,6 +202,17 @@ fn band(x: f32, y: f32, w: f32, h: f32, c: [f32; 4], alpha: f32) -> Draw {
 }
 
 fn draw_slot_back(alpha: f32, out: &mut Vec<Draw>) {
+    if let Some((back, _)) = SLOT_BITMAPS.get() {
+        out.push(Draw::Tex {
+            x: 0.0,
+            y: BAND_Y,
+            w: OUT_W as f32,
+            h: MOUTH_H,
+            tex: *back,
+            alpha,
+        });
+        return;
+    }
     out.push(band(BAY_X, BAND_Y, BAY_W, LIP_H, housing(), alpha));
     out.push(band(MOUTH_X, BAND_Y, MOUTH_W, LIP_H, edge(), alpha));
     out.push(band(BAY_X, BAY_Y, BAY_W, RECESS_H, recess(), alpha));
@@ -207,6 +223,17 @@ fn draw_slot_back(alpha: f32, out: &mut Vec<Draw>) {
 }
 
 fn draw_slot_front(alpha: f32, out: &mut Vec<Draw>) {
+    if let Some((_, front)) = SLOT_BITMAPS.get() {
+        out.push(Draw::Tex {
+            x: 0.0,
+            y: BAND_Y,
+            w: OUT_W as f32,
+            h: MOUTH_H,
+            tex: *front,
+            alpha,
+        });
+        return;
+    }
     front_bands(|x, y, w, h, c| out.push(band(x, y, w, h, c, alpha)));
 }
 

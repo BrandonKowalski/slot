@@ -1,11 +1,7 @@
 use crate::art::render_svg;
+use crate::bitmaps;
 use crate::cart::CartFace;
 use crate::text;
-
-const PORT_SVG: &str = include_str!("../assets/link_port.svg");
-const PLUG_HOST_SVG: &str = include_str!("../assets/link_plug_host.svg");
-const PLUG_JOIN_SVG: &str = include_str!("../assets/link_plug_join.svg");
-const ADAPTER_SVG: &str = include_str!("../assets/link_adapter.svg");
 
 pub const PORT_W: u32 = 720;
 pub const PORT_H: u32 = 92;
@@ -57,9 +53,9 @@ pub fn link_art() -> LinkArt {
         mirror(&arcs_right[2]),
     ];
     LinkArt {
-        port: svg_face(PORT_SVG, PORT_W, PORT_H),
-        plug_host: svg_face(PLUG_HOST_SVG, PLUG_W, PLUG_H),
-        plug_join: svg_face(PLUG_JOIN_SVG, PLUG_W, PLUG_H),
+        port: bitmap_face(bitmaps::link_port(), PORT_W, PORT_H),
+        plug_host: bitmap_face(bitmaps::link_plug_host(), PLUG_W, PLUG_H),
+        plug_join: bitmap_face(bitmaps::link_plug_join(), PLUG_W, PLUG_H),
         adapter: adapter_face(),
         arcs_right,
         arcs_left,
@@ -72,6 +68,14 @@ pub fn link_art() -> LinkArt {
         ),
         arrow_left: svg_face(&arrow_svg("M14 2 L2 11 L14 20 Z"), ARROW_W, ARROW_H),
         arrow_right: svg_face(&arrow_svg("M2 2 L14 11 L2 20 Z"), ARROW_W, ARROW_H),
+    }
+}
+
+fn bitmap_face(rgba: &[u8], w: u32, h: u32) -> CartFace {
+    CartFace {
+        rgba: rgba.to_vec(),
+        w,
+        h,
     }
 }
 
@@ -125,7 +129,7 @@ enum Align {
 type LabelRow = (f32, f32, &'static str, f32, [u8; 3], Align);
 
 fn adapter_face() -> CartFace {
-    let mut face = svg_face(ADAPTER_SVG, ADAPTER_W, ADAPTER_H);
+    let mut face = bitmap_face(bitmaps::link_adapter(), ADAPTER_W, ADAPTER_H);
     let at = |x: f32, y: f32| {
         (
             ADAPTER_BASE_X + x * ADAPTER_SCALE,

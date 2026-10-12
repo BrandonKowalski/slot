@@ -8,7 +8,12 @@ pub mod cable;
 pub mod cart_faces;
 pub mod core;
 pub mod core_picker;
+#[cfg(unix)]
 pub mod crash;
+#[cfg(not(unix))]
+pub mod crash {
+    pub fn install() {}
+}
 pub mod drc;
 pub mod emu;
 pub mod face_builder;

@@ -1,26 +1,20 @@
 use slot_gfx::OUT_W;
 use slot_store::{Cart, Core};
 
-use crate::art;
+use crate::bitmaps;
 use crate::cart::{clean_label, CartFace, CART_H, CART_W};
 use crate::shelf::foot_y;
-use crate::shell::shell_for;
 use crate::slot_chrome::ease;
 use crate::text;
 
-const BOARD_SVG: &str = include_str!("../assets/board.svg");
+pub const BOARD_W: u32 = CART_W;
+pub const BOARD_H: u32 = CART_H;
 
-pub const BOARD_W: u32 = 372;
-pub const BOARD_H: u32 = 209;
-
-pub const ROM_X: u32 = 67;
+/// The black ROM chip on `handmade assets/board.png`: x 61..132, y 48..138.
+pub const ROM_X: u32 = 61;
 pub const ROM_Y: u32 = 48;
 pub const ROM_W: u32 = 71;
 pub const ROM_H: u32 = 90;
-
-const PLASTIC: &str = "#ff00ff";
-const FLOOR: &str = "#800080";
-const DEEP: &str = "#400040";
 
 const MARK_LINE_CHARS: usize = 10;
 const MARK_LINES: usize = 3;
@@ -69,15 +63,8 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
 }
 
 pub fn board_face(cart: &Cart) -> CartFace {
-    let shell = shell_for(cart);
-    let svg = BOARD_SVG
-        .replace(DEEP, &hex(shade(shell.colour, 0.35)))
-        .replace(FLOOR, &hex(shade(shell.colour, 0.62)))
-        .replace(PLASTIC, &hex(shell.colour));
-    let rgba = art::render_svg(&svg, BOARD_W, BOARD_H)
-        .unwrap_or_else(|| vec![0; (BOARD_W * BOARD_H * 4) as usize]);
     let mut face = CartFace {
-        rgba,
+        rgba: bitmaps::board().to_vec(),
         w: BOARD_W,
         h: BOARD_H,
     };
@@ -130,18 +117,17 @@ fn over(dst: &mut CartFace, src: &CartFace, x: u32, y: u32) {
     }
 }
 
-fn hex(c: [u8; 3]) -> String {
-    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+fn bitmap_face(rgba: &[u8], w: u32, h: u32) -> CartFace {
+    CartFace {
+        rgba: rgba.to_vec(),
+        w,
+        h,
+    }
 }
 
-fn shade(c: [u8; 3], f: f32) -> [u8; 3] {
-    c.map(|v| (v as f32 * f).round().clamp(0.0, 255.0) as u8)
-}
-
-const SOCKET_SVG: &str = include_str!("../assets/socket.svg");
-const CHIP_SVG: &str = include_str!("../assets/chip.svg");
-
-pub const BOARD_X: f32 = 174.0;
+/// Centred on the panel. This used to sit at 174 for a 372-wide board; a 360-wide board
+/// centred there slid 6px left of the cart while the picker opened.
+pub const BOARD_X: f32 = (OUT_W as f32 - BOARD_W as f32) / 2.0;
 pub const BOARD_Y: f32 = 150.0;
 
 pub const TURN_PAD: u32 = 2;
@@ -179,12 +165,15 @@ const NAME_MIN_PX: f32 = 8.0;
 const SOCKET_INK: [u8; 3] = [0xee, 0xf5, 0xe6];
 const CHIP_INK: [u8; 3] = [0xf2, 0xf2, 0xf2];
 
+/// Where the lid ends up: the cart's own proportions at 40%, so it shrinks evenly rather than
+/// being squashed on the way, centred where the old 144x81 box was.
 const LID_REST: Placed = Placed {
     x: 288.0,
-    y: 30.0,
+    y: 70.5 - LID_REST_H / 2.0,
     w: 144.0,
-    h: 81.0,
+    h: LID_REST_H,
 };
+const LID_REST_H: f32 = 144.0 * CART_H as f32 / CART_W as f32;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Placed {
@@ -219,7 +208,13 @@ pub fn board_from(shelf: Placed, progress: f32) -> Placed {
         w: BOARD_W as f32,
         h: BOARD_H as f32,
     };
-    lerp(shelf, rest, lift_of(progress))
+    lerp(board_in(shelf), rest, lift_of(progress))
+}
+
+/// The board and the back shell fill the cart they sit in, same size as the lid. Letterboxing them
+/// to the board bitmap's own aspect made both look shorter the moment the cart opened.
+pub fn board_in(cart: Placed) -> Placed {
+    cart
 }
 
 pub fn lid_at(progress: f32) -> (Placed, f32) {
@@ -280,13 +275,7 @@ pub fn padded(face: &CartFace, pad: u32) -> CartFace {
 }
 
 pub fn socket_face(core: Core) -> CartFace {
-    let rgba = art::render_svg(SOCKET_SVG, SOCKET_W, SOCKET_H)
-        .unwrap_or_else(|| vec![0; (SOCKET_W * SOCKET_H * 4) as usize]);
-    let mut face = CartFace {
-        rgba,
-        w: SOCKET_W,
-        h: SOCKET_H,
-    };
+    let mut face = bitmap_face(bitmaps::socket(), SOCKET_W, SOCKET_H);
     if let Some(layout) = name_layout(core, (SOCKET_W - 12) as f32) {
         ink_band(&mut face, 4, 37, &layout, SOCKET_INK, 0.5);
     }
@@ -294,13 +283,7 @@ pub fn socket_face(core: Core) -> CartFace {
 }
 
 pub fn chip_face(core: Option<Core>) -> CartFace {
-    let rgba = art::render_svg(CHIP_SVG, CHIP_W, CHIP_H)
-        .unwrap_or_else(|| vec![0; (CHIP_W * CHIP_H * 4) as usize]);
-    let mut face = CartFace {
-        rgba,
-        w: CHIP_W,
-        h: CHIP_H,
-    };
+    let mut face = bitmap_face(bitmaps::chip(), CHIP_W, CHIP_H);
     if let Some(layout) = core.and_then(|c| name_layout(c, (CHIP_W - 8) as f32)) {
         ink_band(&mut face, 4, 34, &layout, CHIP_INK, 1.0);
     }

@@ -10,10 +10,10 @@ use slot_ui::{
     arrows_hint_face, badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face,
     date_time_text, gb_cart_shadow, hhmm, hint_face, icon_face, menu_face, photo_face,
     quick_caret_face, quick_label_face, quick_legend_faces, quick_value_face, rebuild_count_face,
-    rebuild_title_face, set_clock_hint_face, socket_face, sticker_face, title_face, toast_face,
-    wallpaper_face, word_face, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces,
-    QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
-    HUD_ICON_PX, HUD_INK, LEGEND,
+    rebuild_title_face, set_clock_hint_face, set_slot_bitmaps, slot_back, slot_front, socket_face,
+    sticker_face, title_face, toast_face, wallpaper_face, word_face, CartFace, GbShell, Icon,
+    LinkBadge, PowerChoice, QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields,
+    Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -47,8 +47,7 @@ pub struct Frontend {
     link_art: LinkArtBuilder,
     link_art_done: bool,
     core_asked: Option<String>,
-    core_board_tex: Option<TexId>,
-    core_lid_tex: Option<TexId>,
+    core_tex: CoreTextures,
     core_built: Option<String>,
     undo_tex: Option<TexId>,
     switcher: Switcher,
@@ -128,8 +127,7 @@ impl Frontend {
             link_art: LinkArtBuilder::spawn(),
             link_art_done: false,
             core_asked: None,
-            core_board_tex: None,
-            core_lid_tex: None,
+            core_tex: CoreTextures::default(),
             core_built: None,
             undo_tex: None,
             switcher: Switcher::default(),
@@ -202,9 +200,22 @@ impl Frontend {
         let rounded = gb_cart_shadow(GbShell::Rounded);
         let rounded = compositor.create_texture(rounded.w, rounded.h, &rounded.rgba);
         self.session.app_mut().set_gb_cart_shadows(notched, rounded);
+        let board = slot_ui::cart_backing(None);
+        let board = compositor.create_texture(board.w, board.h, &board.rgba);
+        self.session.app_mut().set_cart_backing(board);
+        let notched = slot_ui::cart_backing(Some(GbShell::Notched));
+        let notched = compositor.create_texture(notched.w, notched.h, &notched.rgba);
+        let rounded = slot_ui::cart_backing(Some(GbShell::Rounded));
+        let rounded = compositor.create_texture(rounded.w, rounded.h, &rounded.rgba);
+        self.session
+            .app_mut()
+            .set_gb_cart_backings(notched, rounded);
         let bolt = icon_face(Icon::Charging, BOLT_PX, HUD_INK);
         let bolt_id = compositor.create_texture(bolt.w, bolt.h, &bolt.rgba);
         self.session.app_mut().set_bolt_face(bolt_id);
+        let back = compositor.create_texture(slot_ui::SLOT_W, slot_ui::SLOT_H, slot_back());
+        let front = compositor.create_texture(slot_ui::SLOT_W, slot_ui::SLOT_H, slot_front());
+        set_slot_bitmaps(back, front);
         crate::boot_time::mark("shelf faces");
         self.upload_wallpaper(compositor);
     }
@@ -357,8 +368,7 @@ impl Frontend {
             compositor,
             &self.faces,
             &mut self.core_asked,
-            &mut self.core_board_tex,
-            &mut self.core_lid_tex,
+            &mut self.core_tex,
             &mut self.core_built,
         );
         if !self.link_art_done {
@@ -762,13 +772,20 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
     app.set_sticker_face(id);
 }
 
+/// The textures the core picker reuses from one cart to the next.
+#[derive(Default)]
+struct CoreTextures {
+    interior: Option<TexId>,
+    board: Option<TexId>,
+    lid: Option<TexId>,
+}
+
 fn sync_core_picker(
     app: &mut App,
     compositor: &mut Compositor,
     builder: &FaceBuilder,
     asked: &mut Option<String>,
-    board: &mut Option<TexId>,
-    lid: &mut Option<TexId>,
+    tex: &mut CoreTextures,
     built: &mut Option<String>,
 ) {
     let highlighted = app.selected_stem().map(str::to_string);
@@ -787,14 +804,28 @@ fn sync_core_picker(
     if highlighted.as_deref() != Some(faces.stem.as_str()) || *built == highlighted {
         return;
     }
+    let interior_id = upload_rgba(
+        compositor,
+        &mut tex.interior,
+        faces.interior.w,
+        faces.interior.h,
+        &faces.interior.rgba,
+    );
+    app.set_core_interior_face(interior_id);
     let board_id = upload_rgba(
         compositor,
-        board,
+        &mut tex.board,
         faces.board.w,
         faces.board.h,
         &faces.board.rgba,
     );
-    let lid_id = upload_rgba(compositor, lid, faces.lid.w, faces.lid.h, &faces.lid.rgba);
+    let lid_id = upload_rgba(
+        compositor,
+        &mut tex.lid,
+        faces.lid.w,
+        faces.lid.h,
+        &faces.lid.rgba,
+    );
     app.set_core_board_faces(board_id, lid_id);
     *built = Some(faces.stem);
 }

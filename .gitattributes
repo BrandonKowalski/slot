@@ -2,3 +2,7 @@
 # endings: a hunk whose context lines were normalised on checkout no longer matches the file
 # it patches, and a core that ships any source with CRLF would stop applying.
 cores/**/*.patch -text
+
+# These run under the device's /bin/sh. A CRLF checkout (Windows autocrlf) leaves a \r on the
+# shebang and on every command, and the frontend never starts.
+*.sh text eol=lf

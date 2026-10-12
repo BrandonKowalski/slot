@@ -57,12 +57,14 @@ fn the_tip_is_at_the_bottom_and_the_cable_fades_out_at_the_top() {
 fn the_port_opens_at_the_top_of_the_strip() {
     let a = link_art();
     let slot = px(&a.port, 360, 12);
+    let shell = px(&a.port, 40, 80);
+    assert_eq!(slot[3], 255, "the port bitmap is transparent: {slot:?}");
+    assert_eq!(shell[3], 255, "the shell bitmap is transparent: {shell:?}");
+    let luma = |p: [u8; 4]| p[0] as u32 + p[1] as u32 + p[2] as u32;
     assert!(
-        slot[0] < 0x12 && slot[3] == 255,
-        "no dark port at the centre: {slot:?}"
+        luma(slot) + 40 < luma(shell),
+        "the port mouth is not darker than the shell: {slot:?} against {shell:?}"
     );
-    let strip = px(&a.port, 100, 60);
-    assert_eq!(&strip[..3], &[0x1a, 0x1a, 0x20]);
 }
 
 #[test]

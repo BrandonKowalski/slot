@@ -72,24 +72,24 @@ fn every_line_is_already_upper_case() {
 #[test]
 fn the_wordmarks_top_edge_is_antialiased_not_a_hard_step() {
     use slot_ui::sticker_face;
-    const GROUND: [u8; 3] = [0x23, 0x1f, 0x20];
     const INK: [u8; 3] = [0xff, 0xff, 0xff];
     let face = sticker_face(&fields());
     let get = |x: u32, y: u32| -> [u8; 3] {
         let i = ((y * face.w + x) * 4) as usize;
         [face.rgba[i], face.rgba[i + 1], face.rgba[i + 2]]
     };
+    let dark = |c: [u8; 3]| (c[0] as u32 + c[1] as u32 + c[2] as u32) < 120;
     let edges: Vec<[u8; 3]> = (400..413)
         .filter_map(|x| {
             (129..142).find_map(|y| {
                 let above = get(x, y - 1);
                 let here = get(x, y);
-                (above == GROUND && here != GROUND).then_some(here)
+                (dark(above) && !dark(here)).then_some(here)
             })
         })
         .collect();
     assert!(
-        edges.iter().any(|&e| e != GROUND && e != INK),
+        edges.iter().any(|&e| e != INK),
         "every sampled column's top edge jumps straight from the ground to the ink: {edges:?}"
     );
 }

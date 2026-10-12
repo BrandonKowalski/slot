@@ -777,6 +777,7 @@ fn the_row_draws_a_game_boy_pak_at_its_own_height() {
         rest_y(GB_CART_H as f32),
         "the pak is not centred on the carousel"
     );
+    assert_eq!(y, y.round(), "the pak is off the pixel grid: {y}");
 }
 
 #[test]
@@ -890,4 +891,113 @@ fn a_cart_pushed_onto_the_row_draws_rather_than_stopping_the_device() {
         2,
         "the row holding a cart the shells never heard of did not draw both its neighbours"
     );
+}
+
+#[test]
+fn a_clear_cart_is_drawn_over_its_board_and_a_solid_one_is_not() {
+    let cart = |stem: &str, code: &str| Cart {
+        platform: Platform::Gba,
+        stem: stem.into(),
+        rom: format!("Games/GBA/{stem}.gba").into(),
+        label: None,
+        code: code.into(),
+        shell: None,
+        title: stem.to_uppercase(),
+    };
+    let board = TexId::from_raw(80);
+    for (code, clear) in [("BPEE", true), ("BPRE", false)] {
+        let mut s = Shelf::new(vec![cart("Game", code)]);
+        settle(&mut s);
+        let face = TexId::from_raw(20);
+        s.set_faces(vec![face]);
+        s.set_backing(board);
+        let mut out = Vec::new();
+        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        let at = |t: TexId| {
+            out.iter()
+                .position(|d| matches!(*d, Draw::Tex { tex, .. } if tex == t))
+        };
+        assert_eq!(at(board).is_some(), clear, "{code}: board layer");
+        if clear {
+            assert!(at(board) < at(face), "the board was drawn over the plastic");
+        }
+    }
+}
+
+#[test]
+fn a_clear_cart_draws_its_interior_then_the_board_then_the_plastic() {
+    let mut s = Shelf::new(vec![Cart {
+        platform: Platform::Gba,
+        stem: "Game".into(),
+        rom: "Games/GBA/Game.gba".into(),
+        label: None,
+        code: "BPEE".into(),
+        shell: None,
+        title: "GAME".into(),
+    }]);
+    settle(&mut s);
+    let (interior, board, face) = (
+        TexId::from_raw(81),
+        TexId::from_raw(80),
+        TexId::from_raw(20),
+    );
+    s.set_faces(vec![face]);
+    s.set_backing(board);
+    s.set_interior(0, interior);
+    let mut out = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+    let at = |t: TexId| {
+        out.iter()
+            .position(|d| matches!(*d, Draw::Tex { tex, .. } if tex == t))
+            .expect("layer drawn")
+    };
+    assert!(at(interior) < at(board) && at(board) < at(face));
+    let size = |t: TexId| {
+        out.iter().find_map(|d| match *d {
+            Draw::Tex { w, h, tex, .. } if tex == t => Some((w, h)),
+            _ => None,
+        })
+    };
+    assert_eq!(
+        size(interior),
+        size(face),
+        "the back shell is not the cart's size"
+    );
+    assert_eq!(size(board), size(face), "the board is not the cart's size");
+    assert_eq!(s.take_interior(0), Some(interior));
+}
+
+#[test]
+fn a_clear_pak_draws_its_interior_then_the_board_then_the_plastic() {
+    use slot_store::{Outline, ShellChoice, ShellFinish};
+    let mut s = Shelf::new(vec![Cart {
+        platform: Platform::Gb,
+        stem: "Pak".into(),
+        rom: "Games/GB/Pak.gb".into(),
+        label: None,
+        code: String::new(),
+        shell: Some(ShellChoice {
+            outline: Outline::Notched,
+            colour: [0xff; 3],
+            finish: ShellFinish::Clear,
+        }),
+        title: "PAK".into(),
+    }]);
+    settle(&mut s);
+    let (interior, board, face) = (
+        TexId::from_raw(81),
+        TexId::from_raw(80),
+        TexId::from_raw(20),
+    );
+    s.set_faces(vec![face]);
+    s.set_gb_backing(GbShell::Notched, board);
+    s.set_interior(0, interior);
+    let mut out = Vec::new();
+    s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+    let at = |t: TexId| {
+        out.iter()
+            .position(|d| matches!(*d, Draw::Tex { tex, .. } if tex == t))
+            .expect("layer drawn")
+    };
+    assert!(at(interior) < at(board) && at(board) < at(face));
 }

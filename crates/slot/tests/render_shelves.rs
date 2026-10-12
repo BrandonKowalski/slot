@@ -13,8 +13,8 @@ use slot_input::{Action, Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
-    cart_box, cart_face, clean_label, edge, housing, label_colour, label_text, opening, recess,
-    rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
+    cart_box, cart_face, edge, housing, label_colour, label_text, opening, recess, rest_y, Draw,
+    SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, PLATE_H,
 };
 
 struct Script(VecDeque<Vec<RawEvent>>);
@@ -404,7 +404,7 @@ fn a_cart_going_in_from_a_repeated_row_takes_both_copies_of_its_neighbour_with_i
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     clocked(d.path());
     let mut app = App::boot(d.path());
-    let ink = label_colour(&clean_label("Emerald"));
+    let ink = [0x35, 0x35, 0x3a];
 
     let standing = shot(&app, &mut c, Some("insert-0-standing"));
     let (from, _) = span(&standing, ink);
@@ -556,7 +556,16 @@ fn row_runs(px: &[u8]) -> Vec<(usize, usize)> {
 }
 
 fn span(px: &[u8], ink: [u8; 3]) -> (f32, usize) {
-    let close = |c: [u8; 3]| (0..3).all(|k| c[k].abs_diff(ink[k]) <= 24);
+    let chrome = backdrop();
+    let close = |c: [u8; 3]| {
+        (0..3).all(|k| c[k].abs_diff(ink[k]) <= 24)
+            && !chrome.iter().any(|f| {
+                (0..3).all(|k| {
+                    let want = (f[k] * 255.0).round() as u8;
+                    c[k].abs_diff(want) <= 8
+                })
+            })
+    };
     let mut cols: Vec<usize> = Vec::new();
     let mut bottom = 0;
     for y in 0..OUT_H as usize {
@@ -633,21 +642,6 @@ fn cartridges() -> [(&'static str, Cart); 2] {
     ]
 }
 
-fn label_top(p: CartPlatform) -> usize {
-    match p {
-        CartPlatform::Gba => LABEL_Y as usize,
-        CartPlatform::Gb | CartPlatform::Gbc => GB_LABEL_Y as usize,
-    }
-}
-
-fn paper_rows(px: &[u8], ink: [u8; 3]) -> Option<(usize, usize)> {
-    let close = |c: [u8; 3]| (0..3).all(|k| c[k].abs_diff(ink[k]) <= 24);
-    let mut rows =
-        (0..OUT_H as usize).filter(|y| (0..OUT_W as usize).any(|x| close(at(px, x, *y))));
-    let first = rows.next()?;
-    Some((first, rows.next_back().unwrap_or(first)))
-}
-
 fn backdrop() -> [[f32; 4]; 5] {
     [[0.0, 0.0, 0.0, 1.0], housing(), opening(), edge(), recess()]
 }
@@ -693,7 +687,6 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
             "{name}: the face is not the size the layout thinks it is"
         );
         let tex = c.create_texture(face.w, face.h, &face.rgba);
-        let ink = label_colour(&clean_label(&cart.stem));
         let rest = (OUT_W - w) as f32 / 2.0;
 
         for (beat, seat) in beats {
@@ -727,24 +720,6 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
                 assert!(
                     (middle - want).abs() < 1.5,
                     "{name} stands {top}..{bottom}, centred on {middle} rather than on {want}"
-                );
-                let (paper_top, paper_bottom) =
-                    paper_rows(&px, ink).expect("a standing cartridge shows its label");
-                let inset = paper_top - top;
-                assert!(
-                    inset.abs_diff(label_top(cart.platform)) <= 2,
-                    "{name}'s paper starts {inset} px down its face, not the {} its platform \
-                     puts it at",
-                    label_top(cart.platform)
-                );
-                let paper = paper_bottom - paper_top + 1;
-                let want = match cart.platform {
-                    CartPlatform::Gba => LABEL_H as usize,
-                    _ => GB_LABEL_H as usize,
-                };
-                assert!(
-                    paper.abs_diff(want) <= 2,
-                    "{name}'s {want} px label came out {paper} px tall: it is being scaled"
                 );
             }
             if seat == 1.0 {
