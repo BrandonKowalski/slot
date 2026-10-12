@@ -653,6 +653,85 @@ impl RetroCore for SpyLinkCore {
     }
 }
 
+/// A core whose first loads are refused, as one can be on a cold card.
+struct FlakyLoadCore {
+    inner: MockCore,
+    refuse: usize,
+    tries: Arc<AtomicUsize>,
+}
+
+impl RetroCore for FlakyLoadCore {
+    fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
+        if self.tries.fetch_add(1, Ordering::Relaxed) < self.refuse {
+            return Err(CoreError::Load("core refused".into()));
+        }
+        self.inner.load(rom)
+    }
+    fn run_frame(&mut self, input: ButtonMask) {
+        self.inner.run_frame(input)
+    }
+    fn video_xrgb8888(&self) -> &[u8] {
+        self.inner.video_xrgb8888()
+    }
+    fn take_audio(&mut self) -> Vec<i16> {
+        self.inner.take_audio()
+    }
+    fn serialize(&mut self) -> Result<Vec<u8>, CoreError> {
+        self.inner.serialize()
+    }
+    fn unserialize(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.unserialize(data)
+    }
+    fn save_ram(&self) -> Option<Vec<u8>> {
+        self.inner.save_ram()
+    }
+    fn load_save_ram(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        self.inner.load_save_ram(data)
+    }
+    fn av_info(&self) -> AvInfo {
+        self.inner.av_info()
+    }
+}
+
+fn flaky(refuse: usize) -> (EmuHandle, Arc<AtomicUsize>) {
+    let tries = Arc::new(AtomicUsize::new(0));
+    let core = FlakyLoadCore {
+        inner: MockCore::new(),
+        refuse,
+        tries: tries.clone(),
+    };
+    let mut sink = StubSink::new();
+    sink.open(32_768).expect("the stub refused to open");
+    drain(sink.clone());
+    let emu = EmuHandle::spawn(
+        Box::new(core),
+        PathBuf::from("mock"),
+        sink.ring(),
+        None,
+        None,
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while emu.state() == CoreState::Loading {
+        assert!(Instant::now() < deadline, "the core never settled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    (emu, tries)
+}
+
+#[test]
+fn a_load_the_core_refuses_once_is_tried_again_before_the_cart_is_given_up() {
+    let (emu, tries) = flaky(2);
+    assert_eq!(emu.state(), CoreState::Ready);
+    assert_eq!(tries.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn a_load_the_core_keeps_refusing_still_fails_after_a_few_tries() {
+    let (emu, tries) = flaky(usize::MAX);
+    assert_eq!(emu.state(), CoreState::Failed);
+    assert_eq!(tries.load(Ordering::Relaxed), 3);
+}
+
 fn spawn_with_core(core: Box<dyn RetroCore>) -> EmuHandle {
     let mut sink = StubSink::new();
     sink.open(32_768).expect("the stub refused to open");

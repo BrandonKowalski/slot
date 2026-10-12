@@ -1,5 +1,6 @@
 mod core;
 mod ffi;
+mod jit_room;
 mod libretro;
 mod link;
 mod mock;

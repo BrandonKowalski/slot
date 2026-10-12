@@ -67,7 +67,25 @@ unsafe fn with_host<R>(f: impl FnOnce(&mut Host) -> R) -> Option<R> {
     Some(f(&mut *p))
 }
 
-unsafe extern "C" fn log_noop(_level: c_uint, _fmt: *const c_char) {}
+const LOG_WARN: c_uint = 2;
+const LOG_CAP: u32 = 64;
+
+static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// A core's own warnings and errors, so `slot.log` says why a load was refused.
+/// The callback is variadic in C; the arguments are ignored, so the format
+/// string is logged as the core wrote it, `%s` and all. Capped, so a chatty
+/// core cannot flood the card.
+unsafe extern "C" fn log_core(level: c_uint, fmt: *const c_char) {
+    if level < LOG_WARN || fmt.is_null() {
+        return;
+    }
+    if LOGGED.fetch_add(1, Ordering::Relaxed) >= LOG_CAP {
+        return;
+    }
+    let msg = std::ffi::CStr::from_ptr(fmt).to_string_lossy();
+    eprintln!("slot: core says: {}", msg.trim_end());
+}
 
 unsafe extern "C" fn set_rumble_state(port: c_uint, effect: c_uint, strength: u16) -> bool {
     with_host(|h| h.rumble.set(port, effect, strength)).unwrap_or(false)
@@ -191,7 +209,7 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             if data.is_null() {
                 return false;
             }
-            (*(data as *mut LogCallback)).log = log_noop as *const c_void;
+            (*(data as *mut LogCallback)).log = log_core as *const c_void;
             true
         }
         SET_AUDIO_BUFFER_STATUS_CALLBACK => {
@@ -462,7 +480,7 @@ impl LibretroCore {
     }
 
     fn open_inner(dylib: &Path, system_dir: &Path, save_dir: &Path) -> Result<Self, CoreError> {
-        let lib = unsafe { Library::new(dylib) }.map_err(|e| CoreError::Load(e.to_string()))?;
+        let lib = crate::jit_room::load(dylib).map_err(|e| CoreError::Load(e.to_string()))?;
         let api = unsafe { Api::load(&lib) }?;
         let version = unsafe { (api.api_version)() };
         if version != API_VERSION {

@@ -19,6 +19,11 @@ use crate::resample::Resampler;
 use crate::rewind::{RewindThread, REWIND_BYTES};
 
 const PRESENT: Duration = Duration::from_nanos(16_666_667);
+/// A load that fails once on a cold card, or while the console is still busy
+/// settling after boot, often works a moment later. A ROM the core really
+/// refuses costs the player half a second more before it comes back out.
+const LOAD_ATTEMPTS: u32 = 3;
+const LOAD_RETRY: Duration = Duration::from_millis(250);
 
 pub const FAST_STEPS: u32 = 6;
 
@@ -490,12 +495,23 @@ impl Worker {
             rom.display(),
             crate::boot_time::ms()
         );
-        if let Err(e) = core.load(&rom) {
-            eprintln!("slot: {e}");
-            self.shared
-                .state
-                .store(CoreState::Failed as u8, Ordering::Release);
-            return;
+        let mut attempt = 1;
+        loop {
+            match core.load(&rom) {
+                Ok(()) => break,
+                Err(e) if attempt < LOAD_ATTEMPTS && !self.shared.stop.load(Ordering::Relaxed) => {
+                    eprintln!("slot: {e} (attempt {attempt} of {LOAD_ATTEMPTS}, trying again)");
+                    attempt += 1;
+                    std::thread::sleep(LOAD_RETRY);
+                }
+                Err(e) => {
+                    eprintln!("slot: {e}");
+                    self.shared
+                        .state
+                        .store(CoreState::Failed as u8, Ordering::Release);
+                    return;
+                }
+            }
         }
         if let Some(sav) = sav {
             eprintln!(
