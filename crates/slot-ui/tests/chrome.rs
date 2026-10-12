@@ -148,6 +148,7 @@ fn chrome_into(c: &Cart, seat: f32, out: &mut Vec<Draw>) {
         screen: 0.0,
         game: true,
         over: true,
+        behind: [None, None],
     }
     .draw(out);
 }
@@ -178,6 +179,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
             screen: 0.0,
             game: false,
             over: true,
+            behind: [None, None],
         }
         .draw(&mut out);
         out.iter()
@@ -235,6 +237,7 @@ fn draw_powering_on(t: f32, out: &mut Vec<Draw>) {
         screen: t,
         game: true,
         over: true,
+        behind: [None, None],
     }
     .draw(out);
 }
@@ -646,6 +649,7 @@ fn the_empty_slot_is_the_same_slot_the_chrome_draws() {
         screen: 0.0,
         game: false,
         over: true,
+        behind: [None, None],
     }
     .draw(&mut seated);
 
@@ -856,5 +860,46 @@ fn the_cart_catches_on_the_top_edge_of_the_slot() {
             (at - lip).abs() < 16.0,
             "{name} hesitates at {at} but the slot's top edge is {lip}"
         );
+    }
+}
+
+#[test]
+fn a_clear_carts_board_goes_into_the_slot_and_comes_out_with_it() {
+    let (interior, board, face) = (TexId::from_raw(81), TexId::from_raw(80), TexId::from_raw(20));
+    for (name, c) in both() {
+        for step in 0..=10 {
+            let seat = step as f32 / 10.0;
+            let mut out = Vec::new();
+            SlotChrome {
+                cart: &c,
+                face: Some(face),
+                rest: centred(&c),
+                scale: 1.0,
+                seat,
+                alert: None,
+                dim: 0.0,
+                screen: 0.0,
+                game: false,
+                over: false,
+                behind: [Some(interior), Some(board)],
+            }
+            .draw(&mut out);
+            let at = |t: TexId| {
+                out.iter()
+                    .position(|d| matches!(*d, Draw::Tex { tex, .. } if tex == t))
+                    .unwrap_or_else(|| panic!("{name} at {seat}: a layer was not drawn"))
+            };
+            assert!(
+                at(interior) < at(board) && at(board) < at(face),
+                "{name} at {seat}: the layers are out of order"
+            );
+            assert_eq!(quad(&out[at(interior)]), quad(&out[at(face)]), "{name} at {seat}");
+            assert_eq!(quad(&out[at(board)]), quad(&out[at(face)]), "{name} at {seat}");
+            let slot_front = out.len();
+            assert!(
+                at(face) < slot_front - 1,
+                "{name} at {seat}: the face is not under the slot front"
+            );
+        }
     }
 }

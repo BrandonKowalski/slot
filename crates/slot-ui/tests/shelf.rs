@@ -836,9 +836,10 @@ fn a_game_boy_row_backs_its_carts_with_the_game_boy_shadow() {
     s.set_faces((0..3).map(|i| TexId::from_raw(20 + i)).collect());
     let gba = TexId::from_raw(98);
     s.set_shadow(gba);
+    // Off-centre carts stay opaque, so only a receding row (the core picker) shows a shadow.
     let drawn = |s: &Shelf| {
         let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        s.draw_row(None, 0.0, 0.3, 1.0, &mut out);
         out
     };
     assert!(
@@ -891,7 +892,7 @@ fn a_colour_pak_and_a_grey_one_are_backed_by_their_own_shells() {
         s.set_gb_shadow(GbShell::Notched, notched);
         s.set_gb_shadow(GbShell::Rounded, rounded);
         let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        s.draw_row(Some(&carts[selected].stem), 0.0, 0.3, 1.0, &mut out);
         let backings: Vec<TexId> = out
             .iter()
             .filter_map(|d| match *d {
@@ -918,7 +919,7 @@ fn a_cart_pushed_onto_the_row_draws_rather_than_stopping_the_device() {
     settle(&mut s);
     let backed = |s: &Shelf| {
         let mut out = Vec::new();
-        s.draw_row(None, 0.0, 0.0, 1.0, &mut out);
+        s.draw_row(Some("Pak 0"), 0.0, 0.3, 1.0, &mut out);
         out.iter()
             .filter(|d| matches!(**d, Draw::Tex { tex, .. } if tex == gb || tex == gba))
             .count()
@@ -1049,4 +1050,32 @@ fn a_clear_pak_draws_its_interior_then_the_board_then_the_plastic() {
             .expect("layer drawn")
     };
     assert!(at(interior) < at(board) && at(board) < at(face));
+}
+
+#[test]
+fn only_a_clear_cart_has_anything_behind_its_plastic() {
+    let cart = |stem: &str, code: &str| Cart {
+        platform: Platform::Gba,
+        stem: stem.into(),
+        rom: format!("Games/GBA/{stem}.gba").into(),
+        label: None,
+        code: code.into(),
+        shell: None,
+        title: stem.to_uppercase(),
+    };
+    let (interior, board) = (TexId::from_raw(81), TexId::from_raw(80));
+    for (code, clear) in [("BPEE", true), ("BPRE", false)] {
+        let mut s = Shelf::new(vec![cart("Game", code)]);
+        s.set_faces(vec![TexId::from_raw(20)]);
+        s.set_backing(board);
+        s.set_interior(0, interior);
+        let want = if clear {
+            [Some(interior), Some(board)]
+        } else {
+            [None, None]
+        };
+        assert_eq!(s.behind("Game"), want, "{code}");
+    }
+    let s = Shelf::new(vec![cart("Game", "BPEE")]);
+    assert_eq!(s.behind("Nothing"), [None, None]);
 }

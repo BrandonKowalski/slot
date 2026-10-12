@@ -117,3 +117,39 @@ fn a_hold_hands_the_core_no_state_and_a_tap_hands_it_the_resume() {
         "a hold resumed the state it was meant to skip"
     );
 }
+
+#[test]
+fn a_game_left_running_starts_loading_before_the_first_frame() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    slot_store::write_slot_state(
+        d.path(),
+        &slot_store::SlotState {
+            cart: Some("Emerald".into()),
+            cart_platform: Some(Platform::Gba),
+            clock_set: true,
+            utc_offset_min: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let s = Session::boot(d.path().to_path_buf());
+    assert!(
+        matches!(s.app().phase(), Phase::Inserting { resumed: true, .. }),
+        "the game was not put back in the slot: {:?}",
+        s.app().phase()
+    );
+    assert!(
+        s.has_core(),
+        "the core waited for the first update, so a cold boot sat idle on the slot"
+    );
+}
+
+#[test]
+fn an_empty_slot_loads_no_core_at_boot() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    common::clocked(d.path());
+    let s = Session::boot(d.path().to_path_buf());
+    assert!(matches!(s.app().phase(), Phase::Shelf));
+    assert!(!s.has_core(), "a core opened with nothing in the slot");
+}

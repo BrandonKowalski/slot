@@ -215,10 +215,11 @@ fn a_wireless_link_seats_the_adapter_with_its_label_plate() {
         opened: false,
     };
     let px = render(menu, LinkKind::Wireless, 2000, "wireless-linked");
-    let plate = at(&px, 360, PORT_Y as usize - 12);
+    let y = PORT_Y as usize - 12;
+    let body = (300..420).filter(|x| at(&px, *x, y)[0] > 0x60).count();
     assert!(
-        plate[0] > 0x28 && plate[0] < 0x70,
-        "no plate where the seated adapter's label goes: {plate:?}"
+        body > 100,
+        "the seated adapter's printed plate is not above the port: {body} light pixels"
     );
 }
 
@@ -255,7 +256,8 @@ fn ending_a_link_pulls_the_plug_back_out_of_the_port() {
     };
     let seated = render(menu, LinkKind::Cable, 0, "cable-unplug-start");
     let gone = render(menu, LinkKind::Cable, 400, "cable-unplug-end");
-    let (x, y) = (356, 359);
+    // Below the resting tip (367) and above the port, so only a seated plug reaches it.
+    let (x, y) = (356, 400);
     assert_ne!(
         at(&seated, x, y),
         GROUND,

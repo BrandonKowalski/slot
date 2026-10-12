@@ -102,6 +102,8 @@ pub struct SlotChrome<'a> {
     pub game: bool,
     /// When set, the picture opens behind a fading slot. A resumed boot, the picture opening, and the eject back to the shelf keep the cart between the slot back and front.
     pub over: bool,
+    /// The back plastic and the board a see-through cart shows under its front shell.
+    pub behind: [Option<TexId>; 2],
 }
 
 impl SlotChrome<'_> {
@@ -145,6 +147,16 @@ impl SlotChrome<'_> {
         let x = centre + (CX - centre) * k - cw / 2.0;
         let y = foot0 + (seated_foot - foot0) * travel - ch;
         let cart_alpha = if seat >= 1.0 && !held { chrome } else { 1.0 };
+        for tex in self.behind.into_iter().flatten() {
+            out.push(Draw::Tex {
+                x,
+                y,
+                w: cw,
+                h: ch,
+                tex,
+                alpha: cart_alpha,
+            });
+        }
         out.push(match self.face {
             Some(tex) => Draw::Tex {
                 x,

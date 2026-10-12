@@ -162,6 +162,24 @@ impl Shelf {
         out
     }
 
+    /// What a see-through cart shows behind its front shell, back plastic first and then the board.
+    /// The shelf draws these under the face. The slot has to as well, or the board vanishes
+    /// as the cart goes in or comes out.
+    pub fn behind(&self, stem: &str) -> [Option<TexId>; 2] {
+        let Some(i) = self.carts.iter().position(|c| c.stem == stem) else {
+            return [None, None];
+        };
+        if !self.clears.get(i).copied().unwrap_or(false) || self.face(i).is_none() {
+            return [None, None];
+        }
+        let board = match self.shells.get(i).copied().flatten() {
+            None => self.backing,
+            Some(GbShell::Notched) => self.gb_backing,
+            Some(GbShell::Rounded) => self.gbc_backing,
+        };
+        [self.interiors.get(i).copied().flatten(), board]
+    }
+
     pub fn find(&self, stem: &str) -> Option<(&Cart, Option<TexId>)> {
         let i = self.carts.iter().position(|c| c.stem == stem)?;
         Some((&self.carts[i], self.face(i)))

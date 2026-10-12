@@ -710,6 +710,7 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
                 screen: 0.0,
                 game: false,
                 over: true,
+                behind: [None, None],
             }
             .draw(&mut out);
             let px = frame(&mut c, &out, &format!("insert-{name}-{beat}"));
@@ -777,6 +778,7 @@ fn no_frame_of_the_travel_jumps_further_than_the_cartridge_is_tall() {
                     screen: 0.0,
                     game: false,
                     over: true,
+                    behind: [None, None],
                 }
                 .draw(&mut out);
                 out.iter()

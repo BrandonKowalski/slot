@@ -40,7 +40,7 @@ impl Session {
     }
 
     pub fn boot_with(root: PathBuf, sink: Box<dyn AudioSink>) -> Self {
-        Session {
+        let mut session = Session {
             app: App::boot(&root),
             root,
             emu: None,
@@ -54,7 +54,14 @@ impl Session {
             prefetch: Prefetch::default(),
             reloading: false,
             driven: false,
+        };
+        // A game left running comes straight back. Its core loads on its own thread, so start it
+        // now and let the card read overlap the rest of the boot. Waiting for the first update
+        // left a cold boot (after a power off) idle on the slot for the whole load.
+        if session.inserting() {
+            session.sync_core();
         }
+        session
     }
 
     pub fn play_sfx(&mut self, sfx: Sfx) {

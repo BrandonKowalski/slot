@@ -2228,6 +2228,7 @@ impl App {
                     | Phase::Playing { .. }
                     | Phase::Ejecting { .. }
             ),
+            behind: self.shelf().behind(stem),
         }
         .draw(out);
     }
