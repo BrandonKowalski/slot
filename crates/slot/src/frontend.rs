@@ -270,6 +270,10 @@ impl Frontend {
         };
         let id = compositor.create_texture(OUT_W, OUT_H, rgba);
         self.session.app_mut().set_ground(id);
+        if let Some(rgba) = slot_ui::blur_background() {
+            let id = compositor.create_texture(OUT_W, OUT_H, rgba);
+            self.session.app_mut().set_blur(id);
+        }
     }
 
     fn apply_look(&mut self) {

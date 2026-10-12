@@ -324,6 +324,7 @@ pub struct App {
     quick_wallpaper_faces: Option<[(TexId, u32, u32); 2]>,
     sticker_face: Option<TexId>,
     ground: Option<TexId>,
+    blur: Option<TexId>,
     wallpaper: Option<TexId>,
     battery_percent: slot_ui::Printed,
     bolt: Option<TexId>,
@@ -453,6 +454,7 @@ impl App {
             quick_wallpaper_faces: None,
             sticker_face: None,
             ground: None,
+            blur: None,
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
             bolt: None,
@@ -713,7 +715,11 @@ impl App {
     }
 
     fn cycle_wallpaper(&mut self, right: bool) {
-        let mut choices = vec![WallpaperPick::None, WallpaperPick::Default];
+        let mut choices = vec![
+            WallpaperPick::None,
+            WallpaperPick::Default,
+            WallpaperPick::Blur,
+        ];
         choices.extend(self.wallpaper_files().into_iter().map(WallpaperPick::File));
         let key = self.resolved_wallpaper().key();
         let at = choices.iter().position(|c| c.key() == key).unwrap_or(1);
@@ -730,6 +736,7 @@ impl App {
         let face = match &self.state.wallpaper {
             WallpaperPick::None => None,
             WallpaperPick::Default => self.ground,
+            WallpaperPick::Blur => self.blur.or(self.ground),
             WallpaperPick::File(_) => self.wallpaper.or(self.ground),
         };
         draw_ground(face, out);
@@ -771,6 +778,10 @@ impl App {
 
     pub fn set_ground(&mut self, face: TexId) {
         self.ground = Some(face);
+    }
+
+    pub fn set_blur(&mut self, face: TexId) {
+        self.blur = Some(face);
     }
 
     pub fn set_wallpaper(&mut self, face: TexId) {

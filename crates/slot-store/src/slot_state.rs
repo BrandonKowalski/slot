@@ -55,6 +55,7 @@ pub enum WallpaperPick {
     None,
     #[default]
     Default,
+    Blur,
     File(String),
 }
 
@@ -63,6 +64,7 @@ impl WallpaperPick {
         match self {
             WallpaperPick::None => "none".to_string(),
             WallpaperPick::Default => "default".to_string(),
+            WallpaperPick::Blur => "default_blur".to_string(),
             WallpaperPick::File(name) => name.clone(),
         }
     }
@@ -71,6 +73,7 @@ impl WallpaperPick {
         match self {
             WallpaperPick::None => "None".to_string(),
             WallpaperPick::Default => "Default".to_string(),
+            WallpaperPick::Blur => "DEFAULT BLUR".to_string(),
             WallpaperPick::File(name) => name
                 .rsplit_once('.')
                 .map(|(stem, _)| stem)
@@ -83,6 +86,7 @@ impl WallpaperPick {
         match value {
             "none" => WallpaperPick::None,
             "" | "default" => WallpaperPick::Default,
+            "default_blur" => WallpaperPick::Blur,
             other => WallpaperPick::File(other.to_string()),
         }
     }

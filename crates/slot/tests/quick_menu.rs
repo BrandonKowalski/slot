@@ -120,6 +120,9 @@ fn wallpaper_cycles_none_default_and_the_folder_and_saves() {
         "a new card did not start on Default"
     );
     press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_wallpaper(), WallpaperPick::Blur);
+    assert_eq!(a.resolved_wallpaper().label(), "DEFAULT BLUR");
+    press(&mut a, Btn::Right);
     assert_eq!(a.resolved_wallpaper(), WallpaperPick::File("a.png".into()));
     press(&mut a, Btn::Right);
     assert_eq!(a.resolved_wallpaper(), WallpaperPick::File("b.png".into()));
