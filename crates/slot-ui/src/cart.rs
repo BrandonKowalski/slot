@@ -18,12 +18,12 @@ pub const DISC_W: u32 = 312;
 pub const DISC_H: u32 = 312;
 
 pub const SNES_W: u32 = 360;
-pub const SNES_H: u32 = 267;
-pub const SNES_LABEL_X: u32 = 60;
-pub const SNES_LABEL_Y: u32 = 26;
-pub const SNES_LABEL_W: u32 = 240;
-pub const SNES_LABEL_H: u32 = 130;
-const SNES_SEATED_H: u32 = 178;
+pub const SNES_H: u32 = 246;
+pub const SNES_LABEL_X: u32 = 32;
+pub const SNES_LABEL_Y: u32 = 12;
+pub const SNES_LABEL_W: u32 = 296;
+pub const SNES_LABEL_H: u32 = 100;
+const SNES_SEATED_H: u32 = 164;
 
 pub const GB_CART_H: u32 = (GB_CART_W * GB_SEATED_H + SEATED_W / 2) / SEATED_W;
 
@@ -622,66 +622,57 @@ fn generated_disc_label(title: &str, w: u32, h: u32) -> Vec<u8> {
     rgba
 }
 
-const SNES_BODY: [u8; 3] = [0xaa, 0xa8, 0xa5];
-const SNES_SLOT_INK: [u8; 3] = [0x2c, 0x2b, 0x2a];
-const SNES_FULL_TO: f32 = 176.0;
-const SNES_STEP: f32 = 20.0;
-const SNES_INSET: f32 = 22.0;
+const SNES_BODY: [u8; 3] = [0xac, 0xb8, 0xbb];
+const SNES_BRASS: [u8; 3] = [0xa6, 0x8e, 0x46];
+const SNES_GROOVES: [f32; 2] = [58.0, 302.0];
 
-/// Whether a point lies on the cartridge: wide at the top with rounded corners, stepping in to the
-/// narrower foot that goes into the console.
-fn snes_inside(x: f32, y: f32) -> bool {
-    let (w, h) = (SNES_W as f32, SNES_H as f32);
-    if x < 0.0 || x >= w || y < 0.0 || y >= h {
+/// A rounded rectangle with its own radius on the top and the bottom corners.
+fn rounded(x: f32, y: f32, rect: (f32, f32, f32, f32), radii: (f32, f32)) -> bool {
+    let (x0, y0, x1, y1) = rect;
+    if x < x0 || x >= x1 || y < y0 || y >= y1 {
         return false;
     }
-    let cut = if y <= SNES_FULL_TO {
-        0.0
-    } else if y <= SNES_FULL_TO + SNES_STEP {
-        (y - SNES_FULL_TO) / SNES_STEP * SNES_INSET
+    let (r, cy) = if y < y0 + radii.0 {
+        (radii.0, y0 + radii.0)
+    } else if y > y1 - radii.1 {
+        (radii.1, y1 - radii.1)
     } else {
-        SNES_INSET
+        return true;
     };
-    if x < cut || x > w - cut {
-        return false;
-    }
-    let top = 16.0;
-    if y < top {
-        let dx = if x < top {
-            top - x
-        } else if x > w - top {
-            x - (w - top)
-        } else {
-            0.0
-        };
-        if dx > 0.0 && dx * dx + (top - y) * (top - y) > top * top {
-            return false;
-        }
-    }
-    let foot = 6.0;
-    if y > h - foot {
-        let (l, r) = (SNES_INSET + foot, w - SNES_INSET - foot);
-        let dx = if x < l {
-            l - x
-        } else if x > r {
-            x - r
-        } else {
-            0.0
-        };
-        let dy = y - (h - foot);
-        if dx > 0.0 && dx * dx + dy * dy > foot * foot {
-            return false;
-        }
-    }
-    true
+    let dx = if x < x0 + r {
+        x0 + r - x
+    } else if x > x1 - r {
+        x - (x1 - r)
+    } else {
+        return true;
+    };
+    dx * dx + (y - cy) * (y - cy) <= r * r
+}
+
+/// The cartridge of the European and Japanese Super Nintendo seen from the front: one rounded
+/// rectangle with a small notch at the top where each side column meets the middle.
+fn snes_inside(x: f32, y: f32) -> bool {
+    let notch = y < 3.0 && SNES_GROOVES.iter().any(|g| (x - g).abs() < 1.2);
+    !notch && rounded(x, y, (0.0, 0.0, SNES_W as f32, SNES_H as f32), (9.0, 12.0))
+}
+
+fn snes_slot(x: f32, y: f32) -> bool {
+    rounded(x, y, (69.0, 147.0, 291.0, 171.0), (12.0, 12.0))
+}
+
+fn snes_sticker(x: f32, y: f32) -> bool {
+    let (x0, y0) = (SNES_LABEL_X as f32, SNES_LABEL_Y as f32);
+    let rect = (x0, y0, x0 + SNES_LABEL_W as f32, y0 + SNES_LABEL_H as f32);
+    rounded(x, y, rect, (3.0, 3.0))
 }
 
 fn shade(c: [u8; 3], k: f32) -> [u8; 3] {
     c.map(|v| (v as f32 * k).clamp(0.0, 255.0) as u8)
 }
 
-/// A Super Nintendo cartridge drawn per pixel: grey shell, grip ridges on the top corners, a
-/// recessed label and the dark slot along the foot. The cover art is printed in the label.
+/// The cartridge of the European and Japanese Super Nintendo, drawn per pixel after a photo of the
+/// real thing: light grey shell, two side columns with five grip grooves each and a screw at the
+/// foot, a middle block with a long recess in three fields, and the sticker with the cover art.
 fn snes_face(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
     let (w, h) = (SNES_W, SNES_H);
     let (lw, lh) = (SNES_LABEL_W, SNES_LABEL_H);
@@ -706,54 +697,82 @@ fn snes_face(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
                 continue;
             }
             let (cx, cy) = (fx + 0.5, fy + 0.5);
-            let mut c = shade(SNES_BODY, 1.06 - 0.16 * cy / hf);
+            let mut c = shade(SNES_BODY, 1.05 - 0.10 * cy / hf);
+            if cx >= SNES_GROOVES[0] && cx < SNES_GROOVES[1] {
+                c = shade(c, 1.03);
+            }
+
+            for g in SNES_GROOVES {
+                if (cx - g).abs() < 1.0 {
+                    c = shade(c, 0.80);
+                } else if (cx - g - 1.5).abs() < 0.8 || (cx - g + 1.5).abs() < 0.8 {
+                    c = shade(c, 1.05);
+                }
+            }
+
+            for k in 0..5 {
+                let yc = 20.0 + 10.8 * k as f32;
+                let in_left = (5.0..16.0).contains(&cx);
+                let in_right = (344.0..355.0).contains(&cx);
+                if in_left || in_right {
+                    if (cy - yc).abs() < 1.4 {
+                        c = shade(c, 0.60);
+                    } else if (cy - yc + 2.4).abs() < 1.0 {
+                        c = shade(c, 1.08);
+                    }
+                }
+            }
+
+            if snes_slot(cx, cy) {
+                c = shade(SNES_BODY, 0.86);
+                if !snes_slot(cx, cy - 3.0) {
+                    c = shade(SNES_BODY, 0.42);
+                } else if !snes_slot(cx, cy + 1.5) || !snes_slot(cx - 1.5, cy) {
+                    c = shade(SNES_BODY, 1.10);
+                }
+                if (cx - 140.0).abs() < 1.0 || (cx - 217.0).abs() < 1.0 {
+                    c = shade(SNES_BODY, 0.70);
+                }
+            }
+
+            for sx in [20.0, wf - 20.0] {
+                let d = ((cx - sx).powi(2) + (cy - 224.0).powi(2)).sqrt();
+                if d < 7.5 {
+                    c = shade(SNES_BODY, 0.55);
+                }
+                if d < 5.5 {
+                    let spot = ((cx - sx + 2.0).powi(2) + (cy - 224.0 + 2.0).powi(2)).sqrt();
+                    c = shade(SNES_BRASS, if spot < 2.5 { 1.35 } else { 1.0 - 0.04 * d });
+                }
+            }
+
+            if snes_sticker(cx, cy) {
+                let (lx, ly) = (x.saturating_sub(SNES_LABEL_X), y.saturating_sub(SNES_LABEL_Y));
+                if x >= SNES_LABEL_X && y >= SNES_LABEL_Y && lx < lw && ly < lh {
+                    let i = ((ly * lw + lx) * 4) as usize;
+                    let a = label[i + 3] as u32;
+                    for k in 0..3 {
+                        c[k] = ((label[i + k] as u32 * a + backing[k] as u32 * (255 - a) + 127)
+                            / 255) as u8;
+                    }
+                }
+                if !snes_sticker(cx - 1.2, cy)
+                    || !snes_sticker(cx + 1.2, cy)
+                    || !snes_sticker(cx, cy - 1.2)
+                    || !snes_sticker(cx, cy + 1.2)
+                {
+                    c = shade(c, 0.86);
+                }
+            }
 
             if !snes_inside(cx, cy - 2.5) {
-                c = shade(c, 1.10);
+                c = shade(c, 1.08);
             } else if !snes_inside(cx - 2.5, cy)
                 || !snes_inside(cx + 2.5, cy)
                 || !snes_inside(cx, cy + 2.5)
             {
-                c = shade(c, 0.74);
+                c = shade(c, 0.80);
             }
-
-            for k in 0..5 {
-                let off = 16.0 + 7.0 * k as f32;
-                let left = cx >= off && cx < off + 2.0;
-                let right = cx >= wf - off - 2.0 && cx < wf - off;
-                if (left || right) && (5.0..30.0).contains(&cy) {
-                    c = shade(c, 0.78);
-                }
-            }
-
-            let (rx0, ry0) = (SNES_LABEL_X as f32 - 8.0, SNES_LABEL_Y as f32 - 8.0);
-            let (rx1, ry1) = (
-                (SNES_LABEL_X + lw) as f32 + 8.0,
-                (SNES_LABEL_Y + lh) as f32 + 8.0,
-            );
-            if cx >= rx0 && cx < rx1 && cy >= ry0 && cy < ry1 {
-                c = shade(c, if cy < ry0 + 3.0 { 0.66 } else { 0.80 });
-                if cy >= ry1 - 1.5 {
-                    c = shade(SNES_BODY, 1.08);
-                }
-            }
-            let (lx, ly) = (x as i32 - SNES_LABEL_X as i32, y as i32 - SNES_LABEL_Y as i32);
-            if lx >= 0 && ly >= 0 && (lx as u32) < lw && (ly as u32) < lh {
-                let i = ((ly as u32 * lw + lx as u32) * 4) as usize;
-                let a = label[i + 3] as u32;
-                for k in 0..3 {
-                    c[k] = ((label[i + k] as u32 * a + backing[k] as u32 * (255 - a) + 127) / 255)
-                        as u8;
-                }
-            }
-
-            let slot_x = (SNES_INSET + 14.0)..(wf - SNES_INSET - 14.0);
-            if cy >= hf - 14.0 && slot_x.contains(&cx) {
-                c = if cy < hf - 13.0 { shade(SNES_BODY, 1.12) } else { SNES_SLOT_INK };
-            }
-
-            let sheen = (-((cx - wf / 2.0) - (cy - hf / 2.0)).powi(2) / (wf * wf) * 6.0).exp() * 0.08;
-            c = c.map(|v| v + ((255 - v) as f32 * sheen) as u8);
 
             let i = ((y * w + x) * 4) as usize;
             rgba[i] = c[0];
