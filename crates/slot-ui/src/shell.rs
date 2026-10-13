@@ -91,6 +91,7 @@ pub fn shell_for(cart: &Cart) -> Shell {
         Platform::Gba => gba_shell_for(&gba_code(cart)),
         Platform::Gb | Platform::Gbc => gb_shell_for(&cart.rom),
         Platform::Ps1 => DEFAULT_SHELL,
+        Platform::Snes => DMG_SHELL,
     }
 }
 

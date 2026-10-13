@@ -11,6 +11,7 @@ pub enum Core {
     Mgba,
     Gpsp,
     Pcsx,
+    Snes9x,
 }
 
 impl Core {
@@ -23,6 +24,7 @@ impl Core {
             Core::Mgba => "mgba",
             Core::Gpsp => "gpsp",
             Core::Pcsx => "pcsx_rearmed",
+            Core::Snes9x => "snes9x",
         }
     }
 
@@ -35,6 +37,7 @@ impl Core {
             Core::Mgba => "mGBA",
             Core::Gpsp => "gpSP",
             Core::Pcsx => "PCSX",
+            Core::Snes9x => "Snes9x",
         }
     }
 
@@ -43,15 +46,17 @@ impl Core {
             "mgba" => Some(Core::Mgba),
             "gpsp" => Some(Core::Gpsp),
             "pcsx_rearmed" | "pcsx" => Some(Core::Pcsx),
+            "snes9x" => Some(Core::Snes9x),
             _ => None,
         }
     }
 
     pub fn runs(self, platform: Platform) -> bool {
         match self {
-            Core::Mgba => platform != Platform::Ps1,
+            Core::Mgba => matches!(platform, Platform::Gba | Platform::Gb | Platform::Gbc),
             Core::Gpsp => platform == Platform::Gba,
             Core::Pcsx => platform == Platform::Ps1,
+            Core::Snes9x => platform == Platform::Snes,
         }
     }
 
@@ -59,6 +64,7 @@ impl Core {
         match platform {
             Platform::Gba | Platform::Gb | Platform::Gbc => Core::Mgba,
             Platform::Ps1 => Core::Pcsx,
+            Platform::Snes => Core::Snes9x,
         }
     }
 }

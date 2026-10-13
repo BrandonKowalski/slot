@@ -175,7 +175,7 @@ fn both_cores_are_told_about_colour_correction_in_their_own_words() {
         let theirs = match which {
             Core::Mgba => "gpsp_color_correction",
             Core::Gpsp => "mgba_color_correction",
-            Core::Pcsx => unreachable!("the colour test only loops over the GBA cores"),
+            Core::Pcsx | Core::Snes9x => unreachable!("the colour test only loops over the GBA cores"),
         };
         assert_eq!(
             core.option(theirs),

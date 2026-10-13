@@ -3,14 +3,20 @@ use slot_store::Platform;
 #[test]
 fn every_platform_has_a_directory() {
     let names: Vec<&str> = Platform::ALL.iter().map(|p| p.dir_name()).collect();
-    assert_eq!(names, vec!["GBA", "GB", "GBC", "PS1"]);
+    assert_eq!(names, vec!["GBA", "GB", "GBC", "PS1", "SNES"]);
 }
 
 #[test]
 fn every_platform_is_a_shelf_of_its_own() {
     assert_eq!(
         Platform::ALL,
-        [Platform::Gba, Platform::Gb, Platform::Gbc, Platform::Ps1]
+        [
+            Platform::Gba,
+            Platform::Gb,
+            Platform::Gbc,
+            Platform::Ps1,
+            Platform::Snes
+        ]
     );
     for (i, p) in Platform::ALL.iter().enumerate() {
         assert!(
@@ -51,4 +57,18 @@ fn the_playstation_runs_on_pcsx_and_no_game_boy_core_runs_it() {
     assert!(!Core::Gpsp.runs(Platform::Ps1));
     assert_eq!(Core::Pcsx.as_str(), "pcsx_rearmed");
     assert_eq!(Core::parse("pcsx_rearmed"), Some(Core::Pcsx));
+}
+
+#[test]
+fn the_super_nintendo_takes_its_rom_extensions_and_runs_on_snes9x() {
+    use slot_store::Core;
+    for name in ["Zelda.sfc", "Mario World.SMC", "Game.swc", "Game.fig"] {
+        assert!(Platform::Snes.accepts(std::path::Path::new(name)), "{name}");
+    }
+    assert!(!Platform::Snes.accepts(std::path::Path::new("Zelda.gba")));
+    assert_eq!(Core::default_for(Platform::Snes), Core::Snes9x);
+    assert!(Core::Snes9x.runs(Platform::Snes));
+    assert!(!Core::Snes9x.runs(Platform::Gba));
+    assert!(!Core::Mgba.runs(Platform::Snes));
+    assert_eq!(Core::Snes9x.as_str(), "snes9x");
 }

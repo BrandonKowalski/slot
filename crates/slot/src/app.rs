@@ -1043,7 +1043,7 @@ impl App {
 
     /// A PlayStation game is drawn at the size the core renders it, not in the 240x160 buffer.
     pub fn wants_hires(&self) -> bool {
-        self.platform == Platform::Ps1
+        matches!(self.platform, Platform::Ps1 | Platform::Snes)
     }
 
     /// Whether a PlayStation picture is stretched over the whole screen instead of kept at 4:3.
@@ -1055,7 +1055,7 @@ impl App {
         match self.platform {
             Platform::Gba => self.state.shader_gba,
             Platform::Gb | Platform::Gbc => self.state.shader_gb,
-            Platform::Ps1 => self.state.shader_ps1,
+            Platform::Ps1 | Platform::Snes => self.state.shader_ps1,
         }
     }
 
@@ -1419,7 +1419,7 @@ impl App {
         let (shader, choices) = match self.platform {
             Platform::Gba => (&mut self.state.shader_gba, &Shader::GBA[..]),
             Platform::Gb | Platform::Gbc => (&mut self.state.shader_gb, &Shader::GB[..]),
-            Platform::Ps1 => (&mut self.state.shader_ps1, &Shader::PS1[..]),
+            Platform::Ps1 | Platform::Snes => (&mut self.state.shader_ps1, &Shader::PS1[..]),
         };
         *shader = shader.step(choices, right);
         let said = match *shader {
@@ -1460,7 +1460,9 @@ impl App {
             }
             return true;
         }
-        if action == Action::ColourCorrectionToggle && self.platform == Platform::Ps1 {
+        if action == Action::ColourCorrectionToggle
+            && matches!(self.platform, Platform::Ps1 | Platform::Snes)
+        {
             self.state.ps1_fill = !self.state.ps1_fill;
             self.persist();
             let said = match self.state.ps1_fill {
