@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Super Nintendo (experimental): `Games/SNES` takes `.sfc`, `.smc`, `.swc` and `.fig`, run by Snes9x (`System/snes9x_libretro.so`). A SNES game sits on the shelf as the rounded grey cartridge of the European (PAL) and Japanese Super Nintendo, with its cover art in the wide label, drawn at the size the core renders it, with the same five filters and the same fill/4:3 switch as the PlayStation (`shader_ps1` and `ps1_fill`).
 - PlayStation (experimental): `Games/PS1` takes `.cue`, `.chd`, `.m3u`, `.pbp` and `.iso` images, run by PCSX ReARMed (`System/pcsx_rearmed_libretro.so`). A PS1 game sits on the shelf as a disc with its cover art, not a cartridge.
 - PlayStation games are drawn at the size the core renders them (320x240 is shown at an exact 2x, 640x480 on the 720x480 panel) instead of being squeezed into the 240x160 GBA buffer. A GPU that cannot run the new shader falls back to the old fitted picture.
 - SELECT with Y switches a disc between the whole screen (default) and a 4:3 picture with bars at the sides; the choice is remembered as `ps1_fill`.
