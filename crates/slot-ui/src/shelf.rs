@@ -1,6 +1,7 @@
 use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
 use slot_store::Cart;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
 
 use crate::cart::{cart_box, gb_shell_of, label_colour, label_text, CART_H, CART_W};
 use crate::hud::Millis;
@@ -52,7 +53,7 @@ pub struct Shelf {
     shadow: Option<TexId>,
     gb_shadow: Option<TexId>,
     gbc_shadow: Option<TexId>,
-    shells: Vec<Option<GbShell>>,
+    shells: Vec<OnceLock<Option<GbShell>>>,
     ride: f32,
     vel: f32,
     held: Option<(i32, Millis, usize)>,
@@ -61,7 +62,7 @@ pub struct Shelf {
 impl Shelf {
     pub fn new(carts: Vec<Cart>) -> Self {
         Shelf {
-            shells: carts.iter().map(gb_shell_of).collect(),
+            shells: carts.iter().map(|_| OnceLock::new()).collect(),
             faces: vec![None; carts.len()],
             carts,
             index: 0,
@@ -334,7 +335,11 @@ impl Shelf {
             let x = x + shake;
             let y = foot_y(ch as f32) - h;
             if alpha < 1.0 {
-                let backing = match self.shells.get(i).copied().flatten() {
+                let backing = match self
+                    .shells
+                    .get(i)
+                    .and_then(|once| *once.get_or_init(|| gb_shell_of(cart)))
+                {
                     None => self.shadow,
                     Some(GbShell::Notched) => self.gb_shadow,
                     Some(GbShell::Rounded) => self.gbc_shadow,
