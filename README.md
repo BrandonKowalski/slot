@@ -74,6 +74,13 @@ fills the whole screen (slightly stretched) and a true 4:3 picture with black ba
 For a game on several discs, keep each disc's `.cue` and `.bin` in a subfolder of `Games/PS1/`
 (slot only lists files at the top level) and add a `.m3u` that names the discs.
 
+# Super Nintendo (experimental)
+
+Put ROMs of your own cartridges in `Games/SNES/` (`.sfc`, `.smc`, `.swc` or `.fig`) and copy
+`snes9x_libretro.so` into `System/`. No BIOS is needed. Cover art goes in `Labels/SNES/<name>.png`.
+The picture, the filters (SELECT with A or B) and the fill/4:3 switch (SELECT with Y) work as for the
+PlayStation. L1 and R1 are the game's shoulder buttons, L2 rewinds and R2 fast-forwards.
+
 # AI Disclosure
 
 The Rust frontend was put together by Claude Opus. I reviewed everything that was
