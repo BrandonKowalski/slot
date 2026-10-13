@@ -1,7 +1,7 @@
 name: ps1
 
-# Builds the slot binary with PlayStation and Super Nintendo support plus the PCSX ReARMed and
-# Snes9x cores for the H700, in the
+# Builds the slot binary with PlayStation, Super Nintendo and PSP support plus the PCSX ReARMed,
+# Snes9x and PPSSPP cores for the H700, in the
 # same bullseye container the release workflow uses so both load on the device's libc.
 # Copy the two files in the artifact onto SD2 (System/) over an existing slot install.
 
@@ -51,6 +51,21 @@ jobs:
           make -C /tmp/snes9x/libretro -j"$(nproc)"
           file /tmp/snes9x/libretro/snes9x_libretro.so | grep -q aarch64
 
+      - name: Build PPSSPP
+        continue-on-error: true
+        run: |
+          set -eu
+          apt-get install -y --no-install-recommends libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libx11-dev zlib1g-dev
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/hrydgard/ppsspp.git /tmp/ppsspp
+          git -C /tmp/ppsspp rev-parse HEAD > /tmp/ppsspp.commit
+          export CFLAGS="-O3 -mtune=cortex-a53" CXXFLAGS="-O3 -mtune=cortex-a53"
+          if ! make -C /tmp/ppsspp/libretro -j"$(nproc)" GLES=1; then
+            make -C /tmp/ppsspp/libretro clean
+            make -C /tmp/ppsspp/libretro -j"$(nproc)"
+          fi
+          file /tmp/ppsspp/libretro/ppsspp_libretro.so | grep -q aarch64
+          readelf -d /tmp/ppsspp/libretro/ppsspp_libretro.so | grep NEEDED
+
       - name: Package
         run: |
           set -eu
@@ -61,6 +76,13 @@ jobs:
           cp /tmp/pcsx/pcsx_rearmed_libretro.so "$out/System/"
           cp /tmp/pcsx/COPYING "$out/System/licenses/pcsx_rearmed-GPL-2.0.txt" 2>/dev/null || true
           cp /tmp/pcsx.commit "$out/System/licenses/pcsx_rearmed.commit"
+          if [ -f /tmp/ppsspp/libretro/ppsspp_libretro.so ]; then
+            cp /tmp/ppsspp/libretro/ppsspp_libretro.so "$out/System/"
+            cp /tmp/ppsspp.commit "$out/System/licenses/ppsspp.commit"
+            cp /tmp/ppsspp/LICENSE.TXT "$out/System/licenses/ppsspp-GPL-2.0.txt" 2>/dev/null || true
+            mkdir -p "$out/BIOS/PPSSPP"
+            cp -r /tmp/ppsspp/assets/. "$out/BIOS/PPSSPP/"
+          fi
           if [ -f /tmp/snes9x/libretro/snes9x_libretro.so ]; then
             cp /tmp/snes9x/libretro/snes9x_libretro.so "$out/System/"
             cp /tmp/snes9x.commit "$out/System/licenses/snes9x.commit"
