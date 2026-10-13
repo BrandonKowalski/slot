@@ -17,6 +17,14 @@ pub const GB_CART_W: u32 = 312;
 pub const DISC_W: u32 = 312;
 pub const DISC_H: u32 = 312;
 
+pub const SNES_W: u32 = 360;
+pub const SNES_H: u32 = 267;
+pub const SNES_LABEL_X: u32 = 60;
+pub const SNES_LABEL_Y: u32 = 26;
+pub const SNES_LABEL_W: u32 = 240;
+pub const SNES_LABEL_H: u32 = 130;
+const SNES_SEATED_H: u32 = 178;
+
 pub const GB_CART_H: u32 = (GB_CART_W * GB_SEATED_H + SEATED_W / 2) / SEATED_W;
 
 pub const fn label_panel(w: u32, h: u32) -> (u32, u32, u32, u32) {
@@ -156,17 +164,19 @@ const GB_SEATED_H: u32 = 259;
 
 pub fn seated_box(platform: Platform) -> (u32, u32) {
     match platform {
-        Platform::Gba | Platform::Snes => (SEATED_W, SEATED_H),
+        Platform::Gba => (SEATED_W, SEATED_H),
         Platform::Gb | Platform::Gbc => (SEATED_W, GB_SEATED_H),
         Platform::Ps1 => (SEATED_W, SEATED_W),
+        Platform::Snes => (SEATED_W, SNES_SEATED_H),
     }
 }
 
 pub fn cart_box(platform: Platform) -> (u32, u32) {
     let shape = match platform {
-        Platform::Gba | Platform::Snes => Shape::Gba,
+        Platform::Gba => Shape::Gba,
         Platform::Gb | Platform::Gbc => Shape::Gb(GbShell::Notched),
         Platform::Ps1 => return (DISC_W, DISC_H),
+        Platform::Snes => return (SNES_W, SNES_H),
     };
     let s = spec(shape);
     (s.w, s.h)
@@ -198,6 +208,9 @@ pub fn label_size(cart: &Cart) -> (u32, u32) {
     if cart.platform == Platform::Ps1 {
         return (DISC_W, DISC_H);
     }
+    if cart.platform == Platform::Snes {
+        return (SNES_LABEL_W, SNES_LABEL_H);
+    }
     let (_, _, lw, lh) = spec(shape_of(cart)).label;
     (lw, lh)
 }
@@ -205,6 +218,9 @@ pub fn label_size(cart: &Cart) -> (u32, u32) {
 pub fn cart_face_with(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
     if cart.platform == Platform::Ps1 {
         return disc_face(cart, art);
+    }
+    if cart.platform == Platform::Snes {
+        return snes_face(cart, art);
     }
     let s = spec(shape_of(cart));
     let shell = shell_for(cart);
@@ -599,6 +615,170 @@ fn generated_disc_label(title: &str, w: u32, h: u32) -> Vec<u8> {
             h as f32 * 0.30,
             MAX_LINES,
             34.0,
+            MIN_PX,
+        );
+        text::draw_centred(&mut rgba, w, h, &layout, ink(bg));
+    }
+    rgba
+}
+
+const SNES_BODY: [u8; 3] = [0xaa, 0xa8, 0xa5];
+const SNES_SLOT_INK: [u8; 3] = [0x2c, 0x2b, 0x2a];
+const SNES_FULL_TO: f32 = 176.0;
+const SNES_STEP: f32 = 20.0;
+const SNES_INSET: f32 = 22.0;
+
+/// Whether a point lies on the cartridge: wide at the top with rounded corners, stepping in to the
+/// narrower foot that goes into the console.
+fn snes_inside(x: f32, y: f32) -> bool {
+    let (w, h) = (SNES_W as f32, SNES_H as f32);
+    if x < 0.0 || x >= w || y < 0.0 || y >= h {
+        return false;
+    }
+    let cut = if y <= SNES_FULL_TO {
+        0.0
+    } else if y <= SNES_FULL_TO + SNES_STEP {
+        (y - SNES_FULL_TO) / SNES_STEP * SNES_INSET
+    } else {
+        SNES_INSET
+    };
+    if x < cut || x > w - cut {
+        return false;
+    }
+    let top = 16.0;
+    if y < top {
+        let dx = if x < top {
+            top - x
+        } else if x > w - top {
+            x - (w - top)
+        } else {
+            0.0
+        };
+        if dx > 0.0 && dx * dx + (top - y) * (top - y) > top * top {
+            return false;
+        }
+    }
+    let foot = 6.0;
+    if y > h - foot {
+        let (l, r) = (SNES_INSET + foot, w - SNES_INSET - foot);
+        let dx = if x < l {
+            l - x
+        } else if x > r {
+            x - r
+        } else {
+            0.0
+        };
+        let dy = y - (h - foot);
+        if dx > 0.0 && dx * dx + dy * dy > foot * foot {
+            return false;
+        }
+    }
+    true
+}
+
+fn shade(c: [u8; 3], k: f32) -> [u8; 3] {
+    c.map(|v| (v as f32 * k).clamp(0.0, 255.0) as u8)
+}
+
+/// A Super Nintendo cartridge drawn per pixel: grey shell, grip ridges on the top corners, a
+/// recessed label and the dark slot along the foot. The cover art is printed in the label.
+fn snes_face(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
+    let (w, h) = (SNES_W, SNES_H);
+    let (lw, lh) = (SNES_LABEL_W, SNES_LABEL_H);
+    let title = label_text(cart);
+    let label = match art {
+        Some(rgba) if rgba.len() == (lw * lh * 4) as usize => rgba,
+        _ => generated_plain_label(&title, lw, lh),
+    };
+    let backing = label_colour(&title);
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    let (wf, hf) = (w as f32, h as f32);
+    for y in 0..h {
+        for x in 0..w {
+            let (fx, fy) = (x as f32, y as f32);
+            let mut hit = 0;
+            for (ox, oy) in [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
+                if snes_inside(fx + ox, fy + oy) {
+                    hit += 1;
+                }
+            }
+            if hit == 0 {
+                continue;
+            }
+            let (cx, cy) = (fx + 0.5, fy + 0.5);
+            let mut c = shade(SNES_BODY, 1.06 - 0.16 * cy / hf);
+
+            if !snes_inside(cx, cy - 2.5) {
+                c = shade(c, 1.10);
+            } else if !snes_inside(cx - 2.5, cy)
+                || !snes_inside(cx + 2.5, cy)
+                || !snes_inside(cx, cy + 2.5)
+            {
+                c = shade(c, 0.74);
+            }
+
+            for k in 0..5 {
+                let off = 16.0 + 7.0 * k as f32;
+                let left = cx >= off && cx < off + 2.0;
+                let right = cx >= wf - off - 2.0 && cx < wf - off;
+                if (left || right) && (5.0..30.0).contains(&cy) {
+                    c = shade(c, 0.78);
+                }
+            }
+
+            let (rx0, ry0) = (SNES_LABEL_X as f32 - 8.0, SNES_LABEL_Y as f32 - 8.0);
+            let (rx1, ry1) = (
+                (SNES_LABEL_X + lw) as f32 + 8.0,
+                (SNES_LABEL_Y + lh) as f32 + 8.0,
+            );
+            if cx >= rx0 && cx < rx1 && cy >= ry0 && cy < ry1 {
+                c = shade(c, if cy < ry0 + 3.0 { 0.66 } else { 0.80 });
+                if cy >= ry1 - 1.5 {
+                    c = shade(SNES_BODY, 1.08);
+                }
+            }
+            let (lx, ly) = (x as i32 - SNES_LABEL_X as i32, y as i32 - SNES_LABEL_Y as i32);
+            if lx >= 0 && ly >= 0 && (lx as u32) < lw && (ly as u32) < lh {
+                let i = ((ly as u32 * lw + lx as u32) * 4) as usize;
+                let a = label[i + 3] as u32;
+                for k in 0..3 {
+                    c[k] = ((label[i + k] as u32 * a + backing[k] as u32 * (255 - a) + 127) / 255)
+                        as u8;
+                }
+            }
+
+            let slot_x = (SNES_INSET + 14.0)..(wf - SNES_INSET - 14.0);
+            if cy >= hf - 14.0 && slot_x.contains(&cx) {
+                c = if cy < hf - 13.0 { shade(SNES_BODY, 1.12) } else { SNES_SLOT_INK };
+            }
+
+            let sheen = (-((cx - wf / 2.0) - (cy - hf / 2.0)).powi(2) / (wf * wf) * 6.0).exp() * 0.08;
+            c = c.map(|v| v + ((255 - v) as f32 * sheen) as u8);
+
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i] = c[0];
+            rgba[i + 1] = c[1];
+            rgba[i + 2] = c[2];
+            rgba[i + 3] = (hit * 255 / 4) as u8;
+        }
+    }
+    CartFace { rgba, w, h }
+}
+
+fn generated_plain_label(title: &str, w: u32, h: u32) -> Vec<u8> {
+    let bg = label_colour(title);
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for _ in 0..w * h {
+        rgba.extend_from_slice(&[bg[0], bg[1], bg[2], 255]);
+    }
+    if let Some(font) = text::label_font() {
+        let layout = text::fit_box(
+            font,
+            title,
+            w as f32 * 0.88,
+            h as f32 * 0.70,
+            MAX_LINES,
+            30.0,
             MIN_PX,
         );
         text::draw_centred(&mut rgba, w, h, &layout, ink(bg));

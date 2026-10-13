@@ -39,6 +39,7 @@ pub use cart::{
     cart_box, cart_face, cart_face_with, cart_shadow, clean_label, gb_cart_shadow, gb_label_panel,
     gb_shell_of, label_colour, label_panel, label_size, label_tags, label_text, seated_box,
     CartFace, CART_H, CART_W, GB_CART_H, GB_CART_W, GB_LABEL_H, GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y,
+    SNES_LABEL_H, SNES_LABEL_Y,
     LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
 };
 pub use clock::{clock_label, date_time_text, hhmm, set_clock_hint_face, ClockPicker, Field};

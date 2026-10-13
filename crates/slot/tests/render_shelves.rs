@@ -15,6 +15,7 @@ use slot_store::{Cart, Platform as CartPlatform};
 use slot_ui::{
     cart_box, cart_face, clean_label, edge, housing, label_colour, label_text, opening, recess,
     rest_y, Draw, SlotChrome, CART_W, GB_CART_H, GB_LABEL_H, GB_LABEL_Y, LABEL_H, LABEL_Y, PLATE_H,
+    SNES_LABEL_Y,
 };
 
 struct Script(VecDeque<Vec<RawEvent>>);
@@ -635,7 +636,8 @@ fn cartridges() -> [(&'static str, Cart); 2] {
 
 fn label_top(p: CartPlatform) -> usize {
     match p {
-        CartPlatform::Gba | CartPlatform::Snes => LABEL_Y as usize,
+        CartPlatform::Gba => LABEL_Y as usize,
+        CartPlatform::Snes => SNES_LABEL_Y as usize,
         CartPlatform::Gb | CartPlatform::Gbc => GB_LABEL_Y as usize,
         CartPlatform::Ps1 => 0,
     }
