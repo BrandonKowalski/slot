@@ -17,6 +17,42 @@ pub const FF_SPEED_DEFAULT: u8 = 6;
 
 pub const RUN_AHEAD_MAX: u8 = 1;
 
+/// Which picture frames a Game Boy or Game Boy Color screen. `None` is the
+/// plain picture, and the default.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub enum BezelPick {
+    #[default]
+    None,
+    File(String),
+}
+
+impl BezelPick {
+    pub fn key(&self) -> String {
+        match self {
+            BezelPick::None => "none".to_string(),
+            BezelPick::File(name) => name.clone(),
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            BezelPick::None => "None".to_string(),
+            BezelPick::File(name) => name
+                .rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or(name)
+                .to_string(),
+        }
+    }
+
+    pub fn parse(value: &str) -> BezelPick {
+        match value {
+            "" | "none" => BezelPick::None,
+            other => BezelPick::File(other.to_string()),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
     pub cart: Option<String>,
@@ -41,6 +77,8 @@ pub struct SlotState {
     pub runahead: u8,
     pub gb_palettes: bool,
     pub gb_palette: GbPalette,
+    pub bezel_gb: BezelPick,
+    pub bezel_gbc: BezelPick,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -114,6 +152,8 @@ impl Default for SlotState {
             runahead: 0,
             gb_palettes: false,
             gb_palette: GbPalette::DEFAULT,
+            bezel_gb: BezelPick::None,
+            bezel_gbc: BezelPick::None,
         }
     }
 }
@@ -132,7 +172,7 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\nrunahead={}\ngb_palettes={}\ngb_palette={}\n",
+        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\nrunahead={}\ngb_palettes={}\ngb_palette={}\nbezel_gb={}\nbezel_gbc={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
@@ -154,7 +194,9 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.rewind as u8,
         s.runahead,
         s.gb_palettes as u8,
-        s.gb_palette.core_name()
+        s.gb_palette.core_name(),
+        s.bezel_gb.key(),
+        s.bezel_gbc.key()
     );
     atomic_write(&state_path(root), text.as_bytes())
 }
@@ -182,6 +224,8 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut runahead = None;
     let mut gb_palettes = None;
     let mut gb_palette = None;
+    let mut bezel_gb = None;
+    let mut bezel_gbc = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -208,6 +252,8 @@ fn parse(text: &str) -> Option<SlotState> {
             "runahead" => runahead = level(value, RUN_AHEAD_MAX),
             "gb_palettes" => gb_palettes = flag(value),
             "gb_palette" => gb_palette = GbPalette::parse(value),
+            "bezel_gb" => bezel_gb = Some(BezelPick::parse(value)),
+            "bezel_gbc" => bezel_gbc = Some(BezelPick::parse(value)),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
             _ => {}
         }
@@ -237,6 +283,8 @@ fn parse(text: &str) -> Option<SlotState> {
         runahead: runahead.unwrap_or(fallback.runahead),
         gb_palettes: gb_palettes.unwrap_or(fallback.gb_palettes),
         gb_palette: gb_palette.unwrap_or(fallback.gb_palette),
+        bezel_gb: bezel_gb.unwrap_or(fallback.bezel_gb),
+        bezel_gbc: bezel_gbc.unwrap_or(fallback.bezel_gbc),
     })
 }
 

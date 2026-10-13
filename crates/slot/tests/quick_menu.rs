@@ -6,7 +6,7 @@ use common::{
 };
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
-use slot_store::{read_slot_state, write_slot_state, Shader, SlotState};
+use slot_store::{read_slot_state, write_slot_state, BezelPick, Platform, Shader, SlotState};
 use slot_ui::{
     edge, Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, MENU_PAD, OUT_W, QUICK_EDGE,
     QUICK_PITCH, QUICK_TOP,
@@ -103,6 +103,77 @@ fn the_quick_menu_is_only_on_the_carousel() {
         a.phase()
     );
     assert_eq!(a.quick_menu(), None);
+}
+
+#[test]
+fn bezels_open_gb_and_gbc_rows_that_cycle_their_folders_from_none() {
+    let (d, mut a, _) = on_carousel();
+    slot::bezel::install(d.path());
+    std::fs::write(d.path().join("bezels/GB/extra.png"), b"png").unwrap();
+    open_at(&mut a, QuickRow::Bezels);
+    press(&mut a, Btn::A);
+    assert_eq!(a.quick_menu(), Some(QuickRow::GbBezel));
+    assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gb),
+        BezelPick::File("bezel_gb.png".into())
+    );
+    assert_eq!(a.resolved_bezel(Platform::Gb).label(), "bezel_gb");
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gb),
+        BezelPick::File("extra.png".into())
+    );
+    press(&mut a, Btn::Right);
+    assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
+    assert_eq!(a.resolved_bezel(Platform::Gbc), BezelPick::None);
+    press(&mut a, Btn::Down);
+    assert_eq!(a.quick_menu(), Some(QuickRow::GbcBezel));
+    press(&mut a, Btn::Left);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gbc),
+        BezelPick::File("bezel_gbc.png".into())
+    );
+    assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Bezels));
+    assert_eq!(
+        read_slot_state(d.path()).bezel_gbc,
+        BezelPick::File("bezel_gbc.png".into())
+    );
+}
+
+#[test]
+fn a_640_wide_panel_cycles_the_640_folder() {
+    let (d, mut a, _) = on_carousel();
+    slot::bezel::install(d.path());
+    a.set_panel((640, 480));
+    open_at(&mut a, QuickRow::Bezels);
+    press(&mut a, Btn::A);
+    assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gb),
+        BezelPick::File("bezel_gb_640.png".into())
+    );
+    press(&mut a, Btn::Down);
+    assert_eq!(a.quick_menu(), Some(QuickRow::GbcBezel));
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gbc),
+        BezelPick::File("bezel_gbc_640.png".into())
+    );
+    assert_eq!(a.resolved_bezel(Platform::Gb).label(), "bezel_gb_640");
+}
+
+#[test]
+fn a_bezel_file_that_is_gone_reads_back_as_none() {
+    let (_d, a, _) = on_carousel_with(SlotState {
+        bezel_gb: BezelPick::File("gone.png".into()),
+        ..SlotState::default()
+    });
+    assert_eq!(a.resolved_bezel(Platform::Gb), BezelPick::None);
 }
 
 #[test]
@@ -264,6 +335,7 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
         QuickRow::GbShader,
         QuickRow::ColourCorrection,
         QuickRow::GbPalettes,
+        QuickRow::Bezels,
         QuickRow::GbaShader,
     ] {
         press(&mut a, Btn::Down);

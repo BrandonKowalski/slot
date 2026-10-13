@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub const DIRS: [&str; 20] = [
+pub const DIRS: [&str; 26] = [
     "BIOS",
     "Config",
     "Games",
@@ -21,6 +21,12 @@ pub const DIRS: [&str; 20] = [
     "States/GBC",
     "System",
     "Wallpapers",
+    "bezels",
+    "bezels/GB",
+    "bezels/GBC",
+    "bezels 640",
+    "bezels 640/GB",
+    "bezels 640/GBC",
 ];
 
 pub fn ensure(root: &Path) {
@@ -30,6 +36,7 @@ pub fn ensure(root: &Path) {
     if let Err(e) = slot_store::move_config(root) {
         eprintln!("slot: config: {e}");
     }
+    crate::bezel::install(root);
 }
 
 pub fn bios_dir(root: &Path) -> PathBuf {

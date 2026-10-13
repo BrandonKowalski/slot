@@ -34,7 +34,17 @@ pub struct Compositor {
     u_bezel_gain: gl::types::GLint,
     u_bezel_alpha: gl::types::GLint,
     bezel: Option<gl::types::GLuint>,
+    game_bezel: Option<TexId>,
+    panel_game_bezel: Option<PanelBezel>,
+    window: (u32, u32),
     turn: Option<Turn>,
+}
+
+#[derive(Copy, Clone)]
+struct PanelBezel {
+    tex: TexId,
+    w: u32,
+    h: u32,
 }
 
 impl Compositor {
@@ -99,6 +109,9 @@ impl Compositor {
                 u_bezel_gain,
                 u_bezel_alpha,
                 bezel: None,
+                game_bezel: None,
+                panel_game_bezel: None,
+                window: (0, 0),
                 turn: None,
             })
         }
@@ -140,6 +153,20 @@ impl Compositor {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
                     self.game.draw(&self.quad);
+                    if let Some(tex) = self.game_bezel {
+                        let (x, y, w, h) = self.game.frame();
+                        self.sprites.draw(
+                            &[Draw::Tex {
+                                x,
+                                y,
+                                w,
+                                h,
+                                tex,
+                                alpha: 1.0,
+                            }],
+                            &self.quad,
+                        );
+                    }
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
@@ -178,11 +205,25 @@ impl Compositor {
         self.game.set_picture(rect);
     }
 
+    pub fn set_game_bezel(&mut self, overlay: Option<(TexId, u32, u32, [f32; 4])>) {
+        self.game_bezel = None;
+        self.panel_game_bezel = None;
+        let Some((tex, w, h, _)) = overlay else {
+            return;
+        };
+        if self.window == (w, h) && (w, h) != (OUT_W, OUT_H) {
+            self.panel_game_bezel = Some(PanelBezel { tex, w, h });
+            return;
+        }
+        self.game_bezel = Some(tex);
+    }
+
     pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
         self.game.set_paper(size, gray);
     }
 
     pub fn fit(&mut self, window: (u32, u32)) {
+        self.window = window;
         let size = canvas_size(window);
         if size == self.size {
             return;
@@ -377,6 +418,7 @@ impl Compositor {
             }
             None => self.blit_part(x, y, w, h, [0.0, 0.0, 1.0, 1.0]),
         }
+        self.draw_panel_game_bezel(window);
         let Some(bezel) = self.bezel.filter(|_| framed && self.screen > 0.0) else {
             return;
         };
@@ -393,6 +435,30 @@ impl Compositor {
         self.quad.draw();
         unsafe { gl::Disable(gl::BLEND) };
     }
+
+    fn draw_panel_game_bezel(&mut self, window: (u32, u32)) {
+        let Some(overlay) = self.panel_game_bezel else {
+            return;
+        };
+        if (overlay.w, overlay.h) != window {
+            return;
+        }
+        let (x, y, w, h) =
+            panel_bezel_rect(window, self.shake, self.lift, self.screen, overlay.w, overlay.h);
+        unsafe { gl::Viewport(0, 0, window.0 as i32, window.1 as i32) };
+        self.sprites.draw_in(
+            window,
+            &[Draw::Tex {
+                x,
+                y,
+                w,
+                h,
+                tex: overlay.tex,
+                alpha: 1.0,
+            }],
+            &self.quad,
+        );
+    }
 }
 
 impl Compositor {
@@ -402,6 +468,54 @@ impl Compositor {
             gl::Uniform4f(self.u_blit_uv, uv[0], uv[1], uv[2], uv[3]);
         }
         self.quad.draw();
+    }
+}
+
+/// The game bezel in top-left window pixels, collapsed the same way as the picture.
+/// At full power it is the whole frame. While the picture opens or closes it
+/// shrinks toward the picture's centre.
+fn panel_bezel_rect(
+    window: (u32, u32),
+    shake: f32,
+    lift: f32,
+    screen: f32,
+    image_w: u32,
+    image_h: u32,
+) -> (f32, f32, f32, f32) {
+    let (bx, mut by, bw, bh) = blit_rect(window, shake);
+    if crate::bezel::framed(window) {
+        by -= crate::bezel::lifted_rect(window, lift).1;
+    }
+    let width = crate::power::screen_width(screen);
+    let height = crate::power::screen_scale(screen);
+    let cx = bx as f32 + bw as f32 / 2.0;
+    let top = window.1 as f32 - (by as f32 + bh as f32);
+    let cy = top + bh as f32 / 2.0;
+    (
+        cx * (1.0 - width),
+        cy * (1.0 - height),
+        image_w as f32 * width,
+        image_h as f32 * height,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panel_bezel_rect;
+
+    #[test]
+    fn a_full_screen_bezel_covers_the_panel_and_a_half_open_one_shrinks_toward_the_picture() {
+        let full = panel_bezel_rect((640, 480), 0.0, 1.0, 1.0, 640, 480);
+        assert_eq!(full, (0.0, 0.0, 640.0, 480.0));
+        let (x, y, w, h) = panel_bezel_rect((640, 480), 0.0, 1.0, 0.0, 640, 480);
+        assert!(h < 480.0 && w < 640.0, "closed bezel is still full size: {w}x{h}");
+        assert!(y > 0.0 && x > 0.0, "closed bezel stays in the corner at {x},{y}");
+        let mid = y + h / 2.0;
+        let open_mid = full.1 + full.3 / 2.0;
+        assert!(
+            (mid - open_mid).abs() > 1.0,
+            "it collapsed toward the panel centre {open_mid}, not the picture"
+        );
     }
 }
 

@@ -48,6 +48,10 @@ fn box_average(src: &[u8], sw: u32, sh: u32, x0: f32, y0: f32, x1: f32, y1: f32)
     out
 }
 
+pub(crate) fn read_rgba(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+    decode(path)
+}
+
 fn decode(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
     let bytes = std::fs::read(path).ok()?;
     let orientation = exif_chunk(&bytes).and_then(exif_orientation).unwrap_or(1);

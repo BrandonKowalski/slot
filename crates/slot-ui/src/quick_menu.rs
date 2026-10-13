@@ -21,10 +21,13 @@ pub enum QuickRow {
     Rewind,
     GbPalettes,
     RunAhead,
+    Bezels,
+    GbBezel,
+    GbcBezel,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 15] = [
+    pub const ALL: [QuickRow; 18] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -40,6 +43,9 @@ impl QuickRow {
         QuickRow::Rewind,
         QuickRow::GbPalettes,
         QuickRow::RunAhead,
+        QuickRow::Bezels,
+        QuickRow::GbBezel,
+        QuickRow::GbcBezel,
     ];
 
     pub const MAIN: [QuickRow; 4] = [
@@ -49,12 +55,15 @@ impl QuickRow {
         QuickRow::About,
     ];
 
-    pub const SCREEN: [QuickRow; 4] = [
+    pub const SCREEN: [QuickRow; 5] = [
         QuickRow::GbaShader,
         QuickRow::GbShader,
         QuickRow::ColourCorrection,
         QuickRow::GbPalettes,
+        QuickRow::Bezels,
     ];
+
+    pub const BEZELS: [QuickRow; 2] = [QuickRow::GbBezel, QuickRow::GbcBezel];
 
     pub const GAME: [QuickRow; 7] = [
         QuickRow::FastForward,
@@ -75,7 +84,9 @@ impl QuickRow {
             QuickRow::GbaShader
             | QuickRow::GbShader
             | QuickRow::ColourCorrection
-            | QuickRow::GbPalettes => &QuickRow::SCREEN,
+            | QuickRow::GbPalettes
+            | QuickRow::Bezels => &QuickRow::SCREEN,
+            QuickRow::GbBezel | QuickRow::GbcBezel => &QuickRow::BEZELS,
             QuickRow::FastForward
             | QuickRow::FastForwardSound
             | QuickRow::Rewind
@@ -91,6 +102,7 @@ impl QuickRow {
         match self.page()[0] {
             QuickRow::GbaShader => Some(QuickRow::Screen),
             QuickRow::FastForward => Some(QuickRow::Game),
+            QuickRow::GbBezel => Some(QuickRow::Bezels),
             _ => None,
         }
     }
@@ -99,6 +111,7 @@ impl QuickRow {
         match self {
             QuickRow::Screen => Some(QuickRow::SCREEN[0]),
             QuickRow::Game => Some(QuickRow::GAME[0]),
+            QuickRow::Bezels => Some(QuickRow::BEZELS[0]),
             _ => None,
         }
     }
@@ -124,13 +137,16 @@ impl QuickRow {
             QuickRow::Rewind => "Rewind",
             QuickRow::GbPalettes => "GB Palettes",
             QuickRow::RunAhead => "Run-Ahead",
+            QuickRow::Bezels => "BEZELS",
+            QuickRow::GbBezel => "GB",
+            QuickRow::GbcBezel => "GBC",
         }
     }
 
     pub fn opens(self) -> bool {
         matches!(
             self,
-            QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game
+            QuickRow::DateTime | QuickRow::About | QuickRow::Screen | QuickRow::Game | QuickRow::Bezels
         )
     }
 
@@ -314,6 +330,8 @@ pub struct QuickMenu<'a> {
     pub row: QuickRow,
     pub values: [Option<QuickValue>; QuickRow::ALL.len()],
     pub clock: Option<[(TexId, u32, u32); 2]>,
+    pub gb_bezel: Option<[(TexId, u32, u32); 2]>,
+    pub gbc_bezel: Option<[(TexId, u32, u32); 2]>,
     pub faces: Option<&'a QuickMenuFaces>,
 }
 
@@ -345,6 +363,8 @@ impl QuickMenu<'_> {
             }
             let value = match row {
                 QuickRow::DateTime => self.clock.map(|c| c[lit as usize]),
+                QuickRow::GbBezel => self.gb_bezel.map(|c| c[lit as usize]),
+                QuickRow::GbcBezel => self.gbc_bezel.map(|c| c[lit as usize]),
                 _ => self.values[row.index()]
                     .and_then(|v| faces.values.get(v.index()))
                     .map(|v| v[lit as usize]),

@@ -111,7 +111,10 @@ fn the_quick_menu_renders_full_screen() {
                 (32..=36).contains(&first),
                 "{name}: {row:?}'s label starts at x {first}"
             );
-            if matches!(row, QuickRow::About | QuickRow::Screen | QuickRow::Game) {
+            if matches!(
+                row,
+                QuickRow::About | QuickRow::Screen | QuickRow::Game
+            ) {
                 continue;
             }
             let value = inked(&px, 360..OUT_W as usize, top);
@@ -212,6 +215,9 @@ fn the_screen_page_sets_gb_palettes_in_line_with_the_rows_above() {
             (32..=36).contains(&first),
             "{row:?}'s label starts at x {first}"
         );
+        if row.opens() {
+            continue;
+        }
         let value = inked(&px, 360..OUT_W as usize, top);
         let last = *value.last().expect("a row with no value");
         assert!(

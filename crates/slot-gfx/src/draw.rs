@@ -48,6 +48,7 @@ pub struct Sprites {
     prog: gl::types::GLuint,
     white: gl::types::GLuint,
     textures: Vec<gl::types::GLuint>,
+    u_target: gl::types::GLint,
     u_rect: gl::types::GLint,
     u_colour: gl::types::GLint,
     u_turn: gl::types::GLint,
@@ -64,15 +65,12 @@ impl Sprites {
             gl::RGBA,
             Some(&[255u8; 4]),
         );
-        let (u_rect, u_colour, u_turn);
+        let (u_target, u_rect, u_colour, u_turn);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_tex"), 0);
-            gl::Uniform2f(
-                crate::gl::uniform_location(prog, "u_target"),
-                OUT_W as f32,
-                OUT_H as f32,
-            );
+            u_target = crate::gl::uniform_location(prog, "u_target");
+            gl::Uniform2f(u_target, OUT_W as f32, OUT_H as f32);
             u_rect = crate::gl::uniform_location(prog, "u_rect");
             u_colour = crate::gl::uniform_location(prog, "u_colour");
             u_turn = crate::gl::uniform_location(prog, "u_turn");
@@ -81,6 +79,7 @@ impl Sprites {
             prog,
             white,
             textures: Vec::new(),
+            u_target,
             u_rect,
             u_colour,
             u_turn,
@@ -127,6 +126,17 @@ impl Sprites {
 
     pub fn source(&self, id: TexId) -> Option<gl::types::GLuint> {
         self.textures.get(id.0).copied()
+    }
+
+    /// Draw `items` as if the target were `size` pixels, then put the canvas
+    /// target back. The viewport must already be that size.
+    pub fn draw_in(&self, size: (u32, u32), items: &[Draw], quad: &Quad) {
+        unsafe {
+            gl::UseProgram(self.prog);
+            gl::Uniform2f(self.u_target, size.0 as f32, size.1 as f32);
+        }
+        self.draw(items, quad);
+        unsafe { gl::Uniform2f(self.u_target, OUT_W as f32, OUT_H as f32) };
     }
 
     pub fn draw(&self, items: &[Draw], quad: &Quad) {

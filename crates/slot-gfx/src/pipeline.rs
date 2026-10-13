@@ -84,6 +84,10 @@ impl GamePass {
         })
     }
 
+    pub fn frame(&self) -> (f32, f32, f32, f32) {
+        screen_rect(self.power)
+    }
+
     pub fn set_power(&mut self, t: f32) {
         self.power = t.clamp(0.0, 1.0);
     }
