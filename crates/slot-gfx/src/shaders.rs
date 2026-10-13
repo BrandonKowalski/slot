@@ -125,7 +125,7 @@ uniform vec2 u_tex;
 uniform vec2 u_scale;
 uniform float u_mode;
 uniform float u_bright;
-uniform float u_frac;
+uniform vec2 u_frac;
 varying vec2 v_uv;
 vec3 fetch(vec2 texel) {
     vec2 t = clamp(texel, vec2(0.5), u_frame - vec2(0.5));
@@ -145,11 +145,10 @@ float scan_weight(float line_pos) {
     return mix(1.0, mix(0.55, 1.0, wave), on);
 }
 void main() {
-    float lo = (1.0 - u_frac) * 0.5;
-    if (v_uv.x < lo || v_uv.x > 1.0 - lo) {
+    vec2 q = (v_uv - (vec2(1.0) - u_frac) * 0.5) / u_frac;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) {
         FRAG_COLOR = vec4(0.0, 0.0, 0.0, 1.0);
     } else {
-        vec2 q = vec2((v_uv.x - lo) / u_frac, v_uv.y);
         vec2 texel = q * u_frame;
         vec3 c;
         if (u_mode < 0.5) {

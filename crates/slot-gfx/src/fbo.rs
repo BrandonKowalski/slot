@@ -137,6 +137,14 @@ impl Compositor {
         self.game.set_video_live(on);
     }
 
+    pub fn set_video_aspect(&mut self, aspect: f32) {
+        self.game.set_video_aspect(aspect);
+    }
+
+    pub fn video_is_live(&self) -> bool {
+        self.game.video_is_live()
+    }
+
     pub fn set_video_fill(&mut self, fill: bool) {
         self.game.set_video_fill(fill);
     }

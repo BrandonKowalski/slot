@@ -6,7 +6,7 @@ mod mock;
 mod rumble;
 
 pub use core::{
-    hires_active, hires_clear, hires_latest, hires_publish, AvInfo, ButtonMask, CoreError,
+    hires_active, hires_clear, hires_latest, hires_publish, hires_set_used, hires_used, AvInfo, ButtonMask, CoreError,
     RetroCore, GBA_H, GBA_W,
 };
 pub use ffi::{

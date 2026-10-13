@@ -12,6 +12,7 @@ pub enum Core {
     Gpsp,
     Pcsx,
     Snes9x,
+    Ppsspp,
 }
 
 impl Core {
@@ -25,6 +26,7 @@ impl Core {
             Core::Gpsp => "gpsp",
             Core::Pcsx => "pcsx_rearmed",
             Core::Snes9x => "snes9x",
+            Core::Ppsspp => "ppsspp",
         }
     }
 
@@ -38,6 +40,7 @@ impl Core {
             Core::Gpsp => "gpSP",
             Core::Pcsx => "PCSX",
             Core::Snes9x => "Snes9x",
+            Core::Ppsspp => "PPSSPP",
         }
     }
 
@@ -47,6 +50,7 @@ impl Core {
             "gpsp" => Some(Core::Gpsp),
             "pcsx_rearmed" | "pcsx" => Some(Core::Pcsx),
             "snes9x" => Some(Core::Snes9x),
+            "ppsspp" => Some(Core::Ppsspp),
             _ => None,
         }
     }
@@ -57,6 +61,7 @@ impl Core {
             Core::Gpsp => platform == Platform::Gba,
             Core::Pcsx => platform == Platform::Ps1,
             Core::Snes9x => platform == Platform::Snes,
+            Core::Ppsspp => platform == Platform::Psp,
         }
     }
 
@@ -65,6 +70,7 @@ impl Core {
             Platform::Gba | Platform::Gb | Platform::Gbc => Core::Mgba,
             Platform::Ps1 => Core::Pcsx,
             Platform::Snes => Core::Snes9x,
+            Platform::Psp => Core::Ppsspp,
         }
     }
 }

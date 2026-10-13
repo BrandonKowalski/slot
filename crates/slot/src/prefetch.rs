@@ -22,7 +22,7 @@ pub struct Prefetch {
 
 impl Prefetch {
     pub fn browse(&mut self, rom: Option<&Path>, now: Millis) {
-        let rom = rom.filter(|r| !Platform::Ps1.accepts(r));
+        let rom = rom.filter(|r| !Platform::Ps1.accepts(r) && !Platform::Psp.accepts(r));
         let Some(rom) = rom else {
             self.resting = None;
             self.read = None;

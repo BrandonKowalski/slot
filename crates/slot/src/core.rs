@@ -157,7 +157,7 @@ pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static st
             "gpsp_color_correction",
             if on { "enabled" } else { "disabled" },
         )),
-        Core::Pcsx | Core::Snes9x => None,
+        Core::Pcsx | Core::Snes9x | Core::Ppsspp => None,
     }
 }
 
@@ -178,6 +178,15 @@ pub fn apply_core_options(
     colour: bool,
     palette: Option<GbPalette>,
 ) {
+    if which == Core::Ppsspp {
+        // No GL context is handed to cores yet, so PPSSPP draws in software. These keep that path
+        // as light as it can be: the JIT, fast memory access, native resolution and frame skip.
+        core.set_option("ppsspp_software_rendering", "enabled");
+        core.set_option("ppsspp_cpu_core", "jit");
+        core.set_option("ppsspp_fast_memory", "enabled");
+        core.set_option("ppsspp_internal_resolution", "480x272");
+        core.set_option("ppsspp_auto_frameskip", "enabled");
+    }
     if matches!(which, Core::Mgba | Core::Gpsp) {
         core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     }

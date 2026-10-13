@@ -31,6 +31,8 @@ struct Host {
     save_dir: CString,
     rumble: Rumble,
     asked_for_rumble: bool,
+    aspect: f32,
+    fit_tick: u32,
     netpacket: Option<NetpacketCallback>,
     net: Link,
     net_peer: Option<u16>,
@@ -319,7 +321,10 @@ unsafe extern "C" fn video_refresh(
     }
     with_host(|h| {
         if width > GBA_W || height > GBA_H {
-            video_fit(h, data as *const u8, width as usize, height as usize, pitch);
+            h.fit_tick = h.fit_tick.wrapping_add(1);
+            if !crate::core::hires_used() || h.fit_tick % 6 == 0 {
+                video_fit(h, data as *const u8, width as usize, height as usize, pitch);
+            }
             video_publish(h, data as *const u8, width as usize, height as usize, pitch);
             return;
         }
@@ -387,15 +392,24 @@ unsafe fn video_publish(h: &Host, data: *const u8, width: usize, height: usize, 
 /// averaging the source pixels that land on each output pixel, with black bars either side.
 unsafe fn video_fit(h: &mut Host, data: *const u8, width: usize, height: usize, pitch: usize) {
     let (dw, dh) = (GBA_W as usize, GBA_H as usize);
-    let ow = (dh * 4 / 3).min(dw);
-    let ox = (dw - ow) / 2;
+    let aspect = if (1.2..=2.0).contains(&h.aspect) {
+        h.aspect
+    } else {
+        4.0 / 3.0
+    };
+    let (ow, oh) = if aspect >= dw as f32 / dh as f32 {
+        (dw, ((dw as f32 / aspect) as usize).clamp(1, dh))
+    } else {
+        (((dh as f32 * aspect) as usize).clamp(1, dw), dh)
+    };
+    let (ox, oy) = ((dw - ow) / 2, (dh - oh) / 2);
     h.video.fill(0);
     if width == 0 || height == 0 {
         return;
     }
-    for y in 0..dh {
-        let y0 = y * height / dh;
-        let y1 = ((y + 1) * height).div_ceil(dh).clamp(y0 + 1, height);
+    for y in 0..oh {
+        let y0 = y * height / oh;
+        let y1 = ((y + 1) * height).div_ceil(oh).clamp(y0 + 1, height);
         for x in 0..ow {
             let x0 = x * width / ow;
             let x1 = ((x + 1) * width).div_ceil(ow).clamp(x0 + 1, width);
@@ -420,7 +434,7 @@ unsafe fn video_fit(h: &mut Host, data: *const u8, width: usize, height: usize, 
                 }
             }
             let n = ((y1 - y0) * (x1 - x0)) as u32;
-            let o = (y * dw + ox + x) * 4;
+            let o = ((y + oy) * dw + ox + x) * 4;
             h.video[o] = (b / n) as u8;
             h.video[o + 1] = (g / n) as u8;
             h.video[o + 2] = (r / n) as u8;
@@ -476,7 +490,7 @@ pub struct LibretroCore {
 /// names its .bin files), so a core gets the path alone, as libretro's `need_fullpath` says.
 fn is_disc_image(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-        ["cue", "chd", "m3u", "pbp", "iso"]
+        ["cue", "chd", "m3u", "pbp", "iso", "cso"]
             .iter()
             .any(|d| ext.eq_ignore_ascii_case(d))
     })
@@ -566,6 +580,8 @@ impl LibretroCore {
             save_dir: cdir(save_dir)?,
             rumble: Rumble::default(),
             asked_for_rumble: false,
+            aspect: 4.0 / 3.0,
+            fit_tick: 0,
             netpacket: None,
             net: Link::default(),
             net_peer: None,
@@ -682,6 +698,7 @@ impl RetroCore for LibretroCore {
             fps: av.timing.fps,
             sample_rate: av.timing.sample_rate,
         };
+        self.host.aspect = av.geometry.aspect_ratio;
         unsafe { (self.api.set_controller_port_device)(0, DEVICE_JOYPAD) };
         Ok(())
     }
@@ -808,6 +825,8 @@ mod tests {
             save_dir: CString::new(".").unwrap(),
             rumble: Rumble::default(),
             asked_for_rumble: false,
+            aspect: 4.0 / 3.0,
+            fit_tick: 0,
             netpacket: None,
             net: Link::default(),
             net_peer: None,

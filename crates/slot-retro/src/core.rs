@@ -199,3 +199,15 @@ pub fn hires_latest<R>(seen: &mut u64, take: impl FnOnce(u32, u32, &[u8]) -> R) 
     *seen = f.seq;
     Some(take(f.w, f.h, &f.bgra))
 }
+
+static HIRES_USED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The renderer says whether it is drawing the native-size frame. While it is, the fitted
+/// 240x160 copy is only needed for thumbnails and stills, so the core wrapper refreshes it rarely.
+pub fn hires_set_used(on: bool) {
+    HIRES_USED.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn hires_used() -> bool {
+    HIRES_USED.load(std::sync::atomic::Ordering::Relaxed)
+}

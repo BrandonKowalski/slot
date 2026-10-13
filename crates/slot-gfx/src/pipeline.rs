@@ -33,6 +33,7 @@ pub struct GamePass {
     video_live: bool,
     video_filter: VideoFilter,
     video_fill: bool,
+    video_aspect: f32,
 }
 
 impl GamePass {
@@ -92,6 +93,7 @@ impl GamePass {
             video_live: false,
             video_filter: VideoFilter::Sharp,
             video_fill: true,
+            video_aspect: 4.0 / 3.0,
         })
     }
 
@@ -176,6 +178,14 @@ impl GamePass {
         self.video_live = on && self.video.as_ref().is_some_and(|v| v.has_frame());
     }
 
+    pub fn set_video_aspect(&mut self, aspect: f32) {
+        self.video_aspect = aspect;
+    }
+
+    pub fn video_is_live(&self) -> bool {
+        self.video_live
+    }
+
     pub fn set_video_fill(&mut self, fill: bool) {
         self.video_fill = fill;
     }
@@ -191,6 +201,7 @@ impl GamePass {
                     quad,
                     self.video_filter,
                     self.video_fill,
+                    self.video_aspect,
                     self.power,
                     self.fbo_scale,
                 );

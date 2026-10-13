@@ -98,17 +98,29 @@ impl VideoPass {
         self.frame = (w, h);
     }
 
-    pub fn draw(&self, quad: &Quad, filter: VideoFilter, fill: bool, power: f32, fbo: [f32; 2]) {
+    pub fn draw(
+        &self,
+        quad: &Quad,
+        filter: VideoFilter,
+        fill: bool,
+        aspect: f32,
+        power: f32,
+        fbo: [f32; 2],
+    ) {
         if !self.has_frame() {
             return;
         }
         let (x, y, w, h) = screen_rect(power);
-        let frac = match fill {
-            true => 1.0,
-            false => ((OUT_H as f32 * 4.0 / 3.0) / OUT_W as f32).min(1.0),
+        let screen = OUT_W as f32 / OUT_H as f32;
+        let (frac_x, frac_y) = if fill {
+            (1.0, 1.0)
+        } else if aspect < screen {
+            (aspect / screen, 1.0)
+        } else {
+            (1.0, screen / aspect)
         };
-        let scale_x = frac * OUT_W as f32 * fbo[0] / self.frame.0 as f32;
-        let scale_y = OUT_H as f32 * fbo[1] / self.frame.1 as f32;
+        let scale_x = frac_x * OUT_W as f32 * fbo[0] / self.frame.0 as f32;
+        let scale_y = frac_y * OUT_H as f32 * fbo[1] / self.frame.1 as f32;
         unsafe {
             gl::UseProgram(self.prog);
             gl::Uniform4f(self.u_rect, x, y, w, h);
@@ -116,7 +128,7 @@ impl VideoPass {
             gl::Uniform2f(self.u_frame, self.frame.0 as f32, self.frame.1 as f32);
             gl::Uniform2f(self.u_scale, scale_x, scale_y);
             gl::Uniform1f(self.u_mode, filter.mode());
-            gl::Uniform1f(self.u_frac, frac);
+            gl::Uniform2f(self.u_frac, frac_x, frac_y);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
         }

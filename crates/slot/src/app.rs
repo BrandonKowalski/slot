@@ -915,7 +915,9 @@ impl App {
     }
 
     pub fn may_rewind(&self) -> bool {
-        self.state.rewind && self.platform != Platform::Ps1 && !self.link_active()
+        self.state.rewind
+            && !matches!(self.platform, Platform::Ps1 | Platform::Psp)
+            && !self.link_active()
     }
 
     pub fn turbo(&self) -> bool {
@@ -923,7 +925,7 @@ impl App {
     }
 
     pub fn records_rewind(&self) -> bool {
-        self.state.rewind && self.platform != Platform::Ps1
+        self.state.rewind && !matches!(self.platform, Platform::Ps1 | Platform::Psp)
     }
 
     pub fn picture_rect(&self) -> [f32; 4] {
@@ -1043,7 +1045,15 @@ impl App {
 
     /// A PlayStation game is drawn at the size the core renders it, not in the 240x160 buffer.
     pub fn wants_hires(&self) -> bool {
-        matches!(self.platform, Platform::Ps1 | Platform::Snes)
+        matches!(self.platform, Platform::Ps1 | Platform::Snes | Platform::Psp)
+    }
+
+    /// The shape of the picture a core draws: the PSP screen is 16:9, the rest here are 4:3.
+    pub fn video_aspect(&self) -> f32 {
+        match self.platform {
+            Platform::Psp => 16.0 / 9.0,
+            _ => 4.0 / 3.0,
+        }
     }
 
     /// Whether a PlayStation picture is stretched over the whole screen instead of kept at 4:3.
@@ -1055,7 +1065,7 @@ impl App {
         match self.platform {
             Platform::Gba => self.state.shader_gba,
             Platform::Gb | Platform::Gbc => self.state.shader_gb,
-            Platform::Ps1 | Platform::Snes => self.state.shader_ps1,
+            Platform::Ps1 | Platform::Snes | Platform::Psp => self.state.shader_ps1,
         }
     }
 
@@ -1419,7 +1429,9 @@ impl App {
         let (shader, choices) = match self.platform {
             Platform::Gba => (&mut self.state.shader_gba, &Shader::GBA[..]),
             Platform::Gb | Platform::Gbc => (&mut self.state.shader_gb, &Shader::GB[..]),
-            Platform::Ps1 | Platform::Snes => (&mut self.state.shader_ps1, &Shader::PS1[..]),
+            Platform::Ps1 | Platform::Snes | Platform::Psp => {
+                (&mut self.state.shader_ps1, &Shader::PS1[..])
+            }
         };
         *shader = shader.step(choices, right);
         let said = match *shader {
@@ -1461,7 +1473,7 @@ impl App {
             return true;
         }
         if action == Action::ColourCorrectionToggle
-            && matches!(self.platform, Platform::Ps1 | Platform::Snes)
+            && matches!(self.platform, Platform::Ps1 | Platform::Snes | Platform::Psp)
         {
             self.state.ps1_fill = !self.state.ps1_fill;
             self.persist();

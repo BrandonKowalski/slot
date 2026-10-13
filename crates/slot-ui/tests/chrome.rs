@@ -45,7 +45,7 @@ fn label_band(c: &Cart) -> (f32, f32) {
         Platform::Gba => (LABEL_Y as f32, LABEL_H as f32),
         Platform::Snes => (SNES_LABEL_Y as f32, SNES_LABEL_H as f32),
         Platform::Gb | Platform::Gbc => (GB_LABEL_Y as f32, GB_LABEL_H as f32),
-        Platform::Ps1 => (0.0, cart_box(c.platform).1 as f32),
+        Platform::Ps1 | Platform::Psp => (0.0, cart_box(c.platform).1 as f32),
     };
     let k = seated_box(c.platform).1 as f32 / cart_box(c.platform).1 as f32;
     (y * k, h * k)

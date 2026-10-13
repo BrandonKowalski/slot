@@ -335,7 +335,7 @@ impl Shelf {
             let y = foot_y(ch as f32) - h;
             if alpha < 1.0 {
                 let backing = match self.shells.get(i).copied().flatten() {
-                    _ if matches!(cart.platform, Platform::Ps1 | Platform::Snes) => None,
+                    _ if matches!(cart.platform, Platform::Ps1 | Platform::Snes | Platform::Psp) => None,
                     None => self.shadow,
                     Some(GbShell::Notched) => self.gb_shadow,
                     Some(GbShell::Rounded) => self.gbc_shadow,

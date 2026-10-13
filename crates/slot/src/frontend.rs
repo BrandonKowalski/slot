@@ -343,6 +343,7 @@ impl Frontend {
             | slot_store::Shader::Crt => ScreenEffect::None,
         });
         compositor.set_video_fill(self.session.app().ps1_fill());
+        compositor.set_video_aspect(self.session.app().video_aspect());
         compositor.set_video_filter(match self.session.app().screen_shader() {
             slot_store::Shader::Crisp => slot_gfx::VideoFilter::Crisp,
             slot_store::Shader::Smooth => slot_gfx::VideoFilter::Smooth,
@@ -371,6 +372,7 @@ impl Frontend {
         } else {
             compositor.set_video_live(false);
         }
+        slot_retro::hires_set_used(compositor.video_is_live());
         self.cart_faces.sync(self.session.app_mut(), compositor);
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_about(self.session.app_mut(), compositor, &mut self.about);

@@ -3,7 +3,7 @@ use slot_store::Platform;
 #[test]
 fn every_platform_has_a_directory() {
     let names: Vec<&str> = Platform::ALL.iter().map(|p| p.dir_name()).collect();
-    assert_eq!(names, vec!["GBA", "GB", "GBC", "PS1", "SNES"]);
+    assert_eq!(names, vec!["GBA", "GB", "GBC", "PS1", "SNES", "PSP"]);
 }
 
 #[test]
@@ -15,7 +15,8 @@ fn every_platform_is_a_shelf_of_its_own() {
             Platform::Gb,
             Platform::Gbc,
             Platform::Ps1,
-            Platform::Snes
+            Platform::Snes,
+            Platform::Psp
         ]
     );
     for (i, p) in Platform::ALL.iter().enumerate() {
@@ -71,4 +72,17 @@ fn the_super_nintendo_takes_its_rom_extensions_and_runs_on_snes9x() {
     assert!(!Core::Snes9x.runs(Platform::Gba));
     assert!(!Core::Mgba.runs(Platform::Snes));
     assert_eq!(Core::Snes9x.as_str(), "snes9x");
+}
+
+#[test]
+fn the_psp_takes_umd_images_and_runs_on_ppsspp() {
+    use slot_store::Core;
+    for name in ["Crisis Core.iso", "Patapon.CSO", "EBOOT.PBP"] {
+        assert!(Platform::Psp.accepts(std::path::Path::new(name)), "{name}");
+    }
+    assert!(!Platform::Psp.accepts(std::path::Path::new("Game.cue")));
+    assert_eq!(Core::default_for(Platform::Psp), Core::Ppsspp);
+    assert!(Core::Ppsspp.runs(Platform::Psp));
+    assert!(!Core::Ppsspp.runs(Platform::Ps1));
+    assert_eq!(Core::Ppsspp.as_str(), "ppsspp");
 }

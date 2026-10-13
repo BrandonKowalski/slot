@@ -639,7 +639,7 @@ fn label_top(p: CartPlatform) -> usize {
         CartPlatform::Gba => LABEL_Y as usize,
         CartPlatform::Snes => SNES_LABEL_Y as usize,
         CartPlatform::Gb | CartPlatform::Gbc => GB_LABEL_Y as usize,
-        CartPlatform::Ps1 => 0,
+        CartPlatform::Ps1 | CartPlatform::Psp => 0,
     }
 }
 

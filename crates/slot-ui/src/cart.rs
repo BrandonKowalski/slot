@@ -98,7 +98,7 @@ enum Shape {
 
 pub fn gb_shell_of(cart: &Cart) -> Option<GbShell> {
     match cart.platform {
-        Platform::Gba | Platform::Ps1 | Platform::Snes => None,
+        Platform::Gba | Platform::Ps1 | Platform::Snes | Platform::Psp => None,
         Platform::Gb | Platform::Gbc => Some(match cart.shell.map(|c| c.outline) {
             Some(Outline::Notched) => GbShell::Notched,
             Some(Outline::Rounded) => GbShell::Rounded,
@@ -166,7 +166,7 @@ pub fn seated_box(platform: Platform) -> (u32, u32) {
     match platform {
         Platform::Gba => (SEATED_W, SEATED_H),
         Platform::Gb | Platform::Gbc => (SEATED_W, GB_SEATED_H),
-        Platform::Ps1 => (SEATED_W, SEATED_W),
+        Platform::Ps1 | Platform::Psp => (SEATED_W, SEATED_W),
         Platform::Snes => (SEATED_W, SNES_SEATED_H),
     }
 }
@@ -175,7 +175,7 @@ pub fn cart_box(platform: Platform) -> (u32, u32) {
     let shape = match platform {
         Platform::Gba => Shape::Gba,
         Platform::Gb | Platform::Gbc => Shape::Gb(GbShell::Notched),
-        Platform::Ps1 => return (DISC_W, DISC_H),
+        Platform::Ps1 | Platform::Psp => return (DISC_W, DISC_H),
         Platform::Snes => return (SNES_W, SNES_H),
     };
     let s = spec(shape);
@@ -205,7 +205,7 @@ pub fn cart_face(cart: &Cart) -> CartFace {
 }
 
 pub fn label_size(cart: &Cart) -> (u32, u32) {
-    if cart.platform == Platform::Ps1 {
+    if matches!(cart.platform, Platform::Ps1 | Platform::Psp) {
         return (DISC_W, DISC_H);
     }
     if cart.platform == Platform::Snes {
@@ -216,7 +216,7 @@ pub fn label_size(cart: &Cart) -> (u32, u32) {
 }
 
 pub fn cart_face_with(cart: &Cart, art: Option<Vec<u8>>) -> CartFace {
-    if cart.platform == Platform::Ps1 {
+    if matches!(cart.platform, Platform::Ps1 | Platform::Psp) {
         return disc_face(cart, art);
     }
     if cart.platform == Platform::Snes {
