@@ -408,3 +408,29 @@ fn boot_rests_each_shelf_on_its_own_last_cart() {
     assert_eq!(a.shelf_platform_name(), Some("Game Boy Advance"));
     assert_eq!(a.selected_stem(), Some("Fusion"));
 }
+
+#[test]
+fn a_resumed_cart_from_before_last_carts_is_still_remembered_after_an_eject() {
+    let d = tmp_root_with_carts(&["Advance Wars", "Emerald", "Fire Emblem"]);
+    let mut state = seated("Emerald");
+    state.cart_platform = Some(Platform::Gba);
+    write_slot_state(d.path(), &state).unwrap();
+    let mut a = App::boot(d.path());
+    a.on_core_ready();
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    a.apply(Action::Eject);
+    for _ in 0..120 {
+        a.update(1.0 / 60.0);
+    }
+    assert!(matches!(a.phase(), Phase::Shelf));
+    let saved = read_slot_state(d.path());
+    assert_eq!(saved.cart, None);
+    assert_eq!(saved.last_cart(Platform::Gba), Some("Emerald"));
+    assert_eq!(saved.last_cart_platform, Some(Platform::Gba));
+    let a = App::boot(d.path());
+    assert!(matches!(a.phase(), Phase::Shelf));
+    assert_eq!(a.selected_stem(), Some("Emerald"));
+}

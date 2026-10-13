@@ -2053,7 +2053,14 @@ impl App {
                 self.persist();
             }
         }
-        if self.state.cart == cart && self.state.cart_platform == platform {
+        let remembered = match (&cart, platform) {
+            (Some(cart), Some(platform)) => {
+                self.state.last_cart(platform) == Some(cart.as_str())
+                    && self.state.last_cart_platform == Some(platform)
+            }
+            _ => true,
+        };
+        if self.state.cart == cart && self.state.cart_platform == platform && remembered {
             return;
         }
         if let (Some(cart), Some(platform)) = (&cart, platform) {
