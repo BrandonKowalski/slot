@@ -360,6 +360,8 @@ fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Left);
     assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Grid);
+    press(&mut a, Btn::Left);
+    assert_eq!(read_slot_state(d.path()).shader_gb, Shader::Lcd3x);
     assert_eq!(read_slot_state(d.path()).shader_gba, Shader::Off);
 }
 
