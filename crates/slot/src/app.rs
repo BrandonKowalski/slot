@@ -261,9 +261,36 @@ pub enum Phase {
     },
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum Rack {
+    Recents,
+    Favorites,
+    Of(Platform),
+}
+
+impl Rack {
+    fn platform(self) -> Option<Platform> {
+        match self {
+            Rack::Of(p) => Some(p),
+            Rack::Recents | Rack::Favorites => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Rack::Recents => "Recents",
+            Rack::Favorites => "Favorites",
+            Rack::Of(p) => p.name(),
+        }
+    }
+}
+
+const RECENTS_AT: usize = 0;
+const FAVORITES_AT: usize = 1;
+
 pub struct App {
     phase: Phase,
-    shelves: Vec<(Option<Platform>, Shelf)>,
+    shelves: Vec<(Rack, Shelf)>,
     shelf_at: usize,
     orphaned: Vec<TexId>,
     play_held: Option<Millis>,
@@ -369,18 +396,19 @@ pub struct FaceWant {
     pub on_screen: bool,
 }
 
-fn shelves_of(carts: Vec<Cart>) -> Vec<(Option<Platform>, Shelf)> {
-    let mut rows: Vec<(Option<Platform>, Vec<Cart>)> = std::iter::once(None)
-        .chain(Platform::ALL.iter().map(|p| Some(*p)))
-        .map(|p| (p, Vec::new()))
+fn shelves_of(carts: Vec<Cart>) -> Vec<(Rack, Shelf)> {
+    let mut rows: Vec<(Rack, Vec<Cart>)> = [Rack::Recents, Rack::Favorites]
+        .into_iter()
+        .chain(Platform::ALL.iter().map(|p| Rack::Of(*p)))
+        .map(|r| (r, Vec::new()))
         .collect();
     for cart in carts {
-        if let Some((_, row)) = rows.iter_mut().find(|(p, _)| *p == Some(cart.platform)) {
+        if let Some((_, row)) = rows.iter_mut().find(|(r, _)| *r == Rack::Of(cart.platform)) {
             row.push(cart);
         }
     }
     rows.into_iter()
-        .map(|(platform, carts)| (platform, Shelf::new(carts)))
+        .map(|(rack, carts)| (rack, Shelf::new(carts)))
         .collect()
 }
 
@@ -502,8 +530,9 @@ impl App {
         app.root = Some(root.to_path_buf());
         app.state = read_slot_state(root);
         app.restock_recents();
-        if !app.shelves[0].1.carts.is_empty() {
-            app.shelf_at = 0;
+        app.restock_favorites();
+        if !app.shelves[RECENTS_AT].1.carts.is_empty() {
+            app.shelf_at = RECENTS_AT;
         }
         if app.state.clock_set {
             app.start();
@@ -608,12 +637,14 @@ impl App {
         self.shelves
             .iter()
             .enumerate()
-            .filter(|(_, (p, _))| platform.is_none_or(|want| p.is_none_or(|p| p == want)))
+            .filter(|(_, (r, _))| {
+                platform.is_none_or(|want| r.platform().is_none_or(|p| p == want))
+            })
             .find_map(|(at, (_, shelf))| {
                 shelf
                     .carts
                     .iter()
-                    .position(|c| c.stem == stem)
+                    .position(|c| c.stem == stem && platform.is_none_or(|p| c.platform == p))
                     .map(|i| (at, i))
             })
     }
@@ -826,11 +857,7 @@ impl App {
 
     pub fn shelf_platform_name(&self) -> Option<&'static str> {
         self.next_shelf(1)?;
-        Some(
-            self.shelves[self.shelf_at]
-                .0
-                .map_or("Recents", Platform::name),
-        )
+        Some(self.shelves[self.shelf_at].0.name())
     }
 
     pub fn set_battery_percent_face(&mut self, face: TexId, w: u32) {
@@ -848,7 +875,7 @@ impl App {
     pub fn carts(&self) -> impl Iterator<Item = &Cart> {
         self.shelves
             .iter()
-            .filter(|(p, _)| p.is_some())
+            .filter(|(r, _)| r.platform().is_some())
             .flat_map(|(_, shelf)| shelf.carts.iter())
     }
 
@@ -1399,6 +1426,7 @@ impl App {
                 Action::Insert => self.insert(!self.state.eject_save),
                 Action::GbaDown(Btn::L1) => self.switch_shelf(-1),
                 Action::GbaDown(Btn::R1) => self.switch_shelf(1),
+                Action::GbaDown(Btn::Y) => self.toggle_favorite(),
                 _ => {}
             },
             Phase::Inserting { .. } if action == Action::Eject => self.eject(),
@@ -2006,7 +2034,29 @@ impl App {
                 .collect(),
             false => Vec::new(),
         };
-        let stocked = &self.shelves[0].1.carts;
+        self.restock(RECENTS_AT, carts);
+    }
+
+    fn restock_favorites(&mut self) {
+        let mut carts: Vec<Cart> = self
+            .carts()
+            .filter(|c| self.state.is_favorite(c.platform, &c.stem))
+            .cloned()
+            .collect();
+        carts.sort_by(|a, b| {
+            (slot_store::sort_key(&a.stem), a.platform as u8)
+                .cmp(&(slot_store::sort_key(&b.stem), b.platform as u8))
+        });
+        let index = self.shelves[FAVORITES_AT].1.index;
+        self.restock(FAVORITES_AT, carts);
+        let shelf = &mut self.shelves[FAVORITES_AT].1;
+        if self.shelf_at == FAVORITES_AT && !shelf.carts.is_empty() {
+            shelf.select(index.min(shelf.carts.len() - 1));
+        }
+    }
+
+    fn restock(&mut self, at: usize, carts: Vec<Cart>) {
+        let stocked = &self.shelves[at].1.carts;
         if stocked.len() == carts.len()
             && stocked
                 .iter()
@@ -2015,12 +2065,34 @@ impl App {
         {
             return;
         }
-        let old = self.shelves[0].1.restock(carts);
+        let old = self.shelves[at].1.restock(carts);
         self.orphaned.extend(old);
-        let empty = self.shelves[0].1.carts.is_empty();
-        if self.shelf_at == 0 && empty {
+        let empty = self.shelves[at].1.carts.is_empty();
+        if self.shelf_at == at && empty {
             self.shelf_at = self.next_shelf(1).unwrap_or(0);
         }
+    }
+
+    fn toggle_favorite(&mut self) {
+        let Some(cart) = self.shelf().carts.get(self.shelf().index) else {
+            return;
+        };
+        let (platform, stem) = (cart.platform, cart.stem.clone());
+        let added = self.state.toggle_favorite(platform, &stem);
+        let shelf_at = self.shelf_at;
+        self.restock_favorites();
+        if self.shelf_at != shelf_at {
+            self.shelf_platform = slot_ui::Printed::default();
+            self.slot_letter = None;
+            self.shelf_named = None;
+            self.name_pending = true;
+        }
+        self.persist();
+        let said = match added {
+            true => Toast::Favorited,
+            false => Toast::Unfavorited,
+        };
+        self.hud.toast(said, self.now());
     }
 
     fn record_cart(&mut self, cart: Option<String>) {

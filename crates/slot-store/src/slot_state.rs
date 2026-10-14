@@ -130,6 +130,7 @@ pub struct SlotState {
     pub wallpaper: WallpaperPick,
     pub show_recents: bool,
     pub recents: Vec<Recent>,
+    pub favorites: Vec<Recent>,
 }
 
 impl SlotState {
@@ -144,6 +145,25 @@ impl SlotState {
             },
         );
         self.recents.truncate(RECENTS_MAX);
+    }
+
+    pub fn is_favorite(&self, platform: Platform, stem: &str) -> bool {
+        self.favorites
+            .iter()
+            .any(|f| f.platform == platform && f.stem == stem)
+    }
+
+    pub fn toggle_favorite(&mut self, platform: Platform, stem: &str) -> bool {
+        if self.is_favorite(platform, stem) {
+            self.favorites
+                .retain(|f| !(f.platform == platform && f.stem == stem));
+            return false;
+        }
+        self.favorites.push(Recent {
+            platform,
+            stem: stem.to_string(),
+        });
+        true
     }
 }
 
@@ -222,6 +242,7 @@ impl Default for SlotState {
             wallpaper: WallpaperPick::Default,
             show_recents: false,
             recents: Vec::new(),
+            favorites: Vec::new(),
         }
     }
 }
@@ -270,6 +291,13 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     for r in &s.recents {
         text.push_str(&format!("recent={}/{}\n", platform_key(r.platform), r.stem));
     }
+    for f in &s.favorites {
+        text.push_str(&format!(
+            "favorite={}/{}\n",
+            platform_key(f.platform),
+            f.stem
+        ));
+    }
     atomic_write(&state_path(root), text.as_bytes())
 }
 
@@ -300,6 +328,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut wallpaper = None;
     let mut show_recents = None;
     let mut recents: Vec<Recent> = Vec::new();
+    let mut favorites: Vec<Recent> = Vec::new();
     for line in text.lines().filter(|l| !l.is_empty()) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -330,6 +359,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "wallpaper" => wallpaper = Some(WallpaperPick::parse(value)),
             "show_recents" => show_recents = flag(value),
             "recent" => recents.extend(recent_value(value)),
+            "favorite" => favorites.extend(recent_value(value).filter(|f| !favorites.contains(f))),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
             _ => {}
         }
@@ -363,6 +393,7 @@ fn parse(text: &str) -> Option<SlotState> {
         wallpaper: wallpaper.unwrap_or(fallback.wallpaper),
         show_recents: show_recents.unwrap_or(fallback.show_recents),
         recents: recents.into_iter().take(RECENTS_MAX).collect(),
+        favorites,
     })
 }
 
