@@ -253,7 +253,7 @@ tasks:
       - sh cores/gpsp/test/run.sh vendor/gpsp-src.tar.gz
 
   device:sh:
-    desc: Run CMD on the box the device build wants, fetching one if this is not it
+    desc: Run CMD on the box the device build wants, fetching one if this is not it. The container is pinned to arm64 so an x86 host builds for the device too, under emulation
     internal: true
     requires:
       vars: [CMD]
@@ -263,7 +263,7 @@ tasks:
         if [ "$(uname -s)-$(uname -m)" = "Linux-aarch64" ]; then
           sh -c '{{.CMD}}'
         else
-          docker run --rm -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
+          docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
         fi
 
   build:device:
