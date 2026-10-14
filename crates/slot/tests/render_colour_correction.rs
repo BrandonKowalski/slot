@@ -237,7 +237,7 @@ fn colour_correction_changes_the_picture_on_every_platform() {
             "sdcard/Games/GB/Catrap (USA).gb",
             "Games/GB/Catrap (USA).gb",
             Platform::Gb,
-            Some(GbPalette::DEFAULT),
+            None,
         ),
     ] {
         let Some(rom) = card_cart(d.path(), from, to) else {
@@ -282,4 +282,30 @@ fn colour_correction_changes_the_picture_on_every_platform() {
              {sat_on:.1}"
         );
     }
+}
+
+#[test]
+fn a_gb_palette_suppresses_gbc_colour_correction() {
+    let Some(dylib) = vendored_core() else {
+        eprintln!("no mgba dylib, skipping");
+        return;
+    };
+    let _g = core_lock();
+    let d = common::tmp_root_with_carts(&[]);
+    let Some(rom) = card_cart(
+        d.path(),
+        "sdcard/Games/GB/Catrap (USA).gb",
+        "Games/GB/Catrap (USA).gb",
+    ) else {
+        eprintln!("no GB cart on this machine's card, skipping");
+        return;
+    };
+    let frames = frames_for("gb");
+    let palette = Some(GbPalette::DEFAULT);
+    let off = picture(d.path(), &dylib, &rom, Platform::Gb, palette, false, frames);
+    let on = picture(d.path(), &dylib, &rom, Platform::Gb, palette, true, frames);
+    assert_eq!(
+        on, off,
+        "GBC correction changed a Game Boy picture while a GB palette was active"
+    );
 }
