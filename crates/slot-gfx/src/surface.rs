@@ -1,7 +1,14 @@
 use std::ffi::c_void;
 use std::fmt;
 
+/// The canvas slot composes onto. 720x480 is the RG34XX panel and three GBA pixels per
+/// canvas pixel. The `canvas-640` feature builds a 640x480 canvas instead, for the 4:3 panels
+/// (RG28XX, RG35XXSP, RG35XX Plus), so the chrome is laid out for the panel 1:1 and the game is
+/// placed at a whole scale rather than the whole 3:2 frame being shrunk onto it.
+#[cfg(not(feature = "canvas-640"))]
 pub const OUT_W: u32 = 720;
+#[cfg(feature = "canvas-640")]
+pub const OUT_W: u32 = 640;
 pub const OUT_H: u32 = 480;
 
 #[derive(Debug)]

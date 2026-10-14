@@ -1333,7 +1333,7 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     );
     let (shadow_i, s) = shadows[0];
     assert!(
-        (s[0] + s[2] / 2.0 - 360.0).abs() < 0.01 && (s[1] + s[3] / 2.0 - 140.0).abs() < 0.01,
+        (s[0] + s[2] / 2.0 - CX).abs() < 0.01 && (s[1] + s[3] / 2.0 - 140.0).abs() < 0.01,
         "the lid's shadow is not under it: {s:?}"
     );
     assert!(shadow_i < lid_i, "the lid's shadow is drawn over the lid");
@@ -1341,15 +1341,18 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
     let seen = |w: u32| (w - HINT_EDGE) as f32;
-    assert_eq!(at(cancel.0), [180.0, 386.0, cancel.1 as f32, HINT_H as f32]);
+    assert_eq!(
+        at(cancel.0),
+        [CX - 180.0, 386.0, cancel.1 as f32, HINT_H as f32]
+    );
     assert_eq!(
         at(swap.0)[0] + seen(swap.1) / 2.0,
-        360.0,
+        CX,
         "Swap is off the panel's centre"
     );
     assert_eq!(
         at(choose.0)[0] + seen(choose.1),
-        540.0,
+        CX + 180.0,
         "Choose does not end at the cart's edge"
     );
     assert_eq!((at(swap.0)[1], at(choose.0)[1]), (386.0, 386.0));
@@ -1814,7 +1817,20 @@ fn session_playing(root: &Path) -> Session {
     s
 }
 
+/// The canvas centre, which the chrome is laid out about.
+const CX: f32 = slot_gfx::OUT_W as f32 / 2.0;
+
 const GB_WINDOW: [f32; 4] = [40.0 / 240.0, 8.0 / 160.0, 160.0 / 240.0, 144.0 / 160.0];
+
+/// What "actual size" samples: the whole 3x texture on the 720 canvas, the Game Boy window on
+/// a canvas that places the picture itself.
+fn gb_actual() -> [f32; 4] {
+    if slot_gfx::canvas_is_whole_texture() {
+        WHOLE_TEXTURE
+    } else {
+        GB_WINDOW
+    }
+}
 
 fn pad(s: &Session) -> u16 {
     s.emu().expect("no core in the slot").input().0
@@ -1826,7 +1842,7 @@ fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
     let mut s = session_playing(d.path());
     assert_eq!(
         s.app().source_rect(),
-        WHOLE_TEXTURE,
+        gb_actual(),
         "it did not open actual size"
     );
 
@@ -1840,11 +1856,7 @@ fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
     s.feed([RawEvent::Up(Btn::L1)], 120);
 
     s.feed([RawEvent::Down(Btn::R1)], 200);
-    assert_eq!(
-        s.app().source_rect(),
-        WHOLE_TEXTURE,
-        "R did not give it back"
-    );
+    assert_eq!(s.app().source_rect(), gb_actual(), "R did not give it back");
     assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
     s.feed([RawEvent::Up(Btn::R1)], 220);
 
@@ -1946,7 +1958,7 @@ fn the_picture_mode_is_remembered_per_cart() {
     );
     s.feed([RawEvent::Down(Btn::R1)], 100);
     assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
-    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
+    assert_eq!(s.app().source_rect(), gb_actual());
 }
 
 #[test]
@@ -1961,7 +1973,7 @@ fn a_cart_with_no_line_reads_as_actual_size() {
     let s = session_playing(d.path());
     assert_eq!(
         s.app().source_rect(),
-        WHOLE_TEXTURE,
+        gb_actual(),
         "a cart with no line did not open at actual size"
     );
 }

@@ -54,6 +54,12 @@ tasks:
     desc: Clippy the device build, which the host lint never compiles
     cmds:
       - cargo clippy -p slot --no-default-features --features device -- -D warnings
+      - cargo clippy -p slot --no-default-features --features device,canvas-640 -- -D warnings
+
+  test:640:
+    desc: The host tests again on the 640x480 canvas
+    cmds:
+      - cargo test -p slot -p slot-gfx -p slot-ui --features slot/canvas-640
 
   check:
     desc: Everything a CI run would do
@@ -270,6 +276,17 @@ tasks:
             -p slot --no-default-features --features device
       - file target-device/device/slot | grep -q aarch64
       - 'echo "built target-device/device/slot"'
+
+  build:device:640:
+    desc: Build for the 640x480 panels (RG28XX, RG35XXSP, RG35XX Plus), see README
+    cmds:
+      - task: device:sh
+        vars:
+          CMD: >-
+            cargo build --profile device --target-dir target-device-640
+            -p slot --no-default-features --features device,canvas-640
+      - file target-device-640/device/slot | grep -q aarch64
+      - 'echo "built target-device-640/device/slot"'
 
   bench:device:
     desc: Build core_bench, slot-retro's headless core benchmark, for the H700. It never ships

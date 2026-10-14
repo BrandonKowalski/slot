@@ -1,7 +1,9 @@
 use crate::surface::{OUT_H, OUT_W};
 
+/// A 4:3 panel takes the 3:2 canvas across its top with a bezel underneath. When the canvas is
+/// itself 4:3 (the `canvas-640` build) it is drawn 1:1 instead and nothing is framed.
 pub fn framed(panel: (u32, u32)) -> bool {
-    panel.0 > 0 && panel.0 * 3 == panel.1 * 4
+    panel.0 > 0 && panel.0 * 3 == panel.1 * 4 && OUT_W * 3 != OUT_H * 4
 }
 
 pub fn screen_rect(panel: (u32, u32)) -> (i32, i32, i32, i32) {

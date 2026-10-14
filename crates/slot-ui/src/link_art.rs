@@ -1,10 +1,10 @@
-use slot_gfx::OUT_H;
+use slot_gfx::{OUT_H, OUT_W};
 
 use crate::art::render_svg;
 use crate::bitmaps;
 use crate::cart::CartFace;
 
-pub const PORT_W: u32 = 720;
+pub const PORT_W: u32 = bitmaps::PORT_W;
 pub const PORT_H: u32 = bitmaps::PORT_H;
 pub const PORT_Y: f32 = (OUT_H - PORT_H) as f32;
 pub const PLUG_W: u32 = 92;
@@ -16,20 +16,23 @@ pub const ADAPTER_H: u32 = bitmaps::ADAPTER_H;
 pub const ADAPTER_BASE_X: f32 = 145.0;
 /// Top of the connector. The connector is the bottom 31px, so a seated base puts the tip at `PORT_Y + 31`, the same depth as a plug.
 pub const ADAPTER_BASE_Y: f32 = 149.0;
+/// The screen centre. The link art was laid out on a 720 canvas about x=360; everything that
+/// was placed by eye is kept at the same offset from the centre.
+const CX: f32 = OUT_W as f32 / 2.0;
 pub const ARCS: [(f32, f32, u32, u32); 3] = [
-    (508.0, 324.0, 16, 56),
-    (530.0, 308.0, 20, 88),
-    (552.0, 292.0, 25, 120),
+    (CX + 148.0, 324.0, 16, 56),
+    (CX + 170.0, 308.0, 20, 88),
+    (CX + 192.0, 292.0, 25, 120),
 ];
-pub const CLICKS_X: f32 = 270.0;
+pub const CLICKS_X: f32 = CX - CLICKS_W as f32 / 2.0;
 /// Just above the port lip. The port used to start at y=388 with the clicks at 360.
 pub const CLICKS_Y: f32 = PORT_Y - 28.0;
 pub const CLICKS_W: u32 = 180;
 pub const CLICKS_H: u32 = 30;
 pub const ARROW_W: u32 = 16;
 pub const ARROW_H: u32 = 22;
-pub const ARROW_LEFT_X: f32 = 268.0;
-pub const ARROW_RIGHT_X: f32 = 436.0;
+pub const ARROW_LEFT_X: f32 = CX - 92.0;
+pub const ARROW_RIGHT_X: f32 = CX + 76.0;
 pub const ARROW_Y: f32 = 52.0;
 
 const ARC_INK: &str = "#f6f4ef";

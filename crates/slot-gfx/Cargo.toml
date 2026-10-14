@@ -9,6 +9,8 @@ license.workspace = true
 default = ["host"]
 host = ["dep:glutin", "dep:glutin-winit", "dep:winit", "dep:raw-window-handle"]
 device = []
+# Compose onto a 640x480 canvas for the 4:3 panels instead of 720x480.
+canvas-640 = []
 test-support = []
 
 [dependencies]

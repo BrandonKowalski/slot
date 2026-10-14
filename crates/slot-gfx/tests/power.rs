@@ -30,3 +30,13 @@ fn the_line_closes_to_a_dot_at_the_very_end() {
         "the collapse eats the whole animation"
     );
 }
+
+#[test]
+fn the_screen_powers_up_inside_the_game_rect() {
+    let dest = (80.0, 80.0, 480.0, 320.0);
+    let (x, y, w, h) = slot_gfx::screen_rect_in(1.0, dest);
+    assert_eq!((x, y, w, h), dest);
+    let (x, y, w, h) = slot_gfx::screen_rect_in(0.0, dest);
+    assert!(w < 480.0 && h < 320.0, "a dark screen is still full size");
+    assert!((x + w / 2.0 - 320.0).abs() < 0.01 && (y + h / 2.0 - 240.0).abs() < 0.01);
+}

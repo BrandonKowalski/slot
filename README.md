@@ -65,6 +65,16 @@ export SLOT_ROTATE=ccw
 exec /lib/ld-linux-aarch64.so.1 "$SYS/slot" > "$SD/slot.log" 2>&1
 ```
 
+## 4:3 panels: the 640x480 build
+slot composes everything onto a 720x480 canvas, the RG34XX's panel, where a GBA pixel is exactly
+three panel pixels. On the 640x480 panels (RG28XX, RG35XXSP, RG35XX Plus) that whole canvas is
+shrunk to fit, so pixels come out uneven and the chrome is softened.
+
+The `canvas-640` feature builds slot with a 640x480 canvas instead. The chrome is laid out for the
+panel 1:1, no bezel is drawn, and games are placed at a whole scale: GBA at 2x (480x320) and Game
+Boy at 3x (480x432). L1 still stretches the picture, now to the panel edge with its aspect kept.
+Build it with `task build:device:640` and copy `target-device/device/slot` over `System/slot`.
+
 ---
 
 # AI Disclosure

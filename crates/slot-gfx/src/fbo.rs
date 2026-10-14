@@ -232,6 +232,10 @@ impl Compositor {
         self.game.set_source_rect(rect);
     }
 
+    pub fn set_game_dest(&mut self, rect: (f32, f32, f32, f32)) {
+        self.game.set_dest(rect);
+    }
+
     pub fn set_shake(&mut self, dx: f32) {
         self.shake = dx;
     }

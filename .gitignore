@@ -16,6 +16,7 @@
 .DS_Store
 /.idea/
 /target-device
+/target-device-640
 /target-verify
 /dist-device
 

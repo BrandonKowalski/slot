@@ -9,6 +9,8 @@ license.workspace = true
 default = ["host"]
 host = ["dep:winit", "dep:cpal", "dep:gilrs", "slot-gfx/host"]
 device = ["slot-gfx/device"]
+# A 640x480 canvas for the 4:3 panels (RG28XX, RG35XXSP, RG35XX Plus).
+canvas-640 = ["slot-gfx/canvas-640"]
 
 [dependencies]
 slot-gfx = { path = "../slot-gfx", default-features = false }

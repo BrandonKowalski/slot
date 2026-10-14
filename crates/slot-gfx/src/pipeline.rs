@@ -4,9 +4,32 @@ use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
 use crate::surface::{GfxError, OUT_H, OUT_W};
 
+/// The cores draw into a GBA-sized texture whatever the canvas is.
+pub const SRC_W: u32 = 240;
+pub const SRC_H: u32 = 160;
+/// Whole canvas pixels per game pixel on the 720x480 canvas.
 pub const SCALE: u32 = 3;
-pub const SRC_W: u32 = OUT_W / SCALE;
-pub const SRC_H: u32 = OUT_H / SCALE;
+
+/// True when the canvas is exactly the game texture at a whole scale, so the whole texture can be
+/// drawn edge to edge, as the 720x480 canvas is.
+pub const fn canvas_is_whole_texture() -> bool {
+    OUT_W == SRC_W * SCALE && OUT_H == SRC_H * SCALE
+}
+
+/// Where a `shown` slice of the game texture lands on the canvas: whole-pixel scaled and centred,
+/// or, when `fit` is set, scaled to the canvas edge with its aspect kept.
+pub fn game_rect(shown: (u32, u32), fit: bool) -> (f32, f32, f32, f32) {
+    let (sw, sh) = (shown.0.max(1) as f32, shown.1.max(1) as f32);
+    let scale = (OUT_W as f32 / sw).min(OUT_H as f32 / sh);
+    let scale = if fit { scale } else { scale.floor().max(1.0) };
+    let (w, h) = ((sw * scale).round(), (sh * scale).round());
+    (
+        ((OUT_W as f32 - w) / 2.0).floor(),
+        ((OUT_H as f32 - h) / 2.0).floor(),
+        w,
+        h,
+    )
+}
 
 pub const WHOLE_TEXTURE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 
@@ -28,6 +51,7 @@ pub struct GamePass {
     power: f32,
     fills: bool,
     src: [f32; 4],
+    dest: (f32, f32, f32, f32),
 }
 
 impl GamePass {
@@ -83,6 +107,7 @@ impl GamePass {
             power: 1.0,
             fills: false,
             src: WHOLE_TEXTURE,
+            dest: (0.0, 0.0, OUT_W as f32, OUT_H as f32),
         })
     }
 
@@ -124,6 +149,12 @@ impl GamePass {
         self.src = rect;
     }
 
+    /// Where the game lands on the canvas. The whole canvas on 720x480, which the shaders were
+    /// tuned for; a whole-scale or fitted rect on any other canvas.
+    pub fn set_dest(&mut self, rect: (f32, f32, f32, f32)) {
+        self.dest = rect;
+    }
+
     pub fn upload(&mut self, xrgb8888: &[u8]) {
         if xrgb8888.len() < (SRC_W * SRC_H * 4) as usize {
             return;
@@ -147,7 +178,9 @@ impl GamePass {
 
     pub fn draw(&self, quad: &Quad) {
         let src = match self.effect {
-            ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
+            ScreenEffect::Grid if canvas_is_whole_texture() => {
+                whole_scale_source(self.src, self.fbo_scale)
+            }
             _ => self.src,
         };
         self.draw_source(self.game, quad, src);
@@ -161,7 +194,7 @@ impl GamePass {
         let (x, y, w, h, bright) = if self.fills {
             (0.0, 0.0, OUT_W as f32, OUT_H as f32, 1.0)
         } else {
-            let (x, y, w, h) = screen_rect(self.power);
+            let (x, y, w, h) = screen_rect(self.power, self.dest);
             (x, y, w, h, screen_brightness(self.power))
         };
         unsafe {

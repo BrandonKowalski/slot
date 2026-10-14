@@ -1,5 +1,7 @@
 use std::sync::OnceLock;
 
+use slot_gfx::OUT_W;
+
 use crate::art::decode_png_bytes;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -19,9 +21,11 @@ pub const SOCKET_W: u32 = 64;
 pub const SOCKET_H: u32 = 46;
 pub const CHIP_W: u32 = 59;
 pub const CHIP_H: u32 = 41;
-pub const SLOT_W: u32 = 720;
+/// The slot mouth and link port bands span the canvas. Their 720px bitmaps are cropped to a
+/// narrower canvas about the centre, so the mouth stays 1:1 on every panel.
+pub const SLOT_W: u32 = OUT_W;
 pub const SLOT_H: u32 = 58;
-pub const PORT_W: u32 = 720;
+pub const PORT_W: u32 = OUT_W;
 pub const PORT_H: u32 = SLOT_H;
 pub const PLUG_W: u32 = 92;
 pub const PLUG_H: u32 = 244;
@@ -54,7 +58,9 @@ const STICKER_PNG: &[u8] = include_bytes!("../../../assets/sticker.png");
 fn load(bytes: &'static [u8], w: u32, h: u32, slot: &'static OnceLock<Vec<u8>>) -> &'static [u8] {
     slot.get_or_init(|| {
         let (mut rgba, sw, sh) = decode_png_bytes(bytes).expect("a template png decodes");
-        if (sw, sh) != (w, h) {
+        if sh == h && sw > w {
+            rgba = crop_centre(&rgba, sw, sh, w);
+        } else if (sw, sh) != (w, h) {
             rgba = scale(&rgba, sw, sh, w, h);
         }
         // Transparent pixels are often stored as white. The cart is sampled with a linear
@@ -88,6 +94,16 @@ fn bleed(rgba: &mut [u8], w: u32, h: u32) {
             }
         }
     }
+}
+
+/// The middle `w` columns of a wider bitmap.
+fn crop_centre(src: &[u8], sw: u32, sh: u32, w: u32) -> Vec<u8> {
+    let left = ((sw - w) / 2) as usize;
+    let mut out = Vec::with_capacity((w * sh * 4) as usize);
+    for row in src.chunks_exact(sw as usize * 4) {
+        out.extend_from_slice(&row[left * 4..(left + w as usize) * 4]);
+    }
+    out
 }
 
 fn scale(src: &[u8], sw: u32, sh: u32, w: u32, h: u32) -> Vec<u8> {

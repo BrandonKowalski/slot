@@ -21,8 +21,10 @@ pub fn screen_brightness(t: f32) -> f32 {
     1.0 + OVERSHOOT * left * left
 }
 
-pub fn screen_rect(t: f32) -> (f32, f32, f32, f32) {
-    let w = OUT_W as f32 * screen_width(t);
-    let h = OUT_H as f32 * screen_scale(t);
-    ((OUT_W as f32 - w) / 2.0, (OUT_H as f32 - h) / 2.0, w, h)
+/// The lit part of `dest` as the screen powers up, collapsing to a line and then a dot.
+pub fn screen_rect(t: f32, dest: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
+    let (dx, dy, dw, dh) = dest;
+    let w = dw * screen_width(t);
+    let h = dh * screen_scale(t);
+    (dx + (dw - w) / 2.0, dy + (dh - h) / 2.0, w, h)
 }

@@ -168,7 +168,7 @@ const CHIP_INK: [u8; 3] = [0xf2, 0xf2, 0xf2];
 /// Where the lid ends up: the cart's own proportions at 40%, so it shrinks evenly rather than
 /// being squashed on the way, centred where the old 144x81 box was.
 const LID_REST: Placed = Placed {
-    x: 288.0,
+    x: (OUT_W as f32 - 144.0) / 2.0,
     y: 70.5 - LID_REST_H / 2.0,
     w: 144.0,
     h: LID_REST_H,

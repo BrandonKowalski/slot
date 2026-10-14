@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A 640x480 canvas build for the 4:3 panels (`canvas-640`): the chrome is laid out for the RG28XX, RG35XXSP and RG35XX Plus panels 1:1 instead of being shrunk from 720x480, GBA games are drawn at a whole 2x and Game Boy games at 3x, and stretch fills the panel with the aspect kept. (#33, #44)
+- The game texture is 240x160 whatever the canvas, and the game is placed on it rather than always filling it.
+
 ## [1.6.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.6.0)
 
 - Runs on the RG28XX: its panel is mounted portrait, so slot turns the picture onto it. (#35)
