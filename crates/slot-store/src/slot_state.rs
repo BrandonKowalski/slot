@@ -107,7 +107,6 @@ pub struct SlotState {
     pub cart: Option<String>,
     pub cart_platform: Option<Platform>,
     pub last_carts: [Option<String>; 3],
-    pub last_cart_platform: Option<Platform>,
     pub brightness: u8,
     pub blue_light: u8,
     pub volume: u8,
@@ -202,7 +201,6 @@ impl SlotState {
 
     pub fn set_last_cart(&mut self, platform: Platform, stem: String) {
         self.last_carts[platform_index(platform)] = Some(stem);
-        self.last_cart_platform = Some(platform);
     }
 }
 
@@ -219,7 +217,6 @@ impl Default for SlotState {
             cart: None,
             cart_platform: None,
             last_carts: Default::default(),
-            last_cart_platform: None,
             brightness: 5,
             blue_light: 0,
             volume: 60,
@@ -267,7 +264,6 @@ cart_platform={}
 last_cart_gba={}
 last_cart_gb={}
 last_cart_gbc={}
-last_cart_platform={}
 brightness={}
 blue_light={}
 volume={}
@@ -296,7 +292,6 @@ wallpaper={}
         s.last_cart(Platform::Gba).unwrap_or(""),
         s.last_cart(Platform::Gb).unwrap_or(""),
         s.last_cart(Platform::Gbc).unwrap_or(""),
-        s.last_cart_platform.map_or(String::new(), platform_key),
         s.brightness,
         s.blue_light,
         s.volume,
@@ -331,7 +326,6 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut cart = None;
     let mut cart_platform = None;
     let mut last_carts: [Option<String>; 3] = Default::default();
-    let mut last_cart_platform = None;
     let mut brightness = None;
     let mut blue_light = None;
     let mut volume = None;
@@ -366,7 +360,6 @@ fn parse(text: &str) -> Option<SlotState> {
             "last_cart_gba" => last_carts[platform_index(Platform::Gba)] = stem(value),
             "last_cart_gb" => last_carts[platform_index(Platform::Gb)] = stem(value),
             "last_cart_gbc" => last_carts[platform_index(Platform::Gbc)] = stem(value),
-            "last_cart_platform" => last_cart_platform = platform_value(value),
             "brightness" => brightness = Some(level(value, BRIGHTNESS_MAX)?),
             "blue_light" => blue_light = Some(level(value, BLUE_LIGHT_MAX)?),
             "volume" => volume = Some(level(value, VOLUME_MAX)?),
@@ -400,7 +393,6 @@ fn parse(text: &str) -> Option<SlotState> {
         cart: (!cart.is_empty()).then_some(cart),
         cart_platform,
         last_carts,
-        last_cart_platform,
         brightness: brightness?,
         blue_light: blue_light?,
         volume: volume?,

@@ -184,7 +184,6 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             cart: Some("Emerald".into()),
             cart_platform: None,
             last_carts: Default::default(),
-            last_cart_platform: None,
             brightness: 3,
             blue_light: 1,
             volume: 40,
@@ -448,5 +447,4 @@ fn each_platform_keeps_its_own_last_cart() {
     assert_eq!(back.last_cart(Platform::Gba), Some("Emerald"));
     assert_eq!(back.last_cart(Platform::Gb), None);
     assert_eq!(back.last_cart(Platform::Gbc), Some("Crystal"));
-    assert_eq!(back.last_cart_platform, Some(Platform::Gbc));
 }

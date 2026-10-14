@@ -536,11 +536,18 @@ impl App {
             None => {
                 self.state.cart = None;
                 self.state.cart_platform = None;
-                if let Some(at) = self.state.last_cart_platform.and_then(|platform| {
-                    self.shelves
-                        .iter()
-                        .position(|(p, s)| *p == Some(platform) && !s.carts.is_empty())
-                }) {
+                let on_recents = self.shelves[self.shelf_at].0.is_none();
+                if let Some(at) = self
+                    .state
+                    .recents
+                    .first()
+                    .filter(|_| !on_recents)
+                    .and_then(|r| {
+                        self.shelves
+                            .iter()
+                            .position(|(p, s)| *p == Some(r.platform) && !s.carts.is_empty())
+                    })
+                {
                     self.shelf_at = at;
                 }
                 self.name_pending = true;
@@ -2054,10 +2061,7 @@ impl App {
             }
         }
         let remembered = match (&cart, platform) {
-            (Some(cart), Some(platform)) => {
-                self.state.last_cart(platform) == Some(cart.as_str())
-                    && self.state.last_cart_platform == Some(platform)
-            }
+            (Some(cart), Some(platform)) => self.state.last_cart(platform) == Some(cart.as_str()),
             _ => true,
         };
         if self.state.cart == cart && self.state.cart_platform == platform && remembered {

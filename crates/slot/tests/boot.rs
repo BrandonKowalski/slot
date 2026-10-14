@@ -398,11 +398,37 @@ fn boot_rests_each_shelf_on_its_own_last_cart() {
         ..Default::default()
     };
     state.set_last_cart(Platform::Gba, "Fusion".into());
+    state.played(Platform::Gba, "Fusion");
     state.set_last_cart(Platform::Gb, "Zelda".into());
+    state.played(Platform::Gb, "Zelda");
     write_slot_state(d.path(), &state).unwrap();
     let mut a = App::boot(d.path());
     assert!(matches!(a.phase(), Phase::Shelf));
     assert_eq!(a.shelf_platform_name(), Some("Game Boy"));
+    assert_eq!(a.selected_stem(), Some("Zelda"));
+    a.apply(Action::GbaDown(Btn::R1));
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy Advance"));
+    assert_eq!(a.selected_stem(), Some("Fusion"));
+}
+
+#[test]
+fn with_recents_on_boot_stays_on_recents_over_the_last_carts_shelf() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion", "Ruby"]);
+    write_gb_cart(&d, "Tetris", "TETRIS");
+    write_gb_cart(&d, "Zelda", "ZELDA");
+    let mut state = SlotState {
+        clock_set: true,
+        show_recents: true,
+        ..Default::default()
+    };
+    state.set_last_cart(Platform::Gba, "Fusion".into());
+    state.played(Platform::Gba, "Fusion");
+    state.set_last_cart(Platform::Gb, "Zelda".into());
+    state.played(Platform::Gb, "Zelda");
+    write_slot_state(d.path(), &state).unwrap();
+    let mut a = App::boot(d.path());
+    assert!(matches!(a.phase(), Phase::Shelf));
+    assert_eq!(a.shelf_platform_name(), Some("Recents"));
     assert_eq!(a.selected_stem(), Some("Zelda"));
     a.apply(Action::GbaDown(Btn::R1));
     assert_eq!(a.shelf_platform_name(), Some("Game Boy Advance"));
@@ -429,7 +455,10 @@ fn a_resumed_cart_from_before_last_carts_is_still_remembered_after_an_eject() {
     let saved = read_slot_state(d.path());
     assert_eq!(saved.cart, None);
     assert_eq!(saved.last_cart(Platform::Gba), Some("Emerald"));
-    assert_eq!(saved.last_cart_platform, Some(Platform::Gba));
+    assert_eq!(
+        saved.recents.first().map(|r| r.platform),
+        Some(Platform::Gba)
+    );
     let a = App::boot(d.path());
     assert!(matches!(a.phase(), Phase::Shelf));
     assert_eq!(a.selected_stem(), Some("Emerald"));

@@ -153,7 +153,7 @@ fn with_recents_on_the_card_boots_onto_the_last_game_played() {
 }
 
 #[test]
-fn with_recents_off_the_card_boots_as_it_always_has() {
+fn with_recents_off_the_card_boots_onto_the_last_games_shelf() {
     let d = card();
     let a = boot_with(
         d.path(),
@@ -162,7 +162,7 @@ fn with_recents_off_the_card_boots_as_it_always_has() {
             ..SlotState::default()
         },
     );
-    assert_eq!(a.shelf_platform_name(), Some("Game Boy Advance"));
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy"));
 }
 
 #[test]
