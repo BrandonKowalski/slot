@@ -957,6 +957,10 @@ impl App {
         self.platform = platform;
     }
 
+    pub fn platform(&self) -> Platform {
+        self.platform
+    }
+
     pub fn set_named_core(&mut self, named: bool) {
         self.named_core = named;
     }

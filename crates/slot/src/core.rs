@@ -40,13 +40,14 @@ pub struct Opened {
 pub fn open_core(
     root: &Path,
     core: Core,
+    platform: Platform,
     serial: &str,
     colour: bool,
     palette: Option<GbPalette>,
     link: Option<u8>,
 ) -> Opened {
     let paths = candidates(root, core);
-    match open_named(root, core, serial, colour, palette, link, &paths) {
+    match open_named(root, core, platform, serial, colour, palette, link, &paths) {
         Some(core) => Opened { core, named: true },
         None => {
             report_missing(core, &paths);
@@ -76,7 +77,19 @@ pub fn open_core_for_palette(
     palette: Option<GbPalette>,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
-    open_named(root, core, serial, colour, palette, None, paths).unwrap_or_else(|| {
+    open_core_for_palette_for_platform(root, core, Platform::Gba, serial, colour, palette, paths)
+}
+
+pub fn open_core_for_palette_for_platform(
+    root: &Path,
+    core: Core,
+    platform: Platform,
+    serial: &str,
+    colour: bool,
+    palette: Option<GbPalette>,
+    paths: &[PathBuf],
+) -> Box<dyn RetroCore> {
+    open_named(root, core, platform, serial, colour, palette, None, paths).unwrap_or_else(|| {
         report_missing(core, paths);
         Box::new(MockCore::new())
     })
@@ -85,6 +98,7 @@ pub fn open_core_for_palette(
 fn open_named(
     root: &Path,
     core: Core,
+    platform: Platform,
     serial: &str,
     colour: bool,
     palette: Option<GbPalette>,
@@ -99,9 +113,10 @@ fn open_named(
         }
         match LibretroCore::open_with(path, &bios, &saves) {
             Ok(mut opened) => {
-                apply_core_options(
+                apply_core_options_for_platform(
                     &mut opened,
                     core,
+                    platform,
                     serial,
                     root::has_real_bios(root),
                     colour,
@@ -148,9 +163,22 @@ fn report_missing(core: Core, paths: &[PathBuf]) {
     );
 }
 
-pub fn colour_option(which: Core, on: bool) -> Option<(&'static str, &'static str)> {
+pub fn colour_option(
+    which: Core,
+    platform: Platform,
+    on: bool,
+) -> Option<(&'static str, &'static str)> {
     match which {
-        Core::Mgba => Some(("mgba_color_correction", if on { "Auto" } else { "OFF" })),
+        Core::Mgba => Some((
+            "mgba_color_correction",
+            if on && platform == Platform::Gb {
+                "GBC"
+            } else if on {
+                "Auto"
+            } else {
+                "OFF"
+            },
+        )),
         Core::Gpsp => Some((
             "gpsp_color_correction",
             if on { "enabled" } else { "disabled" },
@@ -175,6 +203,26 @@ pub fn apply_core_options(
     colour: bool,
     palette: Option<GbPalette>,
 ) {
+    apply_core_options_for_platform(
+        core,
+        which,
+        Platform::Gba,
+        serial,
+        bios,
+        colour,
+        palette,
+    );
+}
+
+pub fn apply_core_options_for_platform(
+    core: &mut LibretroCore,
+    which: Core,
+    platform: Platform,
+    serial: &str,
+    bios: bool,
+    colour: bool,
+    palette: Option<GbPalette>,
+) {
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
@@ -191,7 +239,7 @@ pub fn apply_core_options(
                 core.set_option("mgba_gb_colors", "GBC Dark Green →A");
             }
         }
-        if let Some((key, value)) = colour_option(which, colour) {
+        if let Some((key, value)) = colour_option(which, platform, colour) {
             core.set_option(key, value);
         }
     }
@@ -201,7 +249,7 @@ pub fn apply_core_options(
         if bios {
             core.set_option("gpsp_boot_mode", "bios");
         }
-        if let Some((key, value)) = colour_option(which, colour) {
+        if let Some((key, value)) = colour_option(which, platform, colour) {
             core.set_option(key, value);
         }
     }
@@ -217,20 +265,28 @@ mod tests {
     #[test]
     fn each_core_spells_colour_correction_its_own_way() {
         assert_eq!(
-            colour_option(Core::Mgba, true),
+            colour_option(Core::Mgba, Platform::Gba, true),
             Some(("mgba_color_correction", "Auto"))
         );
         assert_eq!(
-            colour_option(Core::Mgba, false),
+            colour_option(Core::Mgba, Platform::Gba, false),
             Some(("mgba_color_correction", "OFF"))
         );
         assert_eq!(
-            colour_option(Core::Gpsp, true),
+            colour_option(Core::Gpsp, Platform::Gba, true),
             Some(("gpsp_color_correction", "enabled"))
         );
         assert_eq!(
-            colour_option(Core::Gpsp, false),
+            colour_option(Core::Gpsp, Platform::Gba, false),
             Some(("gpsp_color_correction", "disabled"))
+        );
+    }
+
+    #[test]
+    fn mgba_uses_gbc_correction_for_game_boy_games() {
+        assert_eq!(
+            colour_option(Core::Mgba, Platform::Gb, true),
+            Some(("mgba_color_correction", "GBC"))
         );
     }
 

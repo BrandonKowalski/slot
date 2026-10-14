@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::{core_lock, repo_root, vendored_core};
 use slot_retro::{ButtonMask, GBA_H, GBA_W};
-use slot_store::Core;
+use slot_store::{Core, GbPalette, Platform};
 
 fn frames_for(name: &str) -> usize {
     match name {
@@ -93,12 +93,22 @@ fn share_changed(a: &[u8], b: &[u8]) -> f64 {
     diff as f64 / n as f64
 }
 
-fn picture(root: &Path, dylib: &Path, rom: &Path, colour: bool, frames: usize) -> Vec<u8> {
-    let mut core = slot::core::open_core_for(
+fn picture(
+    root: &Path,
+    dylib: &Path,
+    rom: &Path,
+    platform: Platform,
+    palette: Option<GbPalette>,
+    colour: bool,
+    frames: usize,
+) -> Vec<u8> {
+    let mut core = slot::core::open_core_for_palette_for_platform(
         root,
         Core::Mgba,
+        platform,
         "auto",
         colour,
+        palette,
         std::slice::from_ref(&dylib.to_path_buf()),
     );
     core.load(rom).expect("the core would not take the rom");
@@ -199,7 +209,7 @@ fn the_cards_setting_reaches_the_core_through_the_session() {
 }
 
 #[test]
-fn colour_correction_changes_the_picture_on_both_consoles() {
+fn colour_correction_changes_the_picture_on_every_platform() {
     let Some(dylib) = vendored_core() else {
         eprintln!("no mgba dylib, skipping");
         return;
@@ -207,16 +217,27 @@ fn colour_correction_changes_the_picture_on_both_consoles() {
     let _g = core_lock();
     let d = common::tmp_root_with_carts(&[]);
 
-    for (name, from, to) in [
+    for (name, from, to, platform, palette) in [
         (
             "gba",
             "sdcard/Games/GBA/Metroid Fusion.gba",
             "Games/GBA/Metroid Fusion.gba",
+            Platform::Gba,
+            None,
         ),
         (
             "gbc",
             "sdcard/Games/GBC/Pokemon - Crystal Version (USA).gbc",
             "Games/GBC/Pokemon - Crystal Version (USA).gbc",
+            Platform::Gbc,
+            None,
+        ),
+        (
+            "gb",
+            "sdcard/Games/GB/Catrap (USA).gb",
+            "Games/GB/Catrap (USA).gb",
+            Platform::Gb,
+            Some(GbPalette::DEFAULT),
         ),
     ] {
         let Some(rom) = card_cart(d.path(), from, to) else {
@@ -224,8 +245,8 @@ fn colour_correction_changes_the_picture_on_both_consoles() {
             continue;
         };
         let frames = frames_for(name);
-        let off = picture(d.path(), &dylib, &rom, false, frames);
-        let on = picture(d.path(), &dylib, &rom, true, frames);
+        let off = picture(d.path(), &dylib, &rom, platform, palette, false, frames);
+        let on = picture(d.path(), &dylib, &rom, platform, palette, true, frames);
         assert!(
             mean_rgb(&off).iter().sum::<f64>() > 12.0,
             "{name}: still black after {frames} frames, so there is no picture to correct"
