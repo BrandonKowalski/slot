@@ -455,6 +455,7 @@ impl Frontend {
 
     pub fn render(&mut self, compositor: &mut Compositor, window: (u32, u32)) {
         self.session.app_mut().set_panel(window);
+        compositor.set_game_fit(self.session.app().game_fits_panel());
         compositor.fit(window);
         self.compose(compositor);
         compositor.end_frame(window);
@@ -497,6 +498,7 @@ impl Frontend {
     }
 
     pub fn compose(&mut self, compositor: &mut Compositor) {
+        compositor.set_game_fit(self.session.app().game_fits_panel());
         compositor.set_blue_light(self.session.app().blue_light());
         compositor.set_picture(self.session.app().picture_rect());
         compositor.set_screen_effect(match self.session.app().screen_shader() {

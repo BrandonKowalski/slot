@@ -38,6 +38,7 @@ pub struct Compositor {
     bezel: Option<gl::types::GLuint>,
     game_bezel: Option<TexId>,
     sp_frame: bool,
+    game_fit: bool,
     turn: Option<Turn>,
 }
 
@@ -106,6 +107,7 @@ impl Compositor {
                 bezel: None,
                 game_bezel: None,
                 sp_frame: true,
+                game_fit: false,
                 turn: None,
             })
         }
@@ -145,23 +147,50 @@ impl Compositor {
         for (i, item) in items.iter().enumerate() {
             match *item {
                 Draw::Game => {
-                    self.sprites.draw(&items[from..i], &self.quad);
+                    self.draw_sprites(&items[from..i]);
                     self.in_game_rect(|c| {
                         c.game.draw(&c.quad);
                         c.draw_game_bezel();
                     });
                 }
                 Draw::Shot { tex } => {
-                    self.sprites.draw(&items[from..i], &self.quad);
+                    self.draw_sprites(&items[from..i]);
                     if let Some(tex) = self.sprites.source(tex) {
                         self.in_game_rect(|c| c.game.draw_still(tex, &c.quad));
                     }
+                }
+                Draw::Backdrop { tex, dim } => {
+                    self.draw_sprites(&items[from..i]);
+                    self.sprites.set_target(Canvas::FRAMED);
+                    self.sprites.draw(
+                        &[Draw::Tex {
+                            x: 0.0,
+                            y: 0.0,
+                            w: OUT_W as f32,
+                            h: OUT_H as f32,
+                            tex,
+                            alpha: 1.0,
+                        }],
+                        &self.quad,
+                    );
+                    self.sprites.draw(
+                        &[Draw::Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            w: OUT_W as f32,
+                            h: OUT_H as f32,
+                            colour: [0.0, 0.0, 0.0, dim],
+                        }],
+                        &self.quad,
+                    );
+                    self.sprites
+                        .set_target(Canvas::of(self.layout, self.window));
                 }
                 _ => continue,
             }
             from = i + 1;
         }
-        self.sprites.draw(&items[from..], &self.quad);
+        self.draw_sprites(&items[from..]);
     }
 
     pub fn create_texture(&mut self, w: u32, h: u32, rgba: &[u8]) -> TexId {
@@ -197,6 +226,9 @@ impl Compositor {
     }
 
     fn draw_game_bezel(&mut self) {
+        if self.game_fit {
+            return;
+        }
         let Some(tex) = self.game_bezel else {
             return;
         };
@@ -223,7 +255,9 @@ impl Compositor {
 
     pub fn fit(&mut self, window: (u32, u32)) {
         self.window = window;
-        self.resize(canvas_size(window));
+        if !self.game_fit {
+            self.resize(canvas_size(window));
+        }
     }
 
     fn native(&self) -> bool {
@@ -273,6 +307,10 @@ impl Compositor {
 
     pub fn set_game_fills_frame(&mut self, on: bool) {
         self.game.set_fills_frame(on);
+    }
+
+    pub fn set_game_fit(&mut self, on: bool) {
+        self.game_fit = on;
     }
 
     pub fn set_game_source_rect(&mut self, rect: [f32; 4]) {
@@ -350,13 +388,14 @@ impl Compositor {
 
     pub fn begin_frame(&mut self, layout: Layout) {
         self.layout = layout;
-        let size = if self.native() {
+        let size = if self.game_fit || self.native() {
             self.window
         } else {
             canvas_size(self.window)
         };
         self.resize(size);
         self.sprites.set_target(Canvas::of(layout, self.window));
+        self.game.set_fit(self.game_fit.then_some(self.window));
         self.game.set_fbo_scale(
             self.size.0 as f32 / OUT_W as f32,
             self.size.1 as f32 / OUT_H as f32,
@@ -364,7 +403,12 @@ impl Compositor {
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
             gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32);
-            gl::ClearColor(BACKDROP[0], BACKDROP[1], BACKDROP[2], BACKDROP[3]);
+            let bg = if self.game_fit {
+                [0.0, 0.0, 0.0, 1.0]
+            } else {
+                BACKDROP
+            };
+            gl::ClearColor(bg[0], bg[1], bg[2], bg[3]);
             gl::Clear(gl::COLOR_BUFFER_BIT);
         }
     }
@@ -444,7 +488,7 @@ impl Compositor {
             gl::Uniform3f(self.u_gain, self.gain[0], self.gain[1], self.gain[2]);
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
         }
-        if self.native() {
+        if self.game_fit || self.native() {
             let canvas = Canvas::of(Layout::Native, window);
             let dx = (self.shake * window.0 as f32 / canvas.w).round() as i32;
             self.blit_part(
@@ -484,8 +528,29 @@ impl Compositor {
 }
 
 impl Compositor {
+    fn draw_sprites(&self, items: &[Draw]) {
+        if self.game_fit {
+            let canvas = Canvas::of(self.layout, self.window);
+            let scale = (self.size.0 as f32 / canvas.w).min(self.size.1 as f32 / canvas.h);
+            let w = (canvas.w * scale).round() as i32;
+            let h = (canvas.h * scale).round() as i32;
+            unsafe {
+                gl::Viewport(
+                    (self.size.0 as i32 - w) / 2,
+                    (self.size.1 as i32 - h) / 2,
+                    w,
+                    h,
+                );
+            }
+        }
+        self.sprites.draw(items, &self.quad);
+        if self.game_fit {
+            unsafe { gl::Viewport(0, 0, self.size.0 as i32, self.size.1 as i32) };
+        }
+    }
+
     fn in_game_rect(&mut self, draw: impl FnOnce(&mut Self)) {
-        if !self.native() {
+        if self.game_fit || !self.native() {
             return draw(self);
         }
         let (w, h) = canvas_size(self.window);

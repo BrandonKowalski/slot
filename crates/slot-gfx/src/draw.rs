@@ -47,6 +47,10 @@ pub enum Draw {
         alpha: f32,
         turn: f32,
     },
+    Backdrop {
+        tex: TexId,
+        dim: f32,
+    },
     Game,
     Shot {
         tex: TexId,
@@ -193,7 +197,7 @@ impl Sprites {
                     Some(t) => (x, y, w, h, *t, [1.0, 1.0, 1.0, alpha], turn, whole),
                     None => continue,
                 },
-                Draw::Game | Draw::Shot { .. } => continue,
+                Draw::Game | Draw::Shot { .. } | Draw::Backdrop { .. } => continue,
             };
             let (cos, sin) = if turn == 0.0 {
                 (1.0, 0.0)
