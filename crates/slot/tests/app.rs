@@ -2144,10 +2144,10 @@ fn a_game_boy_color_game_keeps_its_own_colour_and_shader() {
     );
     assert_eq!(
         (saved.shader_gb, saved.shader_gbc),
-        (Shader::Simpletex, Shader::Off),
+        (Shader::Simpletex, Shader::Transparent),
         "a Game Boy Color game's shader shortcut did not land on GBC alone"
     );
-    assert_eq!(s.app().screen_shader(), Shader::Off);
+    assert_eq!(s.app().screen_shader(), Shader::Transparent);
 }
 
 #[test]

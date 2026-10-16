@@ -72,12 +72,39 @@ vec2 grid_band(vec2 x) {
 float dot_weight(vec2 f, vec2 o, float bloom) {
     return exp(-4.0 * length(f - (o + vec2(0.5))) * bloom);
 }
+// Transparent: an unlit Game Boy screen. Light pixels let the screen's backing
+// show through, and the dark pixels above it cast soft shadows onto it.
+const vec3 clear_backing = vec3(0.60, 0.62, 0.50);
+const float clear_see = 0.5;
+const float clear_shadow_px = 2.0;
+const float clear_blur_px = 1.0;
+const float clear_shadow = 0.4;
+float darkness_at(vec2 at) {
+    vec2 lo = u_pic.xy;
+    vec2 hi = u_pic.zw - 0.5 / u_src;
+    return 1.0 - dot(texture2D(u_game, clamp(at, lo, hi)).rgb, luma_coeff);
+}
 void main() {
     vec2 uv = u_uv.xy + v_uv * u_uv.zw;
     vec2 f = fract(uv * u_src);
     vec3 c = texture2D(u_game, uv).rgb;
     bool inside = all(greaterThanEqual(uv, u_pic.xy)) && all(lessThan(uv, u_pic.zw));
     if (!inside) {
+    } else if (u_mode > 4.5) {
+        vec2 angle = f * 6.283185307;
+        float yfactor = (16.0 + sin(angle.y)) / 17.0;
+        vec3 xfactors = (4.0 + sin(angle.x + offsets)) / 5.0;
+        vec3 lcd = c * yfactor * xfactors;
+        float grain = texture2D(u_paper, (floor(gl_FragCoord.xy - u_origin) + 0.5) / u_paper_size).r;
+        vec3 backing = clear_backing * (0.9 + 0.2 * grain);
+        vec2 px = u_uv.zw / u_rect.zw;
+        vec2 at = uv - clear_shadow_px * px;
+        vec2 b = clear_blur_px * px;
+        float dark = darkness_at(at)
+            + darkness_at(at + vec2(b.x, 0.0)) + darkness_at(at - vec2(b.x, 0.0))
+            + darkness_at(at + vec2(0.0, b.y)) + darkness_at(at - vec2(0.0, b.y));
+        backing *= 1.0 - clear_shadow * dark / 5.0;
+        c = mix(lcd, backing, clear_see * dot(c, luma_coeff));
     } else if (u_mode > 3.5) {
         c = pow(c, vec3(1.05));
         vec2 d = abs(f - 0.5);

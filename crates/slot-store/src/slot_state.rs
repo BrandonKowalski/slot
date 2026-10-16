@@ -274,11 +274,20 @@ pub enum Shader {
     Grid,
     Dot,
     Simpletex,
+    Transparent,
 }
 
 impl Shader {
     pub const GBA: [Shader; 4] = [Shader::Off, Shader::Lcd3x, Shader::Grid, Shader::Dot];
-    pub const GB: [Shader; 4] = [Shader::Off, Shader::Lcd3x, Shader::Grid, Shader::Simpletex];
+    /// The Game Boy and Game Boy Color list. Transparent is theirs alone: it
+    /// is made for the Game Boy's unlit screen.
+    pub const GB: [Shader; 5] = [
+        Shader::Off,
+        Shader::Lcd3x,
+        Shader::Grid,
+        Shader::Simpletex,
+        Shader::Transparent,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -287,6 +296,7 @@ impl Shader {
             Shader::Grid => "grid",
             Shader::Dot => "dot",
             Shader::Simpletex => "simpletex",
+            Shader::Transparent => "transparent",
         }
     }
 
@@ -297,6 +307,7 @@ impl Shader {
             Shader::Grid,
             Shader::Dot,
             Shader::Simpletex,
+            Shader::Transparent,
         ]
         .into_iter()
         .find(|s| s.name() == name)

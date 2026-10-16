@@ -463,7 +463,18 @@ fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     let s = read_slot_state(d.path());
     assert_eq!(
         (s.shader_gba, s.shader_gb, s.shader_gbc),
-        (Shader::Off, Shader::Grid, Shader::Off)
+        (Shader::Off, Shader::Grid, Shader::Transparent),
+        "GBC steps from Simpletex to Transparent"
+    );
+    assert_eq!(
+        a.quick_value(QuickRow::GbcShader),
+        Some(QuickValue::Transparent)
+    );
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        read_slot_state(d.path()).shader_gbc,
+        Shader::Off,
+        "Transparent did not wrap round to Off"
     );
 }
 

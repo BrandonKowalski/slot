@@ -249,7 +249,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         gb_palette: GbPalette::parse("GBC Dark Green →A").unwrap(),
         wallpaper_tint: WallpaperTint::Medium,
         colour_correction_gbc: true,
-        shader_gbc: Shader::Grid,
+        shader_gbc: Shader::Transparent,
         bezel_gba: BezelPick::None,
         bezel_gb: BezelPick::Default,
         bezel_gbc: BezelPick::File("Pocket.png".into()),
@@ -283,7 +283,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "bezel_gb=default",
         "bezel_gbc=Pocket.png",
         "colour_correction_gbc=1",
-        "shader_gbc=grid",
+        "shader_gbc=transparent",
         "shelf=gba",
         "shelf_cart=gba/Drill Dozer",
     ] {
@@ -557,5 +557,28 @@ fn a_card_from_before_the_gbc_split_starts_gbc_from_the_gb_c_settings() {
         (s.colour_correction_gbc, s.shader_gbc),
         (false, Shader::Off),
         "the GB settings overrode GBC's own"
+    );
+}
+
+#[test]
+fn transparent_is_on_both_game_boy_lists_and_not_the_gbas() {
+    assert!(Shader::GB.contains(&Shader::Transparent));
+    assert!(!Shader::GBA.contains(&Shader::Transparent));
+    assert_eq!(Shader::parse("transparent"), Some(Shader::Transparent));
+    assert_eq!(Shader::Transparent.name(), "transparent");
+
+    let d = tmp_root();
+    std::fs::write(
+        d.path().join("Config/slot.state"),
+        "cart=Emerald\nbrightness=3\nblue_light=1\nvolume=40\nmuted=1\nclock_set=1\nutc_offset_min=-300\nshader_gb=transparent\nshader_gbc=transparent\nshader_gba=transparent\n",
+    )
+    .unwrap();
+    let s = read_slot_state(d.path());
+    assert_eq!(s.shader_gb, Shader::Transparent);
+    assert_eq!(s.shader_gbc, Shader::Transparent);
+    assert_ne!(
+        s.shader_gba,
+        Shader::Transparent,
+        "the GBA took Transparent"
     );
 }

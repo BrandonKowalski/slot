@@ -16,6 +16,7 @@ pub enum ScreenEffect {
     Grid,
     Dot,
     Simpletex,
+    Transparent,
 }
 
 impl ScreenEffect {
@@ -32,4 +33,21 @@ pub fn lcd3x_mask() -> [[[f32; 3]; 3]; 3] {
         }
     }
     mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ScreenEffect;
+
+    #[test]
+    fn each_effect_has_the_mode_the_game_shader_branches_on() {
+        // GAME_FRAG picks its branch from these numbers, highest first.
+        assert_eq!(ScreenEffect::None.mode(), 0.0);
+        assert_eq!(ScreenEffect::Lcd3x.mode(), 1.0);
+        assert_eq!(ScreenEffect::Grid.mode(), 2.0);
+        assert_eq!(ScreenEffect::Dot.mode(), 3.0);
+        assert_eq!(ScreenEffect::Simpletex.mode(), 4.0);
+        assert_eq!(ScreenEffect::Transparent.mode(), 5.0);
+        assert!(crate::shaders::GAME_FRAG.contains("u_mode > 4.5"));
+    }
 }

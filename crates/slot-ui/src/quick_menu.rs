@@ -357,10 +357,11 @@ pub enum QuickValue {
     Low,
     Medium,
     High,
+    Transparent,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 18] = [
+    pub const ALL: [QuickValue; 19] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -379,6 +380,7 @@ impl QuickValue {
         QuickValue::Low,
         QuickValue::Medium,
         QuickValue::High,
+        QuickValue::Transparent,
     ];
 
     pub fn index(self) -> usize {
@@ -405,6 +407,7 @@ impl QuickValue {
             QuickValue::Low => "25%",
             QuickValue::Medium => "45%",
             QuickValue::High => "65%",
+            QuickValue::Transparent => "Transparent",
         }
     }
 

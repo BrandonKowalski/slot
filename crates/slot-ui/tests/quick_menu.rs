@@ -212,6 +212,7 @@ fn the_values_read_as_the_menu_prints_them() {
             "25%",
             "45%",
             "65%",
+            "Transparent",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
