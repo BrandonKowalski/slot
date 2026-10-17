@@ -781,3 +781,224 @@ fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
         "a white cell averages {mean} under the dot shader"
     );
 }
+
+#[test]
+fn fit_ui_sprites_stay_square_and_centred() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("SKIPPED Fit UI rendering: headless OpenGL unavailable");
+        return;
+    };
+    let tex = c.create_texture_nearest(1, 1, &[255, 0, 0, 255]);
+    for panel in [(720, 480), (640, 480), (720, 720), (1280, 720), (320, 480)] {
+        for layout in [slot_gfx::Layout::Framed, slot_gfx::Layout::Native] {
+            c.set_game_fit(true);
+            c.fit(panel);
+            c.begin_frame(layout);
+            let canvas = slot_gfx::Canvas::of(layout, panel);
+            let backdrop = c.create_texture_nearest(1, 1, &[0, 0, 255, 255]);
+            c.draw_list(&[
+                Draw::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: canvas.w,
+                    h: canvas.h,
+                    colour: [0.0, 1.0, 0.0, 1.0],
+                },
+                Draw::Backdrop {
+                    tex: backdrop,
+                    dim: 0.0,
+                },
+                Draw::Tex {
+                    x: canvas.centred(40.0),
+                    y: (canvas.h - 40.0) / 2.0,
+                    w: 40.0,
+                    h: 40.0,
+                    tex,
+                    alpha: 1.0,
+                },
+            ]);
+            let frame = c.read_frame();
+            let (mut left, mut top, mut right, mut bottom) = (panel.0, panel.1, 0, 0);
+            for (i, pixel) in frame.chunks_exact(4).enumerate() {
+                let (x, y) = (i as u32 % panel.0, i as u32 / panel.0);
+                if pixel[..3] == [255, 0, 0] {
+                    left = left.min(x);
+                    top = top.min(y);
+                    right = right.max(x);
+                    bottom = bottom.max(y);
+                } else {
+                    assert_eq!(&pixel[..3], &[0, 0, 255], "{panel:?} {layout:?}");
+                }
+            }
+            assert!(left <= right && top <= bottom, "sprite missing");
+            let scale = (panel.0 as f32 / canvas.w).min(panel.1 as f32 / canvas.h);
+            let expected = (40.0 * scale).round() as i32;
+            let (w, h) = ((right - left + 1) as i32, (bottom - top + 1) as i32);
+            assert!((w - h).abs() <= 1, "{panel:?} {layout:?}: {w}x{h}");
+            assert!((w - expected).abs() <= 1 && (h - expected).abs() <= 1);
+            assert!((left as i32 + right as i32 + 1 - panel.0 as i32).abs() <= 1);
+            assert!((top as i32 + bottom as i32 + 1 - panel.1 as i32).abs() <= 1);
+            assert_eq!(c.read_window(panel), frame);
+        }
+    }
+}
+
+#[test]
+fn fractional_fit_grid_lines_every_original_game_boy_pixel_evenly() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("SKIPPED Fit Grid rendering: headless OpenGL unavailable");
+        return;
+    };
+    for (panel, left) in [((640, 480), 53), ((720, 480), 93)] {
+        c.set_game_fit(true);
+        c.fit(panel);
+        c.set_game_source_rect(GB_RECT);
+        c.set_screen_effect(ScreenEffect::Grid);
+        c.set_screen_power(1.0);
+        c.begin_frame(slot_gfx::Layout::Framed);
+        c.upload_game(&gb_shaped(|_, _| [0xc0; 3], [0, 0, 0]));
+        c.draw_game();
+        assert_eq!(c.frame_size(), panel);
+        let frame = c.read_frame();
+        let game: Vec<u8> = frame
+            .chunks_exact(panel.0 as usize * 4)
+            .flat_map(|row| row[left * 4..(left + 533) * 4].iter().copied())
+            .collect();
+        assert_even(
+            &grid_profile(&game, 533, 480, true),
+            GB_W,
+            0.18,
+            "Fit columns",
+        );
+        assert_even(
+            &grid_profile(&game, 533, 480, false),
+            GB_H,
+            0.18,
+            "Fit rows",
+        );
+    }
+}
+
+#[test]
+fn dimmed_backdrop_covers_the_full_panel_in_native_fit() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("SKIPPED dimmed Backdrop rendering: headless OpenGL unavailable");
+        return;
+    };
+    let tex = c.create_texture_nearest(1, 1, &[200, 160, 80, 255]);
+    for panel in [(640, 480), (720, 720)] {
+        c.set_game_fit(true);
+        c.fit(panel);
+        c.begin_frame(slot_gfx::Layout::Native);
+        c.draw_list(&[Draw::Backdrop { tex, dim: 0.5 }]);
+        assert_eq!(c.frame_size(), panel);
+        let frame = c.read_frame();
+        for (i, pixel) in frame.chunks_exact(4).enumerate() {
+            for (ch, expected) in [100, 80, 40].into_iter().enumerate() {
+                assert!(
+                    pixel[ch].abs_diff(expected) <= 1,
+                    "{panel:?} pixel {i}: {pixel:?}, backdrop must dim the full panel"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fit_uses_panel_pixels_full_source_and_stays_put_when_paused() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("SKIPPED Fit rendering: headless OpenGL unavailable");
+        return;
+    };
+    for (panel, rect) in [
+        ((720, 480), (93, 0, 533, 480)),
+        ((640, 480), (53, 0, 533, 480)),
+        ((720, 720), (0, 36, 720, 648)),
+        ((1280, 720), (240, 0, 800, 720)),
+        ((320, 480), (0, 96, 320, 288)),
+    ] {
+        c.set_game_fit(true);
+        c.fit(panel);
+        c.set_game_source_rect(GB_RECT);
+        c.set_screen_power(1.0);
+        c.set_screen_effect(ScreenEffect::None);
+        c.set_sp_frame(true);
+        c.set_bezel(1, 1, &[255, 0, 255, 255]);
+        let bezel = c.create_texture(1, 1, &[255, 0, 255, 255]);
+        c.set_game_bezel(Some(bezel));
+        c.begin_frame(slot_gfx::Layout::Framed);
+        c.upload_game(&gb_shaped(
+            |x, y| [x as u8 + 1, y as u8 + 1, 200],
+            [255, 0, 255],
+        ));
+        c.draw_list(&[
+            Draw::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+                colour: [0.0, 0.0, 0.0, 1.0],
+            },
+            Draw::Game,
+        ]);
+        assert_eq!(c.frame_size(), panel);
+        let frame = c.read_frame();
+        let sample = |image: &[u8], x: usize, y: usize| {
+            let at = (y * panel.0 as usize + x) * 4;
+            [image[at], image[at + 1], image[at + 2]]
+        };
+        let (x, y, w, h) = rect;
+        assert_eq!(sample(&frame, x, y), [1, 1, 200]);
+        assert_eq!(sample(&frame, x + w - 1, y + h - 1), [160, 144, 200]);
+        for py in 0..panel.1 as usize {
+            for px in 0..panel.0 as usize {
+                if px < x || px >= x + w || py < y || py >= y + h {
+                    assert_eq!(sample(&frame, px, py), [0, 0, 0]);
+                }
+            }
+        }
+        assert_eq!(c.read_window(panel), frame, "Fit was resized during output");
+        c.begin_frame(slot_gfx::Layout::Native);
+        c.draw_list(&[Draw::Game]);
+        assert_eq!(c.read_frame(), frame, "pause layout moved the game");
+        let mut rgba = gb_shaped(|x, y| [x as u8 + 1, y as u8 + 1, 200], [255, 0, 255]);
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+            pixel[3] = 255;
+        }
+        let shot = c.create_texture_nearest(SRC_W, SRC_H, &rgba);
+        c.begin_frame(slot_gfx::Layout::Native);
+        c.draw_list(&[Draw::Shot { tex: shot }]);
+        assert_eq!(c.read_frame(), frame, "saved thumbnail moved the game");
+        let link_shot = c.create_texture_nearest(panel.0, panel.1, &frame);
+        c.begin_frame(slot_gfx::Layout::Framed);
+        c.draw_list(&[Draw::Backdrop {
+            tex: link_shot,
+            dim: 0.0,
+        }]);
+        assert_eq!(c.read_frame(), frame, "link screenshot moved the game");
+        c.set_screen_effect(ScreenEffect::Grid);
+        c.begin_frame(slot_gfx::Layout::Framed);
+        c.draw_list(&[Draw::Game]);
+        let grid = c.read_frame();
+        c.begin_frame(slot_gfx::Layout::Native);
+        c.draw_list(&[Draw::Game]);
+        assert_eq!(c.read_frame(), grid, "pause changed shader scale");
+        c.begin_frame(slot_gfx::Layout::Native);
+        c.draw_list(&[Draw::Shot { tex: shot }]);
+        assert_eq!(c.read_frame(), grid, "thumbnail skipped the game shader");
+        c.set_game_fit(false);
+        c.begin_frame(slot_gfx::Layout::Native);
+        let shelf = c.read_frame();
+        let mut fresh = Compositor::new(&_s).unwrap();
+        fresh.fit(panel);
+        fresh.begin_frame(slot_gfx::Layout::Native);
+        assert_eq!(c.frame_size(), fresh.frame_size());
+        assert_eq!(
+            shelf,
+            fresh.read_frame(),
+            "Fit changed the shelf background"
+        );
+        assert_eq!(c.read_window(panel), fresh.read_window(panel));
+    }
+}

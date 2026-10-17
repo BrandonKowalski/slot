@@ -592,7 +592,7 @@ fn a_cart_in_flight_is_not_also_left_standing_on_the_shelf() {
                     && w <= CART_W as f32 + 0.01
                     && (w / h - CART_W as f32 / CART_H as f32).abs() < 0.05
             }
-            Draw::Game | Draw::Shot { .. } => false,
+            Draw::Game | Draw::Shot { .. } | Draw::Backdrop { .. } => false,
         })
         .count();
     assert_eq!(
@@ -1845,23 +1845,23 @@ fn l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one() {
         "it did not open actual size"
     );
 
-    s.feed([RawEvent::Down(Btn::L1)], 100);
+    s.feed([RawEvent::Down(Btn::R1)], 100);
     assert_eq!(
         s.app().source_rect(),
         GB_WINDOW,
-        "L did not stretch the picture"
+        "R did not stretch the picture"
     );
-    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
-    s.feed([RawEvent::Up(Btn::L1)], 120);
+    assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
+    s.feed([RawEvent::Up(Btn::R1)], 120);
 
-    s.feed([RawEvent::Down(Btn::R1)], 200);
+    s.feed([RawEvent::Down(Btn::L1)], 200);
     assert_eq!(
         s.app().source_rect(),
         WHOLE_TEXTURE,
-        "R did not give it back"
+        "L did not give it back"
     );
-    assert_eq!(pad(&s) & ButtonMask::R, 0, "R reached the game as well");
-    s.feed([RawEvent::Up(Btn::R1)], 220);
+    assert_eq!(pad(&s) & ButtonMask::L, 0, "L reached the game as well");
+    s.feed([RawEvent::Up(Btn::L1)], 220);
 
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
     let mut s = session_playing(d.path());
@@ -1943,8 +1943,8 @@ fn a_shoulder_still_held_when_the_cart_seats_never_reaches_a_game_boy_core() {
 fn the_picture_mode_is_remembered_per_cart() {
     let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
     let mut s = session_playing(d.path());
-    s.feed([RawEvent::Down(Btn::L1)], 100);
-    s.feed([RawEvent::Up(Btn::L1)], 120);
+    s.feed([RawEvent::Down(Btn::R1)], 100);
+    s.feed([RawEvent::Up(Btn::R1)], 120);
     assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Stretch);
     assert_eq!(
         video_mode_for(d.path(), "Zzz"),
@@ -1959,7 +1959,7 @@ fn the_picture_mode_is_remembered_per_cart() {
         GB_WINDOW,
         "the cart did not come back stretched"
     );
-    s.feed([RawEvent::Down(Btn::R1)], 100);
+    s.feed([RawEvent::Down(Btn::L1)], 100);
     assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
     assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
 }
@@ -2291,4 +2291,131 @@ fn the_shader_shortcut_does_nothing_in_the_save_state_switcher() {
     a.apply(Action::ShaderPrev);
     assert_eq!(slot_store::read_slot_state(d.path()).shader_gba, before);
     assert_eq!(a.toast(), None);
+}
+
+#[test]
+fn fit_is_remembered_and_hides_both_bezels() {
+    let d = common::tmp_root_with_gb_carts(&["Tetris", "Zzz"]);
+    let mut s = session_playing(d.path());
+    for now in [100, 200] {
+        s.feed([RawEvent::Down(Btn::R1)], now);
+        s.feed([RawEvent::Up(Btn::R1)], now + 20);
+    }
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Fit);
+    assert!(s.app().game_fits_panel());
+    assert_eq!(
+        s.app().source_rect(),
+        [40.0 / 240.0, 8.0 / 160.0, 160.0 / 240.0, 144.0 / 160.0]
+    );
+    s.app_mut()
+        .set_game_bezel(Some(slot_gfx::TexId::from_raw(123)));
+    assert_eq!(s.app().shown_game_bezel(), None);
+    assert!(!s.app().sp_frame());
+    assert_eq!(pad(&s) & (ButtonMask::L | ButtonMask::R), 0);
+    drop(s);
+    let mut s = session_playing(d.path());
+    assert!(s.app().game_fits_panel());
+    s.feed([RawEvent::Down(Btn::R1)], 100);
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
+    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
+    s.app_mut().set_platform(Platform::Gba);
+    s.app_mut()
+        .set_game_bezel(Some(slot_gfx::TexId::from_raw(123)));
+    s.app_mut().set_video_mode(VideoMode::Fit);
+    assert!(!s.app().game_fits_panel());
+    assert_eq!(s.app().source_rect(), WHOLE_TEXTURE);
+    assert_eq!(
+        s.app().shown_game_bezel(),
+        Some(slot_gfx::TexId::from_raw(123))
+    );
+}
+
+#[test]
+fn fit_stops_when_eject_returns_to_the_native_shelf() {
+    let mut a = app_with_platforms(&[(Platform::Gb, "Tetris"), (Platform::Gb, "Zzz")]);
+    a.set_panel((720, 720));
+    a.set_platform(Platform::Gb);
+    a.set_video_mode(VideoMode::Fit);
+    assert!(!a.game_fits_panel());
+    a.apply(Action::Insert);
+    assert!(matches!(a.phase(), Phase::Inserting { .. }));
+    assert!(!a.game_fits_panel());
+    a.set_game_ready(true);
+    a.on_core_ready();
+    seconds_until(&mut a, |a| a.screen_power() == 1.0);
+    assert!(a.game_fits_panel());
+    a.apply(Action::QuickMenu);
+    assert!(a.game_fits_panel(), "pause must retain Fit");
+    a.apply(Action::QuickMenu);
+    a.apply(Action::Eject);
+    assert!(matches!(a.phase(), Phase::Ejecting { .. }));
+    assert!(a.game_fits_panel(), "the visible game must retain Fit");
+    for _ in 0..240 {
+        assert!(!a.sp_frame(), "Fit revealed the SP bezel during eject");
+        a.update(1.0 / 60.0);
+        if a.screen_power() == 0.0 {
+            break;
+        }
+    }
+    assert_eq!(a.screen_power(), 0.0);
+    assert!(!a.sp_frame(), "the SP bezel appeared after the CRT closed");
+    assert!(
+        !a.game_fits_panel(),
+        "the native eject animation must not use Fit"
+    );
+    seconds_until(&mut a, |a| matches!(a.phase(), Phase::Shelf));
+    assert!(matches!(a.phase(), Phase::Shelf));
+    assert_eq!(a.layout(), slot_gfx::Layout::Native);
+    assert_eq!(a.playing_platform(), Platform::Gb);
+    assert!(!a.game_fits_panel());
+    a.apply(Action::QuickMenu);
+    assert!(!a.game_fits_panel(), "shelf settings must not use Fit");
+}
+
+#[test]
+fn picture_modes_wrap_in_both_directions() {
+    let mut a = app_with_platforms(&[(Platform::Gb, "Tetris")]);
+    a.set_platform(Platform::Gb);
+    a.apply(Action::Insert);
+    a.set_game_ready(true);
+    a.on_core_ready();
+    seconds_until(&mut a, |a| a.screen_power() == 1.0);
+    for (button, modes) in [
+        (
+            Btn::R1,
+            [VideoMode::Stretch, VideoMode::Fit, VideoMode::Actual],
+        ),
+        (
+            Btn::L1,
+            [VideoMode::Fit, VideoMode::Stretch, VideoMode::Actual],
+        ),
+    ] {
+        for mode in modes {
+            a.apply(Action::GbaDown(button));
+            assert_eq!(
+                a.source_rect(),
+                slot::video_mode::source_rect(Platform::Gb, mode)
+            );
+            assert_eq!(a.game_fits_panel(), mode == VideoMode::Fit);
+            a.apply(Action::GbaUp(button));
+        }
+    }
+}
+
+#[test]
+fn picture_mode_parsing_preserves_existing_choices_and_fallback() {
+    for mode in [VideoMode::Actual, VideoMode::Stretch, VideoMode::Fit] {
+        assert_eq!(VideoMode::parse(mode.as_str()), Some(mode));
+    }
+    assert_eq!(VideoMode::parse(" FIT "), Some(VideoMode::Fit));
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    std::fs::create_dir_all(d.path().join("Config")).unwrap();
+    std::fs::write(d.path().join(VIDEO_MODE_FILE), "Tetris=unknown\n").unwrap();
+    assert_eq!(video_mode_for(d.path(), "Tetris"), VideoMode::Actual);
+    for platform in [Platform::Gb, Platform::Gbc] {
+        assert_eq!(
+            slot::video_mode::source_rect(platform, VideoMode::Fit),
+            [40.0 / 240.0, 8.0 / 160.0, 160.0 / 240.0, 144.0 / 160.0]
+        );
+    }
 }
