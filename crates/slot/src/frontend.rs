@@ -8,13 +8,14 @@ use slot_power::{Platform, Power};
 use slot_store::{format_stamp, BezelPick, Platform as Console};
 use slot_ui::{
     badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
-    date_time_text, default_game_bezel_face, footer_ink, game_bezel_face, gb_cart_shadow, hhmm,
-    hint_face, icon_face, link_button_legends, menu_face, photo_face, quick_caret_face,
-    quick_label_face, quick_legend_faces, quick_pointer_face, quick_value_face, rebuild_count_face,
-    rebuild_title_face, set_clock_hint_face, slot_back, slot_back_light, slot_front,
-    slot_front_light, socket_face, sticker_face, title_face, toast_face, wallpaper_face, word_ink,
-    CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces, QuickRow, QuickValue,
-    RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    date_time_text, default_game_bezel_face, fit_game_bezel_face, footer_ink, game_bezel_face,
+    gb_cart_shadow, hhmm, hint_face, icon_face, link_button_legends, menu_face, photo_face,
+    quick_caret_face, quick_label_face, quick_legend_faces, quick_pointer_face, quick_value_face,
+    rebuild_count_face, rebuild_title_face, set_clock_hint_face, slot_back, slot_back_light,
+    slot_front, slot_front_light, socket_face, sticker_face, title_face, toast_face,
+    wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces,
+    QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
+    HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -88,7 +89,7 @@ struct QuickPalette {
 #[derive(Default)]
 struct BezelSync {
     tex: Option<TexId>,
-    image: Option<(Console, BezelPick)>,
+    image: Option<(Console, BezelPick, bool)>,
     labels: [String; 3],
     faces: [(Option<TexId>, Option<TexId>); 3],
 }
@@ -511,6 +512,7 @@ impl Frontend {
         compositor.set_screen_footer(self.session.app().screen_footer());
         compositor.set_overlay_slide(self.session.app().overlay_slide());
         compositor.set_game_source_rect(self.session.app().source_rect());
+        compositor.set_soft_picture(self.session.app().softens_picture());
         self.grab_link_shot(compositor);
         compositor.begin_frame(self.session.app().layout());
         if self.draw_rebuild(compositor) {
@@ -928,12 +930,15 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
 fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut BezelSync) {
     let platform = app.playing_platform();
     let pick = app.resolved_bezel(platform);
-    let shown = (platform, pick);
+    let shown = (platform, pick, app.fits_picture());
     if state.image.as_ref() != Some(&shown) {
-        let rgba = match &shown.1 {
-            BezelPick::None | BezelPick::Ags102 => None,
-            BezelPick::Default => default_game_bezel_face(platform == Console::Gbc),
-            BezelPick::File(name) => app
+        let rgba = match (&shown.1, shown.2) {
+            (BezelPick::None | BezelPick::Ags102, _) => None,
+            (BezelPick::Default, false) => default_game_bezel_face(platform == Console::Gbc),
+            (BezelPick::Default, true) => fit_game_bezel_face(platform == Console::Gbc),
+            // A card bezel is drawn for the actual-size picture and would cover a fitted one.
+            (BezelPick::File(_), true) => None,
+            (BezelPick::File(name), false) => app
                 .root()
                 .map(|root| {
                     root.join(crate::bezel::GAME_BEZELS)

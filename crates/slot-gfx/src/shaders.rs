@@ -63,7 +63,20 @@ uniform vec2 u_origin;
 uniform vec4 u_rect;
 uniform vec2 u_fbo;
 uniform vec4 u_pic;
+uniform float u_soft;
 varying vec2 v_uv;
+// Sharp bilinear: hard texels that blend only across the one screen line where two meet.
+vec3 soft_texel(vec2 uv) {
+    vec2 scale = u_rect.zw * u_fbo / (u_uv.zw * u_src);
+    vec2 t = uv * u_src - 0.5;
+    vec2 i = floor(t);
+    vec2 s = clamp((t - i - 0.5) * scale + 0.5, 0.0, 1.0);
+    vec2 a = (i + 0.5) / u_src;
+    vec2 b = (i + 1.5) / u_src;
+    vec3 top = mix(texture2D(u_game, a).rgb, texture2D(u_game, vec2(b.x, a.y)).rgb, s.x);
+    vec3 bottom = mix(texture2D(u_game, vec2(a.x, b.y)).rgb, texture2D(u_game, b).rgb, s.x);
+    return mix(top, bottom, s.y);
+}
 const vec3 offsets = vec3(3.141592654) * vec3(1.0 / 2.0, 1.0 / 2.0 - 2.0 / 3.0, 1.0 / 2.0 - 4.0 / 3.0);
 const vec3 luma_coeff = vec3(0.2126, 0.7152, 0.0722);
 vec2 grid_band(vec2 x) {
@@ -75,7 +88,7 @@ float dot_weight(vec2 f, vec2 o, float bloom) {
 void main() {
     vec2 uv = u_uv.xy + v_uv * u_uv.zw;
     vec2 f = fract(uv * u_src);
-    vec3 c = texture2D(u_game, uv).rgb;
+    vec3 c = u_soft > 0.5 ? soft_texel(uv) : texture2D(u_game, uv).rgb;
     bool inside = all(greaterThanEqual(uv, u_pic.xy)) && all(lessThan(uv, u_pic.zw));
     if (!inside) {
     } else if (u_mode > 3.5) {

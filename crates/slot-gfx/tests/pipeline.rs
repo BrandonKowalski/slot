@@ -781,3 +781,101 @@ fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
         "a white cell averages {mean} under the dot shader"
     );
 }
+
+const FIT_RECT: [f32; 4] = [
+    12.0 / SRC_W as f32,
+    GB_Y as f32 / SRC_H as f32,
+    216.0 / SRC_W as f32,
+    GB_H as f32 / SRC_H as f32,
+];
+
+fn fitted(c: &mut Compositor, soft: bool, inside: impl Fn(usize, usize) -> [u8; 3]) -> Vec<u8> {
+    c.set_picture([
+        GB_RECT[0],
+        GB_RECT[1],
+        GB_RECT[0] + GB_RECT[2],
+        GB_RECT[1] + GB_RECT[3],
+    ]);
+    c.set_game_source_rect(FIT_RECT);
+    c.set_soft_picture(soft);
+    c.set_screen_effect(ScreenEffect::None);
+    c.set_screen_power(1.0);
+    c.begin_frame(slot_gfx::Layout::Framed);
+    c.upload_game(&gb_shaped(inside, [0, 0, 0]));
+    c.draw_game();
+    c.read_frame()
+}
+
+fn fitted_stripes(c: &mut Compositor, soft: bool) -> Vec<u8> {
+    fitted(c, soft, |_, y| match y % 4 == 0 {
+        true => [0, 0, 0],
+        false => [255, 255, 255],
+    })
+}
+
+/// How dark each line of the stripe pattern is in total, one entry per stripe.
+fn stripe_weights(line: impl Iterator<Item = [u8; 3]>) -> Vec<f32> {
+    let mut weights = Vec::new();
+    let mut run = 0.0;
+    for rgb in line {
+        let dark = 1.0 - rgb[1] as f32 / 255.0;
+        if dark > 0.01 {
+            run += dark;
+        } else if run > 0.0 {
+            weights.push(run);
+            run = 0.0;
+        }
+    }
+    // The first stripe can start above the screen; only whole ones are compared.
+    weights
+        .split_first()
+        .map(|(_, rest)| rest.to_vec())
+        .unwrap_or_default()
+}
+
+fn spread(weights: &[f32]) -> f32 {
+    let max = weights.iter().cloned().fold(f32::MIN, f32::max);
+    let min = weights.iter().cloned().fold(f32::MAX, f32::min);
+    max - min
+}
+
+#[test]
+fn the_fitted_picture_fills_the_height_with_bars_only_at_the_sides() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let frame = fitted(&mut c, true, |_, _| [255, 255, 255]);
+    let lit = |x: usize, y: usize| px(&frame, x, y).iter().any(|v| *v > 8);
+    let (w, h) = (OUT_W as usize, OUT_H as usize);
+    assert!(
+        lit(w / 2, 0) && lit(w / 2, h - 1),
+        "the picture does not reach the top and bottom"
+    );
+    assert!(
+        !lit(91, h / 2) && !lit(w - 92, h / 2),
+        "the side bars are not black"
+    );
+    assert!(
+        lit(95, h / 2) && lit(w - 96, h / 2),
+        "the picture is narrower than 534"
+    );
+}
+
+#[test]
+fn softening_gives_every_fitted_game_boy_row_the_same_weight() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let x = OUT_W as usize / 2 + 6;
+    let rows = |frame: &[u8]| stripe_weights((0..OUT_H as usize).map(|y| px(frame, x, y)));
+
+    let hard = rows(&fitted_stripes(&mut c, false));
+    assert!(
+        spread(&hard) >= 0.9,
+        "hard edges were already even: {hard:?}"
+    );
+
+    let soft = rows(&fitted_stripes(&mut c, true));
+    assert_eq!(soft.len(), hard.len(), "softening lost a stripe: {soft:?}");
+    assert!(spread(&soft) < 0.4, "softened rows are uneven: {soft:?}");
+}

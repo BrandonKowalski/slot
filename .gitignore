@@ -22,3 +22,7 @@
 # Parallel implementation worktrees, never content.
 /.worktrees
 .superpowers/
+
+# Release trees and zips from task dist:device OUT=slot-<tag>
+/slot-v*/
+/slot-v*-h700.zip
