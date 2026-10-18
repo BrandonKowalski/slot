@@ -15,10 +15,45 @@ that produced it. Read this before resolving a conflict.
 - **Base:** upstream `e5b12ad Add RG35XX-H to the device list, closes #98`, which is after the
   upstream `v1.7.0` tag. Fork releases are tagged `v<upstream version>-gp-custom[.N]`, first one
   `v1.7.0-gp-custom` on `16c72c7`.
-- **Sync model:** fork commits sit on top of upstream `main` and are rebased onto it, never merged.
-  The plan is a scheduled workflow that mirrors upstream and rebases; a conflict fails the job,
-  leaves `main` untouched, and is resolved by an agent in a pull request. That workflow does not
-  exist yet.
+- **Sync model:** upstream `main` is merged into the fork's `main` through a pull request, the
+  way GitHub's Sync fork → Open pull request does it; history is never rewritten. A coding agent
+  resolves the pull request, and the workflow merges it once every required check passes.
+  `.github/workflows/sync-upstream.yml` does this daily (05:17 UTC) and on demand:
+  1. `.github/sync/sync_upstream.py prepare` copies upstream's `main` to `sync/upstream-<sha>` in
+     the fork and opens a pull request from it into `main`; GitHub shows it as conflicted when the
+     fork's changes clash. A newer upstream closes an older waiting sync pull request; the same
+     upstream is never synced twice while its pull request waits.
+  2. It merges `main` into that branch, as GitHub's Resolve conflicts button does. Binary files
+     and files one side deleted take upstream's state. Text conflicts go to the OpenCode agent
+     running an OpenRouter model, which reads this file, resolves them following section 3
+     (upstream wins, the fork change is re-applied on top) and runs fmt, clippy, the device build,
+     the fork's Fit tests and other tests until they pass. It must keep the fork's tests intact
+     (section 4). It may only run `cargo`, read-only `git` and the `fork-tests` command, has no
+     web access, and may not edit `.github/`, this file or `rebase-log.md`.
+  3. `verify` refuses the result if conflict markers remain or protected files changed. The
+     workflow then runs the checks itself: fmt, clippy (host and device), the device build and the
+     fork's Fit tests by name (section 4) are required; the full `cargo test` is advisory because
+     some tests need cores the runner does not have.
+  4. `finish` commits the merge with a record in `rebase-log.md` (upstream commits, fork commits,
+     each conflict, the agent's notes, the check results), pushes the branch, and puts the same
+     record in the pull request description. Failed required checks still push the attempt and
+     mark the pull request "do not merge".
+  5. With every required check passed, the workflow merges the pull request with a merge commit
+     (never squash or rebase: the next sync finds what is new from where upstream's history
+     joins `main`). Set the repository variable `SYNC_AUTO_MERGE` to `false` to review and merge
+     by hand instead; then use "Create a merge commit" too.
+  6. After merging, it tags the merge commit as the fork's next release and pushes the tag, which
+     starts `release.yml`. The name is `<upstream release>-gp-custom.<n>`, where the upstream
+     release is the newest upstream `v*` tag in the merged upstream code and `n` is one past the
+     fork's highest for that release: `v1.7.0-gp-custom.2` is followed by `v1.7.0-gp-custom.3`, and
+     the first sync after upstream tags `v1.8.0` gives `v1.8.0-gp-custom.1`. **Rule: new upstream
+     commits, new tag; none, no tag** (a run with nothing new stops before merging). Syncs merged
+     by hand (`SYNC_AUTO_MERGE=false`) and syncs of a test branch are not tagged; tag those by hand.
+  Setup it needs: repo secret `OPENROUTER_API_KEY`, repo variable `AGENT_MODEL` (an OpenRouter
+  model id such as `vendor/model`, used as `openrouter/<AGENT_MODEL>`), and repo secret `SYNC_TOKEN`, a
+  fine-grained token with Contents, Pull requests and Workflows write on this repo, because the
+  default token cannot push upstream changes to `.github/workflows/`. Run it from Actions →
+  sync-upstream → Run workflow.
 
 ## 2. Fork-only files (cannot conflict)
 
@@ -26,9 +61,13 @@ that produced it. Read this before resolving a conflict.
 |---|---|
 | `FORK-NOTES.md` | This file |
 | `RELEASE.md` | How release zips are built and named. Kept out of `README.md` on purpose so syncs never touch it |
+| `rebase-log.md` | One record per automatic upstream sync, newest first, written by the sync workflow |
+| `.github/workflows/sync-upstream.yml`, `.github/sync/sync_upstream.py` | The automatic upstream sync pull request, resolved by the OpenCode agent (section 1) |
 | `assets/bezel_gb_fit.png`, `assets/bezel_gbc_fit.png` | Built-in Fit bezel art, compiled in |
 | `crates/slot-ui/tests/fit_bezel.rs` | Fit bezel PNGs only draw in the side bars |
 | `crates/slot/tests/render_fit_bezel.rs` | Full-frame render of the Fit bezel and of a card bezel in Fit |
+| `crates/slot/tests/fit_softening.rs` | GBC carts fit and soften exactly like GB carts, softened only while fitted |
+| `crates/slot-gfx/tests/fit_colour.rs` | Softening colour stripes: every channel even, edges only mix the two colours (macOS only) |
 
 **Rule:** do not edit `README.md` or `CHANGELOG.md` in the fork. Fork documentation goes in the
 files above. If upstream adds a file with one of these names, rename ours, not theirs.
@@ -90,7 +129,10 @@ no Fit and is never affected, even with `fit` saved for a GBA game.
    cores leave them black (`crates/slot/tests/render_picture_modes.rs` asserts it). The mock core
    (`crates/slot-retro/src/mock.rs`) fills the whole texture, so never test "pixel in the bar is
    black" against the mock.
-4. **Commit after resolving:** keep the fork change as one commit with its original message.
+4. **Commit after resolving:** the resolution goes in the merge commit on the sync branch; fork
+   commits are never rewritten. The workflow adds the sync's record to `rebase-log.md` in that
+   same commit. When fixing a sync pull request by hand, push to its `sync/upstream-<sha>`
+   branch and update the record in the description.
 
 ## 4. Verify after every sync
 
@@ -104,6 +146,42 @@ SLOT_SILENT=1 cargo test --workspace --no-fail-fast
 `task check` runs the same set plus the card-script tests. A local device build is
 `task dist:device OUT=slot-<tag>` (see `RELEASE.md`).
 
+### Fit tests: what each one guards
+
+`python3 .github/sync/sync_upstream.py fork-tests` runs every test below by name and fails if any
+of them is missing or failing; the sync workflow requires it. Its list, `FORK_TESTS` in that
+script, is the source of truth: add a test there when you add one here. Tests marked (macOS) need
+headless GL and are skipped on Linux, so run the command on a Mac after a sync that touched
+rendering. File paths are under `crates/`.
+
+| Feature | Tests |
+|---|---|
+| Fit between Actual and Stretch; L1 bigger, R1 smaller, stopping at both ends; GBA unaffected | `slot/tests/app.rs` `l_and_r_change_the_mode_on_a_game_boy_cart_and_not_on_a_gba_one` |
+| Fit crop: full height at 10:9, `[12/240, 8/160, 216/240, 144/160]` | the same test, and `the_picture_mode_is_remembered_per_cart` |
+| `fit` saved per game and restored | `slot/tests/app.rs` `the_picture_mode_is_remembered_per_cart` |
+| A GBA game saved as `fit` shows its whole picture, unsoftened | `slot/tests/app.rs` `a_gba_cart_saved_as_fit_still_shows_the_whole_picture` |
+| Only Fit is softened (GB) | `slot/tests/app.rs` `only_the_fitted_picture_is_softened` |
+| GBC fits and softens exactly like GB, softened only while fitted | `slot/tests/fit_softening.rs` `a_game_boy_color_cart_is_softened_only_while_fitted`, `game_boy_and_game_boy_color_carts_fit_and_soften_alike` |
+| Bezel kept in Fit, dropped in Stretch | `slot/tests/app.rs` `the_fitted_picture_keeps_its_bezel_and_the_stretched_one_drops_it` |
+| Fit bezel art (GB and GBC) only draws in the side bars | `slot-ui/tests/fit_bezel.rs` `the_fit_bezels_only_draw_in_the_side_bars` |
+| The fitted picture fills the height, black bars only at the sides (macOS) | `slot-gfx/tests/pipeline.rs` `the_fitted_picture_fills_the_height_with_bars_only_at_the_sides` |
+| Sharp-bilinear softening gives every row the same weight (macOS) | `slot-gfx/tests/pipeline.rs` `softening_gives_every_fitted_game_boy_row_the_same_weight` |
+| Softening on colour stripes: every channel even, edges only mix the two colours (macOS) | `slot-gfx/tests/fit_colour.rs` `softened_colour_rows_stay_even_in_every_channel_without_fringes`, `softened_colour_columns_stay_even_in_every_channel_without_fringes` |
+| Default bezel in Fit drawn on screen, power lamp and label (macOS, GBC) | `slot/tests/render_fit_bezel.rs` `the_default_bezel_in_fit_mode_lights_the_power_lamp_and_labels_the_right_bar` |
+| A card bezel shows at Actual size and stays off the fitted picture (macOS) | `slot/tests/render_fit_bezel.rs` `a_bezel_from_the_card_shows_at_actual_size_and_stays_off_the_fitted_picture` |
+
+Not covered yet: L1/R1 leaving the mode alone when the button is remapped to the game (upstream's
+`bound_to_game` guard), `compose()` switching softening on during play (`set_soft_picture`), the
+GB (non-colour) Fit bezel on screen, Fit → Actual bringing the normal bezel back, and None/AGS-102
+showing no bezel in Fit.
+
+**When merging:** the fork's tests are kept like the fork's code. Never delete, rename, `#[ignore]`
+or loosen one, and never change what it asserts. If upstream changes an API a fork test uses
+(session setup, `Compositor` methods, test helpers), update only the setup. If a fork test fails
+after a merge, the merge is wrong: fix the code, not the test. When upstream changes a test the
+fork also edited (`app.rs`, `pipeline.rs`), take upstream's version and re-apply the fork's
+assertions from this table.
+
 - Renderer tests are `#![cfg(target_os = "macos")]` (headless GL) and **silently pass elsewhere**.
   A green run on Linux CI proves nothing about rendering; run on macOS.
 - **Known failures not caused by the fork:** in `crates/slot-gfx/tests/layout.rs`,
@@ -114,7 +192,8 @@ SLOT_SILENT=1 cargo test --workspace --no-fail-fast
 
 ## 5. Releases
 
-See `RELEASE.md`. In short: `release.yml` (upstream's, unchanged) runs on any `v*` tag and
+The sync workflow tags each merged upstream sync as the next `-gp-custom.<n>` release (section
+1, step 6); other releases are tagged by hand. See `RELEASE.md`. In short: `release.yml` (upstream's, unchanged) runs on any `v*` tag and
 attaches `slot-<tag>-h700.zip`, which holds a `slot-<tag>/` folder for SD2. One zip serves every
 H700 device. `.gitignore` ignores `/slot-v*/` and `/slot-v*-h700.zip` (two lines appended at the
 end; if `.gitignore` conflicts, keep upstream's file and re-append them).

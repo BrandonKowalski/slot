@@ -63,8 +63,6 @@ fn a_held_left_or_right_changes_a_menu_value_once() {
     let (_d, mut a) = on_shelf(&["Emerald", "Fusion"]);
     a.apply_at(Action::QuickMenu, T - 900);
     a.apply_at(Action::GbaDown(Btn::A), T - 800);
-    a.apply_at(Action::GbaDown(Btn::Down), T - 700);
-    a.apply_at(Action::GbaUp(Btn::Down), T - 690);
     assert_eq!(a.quick_menu(), Some(QuickRow::Theme));
     a.apply_at(Action::GbaDown(Btn::Right), T);
     assert_eq!(a.quick_value(QuickRow::Theme), Some(QuickValue::Light));

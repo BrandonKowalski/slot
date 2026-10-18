@@ -431,7 +431,7 @@ fn a_cart_going_in_from_a_repeated_row_takes_both_copies_of_its_neighbour_with_i
     app.update(SEATED_AT / 2.0);
     let halfway = shot(&app, &mut c, Some("insert-1-halfway"));
     let (mid, y) = span(&halfway, ink);
-    for _ in 0..120 {
+    for _ in 0..16 {
         app.update(1.0 / 60.0);
     }
     let seated = shot(&app, &mut c, Some("insert-2-seated"));

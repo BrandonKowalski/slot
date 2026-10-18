@@ -1,0 +1,233 @@
+name: sync-upstream
+
+# Fork-only. Syncs with BrandonKowalski/slot through a pull request, like Sync fork → Open pull
+# request, and has the OpenCode agent (any OpenRouter model) resolve it: copies upstream's main to
+# sync/upstream-<sha>, opens a pull request into main, merges main into it, lets the agent resolve
+# conflicts and fix the build (upstream wins, fork changes re-applied on top), runs the checks,
+# and pushes the result to the pull request with a description of every resolution. When every
+# required check passed it merges the pull request (set the repository variable SYNC_AUTO_MERGE
+# to false to leave that to the owner instead) and tags the merge as the fork's next release,
+# <upstream release>-gp-custom.<n>, which starts release.yml. See FORK-NOTES.md.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+  # Temporary, for testing before this file is on main: a push to sync-test runs the sync with
+  # sync-test standing in for main (its pull request targets sync-test). Remove before merging.
+  push:
+    branches: [sync-test]
+    paths: ['.github/workflows/sync-upstream.yml', '.github/sync/**']
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: sync with upstream
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    env:
+      SLOT_SILENT: '1'
+      # The branch being synced: main on schedule, the branch the run was started from otherwise.
+      BASE_BRANCH: ${{ github.ref_name }}
+    steps:
+      # SYNC_TOKEN is a fine-grained token with Contents, Pull requests and Workflows write on
+      # this repo. GitHub refuses pushes that change .github/workflows made with the default
+      # token, which happens whenever upstream edits its workflows. The token is not stored in
+      # the checkout and is only in the environment of the steps that push, never the agent's.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Let git push with the sync token
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          HAS_SYNC_TOKEN: ${{ secrets.SYNC_TOKEN != '' }}
+        run: |
+          if [ "$HAS_SYNC_TOKEN" = true ]; then
+            echo "Using the SYNC_TOKEN secret, which acts as $(gh api user --jq .login)"
+          else
+            echo "::warning::No SYNC_TOKEN repository secret is visible to this workflow; using the built-in token, which cannot open pull requests unless Actions may create them, and cannot push upstream workflow changes"
+          fi
+          gh auth setup-git
+
+      - name: Open the pull request and merge
+        id: prep
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          UPSTREAM_REPO: BrandonKowalski/slot
+          UPSTREAM_BRANCH: main
+        run: python3 .github/sync/sync_upstream.py prepare
+
+      - name: Install system libraries for the host build
+        if: steps.prep.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev xvfb
+
+      - name: Install the pinned Rust toolchain
+        if: steps.prep.outputs.changed == 'true'
+        run: |
+          set -eu
+          if ! command -v rustup > /dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install
+
+      - name: Install OpenCode
+        if: steps.prep.outputs.changed == 'true'
+        run: npm install -g opencode-ai@1.19.3
+
+      # --auto approves what the rules do not deny. Explicit denies still hold: the shell is
+      # limited to cargo and read-only git, there is no web access, and the files the agent must
+      # not touch cannot be edited. The config is passed inline because inline config overrides
+      # an opencode.json that an upstream commit might add to the repository.
+      - name: Resolve with the OpenCode agent
+        id: agent
+        if: steps.prep.outputs.changed == 'true'
+        continue-on-error: true
+        timeout-minutes: 75
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          PROMPT: ${{ steps.prep.outputs.prompt }}
+          OPENCODE_CONFIG_CONTENT: |
+            {
+              "$schema": "https://opencode.ai/config.json",
+              "autoupdate": false,
+              "provider": { "openrouter": { "options": { "apiKey": "{env:OPENROUTER_API_KEY}" } } },
+              "agent": { "build": { "steps": 150 } },
+              "permission": {
+                "edit": { "*": "allow", ".github/*": "deny", "FORK-NOTES.md": "deny", "rebase-log.md": "deny" },
+                "bash": {
+                  "*": "deny",
+                  "cargo *": "allow",
+                  "git diff*": "allow",
+                  "git log*": "allow",
+                  "git show*": "allow",
+                  "git status*": "allow",
+                  "git ls-files*": "allow",
+                  "git grep*": "allow",
+                  "python3 .github/sync/sync_upstream.py fork-tests": "allow"
+                },
+                "webfetch": "deny",
+                "websearch": "deny",
+                "external_directory": "deny",
+                "question": "deny"
+              }
+            }
+        run: |
+          if [ -z "$AGENT_MODEL" ]; then
+            echo "Set the repository variable AGENT_MODEL to an OpenRouter model id, e.g. vendor/model" >&2
+            exit 1
+          fi
+          opencode run --auto --model "openrouter/$AGENT_MODEL" "$PROMPT"
+
+      - name: Check the agent's resolution
+        id: verify
+        if: steps.prep.outputs.changed == 'true'
+        run: python3 .github/sync/sync_upstream.py verify
+
+      - name: 'Check: formatting'
+        id: fmt
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: 'Check: clippy'
+        id: clippy
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: 'Check: clippy for the device'
+        id: clippy_device
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: cargo clippy -p slot --no-default-features --features device -- -D warnings
+
+      - name: 'Check: device build'
+        id: device
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: cargo build --profile device --target-dir target-device -p slot --no-default-features --features device
+
+      - name: 'Check: fork Fit tests'
+        id: fork_tests
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: python3 .github/sync/sync_upstream.py fork-tests
+
+      - name: 'Check: tests (advisory)'
+        id: tests
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 40
+        run: xvfb-run -a cargo test --workspace --no-fail-fast
+
+      - name: Push the resolution to the pull request
+        id: finish
+        if: steps.verify.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          UPSTREAM_REPO: BrandonKowalski/slot
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          AUTO_MERGE: ${{ vars.SYNC_AUTO_MERGE != 'false' }}
+          CHECKS: fmt=${{ steps.fmt.outcome }},clippy=${{ steps.clippy.outcome }},clippy_device=${{ steps.clippy_device.outcome }},device=${{ steps.device.outcome }},fork_tests=${{ steps.fork_tests.outcome }},tests=${{ steps.tests.outcome }}
+        run: python3 .github/sync/sync_upstream.py finish
+
+      # New upstream commits get a new tag; none, no tag. A run with nothing new upstream stops at
+      # prepare (changed=false) and never gets here. Pushed with SYNC_TOKEN, so release.yml runs; a
+      # tag pushed with the built-in token would not start it.
+      - name: Tag the fork release
+        id: tag
+        if: steps.finish.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          UPSTREAM_REPO: BrandonKowalski/slot
+        run: python3 .github/sync/sync_upstream.py tag
+
+      - name: Report the failure on the pull request
+        if: failure() && steps.prep.outputs.pr != '' && steps.finish.outcome == 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+          PR: ${{ steps.prep.outputs.pr }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "The sync could not produce a usable resolution, so nothing was pushed to this pull request and main is unchanged. See $RUN"
+
+      - name: Summary
+        if: always()
+        env:
+          CHANGED: ${{ steps.prep.outputs.changed }}
+          PR: ${{ steps.prep.outputs.pr }}
+          UPSTREAM: ${{ steps.prep.outputs.upstream }}
+          CONFLICTS: ${{ steps.prep.outputs.conflicts }}
+          PASSED: ${{ steps.finish.outputs.passed }}
+          MERGED: ${{ steps.finish.outputs.merged }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          {
+            echo "### Upstream sync"
+            if [ "$CHANGED" = "true" ] && [ -n "$PASSED" ]; then
+              echo "Upstream \`$UPSTREAM\` merged with $CONFLICTS conflicted file(s) for the agent; required checks passed: $PASSED; merged by the workflow: ${MERGED:-false}. $PR"
+              if [ -n "$TAG" ]; then echo; echo "Release tag: \`$TAG\`"; fi
+              echo
+              awk '/^## / { n++ } n == 1 { print }' rebase-log.md
+            elif [ "$CHANGED" = "false" ] && [ -n "$PR" ]; then
+              echo "This upstream is already in $PR, waiting for review."
+            elif [ "$CHANGED" = "false" ]; then
+              echo "Already up to date with upstream."
+            else
+              echo "The sync failed before finishing; main was not changed. ${PR}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

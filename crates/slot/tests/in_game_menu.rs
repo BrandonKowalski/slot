@@ -90,9 +90,12 @@ fn b_climbs_the_in_game_pages_and_never_the_shelf_ones() {
 #[test]
 fn screen_shows_the_palette_only_when_palettes_are_live() {
     let (_d, mut a) = playing();
-    assert_eq!(a.in_game_hidden(), &[QuickRow::Palette, QuickRow::Bezel]);
+    assert_eq!(
+        a.in_game_hidden(),
+        &[QuickRow::Palette, QuickRow::Bezel, QuickRow::LeftStick]
+    );
     a.set_palette_live(true);
-    assert_eq!(a.in_game_hidden(), &[QuickRow::Bezel]);
+    assert_eq!(a.in_game_hidden(), &[QuickRow::Bezel, QuickRow::LeftStick]);
 }
 
 #[test]
@@ -389,6 +392,9 @@ fn menu_faces(a: &mut App) {
             (id(402), 80),
             (id(403), 90),
             (id(404), 85),
+            (id(405), 75),
+            (id(406), 95),
+            (id(407), 90),
         ],
         legend_light: [
             (id(400), 70),
@@ -396,7 +402,11 @@ fn menu_faces(a: &mut App) {
             (id(402), 80),
             (id(403), 90),
             (id(404), 85),
+            (id(405), 75),
+            (id(406), 95),
+            (id(407), 90),
         ],
+        descriptions: [(id(410), 300, 44), (id(411), 340, 44)],
     });
 }
 

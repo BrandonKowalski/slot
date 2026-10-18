@@ -12,25 +12,60 @@ pub const SW_LID: u16 = 0x00;
 pub const EV_ABS: u16 = 0x03;
 pub const ABS_HAT0X: u16 = 0x10;
 pub const ABS_HAT0Y: u16 = 0x11;
+pub const ABS_LSX: u16 = 0x02;
+pub const ABS_LSY: u16 = 0x03;
+
+pub const STICK_DEADZONE: i32 = 2048;
+
+const LEFT_STICK_TARGETS: [&str; 6] = [
+    "rg34xxsp",
+    "rg35xxh",
+    "rg35xxpro",
+    "rg40xxh",
+    "rg40xxv",
+    "rgcubexx",
+];
+
+pub fn has_left_stick(target: &str) -> bool {
+    LEFT_STICK_TARGETS.contains(&target)
+}
 
 #[derive(Default)]
 pub struct Hat {
-    x: i32,
-    y: i32,
+    hat: [i32; 2],
+    stick: [i32; 2],
+    steers: bool,
 }
 
 impl Hat {
+    pub fn steer_with_stick(&mut self, on: bool) {
+        self.steers = on;
+    }
+
     pub fn feed(&mut self, ev: Ev) -> Vec<RawEvent> {
-        let (held, ends) = match ev.code {
-            ABS_HAT0X => (&mut self.x, [Btn::Left, Btn::Right]),
-            ABS_HAT0Y => (&mut self.y, [Btn::Up, Btn::Down]),
+        let tilt = |v: i32| match v {
+            v if v > STICK_DEADZONE => 1,
+            v if v < -STICK_DEADZONE => -1,
+            _ => 0,
+        };
+        let steer = |v: i32| if self.steers { tilt(v) } else { 0 };
+        let (axis, from_stick, value) = match ev.code {
+            ABS_HAT0X => (0, false, ev.value.signum()),
+            ABS_HAT0Y => (1, false, ev.value.signum()),
+            ABS_LSX => (0, true, steer(ev.value)),
+            ABS_LSY => (1, true, steer(ev.value)),
             _ => return Vec::new(),
         };
-        let (was, now) = (*held, ev.value.signum());
+        let was = self.held(axis);
+        match from_stick {
+            true => self.stick[axis] = value,
+            false => self.hat[axis] = value,
+        }
+        let now = self.held(axis);
         if now == was {
             return Vec::new();
         }
-        *held = now;
+        let ends = [[Btn::Left, Btn::Right], [Btn::Up, Btn::Down]][axis];
         let btn = |v: i32| ends[usize::from(v > 0)];
         let mut out = Vec::new();
         if was != 0 {
@@ -40,6 +75,13 @@ impl Hat {
             out.push(RawEvent::Down(btn(now)));
         }
         out
+    }
+
+    fn held(&self, axis: usize) -> i32 {
+        match self.hat[axis] {
+            0 => self.stick[axis],
+            hat => hat,
+        }
     }
 }
 

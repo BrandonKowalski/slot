@@ -493,7 +493,7 @@
               <tbody>
                 <tr><td>Anbernic RG&nbsp;SP</td><td class="yes">Yes</td><td>Always</td></tr>
                 <tr><td>Anbernic RG34XX</td><td>Yes</td><td>1.4.0</td></tr>
-                <tr><td>Anbernic RG34XXSP</td><td>Yes (No Stick Support Yet)</td><td>1.4.0</td></tr>
+                <tr><td>Anbernic RG34XXSP</td><td>Yes (Needs Left Stick as D-Pad Verification)</td><td>1.4.0</td></tr>
                 <tr><td>Anbernic RG35XXSP</td><td class="yes">Yes</td><td>1.5.0</td></tr>
                 <tr><td>Anbernic 35XX Plus</td><td class="yes">Yes</td><td>1.5.0</td></tr>
                 <tr><td>Anbernic RG28XX</td><td class="yes">Yes</td><td>1.6.0</td></tr>
@@ -542,6 +542,19 @@
               <code>Games/GBA/Metroid Fusion.gba</code>.</dd>
         </div>
         <div class="qa">
+          <dt>What size should a label be?</dt>
+          <dd>
+            <p>The image is scaled to fill the label and trimmed evenly from the edges, so match its shape.
+               Bigger is fine.</p>
+            <ul>
+              <li>GBA: 1.94:1, such as 1280&times;661</li>
+              <li>Game Boy and Game Boy Color: 1.13:1, such as 1024&times;901</li>
+            </ul>
+            <p>The <code>README.txt</code> in <code>Labels/</code> has the exact label boxes and the
+               <code>cart_shell.txt</code> format for shell colours.</p>
+          </dd>
+        </div>
+        <div class="qa">
           <dt>Do I have to craft them by hand?</dt>
           <dd>Nah! You can use the <a href="https://studio.slot-cfw.fyi">slot Cart Studio</a>.</dd>
         </div>
@@ -553,6 +566,17 @@
           <dt>Can I use my own wallpaper?</dt>
           <dd>
             <p>Drop a <code>.png</code> into <code>Wallpapers/</code> and pick it under Wallpaper in the General settings.</p>
+            <p>Make it 720&times;480. Other sizes are scaled to fill the screen and trimmed evenly from the edges.
+               640&times;480 devices lose up to 40 pixels from each side, so keep anything important in the middle.</p>
+          </dd>
+        </div>
+        <div class="qa">
+          <dt>Can I make my own bezels?</dt>
+          <dd>
+            <p>For Game Boy and Game Boy Color, yes. Drop a 720&times;480 <code>.png</code> into <code>Bezels/GB/</code>
+               or <code>Bezels/GBC/</code> and pick it under Bezel in that system's Screen settings.</p>
+            <p>The bezel is drawn over the game, so leave the screen transparent. The game covers 480&times;432
+               starting 120 pixels from the left and 24 from the top.</p>
           </dd>
         </div>
       </dl>

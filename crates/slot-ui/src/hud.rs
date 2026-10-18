@@ -151,6 +151,7 @@ pub struct Hud {
     ff: FfState,
     said: Option<(Toast, Millis)>,
     alarm: Option<Millis>,
+    alarm_toast: Option<Toast>,
     icons: Vec<TexId>,
     toasts: Vec<TexId>,
     link: LinkBadge,
@@ -180,6 +181,15 @@ impl Hud {
             (true, None) => Some(now),
             (false, _) => None,
         };
+    }
+
+    pub fn set_alarm_toast(&mut self, toast: Toast) {
+        self.alarm_toast = Some(toast);
+    }
+
+    pub fn alarm_toast(&self) -> Option<Toast> {
+        self.alarm
+            .map(|_| self.alarm_toast.unwrap_or(Toast::CardUnwritable))
     }
 
     pub fn alarmed(&self) -> bool {
@@ -324,7 +334,7 @@ impl Hud {
             h: ALARM_BAND_H,
             colour: pulse(age),
         });
-        let alarm = Toast::CardUnwritable;
+        let alarm = self.alarm_toast.unwrap_or(Toast::CardUnwritable);
         let Some(tex) = self.toasts.get(alarm.index()).copied() else {
             return;
         };
@@ -389,18 +399,22 @@ impl Hud {
 
     fn toast_alpha(&self, now: Millis) -> f32 {
         match self.said {
-            Some((_, shown)) => fade(shown, now),
+            Some((toast, shown)) => fade_over(shown, now, toast.hold_ms()),
             None => 0.0,
         }
     }
 }
 
 fn fade(shown: Millis, now: Millis) -> f32 {
+    fade_over(shown, now, HUD_MS)
+}
+
+fn fade_over(shown: Millis, now: Millis, hold: Millis) -> f32 {
     let age = now.saturating_sub(shown);
-    if age >= HUD_MS {
+    if age >= hold {
         return 0.0;
     }
-    ((HUD_MS - age) as f32 / FADE_MS as f32).min(1.0)
+    ((hold - age) as f32 / FADE_MS as f32).min(1.0)
 }
 
 fn pulse(age: Millis) -> [f32; 4] {

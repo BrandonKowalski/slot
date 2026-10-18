@@ -5,10 +5,15 @@ use crate::text;
 pub enum PowerChoice {
     Restart,
     PowerOff,
+    Repair,
 }
 
 impl PowerChoice {
-    pub const ALL: [PowerChoice; 2] = [PowerChoice::Restart, PowerChoice::PowerOff];
+    pub const ALL: [PowerChoice; 3] = [
+        PowerChoice::Restart,
+        PowerChoice::PowerOff,
+        PowerChoice::Repair,
+    ];
 
     pub fn index(self) -> usize {
         self as usize
@@ -35,4 +40,29 @@ pub fn menu_face(label: &str) -> UndoFace {
     let layout = text::fit(font, label, w as f32, 1, MENU_PX, MENU_MIN_PX);
     text::draw_centred(&mut rgba, w, MENU_H, &layout, MENU_INK);
     UndoFace { rgba, w, h: MENU_H }
+}
+
+const DETAIL_PX: f32 = 20.0;
+const DETAIL_H: u32 = 28;
+
+pub fn menu_detail_face(label: &str) -> UndoFace {
+    let Some(font) = text::label_font() else {
+        return UndoFace {
+            rgba: Vec::new(),
+            w: 0,
+            h: 0,
+        };
+    };
+    let shown = label.to_uppercase();
+    let ink =
+        text::line_width(font, &shown, DETAIL_PX, text::tracking_for(DETAIL_PX)).ceil() as u32;
+    let w = ink + 2 * MENU_PAD;
+    let mut rgba = vec![0u8; (w * DETAIL_H * 4) as usize];
+    let layout = text::fit(font, label, w as f32, 1, DETAIL_PX, DETAIL_PX);
+    text::draw_centred(&mut rgba, w, DETAIL_H, &layout, MENU_INK);
+    UndoFace {
+        rgba,
+        w,
+        h: DETAIL_H,
+    }
 }

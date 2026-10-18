@@ -42,15 +42,15 @@ Release notes can be found in the [changelog](CHANGELOG.md).
 
 # Supported Devices
 
-| Device             | Supported                  | Since Version |
-|--------------------|----------------------------|---------------|
-| Anbernic RG SP     | Yes                        | Always        |
-| Anbernic RG34XX    | Yes                        | 1.4.0         |
-| Anbernic RG34XXSP  | Yes (No Stick Support Yet) | 1.4.0         |
-| Anbernic RG35XXSP  | Yes                        | 1.5.0         |
-| Anbernic 35XX Plus | Yes                        | 1.5.0         |
-| Anbernic RG28XX    | Yes                        | 1.6.0         |
-| Anbernic RG35XX-H  | Yes                        | 1.7.0         |
+| Device             | Supported                                    | Since Version |
+|--------------------|----------------------------------------------|---------------|
+| Anbernic RG SP     | Yes                                          | Always        |
+| Anbernic RG34XX    | Yes                                          | 1.4.0         |
+| Anbernic RG34XXSP  | Yes (Needs Left Stick as D-Pad Verification) | 1.4.0         |
+| Anbernic RG35XXSP  | Yes                                          | 1.5.0         |
+| Anbernic 35XX Plus | Yes                                          | 1.5.0         |
+| Anbernic RG28XX    | Yes                                          | 1.6.0         |
+| Anbernic RG35XX-H  | Yes                                          | 1.7.0         |
 
 If you have one of the untested devices, or have tried slot on a device not listed,
 please [open an issue on GitHub](https://github.com/BrandonKowalski/slot/issues) and let me know how it went.

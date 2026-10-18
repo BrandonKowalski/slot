@@ -1,9 +1,19 @@
+#![cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("record: this example needs macOS headless OpenGL");
+    std::process::exit(2);
+}
+
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use slot::frontend::Frontend;
-use slot_gfx::{blue_light_gain, Compositor, HeadlessSurface, OUT_H, OUT_W};
+#[cfg(target_os = "macos")]
+use slot_gfx::HeadlessSurface;
+use slot_gfx::{blue_light_gain, Compositor, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
 
@@ -134,6 +144,7 @@ impl InputSource for Scripted {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [root, script, out] = args.as_slice() else {

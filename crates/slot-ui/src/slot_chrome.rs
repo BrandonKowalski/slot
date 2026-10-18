@@ -330,6 +330,12 @@ pub fn draw_slot_title(canvas: Canvas, title: Printed, alpha: f32, out: &mut Vec
     });
 }
 
+pub fn draw_plugged_slot(canvas: Canvas, plugged: Option<TexId>, out: &mut Vec<Draw>) {
+    if let Some(tex) = plugged {
+        out.push(strip(canvas, tex, 1.0));
+    }
+}
+
 pub fn draw_empty_slot(canvas: Canvas, slot: Option<(TexId, TexId)>, out: &mut Vec<Draw>) {
     draw_slot_back(canvas, slot, 1.0, out);
     draw_slot_front(canvas, slot, 1.0, out);

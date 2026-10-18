@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::evdev::{
-    code_to_btn, device_name, pick_devices, Ev, ABS_HAT0X, ABS_HAT0Y, EV_ABS, EV_KEY, EV_SW, SW_LID,
+    code_to_btn, device_name, pick_devices, Ev, ABS_HAT0X, ABS_HAT0Y, ABS_LSX, ABS_LSY, EV_ABS,
+    EV_KEY, EV_SW, SW_LID,
 };
 
 pub const TRACE_VAR: &str = "SLOT_TRACE_INPUT";
@@ -59,6 +60,8 @@ pub fn event_line(node: &str, ms: u128, ev: Ev) -> String {
         EV_SW if ev.code == SW_LID => "Lid".to_string(),
         EV_ABS if ev.code == ABS_HAT0X => "hat0x".to_string(),
         EV_ABS if ev.code == ABS_HAT0Y => "hat0y".to_string(),
+        EV_ABS if ev.code == ABS_LSX => "lsx".to_string(),
+        EV_ABS if ev.code == ABS_LSY => "lsy".to_string(),
         _ => "ignored".to_string(),
     };
     format!(

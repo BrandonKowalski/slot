@@ -2,8 +2,8 @@ mod art;
 pub use art::cover;
 mod bitmaps;
 pub use bitmaps::{
-    link_port, link_port_light, slot_back, slot_back_light, slot_front, slot_front_light, Mould,
-    SLOT_H, SLOT_W,
+    link_port, link_port_light, slot_back, slot_back_light, slot_front, slot_front_light,
+    slot_plugged, slot_plugged_light, Mould, SLOT_H, SLOT_W,
 };
 mod backdrop;
 mod barcode;
@@ -70,11 +70,12 @@ pub use plate::{
     HINT_H, LEGEND_GAP, TITLE_H, TITLE_LINE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};
-pub use power_menu::{menu_face, PowerChoice, MENU_PAD};
+pub use power_menu::{menu_detail_face, menu_face, PowerChoice, MENU_PAD};
 pub use quick_menu::{
-    core_button_legends, draw_menu_ground, link_button_legends, quick_caret_face, quick_label_face,
-    quick_legend_faces, quick_pointer_face, quick_row_top, quick_value_face, QuickMenu,
-    QuickMenuFaces, QuickRow, QuickValue, QUICK_EDGE, QUICK_LABEL_X, QUICK_PITCH,
+    core_button_legends, draw_menu_ground, link_button_legends, prompt_legends, quick_caret_face,
+    quick_description_face, quick_label_face, quick_legend_faces, quick_pointer_face,
+    quick_row_top, quick_row_top_at, quick_value_face, quick_window, repair_legends, QuickMenu,
+    QuickMenuFaces, QuickRow, QuickValue, QUICK_EDGE, QUICK_LABEL_X, QUICK_PITCH, QUICK_VISIBLE,
 };
 pub use rebuild::{rebuild_count_face, rebuild_title_face, RebuildScreen};
 pub use refusal::Refusal;
@@ -86,8 +87,8 @@ pub use shell::{
 };
 pub use silhouette::{gb_silhouette, silhouette, GbShell};
 pub use slot_chrome::{
-    draw_empty_slot, draw_slot_name, draw_slot_title, ease, edge, housing, opening, recess,
-    slot_name_y, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
+    draw_empty_slot, draw_plugged_slot, draw_slot_name, draw_slot_title, ease, edge, housing,
+    opening, recess, slot_name_y, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
 };
 pub use sticker::{
     draw_sticker, head_rows, sticker_face, sticker_lines, sticker_rect, StickerFields, COPYRIGHT,

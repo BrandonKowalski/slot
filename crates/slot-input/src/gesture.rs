@@ -48,6 +48,27 @@ pub enum Action {
     PowerOff,
     LidClose,
     LidOpen,
+    MenuChordDown(Btn),
+    MenuChordUp(Btn),
+    RepairCard,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Mod {
+    Select,
+    Menu,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Chord {
+    pub modifier: Option<Mod>,
+    pub button: Btn,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum Release {
+    Nothing,
+    Send(Action),
 }
 
 #[derive(Copy, Clone, Default)]
@@ -65,12 +86,15 @@ enum Select {
 #[derive(Default)]
 pub struct Gestures {
     select: Select,
-    menu_dpad_display: bool,
-    chord_held: u16,
+    shortcuts: Vec<(Chord, Action)>,
+    playing: bool,
+    held: Vec<(Btn, Release)>,
+    ff_button: Option<Btn>,
+    rewind_button: Option<Btn>,
     menu_down_at: Option<Millis>,
     menu_last_tap: Option<Millis>,
     menu_eject_fired: bool,
-    menu_display_chorded: bool,
+    menu_chorded: bool,
     power_down_at: Option<Millis>,
     power_hold_fired: bool,
     vol_up_at: Option<Millis>,
@@ -101,8 +125,34 @@ impl Gestures {
         Self::default()
     }
 
-    pub fn set_menu_dpad_display(&mut self, enabled: bool) {
-        self.menu_dpad_display = enabled;
+    pub fn set_shortcuts(&mut self, shortcuts: Vec<(Chord, Action)>) {
+        self.shortcuts = shortcuts;
+    }
+
+    pub fn set_playing(&mut self, playing: bool) {
+        self.playing = playing;
+    }
+
+    fn shortcut(&self, modifier: Option<Mod>, button: Btn) -> Option<Action> {
+        let chord = Chord { modifier, button };
+        self.shortcuts
+            .iter()
+            .find(|(c, _)| *c == chord)
+            .map(|(_, a)| *a)
+    }
+
+    fn hold(&mut self, b: Btn, action: Action) -> Vec<Action> {
+        let release = match action {
+            Action::FfStart => Release::Send(Action::FfStop),
+            Action::RewindStart => Release::Send(Action::RewindStop),
+            _ => Release::Nothing,
+        };
+        self.held.push((b, release));
+        vec![action]
+    }
+
+    fn menu_held(&self) -> bool {
+        !self.menu_eject_fired && (self.menu_down_at.is_some() || self.menu_chorded)
     }
 
     pub fn ff_latched(&self) -> bool {
@@ -167,18 +217,42 @@ impl Gestures {
     }
 
     fn down(&mut self, b: Btn, now: Millis) -> Vec<Action> {
-        if let Some((bit, action)) = self.menu_display_chord(b) {
-            self.menu_display_chorded = true;
+        if !matches!(b, Btn::Menu | Btn::Select) && self.menu_held() {
+            self.menu_chorded = true;
             self.menu_down_at = None;
             self.menu_last_tap = None;
             self.menu_eject_fired = false;
-            self.chord_held |= bit;
-            return vec![action];
+            return match self.shortcut(Some(Mod::Menu), b) {
+                Some(action) => self.hold(b, action),
+                None => {
+                    self.held.push((b, Release::Send(Action::MenuChordUp(b))));
+                    vec![Action::MenuChordDown(b)]
+                }
+            };
         }
-        if let (true, Some((bit, action))) = (self.chording(now), chord(b)) {
-            self.mark_chorded();
-            self.chord_held |= bit;
-            return vec![action];
+        if self.chording(now) {
+            let action = match b {
+                Btn::VolUp | Btn::VolDown => Some(Action::MuteToggle),
+                _ => self.shortcut(Some(Mod::Select), b),
+            };
+            if let Some(action) = action {
+                self.mark_chorded();
+                return self.hold(b, action);
+            }
+        }
+        if self.playing {
+            match self.shortcut(None, b) {
+                Some(Action::FfStart) => {
+                    self.ff_button = Some(b);
+                    return self.ff_down(now);
+                }
+                Some(Action::RewindStart) => {
+                    self.rewind_button = Some(b);
+                    return self.rewind_start();
+                }
+                Some(action) => return self.hold(b, action),
+                None => {}
+            }
         }
         match b {
             Btn::Select => self.select_down(now),
@@ -190,8 +264,6 @@ impl Gestures {
             }
             Btn::Lid => vec![Action::LidClose],
             Btn::VolUp | Btn::VolDown => self.volume_press(b, now),
-            Btn::L2 => self.rewind_start(),
-            Btn::R2 => self.ff_down(now),
             _ => {
                 let mut out = self.hand_over_select(now);
                 out.push(Action::GbaDown(b));
@@ -201,11 +273,17 @@ impl Gestures {
     }
 
     fn up(&mut self, b: Btn, now: Millis) -> Vec<Action> {
-        if let Some((bit, _)) = chord(b) {
-            if self.chord_held & bit != 0 {
-                self.chord_held &= !bit;
-                return Vec::new();
-            }
+        if let Some(at) = self.held.iter().position(|(h, _)| *h == b) {
+            return match self.held.remove(at).1 {
+                Release::Nothing => Vec::new(),
+                Release::Send(action) => vec![action],
+            };
+        }
+        if self.ff_button == Some(b) && (self.ff_on || self.r2_refused) {
+            return self.ff_up(now);
+        }
+        if self.rewind_button == Some(b) && self.rewinding {
+            return self.rewind_stop();
         }
         match b {
             Btn::Select => self.select_up(now),
@@ -213,8 +291,6 @@ impl Gestures {
             Btn::Power => self.power_up(),
             Btn::Lid => vec![Action::LidOpen],
             Btn::VolUp | Btn::VolDown => self.volume_release(b),
-            Btn::L2 => self.rewind_stop(),
-            Btn::R2 => self.ff_up(now),
             _ => vec![Action::GbaUp(b)],
         }
     }
@@ -284,7 +360,7 @@ impl Gestures {
     }
 
     fn menu_down(&mut self, now: Millis) -> Vec<Action> {
-        self.menu_display_chorded = false;
+        self.menu_chorded = false;
         if self.chording(now) {
             self.mark_chorded();
             self.menu_down_at = None;
@@ -304,8 +380,8 @@ impl Gestures {
     }
 
     fn menu_up(&mut self, now: Millis) -> Vec<Action> {
-        if self.menu_display_chorded {
-            self.menu_display_chorded = false;
+        if self.menu_chorded {
+            self.menu_chorded = false;
             self.menu_down_at = None;
             self.menu_eject_fired = false;
             return Vec::new();
@@ -425,40 +501,4 @@ impl Gestures {
         self.ff_on = false;
         vec![Action::FfStop]
     }
-}
-
-impl Gestures {
-    fn menu_display_chord(&self, b: Btn) -> Option<(u16, Action)> {
-        (self.menu_dpad_display
-            && !self.menu_eject_fired
-            && (self.menu_down_at.is_some() || self.menu_display_chorded))
-            .then(|| display_chord(b))
-            .flatten()
-    }
-}
-
-fn display_chord(b: Btn) -> Option<(u16, Action)> {
-    Some(match b {
-        Btn::Up => (1, Action::BrightnessUp),
-        Btn::Down => (2, Action::BrightnessDown),
-        Btn::Left => (4, Action::BlueLightDown),
-        Btn::Right => (8, Action::BlueLightUp),
-        _ => return None,
-    })
-}
-
-fn chord(b: Btn) -> Option<(u16, Action)> {
-    Some(match b {
-        Btn::Up | Btn::Down | Btn::Left | Btn::Right => display_chord(b)?,
-        Btn::L1 => (16, Action::LoadState),
-        Btn::R1 => (32, Action::SaveState),
-        Btn::Y => (64, Action::ColourCorrectionToggle),
-        Btn::L2 => (128, Action::PalettePrev),
-        Btn::R2 => (256, Action::PaletteNext),
-        Btn::A => (512, Action::ShaderNext),
-        Btn::B => (1024, Action::ShaderPrev),
-        Btn::VolUp => (2048, Action::MuteToggle),
-        Btn::VolDown => (4096, Action::MuteToggle),
-        _ => return None,
-    })
 }

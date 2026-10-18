@@ -89,7 +89,7 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
     assert_eq!(f.app().in_game_menu(), Some(QuickRow::Shader));
     let screen = composed(&mut f, &mut c, "screen");
 
-    let panel = quick_row_top(QuickRow::Shader, f.app().in_game_hidden()) as usize - 16;
+    let panel = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize - 16;
     let (mut probed, mut lit) = (0, 0);
     for y in (48..panel).step_by(17) {
         for x in (0..150).chain(570..OUT_W as usize).step_by(13) {
@@ -128,7 +128,7 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         );
     }
 
-    let row = quick_row_top(QuickRow::Shader, f.app().in_game_hidden()) as usize;
+    let row = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize;
     let ink = (row..row + 40)
         .flat_map(|y| (64..400).map(move |x| (x, y)))
         .filter(|&(x, y)| bright(at(&screen, x, y)) > 600)
@@ -143,4 +143,49 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         bright(below) <= bright(above),
         "the panel is not darker than the game above it"
     );
+}
+
+#[test]
+fn the_controls_page_renders() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::A);
+    run_for(&mut f, &mut input, 4.0);
+    tap(&mut f, &mut input, Btn::Menu);
+    run_for(&mut f, &mut input, 0.5);
+    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::Down, Btn::Down, Btn::A] {
+        tap(&mut f, &mut input, btn);
+    }
+    run_for(&mut f, &mut input, 0.3);
+    assert_eq!(f.app().in_game_menu(), Some(QuickRow::GameUp));
+    composed(&mut f, &mut c, "controls");
+    for _ in 0..7 {
+        tap(&mut f, &mut input, Btn::Down);
+    }
+    run_for(&mut f, &mut input, 0.2);
+    assert_eq!(f.app().in_game_menu(), Some(QuickRow::GameStart));
+    composed(&mut f, &mut c, "controls-scrolled");
+    tap(&mut f, &mut input, Btn::A);
+    run_for(&mut f, &mut input, 0.2);
+    assert!(f.app().capturing());
+    composed(&mut f, &mut c, "controls-waiting");
+    input.0.push_back(vec![RawEvent::Down(Btn::Menu)]);
+    f.advance(&mut input);
+    tap(&mut f, &mut input, Btn::X);
+    input.0.push_back(vec![RawEvent::Up(Btn::Menu)]);
+    f.advance(&mut input);
+    run_for(&mut f, &mut input, 0.2);
+    assert!(!f.app().capturing());
+    tap(&mut f, &mut input, Btn::Up);
+    run_for(&mut f, &mut input, 0.2);
+    composed(&mut f, &mut c, "controls-bound");
 }

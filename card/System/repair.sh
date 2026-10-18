@@ -1,0 +1,155 @@
+#!/bin/sh
+HERE="$(cd "$(dirname "$0")" && pwd)"
+DATA="${AGS_DATA:-/data}"
+RUN="${AGS_RUN:-/run}"
+MOUNTS="${AGS_MOUNTS:-/proc/mounts}"
+UPTIME="${AGS_UPTIME:-/proc/uptime}"
+UMOUNT="${AGS_UMOUNT:-umount}"
+MOUNT="${AGS_MOUNT:-mount}"
+FUSER="${AGS_FUSER:-fuser}"
+SYNC="${AGS_SYNC:-sync}"
+REBOOT="${AGS_REBOOT:-reboot}"
+RMMOD="${AGS_RMMOD:-rmmod}"
+SPLASH="${AGS_SPLASH:-/usr/bin/baseos-splash}"
+FSCK_FAT="${AGS_FSCK_FAT:-/usr/sbin/fsck.fat}"
+FSCK_EXFAT="${AGS_FSCK_EXFAT:-$HERE/fsck.exfat}"
+SLEEP="${AGS_SLEEP:-sleep}"
+HOLD="${AGS_HOLD:-2}"
+LOG="$DATA/slot-repair.log"
+RESULT="$DATA/slot-repair.result"
+
+exec > "${AGS_OUT:-/tmp/slot-repair.out}" 2>&1 < /dev/null
+cd /
+
+log() {
+	echo "$(date '+%F %T') $*" >> "$LOG"
+}
+
+now() {
+	cut -d' ' -f1 "$UPTIME" 2>/dev/null
+}
+
+shown=
+say() {
+	if [ -n "$shown" ]; then
+		left="$(awk -v a="$shown" -v b="$(now)" -v h="$HOLD" \
+			'BEGIN { l = h - (b - a); if (l > 0) printf "%.2f", l; else print 0 }')"
+		[ "$left" = 0 ] || $SLEEP "$left"
+	fi
+	"$SPLASH" --important -1 "$1" 2>/dev/null
+	shown="$(now)"
+}
+
+options() {
+	awk -v m="$1" '$2 == m { o = $4 } END { print o }' "$MOUNTS"
+}
+
+after=
+finish() {
+	echo "$1" > "$RESULT"
+	log "result $1"
+	$SYNC
+	if [ "$1" = repaired ] || [ "$1" = clean ]; then
+		say "REPAIR COMPLETE"
+	else
+		say "REPAIR FAILED: USE A COMPUTER"
+	fi
+	say "REBOOTING"
+	$SLEEP "$HOLD"
+	$RMMOD 8821cs 2>/dev/null
+	$SYNC
+	if [ "$after" = force ]; then
+		$REBOOT -f
+	else
+		$REBOOT
+	fi
+	exit 0
+}
+
+unmount() {
+	$UMOUNT "$1" 2>/dev/null
+	if [ -n "$(options "$1")" ]; then
+		$FUSER -km "$1" 2>/dev/null
+		$SLEEP 1
+		$UMOUNT "$1" 2>/dev/null
+	fi
+	[ -n "$(options "$1")" ] || return 0
+	$MOUNT -o remount,ro "$1" 2>/dev/null
+	case ",$(options "$1")," in
+	*,ro,*)
+		log "could not unmount $1, checking it read-only"
+		after=force
+		;;
+	*)
+		log "could not unmount $1 or make it read-only"
+		finish busy
+		;;
+	esac
+}
+
+if [ $# -eq 0 ] || [ $(($# % 3)) -ne 0 ]; then
+	log "repair: expected device, mount point and filesystem for each card, got: $*"
+	finish unsupported
+fi
+
+cards=0
+set -- "$@" end
+while [ "$1" != end ]; do
+	case "$3" in
+	vfat | exfat) ;;
+	*)
+		log "repair $1 $2: unsupported filesystem $3"
+		finish unsupported
+		;;
+	esac
+	log "repair $1 $2 $3"
+	cards=$((cards + 1))
+	set -- "$@" "$1" "$2" "$3"
+	shift 3
+done
+shift
+
+if [ "$cards" -eq 1 ]; then
+	say "UNMOUNTING DISK"
+else
+	say "UNMOUNTING DISKS"
+fi
+pid="$(cat "$RUN/slot-led.pid" 2>/dev/null)"
+[ -n "$pid" ] && kill "$pid" 2>/dev/null
+$SYNC
+set -- "$@" end
+while [ "$1" != end ]; do
+	unmount "$2"
+	set -- "$@" "$1" "$2" "$3"
+	shift 3
+done
+shift
+
+say "REPAIRING"
+status=clean
+set -- "$@" end
+while [ "$1" != end ]; do
+	case "$3" in
+	vfat) fsck="$FSCK_FAT" fix=-a ;;
+	exfat) fsck="$FSCK_EXFAT" fix=-y ;;
+	esac
+	if [ ! -x "$fsck" ]; then
+		log "no $fsck"
+		status=failed
+	else
+		"$fsck" "$fix" "$1" >> "$LOG" 2>&1
+		fixed=$?
+		log "$(basename "$fsck") $fix $1 exit $fixed"
+		"$fsck" "$fix" "$1" >> "$LOG" 2>&1
+		check=$?
+		log "$(basename "$fsck") $fix $1 again exit $check"
+		if [ "$check" -ne 0 ]; then
+			status=failed
+		elif [ "$fixed" -ne 0 ] && [ "$status" = clean ]; then
+			status=repaired
+		fi
+	fi
+	set -- "$@" "$1" "$2" "$3"
+	shift 3
+done
+finish "$status"

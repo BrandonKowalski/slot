@@ -251,7 +251,7 @@ fn clock_screen(way: Way) -> (TempDir, App, Clock) {
             a.apply(Action::GbaDown(Btn::Down));
         }
         a.apply(Action::GbaDown(Btn::A));
-        for _ in 0..QuickRow::DateTime.position(a.hidden_rows()) {
+        for _ in 0..QuickRow::DateTime.position(&a.hidden_rows()) {
             a.apply(Action::GbaDown(Btn::Down));
         }
         a.apply(Action::GbaDown(Btn::A));

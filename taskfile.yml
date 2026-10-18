@@ -5,17 +5,19 @@ vars:
   GPSP_HOST: vendor/gpsp_libretro.dylib
   MGBA_COMMIT: e31759b24e7a4e3899285ff720d7b573ac328ae7
   GPSP_COMMIT: 7b2dd37394e2822110cacef321e9bb291a305b77
+  EXFATPROGS_VERSION: 1.4.3
+  EXFATPROGS_SHA256: 4b5052cba6ff9f6dcb1c63eeeac328620472c5b0b3caf3d38e4ada50e75469d3
   SLOT_IN_PROCESS: >-
     --test bios --test core --test core_options --test e2e --test emu --test gb_palette_recolour --test gpsp
     --test link_ui --test mgba_gb_link --test mgba_link --test render_colour_correction
-    --test render_gb_palette --test render_picture_modes --test runahead --test render
+    --test render_gb_palette --test render_picture_modes --test render
     --test render_in_game_menu --test render_power_wake --test render_quick_menu
     --test render_shelf --test render_shelves
   IN_PROCESS: >-
     (package(slot) & (binary(bios) | binary(core) | binary(core_options) | binary(e2e) | binary(emu)
     | binary(gb_palette_recolour) | binary(gpsp) | binary(link_ui) | binary(mgba_gb_link)
     | binary(mgba_link) | binary(render_colour_correction) | binary(render_gb_palette)
-    | binary(render_picture_modes) | binary(runahead) | binary(render) | binary(render_in_game_menu)
+    | binary(render_picture_modes) | binary(render) | binary(render_in_game_menu)
     | binary(render_power_wake) | binary(render_quick_menu) | binary(render_shelf)
     | binary(render_shelves)))
     | (package(slot-gfx) & binary(pipeline)) | (package(slot-ui) & binary(render_row_edges))
@@ -92,8 +94,10 @@ tasks:
     cmds:
       - sh card/test-slotlink.sh
       - sh card/test-led.sh
+      - sh card/test-lid.sh
       - sh card/test-coresave.sh
       - sh card/test-launch.sh
+      - sh card/test-repair.sh
 
   core:
     desc: >-
@@ -270,6 +274,32 @@ tasks:
     cmds:
       - sh cores/gpsp/test/run.sh vendor/gpsp-src.tar.gz
 
+  fsck:exfat:
+    desc: >-
+      Build a static aarch64 fsck.exfat from the pinned exfatprogs release, whose archive ships
+      beside it as its GPL-2.0 corresponding source
+    status:
+      - test -f vendor/fsck.exfat
+      - test -f vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz
+    cmds:
+      - |
+        set -euo pipefail
+        mkdir -p vendor
+        rm -f vendor/fsck.exfat vendor/exfatprogs-*.tar.gz
+        curl -fsSL -o vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz \
+          "https://github.com/exfatprogs/exfatprogs/releases/download/{{.EXFATPROGS_VERSION}}/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz"
+        echo "{{.EXFATPROGS_SHA256}}  vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz" | shasum -a 256 -c -
+      - task: device:sh
+        vars:
+          CMD: >-
+            set -e; rm -rf target-device/exfatprogs; mkdir -p target-device/exfatprogs;
+            tar -xzf vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz -C target-device/exfatprogs;
+            cd target-device/exfatprogs/exfatprogs-{{.EXFATPROGS_VERSION}};
+            ./configure --quiet; make -s -j4 LDFLAGS=-all-static;
+            strip fsck/fsck.exfat; cp fsck/fsck.exfat ../../../vendor/fsck.exfat
+      - file vendor/fsck.exfat | grep -q 'aarch64.*statically linked'
+      - 'echo "built vendor/fsck.exfat from exfatprogs {{.EXFATPROGS_VERSION}}"'
+
   device:sh:
     desc: Run CMD on the box the device build wants, fetching one if this is not it
     internal: true
@@ -308,7 +338,7 @@ tasks:
 
   dist:device:
     desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
-    deps: [core:device, core:gpsp, build:device]
+    deps: [core:device, core:gpsp, fsck:exfat, build:device]
     vars:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
@@ -322,7 +352,9 @@ tasks:
       - file vendor/gpsp_libretro.so | grep -q aarch64
       - cp vendor/mgba_libretro.so {{.OUT}}/System/
       - cp vendor/gpsp_libretro.so {{.OUT}}/System/
+      - cp vendor/fsck.exfat {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
+      - cp vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz {{.OUT}}/System/licenses/
       - |
         set -euo pipefail
         sha="$(cat vendor/gpsp-src.sha)"
@@ -342,37 +374,60 @@ tasks:
 
   deploy:device:
     desc: Build and push onto a device over adb, then restart it. SD defaults to /mnt/sdcard
-    deps: [core:device, core:gpsp, build:device]
+    deps: [core:device, core:gpsp, fsck:exfat, build:device]
+    cmds:
+      - task: deploy:push
+        vars: {SD: '{{.SD}}'}
+
+  deploy:all:
+    desc: Build and push onto every attached adb device, then restart each. SD defaults to /mnt/sdcard
+    deps: [core:device, core:gpsp, fsck:exfat, build:device]
+    vars:
+      SERIALS:
+        sh: adb devices | awk 'NR > 1 && $2 == "device" {print $1}'
+    preconditions:
+      - sh: test -n "{{.SERIALS}}"
+        msg: no adb devices attached
+    cmds:
+      - for: {var: SERIALS}
+        task: deploy:push
+        vars: {SD: '{{.SD}}', SERIAL: '{{.ITEM}}'}
+
+  deploy:push:
+    internal: true
     vars:
       SD: '{{.SD | default "/mnt/sdcard"}}'
+      ADB: 'adb{{if .SERIAL}} -s {{.SERIAL}}{{end}}'
     cmds:
-      - adb wait-for-device
+      - "{{.ADB}} wait-for-device"
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64
-      - adb push target-device/device/slot '{{.SD}}/System/slot'
-      - for f in card/System/*; do adb push "$f" '{{.SD}}/System/'; done
-      - adb push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'
-      - adb push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'
-      - adb push licenses '{{.SD}}/System/'
+      - "{{.ADB}} push target-device/device/slot '{{.SD}}/System/slot'"
+      - for f in card/System/*; do {{.ADB}} push "$f" '{{.SD}}/System/'; done
+      - "{{.ADB}} push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'"
+      - "{{.ADB}} push vendor/gpsp_libretro.so '{{.SD}}/System/gpsp_libretro.so'"
+      - "{{.ADB}} push vendor/fsck.exfat '{{.SD}}/System/fsck.exfat'"
+      - "{{.ADB}} push licenses '{{.SD}}/System/'"
+      - "{{.ADB}} push vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz '{{.SD}}/System/licenses/'"
       - |
         set -euo pipefail
         sha="$(cat vendor/gpsp-src.sha)"
-        adb push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
-        adb push vendor/gpsp-src.meta "{{.SD}}/System/licenses/gpsp-${sha}.meta"
+        {{.ADB}} push vendor/gpsp-src.tar.gz "{{.SD}}/System/licenses/gpsp-${sha}.tar.gz"
+        {{.ADB}} push vendor/gpsp-src.meta "{{.SD}}/System/licenses/gpsp-${sha}.meta"
         for p in cores/gpsp/*.patch; do
-          adb push "$p" "{{.SD}}/System/licenses/gpsp-$(basename "$p")"
+          {{.ADB}} push "$p" "{{.SD}}/System/licenses/gpsp-$(basename "$p")"
         done
       - |
         set -euo pipefail
         commit="$(grep '^commit=' vendor/mgba_libretro.so.meta | cut -d= -f2)"
-        adb push vendor/mgba_libretro.so.meta "{{.SD}}/System/licenses/mgba-${commit}.meta"
+        {{.ADB}} push vendor/mgba_libretro.so.meta "{{.SD}}/System/licenses/mgba-${commit}.meta"
         for p in cores/mgba/*.patch; do
-          adb push "$p" "{{.SD}}/System/licenses/mgba-$(basename "$p")"
+          {{.ADB}} push "$p" "{{.SD}}/System/licenses/mgba-$(basename "$p")"
         done
-      - adb shell 'chmod +x {{.SD}}/System/slot && sync'
-      - adb reboot
-      - adb wait-for-device
-      - 'echo "deployed to {{.SD}}, device rebooting"'
+      - "{{.ADB}} shell 'chmod +x {{.SD}}/System/slot && sync'"
+      - "{{.ADB}} reboot"
+      - "{{.ADB}} wait-for-device"
+      - 'echo "deployed to {{.SD}}{{if .SERIAL}} on {{.SERIAL}}{{end}}, device rebooting"'
 
   log:device:
     desc: Read slot's log back off a connected device

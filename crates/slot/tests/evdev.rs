@@ -330,3 +330,70 @@ fn a_hat_axis_is_traced_as_the_axis_it_is() {
     assert!(line.contains("hat0y"), "{line}");
     assert!(!line.contains("ignored"), "{line}");
 }
+
+fn abs(code: u16, value: i32) -> slot::input::evdev::Ev {
+    slot::input::evdev::Ev {
+        kind: slot::input::evdev::EV_ABS,
+        code,
+        value,
+    }
+}
+
+#[test]
+fn the_left_stick_presses_the_d_pad_past_half_tilt() {
+    let mut hat = slot::input::evdev::Hat::default();
+    hat.steer_with_stick(true);
+    assert!(hat.feed(abs(0x03, -1500)).is_empty());
+    assert_eq!(hat.feed(abs(0x03, -3000)), vec![RawEvent::Down(Btn::Up)]);
+    assert!(hat.feed(abs(0x03, -4000)).is_empty());
+    assert_eq!(hat.feed(abs(0x03, 100)), vec![RawEvent::Up(Btn::Up)]);
+    assert_eq!(hat.feed(abs(0x02, 4096)), vec![RawEvent::Down(Btn::Right)]);
+    assert_eq!(
+        hat.feed(abs(0x02, -4096)),
+        vec![RawEvent::Up(Btn::Right), RawEvent::Down(Btn::Left)]
+    );
+}
+
+#[test]
+fn with_the_stick_off_it_presses_nothing() {
+    let mut hat = slot::input::evdev::Hat::default();
+    assert!(hat.feed(abs(0x03, -4096)).is_empty());
+    assert!(hat.feed(abs(0x02, 4096)).is_empty());
+}
+
+#[test]
+fn turning_the_stick_off_mid_tilt_lets_go_on_its_next_move() {
+    let mut hat = slot::input::evdev::Hat::default();
+    hat.steer_with_stick(true);
+    assert_eq!(hat.feed(abs(0x02, 4096)), vec![RawEvent::Down(Btn::Right)]);
+    hat.steer_with_stick(false);
+    assert_eq!(hat.feed(abs(0x02, 4000)), vec![RawEvent::Up(Btn::Right)]);
+}
+
+#[test]
+fn the_d_pad_held_through_a_stick_flick_stays_held() {
+    let mut hat = slot::input::evdev::Hat::default();
+    hat.steer_with_stick(true);
+    assert_eq!(hat.feed(abs(0x11, -1)), vec![RawEvent::Down(Btn::Up)]);
+    assert!(hat.feed(abs(0x03, -4096)).is_empty());
+    assert!(hat.feed(abs(0x03, 0)).is_empty());
+    assert_eq!(hat.feed(abs(0x11, 0)), vec![RawEvent::Up(Btn::Up)]);
+}
+
+#[test]
+fn only_the_skus_nextui_lists_with_a_left_stick_have_one() {
+    use slot::input::evdev::has_left_stick;
+    for t in [
+        "rg34xxsp",
+        "rg35xxh",
+        "rg35xxpro",
+        "rg40xxh",
+        "rg40xxv",
+        "rgcubexx",
+    ] {
+        assert!(has_left_stick(t), "{t}");
+    }
+    for t in ["rgsp", "rg35xxsp", "rg35xxplus", "rg34xx", "rg28xx", ""] {
+        assert!(!has_left_stick(t), "{t}");
+    }
+}
