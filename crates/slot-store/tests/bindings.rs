@@ -25,11 +25,13 @@ fn with(modifier: Modifier, button: Device) -> Option<Binding> {
 }
 
 #[test]
-fn a_gba_has_ten_buttons_and_a_game_boy_eight() {
-    assert_eq!(GameButton::of(Platform::Gba).len(), 10);
-    assert_eq!(GameButton::of(Platform::Gb).len(), 8);
-    assert_eq!(GameButton::of(Platform::Gbc).len(), 8);
+fn a_gba_has_twelve_buttons_and_a_game_boy_ten() {
+    assert_eq!(GameButton::of(Platform::Gba).len(), 12);
+    assert_eq!(GameButton::of(Platform::Gb).len(), 10);
+    assert_eq!(GameButton::of(Platform::Gbc).len(), 10);
     assert!(!GameButton::of(Platform::Gb).contains(&GameButton::L));
+    assert!(GameButton::of(Platform::Gb).contains(&GameButton::TurboA));
+    assert!(GameButton::of(Platform::Gbc).contains(&GameButton::TurboB));
 }
 
 #[test]
@@ -39,6 +41,8 @@ fn every_console_button_starts_on_the_device_button_of_its_name() {
     assert_eq!(c.game(GameButton::L), plain(Device::L1));
     assert_eq!(c.game(GameButton::R), plain(Device::R1));
     assert_eq!(c.game(GameButton::Select), plain(Device::Select));
+    assert_eq!(c.game(GameButton::TurboA), plain(Device::X));
+    assert_eq!(c.game(GameButton::TurboB), plain(Device::Y));
 }
 
 #[test]

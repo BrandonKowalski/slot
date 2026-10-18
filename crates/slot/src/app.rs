@@ -1009,6 +1009,8 @@ impl App {
             | QuickRow::GameStart
             | QuickRow::GameL
             | QuickRow::GameR
+            | QuickRow::GameTurboA
+            | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
             | QuickRow::ScBrightUp
@@ -2491,6 +2493,8 @@ impl App {
             | QuickRow::GameStart
             | QuickRow::GameL
             | QuickRow::GameR
+            | QuickRow::GameTurboA
+            | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
             | QuickRow::ScBrightUp
@@ -2652,6 +2656,8 @@ impl App {
             | QuickRow::GameStart
             | QuickRow::GameL
             | QuickRow::GameR
+            | QuickRow::GameTurboA
+            | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
             | QuickRow::ScBrightUp

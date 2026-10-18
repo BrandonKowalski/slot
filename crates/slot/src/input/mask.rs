@@ -60,5 +60,7 @@ fn bit(g: GameButton) -> u16 {
         GameButton::Start => ButtonMask::START,
         GameButton::L => ButtonMask::L,
         GameButton::R => ButtonMask::R,
+        GameButton::TurboA => ButtonMask::X,
+        GameButton::TurboB => ButtonMask::Y,
     }
 }

@@ -186,10 +186,12 @@ pub enum GameButton {
     Start,
     L,
     R,
+    TurboA,
+    TurboB,
 }
 
 impl GameButton {
-    pub const ALL: [GameButton; 10] = [
+    pub const ALL: [GameButton; 12] = [
         GameButton::Up,
         GameButton::Down,
         GameButton::Left,
@@ -200,12 +202,27 @@ impl GameButton {
         GameButton::Start,
         GameButton::L,
         GameButton::R,
+        GameButton::TurboA,
+        GameButton::TurboB,
+    ];
+
+    const GAME_BOY: [GameButton; 10] = [
+        GameButton::Up,
+        GameButton::Down,
+        GameButton::Left,
+        GameButton::Right,
+        GameButton::A,
+        GameButton::B,
+        GameButton::Select,
+        GameButton::Start,
+        GameButton::TurboA,
+        GameButton::TurboB,
     ];
 
     pub fn of(platform: Platform) -> &'static [GameButton] {
         match platform {
             Platform::Gba => &GameButton::ALL,
-            Platform::Gb | Platform::Gbc => &GameButton::ALL[..8],
+            Platform::Gb | Platform::Gbc => &GameButton::GAME_BOY,
         }
     }
 
@@ -221,6 +238,8 @@ impl GameButton {
             GameButton::Start => "Start",
             GameButton::L => "L Button",
             GameButton::R => "R Button",
+            GameButton::TurboA => "Turbo A",
+            GameButton::TurboB => "Turbo B",
         }
     }
 
@@ -236,6 +255,8 @@ impl GameButton {
             GameButton::Start => "start",
             GameButton::L => "l",
             GameButton::R => "r",
+            GameButton::TurboA => "turbo_a",
+            GameButton::TurboB => "turbo_b",
         }
     }
 
@@ -251,6 +272,8 @@ impl GameButton {
             GameButton::Start => Device::Start,
             GameButton::L => Device::L1,
             GameButton::R => Device::R1,
+            GameButton::TurboA => Device::X,
+            GameButton::TurboB => Device::Y,
         }
     }
 
@@ -355,7 +378,7 @@ impl Shortcut {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Controls {
-    game: [Option<Binding>; 10],
+    game: [Option<Binding>; 12],
 }
 
 impl Default for Controls {

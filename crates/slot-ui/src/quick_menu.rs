@@ -64,6 +64,8 @@ pub enum QuickRow {
     GameStart,
     GameL,
     GameR,
+    GameTurboA,
+    GameTurboB,
     ScSave,
     ScLoad,
     ScBrightUp,
@@ -85,7 +87,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 72] = [
+    pub const ALL: [QuickRow; 74] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -140,6 +142,8 @@ impl QuickRow {
         QuickRow::GameStart,
         QuickRow::GameL,
         QuickRow::GameR,
+        QuickRow::GameTurboA,
+        QuickRow::GameTurboB,
         QuickRow::ScSave,
         QuickRow::ScLoad,
         QuickRow::ScBrightUp,
@@ -190,7 +194,7 @@ impl QuickRow {
         QuickRow::ShelfFavorite,
     ];
 
-    pub const CONTROLS: [QuickRow; 10] = [
+    pub const CONTROLS: [QuickRow; 12] = [
         QuickRow::GameUp,
         QuickRow::GameDown,
         QuickRow::GameLeft,
@@ -201,6 +205,8 @@ impl QuickRow {
         QuickRow::GameStart,
         QuickRow::GameL,
         QuickRow::GameR,
+        QuickRow::GameTurboA,
+        QuickRow::GameTurboB,
     ];
 
     pub const SHORTCUTS: [QuickRow; 13] = [
@@ -438,7 +444,9 @@ impl QuickRow {
             | QuickRow::GameSelect
             | QuickRow::GameStart
             | QuickRow::GameL
-            | QuickRow::GameR => self.game_button().map_or("", GameButton::label),
+            | QuickRow::GameR
+            | QuickRow::GameTurboA
+            | QuickRow::GameTurboB => self.game_button().map_or("", GameButton::label),
             QuickRow::ScSave
             | QuickRow::ScLoad
             | QuickRow::ScBrightUp
@@ -507,6 +515,8 @@ impl QuickRow {
             QuickRow::GameStart => GameButton::Start,
             QuickRow::GameL => GameButton::L,
             QuickRow::GameR => GameButton::R,
+            QuickRow::GameTurboA => GameButton::TurboA,
+            QuickRow::GameTurboB => GameButton::TurboB,
             _ => return None,
         })
     }

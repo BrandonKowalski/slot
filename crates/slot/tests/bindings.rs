@@ -415,3 +415,28 @@ fn in_game_buttons_are_set_from_the_main_menu_and_reach_a_game() {
         Binding::plain(Device::Y)
     );
 }
+
+#[test]
+fn turbo_b_moves_off_y_from_the_in_game_page() {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    tap(&mut s, &mut now, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
+    tap(&mut s, &mut now, Btn::A);
+    tap(&mut s, &mut now, Btn::Up);
+    tap(&mut s, &mut now, Btn::A);
+    for _ in 0..QuickRow::GameTurboB.position(&[]) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::GameTurboB));
+    tap(&mut s, &mut now, Btn::A);
+    assert!(s.app().capturing());
+    tap(&mut s, &mut now, Btn::L2);
+    assert!(!s.app().capturing());
+    assert_eq!(
+        read_controls(d.path()).game(GameButton::TurboB),
+        Binding::plain(Device::L2)
+    );
+}
