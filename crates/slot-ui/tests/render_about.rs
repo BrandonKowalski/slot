@@ -11,8 +11,7 @@ fn render_about() {
         .and_then(|p| wallpaper_face(std::path::Path::new(&p)));
     let label = sticker_face(&StickerFields {
         battery: Some(87),
-        serial: "0473885",
-        dirty_digit: '0',
+        serial: "04738857",
     });
 
     let mut list = Vec::new();

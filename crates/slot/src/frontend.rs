@@ -1152,7 +1152,6 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
     let face = sticker_face(&StickerFields {
         battery,
         serial: &build.serial(),
-        dirty_digit: build.dirty_digit(),
     });
     let id = upload(compositor, &mut state.tex, face);
     app.set_sticker_face(id);

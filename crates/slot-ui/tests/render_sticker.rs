@@ -15,8 +15,7 @@ fn render_sticker() {
     };
     let face = sticker_face(&StickerFields {
         battery: Some(87),
-        serial: "0473885",
-        dirty_digit: '0',
+        serial: "04738857",
     });
     let (w, h) = (STICKER_W as usize, STICKER_H as usize);
     write(&out, &face.rgba, w, h);
