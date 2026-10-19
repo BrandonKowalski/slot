@@ -324,8 +324,7 @@ fn app_with_platforms(carts: &[(Platform, &str)]) -> App {
 }
 
 fn tap(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
+    common::through(a, btn);
 }
 
 #[test]
@@ -484,7 +483,7 @@ fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
         (Btn::R1, "Game Boy Advance"),
         (Btn::L1, "Game Boy Color"),
     ] {
-        a.apply_at(Action::GbaDown(btn), 1_000);
+        common::through_at(&mut a, btn, 1_000);
         assert_eq!(
             a.shelf_platform_name(),
             Some(want),
@@ -509,7 +508,7 @@ fn a_card_on_one_shelf_names_nothing_because_there_is_nowhere_to_switch_to() {
         "a card with only Game Boy Advance carts named its platform anyway"
     );
     for btn in [Btn::L1, Btn::R1] {
-        alone.apply_at(Action::GbaDown(btn), 1_000);
+        common::through_at(&mut alone, btn, 1_000);
         assert_eq!(
             alone.shelf_platform_name(),
             None,
@@ -562,8 +561,8 @@ fn a_held_direction_does_not_follow_the_shelf_it_was_pressed_on() {
     ]);
     a.apply_at(Action::GbaDown(Btn::Right), 0);
     assert_eq!(a.selected_stem(), Some("Bbb"));
-    a.apply_at(Action::GbaDown(Btn::R1), 10);
-    a.apply_at(Action::GbaDown(Btn::L1), 20);
+    a.apply_at(Action::NextShelf, 10);
+    a.apply_at(Action::PreviousShelf, 20);
     for _ in 0..120 {
         a.update(1.0 / 60.0);
     }

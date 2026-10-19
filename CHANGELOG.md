@@ -7,6 +7,8 @@
 - If slot stops responding with the lid closed, a separate watcher powers off a minute after the Lid Off time.
 - Run-Ahead is removed. It scrambled saves in games with a 128 KB flash chip, such as Super Mario Advance 4. (#104)
 - Turbo A and Turbo B have their own rows on the In-Game controls page and can be moved off X and Y. (#127)
+- Shortcuts and shelf keys take any two buttons held together, such as L1+R1. In a game the first button still reaches the game at once; the second fires the shortcut. SELECT, START and MENU only work as the first button. Brightness and blue light shortcuts also work on the shelf; a shelf key on the same button still moves the shelf.
+- Setting a control that something else already uses shows a warning naming it, such as "Same as Fast Forward", and marks both rows with a warning triangle.
 - Loading a state while a game is saving to a 128 KB flash chip no longer writes the save into the wrong half of the chip.
 - The cart insertion animation no longer stutters, and a large ROM still loading after the cart seats powers the screen on to a blank panel that brightens until the game appears. (#119)
 - On Anbernics with a left stick, the stick works as the D-pad. Left Stick as D-Pad on the Gameplay page turns it off. (#106, #107)

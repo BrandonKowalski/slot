@@ -30,17 +30,17 @@ use crate::persist::{self, Snapshot};
 use crate::video_mode::{self, VideoMode};
 use slot_store::{
     read_carousel, read_controls, read_shortcuts, write_carousel, write_controls, write_shortcuts,
-    Binding, CarouselAction, CarouselKeys, Controls, Device, GameButton, Modifier, ShortcutKeys,
-    LID_OFF_MIN,
+    Binding, CarouselKeys, Controls, Device, GameButton, Modifier, ShortcutKeys, LID_OFF_MIN,
 };
 
 pub const PRESS_A_BUTTON: &str = "Press a button";
+pub const CLASH_MARK: &str = "!";
 
 #[derive(Copy, Clone, Debug)]
 struct BindCapture {
     row: QuickRow,
     menu: bool,
-    select: bool,
+    first: Option<Device>,
 }
 
 pub const INSERT_S: f32 = 0.73;
@@ -909,6 +909,9 @@ impl App {
         if !self.left_stick {
             hidden.push(QuickRow::LeftStick);
         }
+        if !self.state.turbo {
+            hidden.extend([QuickRow::GameTurboA, QuickRow::GameTurboB]);
+        }
         hidden
     }
 
@@ -1250,6 +1253,9 @@ impl App {
         if !self.left_stick {
             hidden.push(QuickRow::LeftStick);
         }
+        if !self.state.turbo {
+            hidden.extend([QuickRow::GameTurboA, QuickRow::GameTurboB]);
+        }
         hidden
     }
 
@@ -1569,7 +1575,7 @@ impl App {
         self.capture = Some(BindCapture {
             row,
             menu: false,
-            select: false,
+            first: None,
         });
     }
 
@@ -1577,25 +1583,30 @@ impl App {
         let Some(mut c) = self.capture else {
             return;
         };
-        let select_mod = c.row.shortcut().is_some();
+        let pairs = c.row.game_button().is_none();
         match ev {
-            RawEvent::Down(Btn::Menu) => c.menu = true,
+            RawEvent::Down(Btn::Menu) if c.first.is_none() => c.menu = true,
             RawEvent::Up(Btn::Menu) => c.menu = false,
-            RawEvent::Down(Btn::Select) if select_mod && !c.menu => c.select = true,
-            RawEvent::Up(Btn::Select) if c.select => {
-                return self.bind(c.row, Binding::plain(Device::Select));
-            }
             RawEvent::Down(b) => {
                 if let Some(button) = crate::input::btn_device(b) {
-                    let modifier = match (c.menu, c.select) {
-                        (true, _) => Some(Modifier::Menu),
-                        (false, true) => Some(Modifier::Select),
-                        (false, false) => None,
+                    let binding = match (c.menu, c.first) {
+                        (true, _) => Binding::with(Modifier::Menu, button),
+                        (false, Some(first)) => Binding::pair(first, button),
+                        (false, None) if pairs => {
+                            c.first = Some(button);
+                            self.capture = Some(c);
+                            return;
+                        }
+                        (false, None) => Binding::plain(button),
                     };
-                    return self.bind(c.row, Some(Binding { modifier, button }));
+                    return self.bind(c.row, binding);
                 }
             }
-            RawEvent::Up(_) => {}
+            RawEvent::Up(b) => {
+                if let Some(first) = c.first.filter(|f| crate::input::btn_device(b) == Some(*f)) {
+                    return self.bind(c.row, Binding::plain(first));
+                }
+            }
         }
         self.capture = Some(c);
     }
@@ -1603,13 +1614,38 @@ impl App {
     fn bind(&mut self, row: QuickRow, binding: Option<Binding>) {
         self.capture = None;
         self.set_binding(row, binding);
-        if self.in_game_menu.is_some() {
-            let hidden = self.in_game_hidden();
-            self.in_game_menu = Some(row.down(&hidden));
-        } else if let Phase::QuickMenu { .. } = self.phase {
-            self.phase = Phase::QuickMenu {
-                row: row.down(&self.hidden_rows()),
-            };
+        if let Some(other) = self.clash(row) {
+            let now = self.now();
+            self.hud.toast(Toast::Duplicate(other), now);
+        }
+    }
+
+    pub fn clash(&self, row: QuickRow) -> Option<QuickRow> {
+        self.binding_table().clash(row)
+    }
+
+    pub fn binding_table(&self) -> crate::input::Table {
+        crate::input::Table::new(
+            &self.controls,
+            &self.shortcuts,
+            &self.carousel,
+            self.state.turbo,
+        )
+    }
+
+    pub fn input_context(&self) -> slot_input::Context {
+        let overlaid = self.game_menu_open()
+            || self.in_game_menu().is_some()
+            || self.repair_prompt()
+            || self.shutting_down();
+        let shelf = matches!(self.phase, Phase::Shelf)
+            && self.core_picker.is_none()
+            && !self.repair_prompt
+            && self.reset_prompt.is_none();
+        match self.phase {
+            Phase::Playing { .. } if !overlaid => slot_input::Context::Game,
+            _ if shelf => slot_input::Context::Shelf,
+            _ => slot_input::Context::Menu,
         }
     }
 
@@ -1720,7 +1756,7 @@ impl App {
         let mut texts: Vec<String> = QuickRow::ALL
             .iter()
             .filter(|r| r.binds())
-            .map(|r| Binding::text(self.binding_of(*r)))
+            .map(|r| self.bound_text(*r))
             .collect();
         texts.push(PRESS_A_BUTTON.to_string());
         texts.sort();
@@ -1745,16 +1781,24 @@ impl App {
                 }
                 let text = match self.capture_row() == Some(*r) {
                     true => PRESS_A_BUTTON.to_string(),
-                    false => Binding::text(self.binding_of(*r)),
+                    false => self.bound_text(*r),
                 };
                 self.binding_faces.get(&text).copied()
             })
             .collect()
     }
 
+    fn bound_text(&self, row: QuickRow) -> String {
+        let text = Binding::text(self.binding_of(row));
+        match self.clash(row) {
+            Some(_) => format!("{CLASH_MARK}{text}"),
+            None => text,
+        }
+    }
+
     fn description(&self, row: QuickRow) -> Option<(TexId, u32, u32)> {
         let faces = self.quick_menu_faces.as_ref()?;
-        if row.shortcut().is_some() {
+        if row.shortcut().is_some() || row.carousel_action().is_some() {
             Some(faces.descriptions[1])
         } else if row.binds() {
             Some(faces.descriptions[0])
@@ -2269,14 +2313,9 @@ impl App {
                     self.open_core_picker()
                 }
                 _ if self.core_picker.is_some() => self.core_picker_input(action),
-                _ if crate::input::carousel_action(&self.carousel, action).is_some() => {
-                    match crate::input::carousel_action(&self.carousel, action) {
-                        Some(CarouselAction::PreviousShelf) => self.switch_shelf(-1),
-                        Some(CarouselAction::NextShelf) => self.switch_shelf(1),
-                        Some(CarouselAction::Favorite) => self.toggle_favorite(),
-                        None => {}
-                    }
-                }
+                Action::PreviousShelf => self.switch_shelf(-1),
+                Action::NextShelf => self.switch_shelf(1),
+                Action::Favorite => self.toggle_favorite(),
                 Action::GbaDown(Btn::Up) => self.jump_letter(-1),
                 Action::GbaDown(Btn::Down) => self.jump_letter(1),
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.shelf_mut().hold_left(now),

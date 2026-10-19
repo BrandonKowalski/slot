@@ -1,7 +1,7 @@
 use slot_store::GbPalette;
 use slot_ui::{
-    toast_face, toast_rect, Canvas, Draw, Hud, HudKind, TexId, Toast, ALARM_BAND_H, OUT_H, OUT_W,
-    PLATE_H,
+    toast_face, toast_rect, Canvas, Draw, Hud, HudKind, QuickRow, TexId, Toast, ALARM_BAND_H,
+    OUT_H, OUT_W, PLATE_H,
 };
 
 #[test]
@@ -51,10 +51,20 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );
+    let palettes = GbPalette::all().count();
     assert_eq!(
-        all[18..],
+        all[18..18 + palettes],
         GbPalette::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
+    );
+    assert_eq!(
+        all[18 + palettes..],
+        QuickRow::ALL
+            .into_iter()
+            .filter(|r| r.binds())
+            .map(Toast::Duplicate)
+            .collect::<Vec<_>>()[..],
+        "the duplicate warnings do not follow the palettes in row order"
     );
     for (i, t) in all.iter().enumerate() {
         assert_eq!(t.index(), i, "{t:?} does not answer to its own place");
@@ -70,9 +80,18 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
 fn no_toast_is_shrunk_to_fit_its_box() {
     let rows = |t: Toast| {
         let f = toast_face(t);
-        let inked: Vec<usize> = (0..f.h as usize)
-            .filter(|y| (0..f.w as usize).any(|x| f.rgba[(y * f.w as usize + x) * 4 + 3] > 0))
-            .collect();
+        let (w, h) = (f.w as usize, f.h as usize);
+        let ink = |x: usize, y: usize| f.rgba[(y * w + x) * 4 + 3] > 0;
+        let mut from = 0;
+        if t.icon().is_some() {
+            let cols: Vec<usize> = (0..w).filter(|x| (0..h).any(|y| ink(*x, y))).collect();
+            let gap = cols
+                .windows(2)
+                .position(|p| p[1] - p[0] > 3)
+                .expect("no icon gap");
+            from = cols[gap + 1];
+        }
+        let inked: Vec<usize> = (0..h).filter(|y| (from..w).any(|x| ink(x, *y))).collect();
         let first = *inked.first().expect("the banner is blank");
         let last = *inked.last().expect("the banner is blank");
         (first, last)

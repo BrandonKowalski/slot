@@ -478,3 +478,71 @@ fn the_left_stick_row_keeps_its_label_clear_of_its_value() {
         "the label runs into the value, widest gap {gap} px"
     );
 }
+
+#[test]
+fn a_duplicate_binding_shows_a_warning_naming_the_other_row() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(&mut f, &mut input, Btn::Down);
+    }
+    tap(&mut f, &mut input, Btn::A);
+    tap(&mut f, &mut input, Btn::Down);
+    tap(&mut f, &mut input, Btn::A);
+    tap(&mut f, &mut input, Btn::A);
+    assert!(f.app().capturing());
+    tap(&mut f, &mut input, Btn::A);
+    assert!(!f.app().capturing());
+    assert_eq!(
+        f.app().toast(),
+        Some(slot_ui::Toast::Duplicate(QuickRow::GameA))
+    );
+    let px = composed(&mut f, &mut c, "duplicate-toast");
+    let (x, y, w, h) =
+        slot_ui::toast_rect(f.app().canvas(), slot_ui::Toast::Duplicate(QuickRow::GameA));
+    let ink: Vec<usize> = (x as usize..(x + w) as usize)
+        .filter(|&px_x| {
+            (y as usize..(y + h) as usize).any(|py| at(&px, px_x, py).iter().all(|c| *c > 0xc0))
+        })
+        .collect();
+    assert!(
+        ink.len() > 100,
+        "the toast has almost no ink: {}",
+        ink.len()
+    );
+    let gaps: Vec<usize> = ink
+        .windows(2)
+        .filter(|p| p[1] - p[0] > 4)
+        .map(|p| p[1] - p[0])
+        .collect();
+    assert!(
+        !gaps.is_empty() && ink[0] < (x + w / 2.0) as usize - 100,
+        "no icon set apart ahead of the words: first ink {} gaps {gaps:?}",
+        ink[0]
+    );
+    let amber = |p: [u8; 3]| p[0] > 0xd0 && (0x80..0xd0).contains(&p[1]) && p[2] < 0x70;
+    let amber_in = |xs: std::ops::Range<usize>, ys: std::ops::Range<usize>| {
+        ys.flat_map(|py| xs.clone().map(move |px_x| (px_x, py)))
+            .filter(|&(px_x, py)| amber(at(&px, px_x, py)))
+            .count()
+    };
+    assert!(
+        amber_in(x as usize..(x + w) as usize, y as usize..(y + h) as usize) > 20,
+        "the warning triangle is not amber"
+    );
+    let width = f.app().canvas().w as usize;
+    assert!(
+        amber_in(width / 2..width, (y + h) as usize + 20..400) > 40,
+        "no amber triangle marks the clashing rows"
+    );
+}

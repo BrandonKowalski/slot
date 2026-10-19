@@ -43,8 +43,7 @@ fn tick(a: &mut App, secs: f32) {
 }
 
 fn press(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
+    common::through(a, btn);
 }
 
 fn title_alpha(a: &App) -> Option<f32> {

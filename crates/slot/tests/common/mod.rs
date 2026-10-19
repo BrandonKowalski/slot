@@ -614,3 +614,28 @@ fn seated(root: &Path, snapshot: Box<dyn Snapshot>, state: SlotState) -> App {
     }
     a
 }
+
+pub fn through(a: &mut App, btn: slot_input::Btn) {
+    let now = a.now();
+    feed_through(a, btn, now, |a, action| a.apply(action));
+}
+
+pub fn through_at(a: &mut App, btn: slot_input::Btn, at: slot_input::Millis) {
+    feed_through(a, btn, at, |a, action| a.apply_at(action, at));
+}
+
+fn feed_through(
+    a: &mut App,
+    btn: slot_input::Btn,
+    now: slot_input::Millis,
+    apply: impl Fn(&mut App, slot_input::Action),
+) {
+    let mut g = slot_input::Gestures::new();
+    g.set_entries(a.binding_table().entries());
+    for ev in [slot_input::RawEvent::Down(btn), slot_input::RawEvent::Up(btn)] {
+        g.set_context(a.input_context());
+        for action in g.feed(ev, now) {
+            apply(a, action);
+        }
+    }
+}

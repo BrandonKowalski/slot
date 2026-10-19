@@ -724,3 +724,219 @@ fn fast_forward_on_a_menu_chord_lasts_while_held() {
     assert!(g.feed(Up(Menu), 450).is_empty());
     assert_eq!(g.feed(Down(R2), 500), vec![GbaDown(R2)]);
 }
+
+fn paired() -> Gestures {
+    let mut g = gestures();
+    let mut shortcuts = today();
+    shortcuts.push((
+        Chord {
+            modifier: Some(Mod::Button(L1)),
+            button: R1,
+        },
+        SaveState,
+    ));
+    shortcuts.push((
+        Chord {
+            modifier: Some(Mod::Button(Start)),
+            button: A,
+        },
+        FfStart,
+    ));
+    g.set_shortcuts(shortcuts);
+    g
+}
+
+#[test]
+fn a_pair_fires_on_its_second_button_and_the_game_keeps_the_first() {
+    let mut g = paired();
+    assert_eq!(g.feed(Down(L1), 0), vec![GbaDown(L1)]);
+    assert_eq!(g.feed(Down(R1), 40), vec![SaveState]);
+    assert!(
+        g.feed(Up(R1), 80).is_empty(),
+        "the second button reached the game"
+    );
+    assert_eq!(g.feed(Up(L1), 90), vec![GbaUp(L1)]);
+}
+
+#[test]
+fn a_pair_fires_in_either_order() {
+    let mut g = paired();
+    assert_eq!(g.feed(Down(R1), 0), vec![GbaDown(R1)]);
+    assert_eq!(g.feed(Down(L1), 40), vec![SaveState]);
+    assert!(g.feed(Up(L1), 80).is_empty());
+    assert_eq!(g.feed(Up(R1), 90), vec![GbaUp(R1)]);
+}
+
+#[test]
+fn either_half_of_a_pair_alone_is_the_games() {
+    let mut g = paired();
+    assert_eq!(g.feed(Down(R1), 0), vec![GbaDown(R1)]);
+    assert_eq!(g.feed(Up(R1), 40), vec![GbaUp(R1)]);
+    assert_eq!(g.feed(Down(L1), 100), vec![GbaDown(L1)]);
+    assert_eq!(g.feed(Up(L1), 140), vec![GbaUp(L1)]);
+}
+
+#[test]
+fn a_pair_does_nothing_outside_a_game() {
+    let mut g = paired();
+    g.set_playing(false);
+    assert_eq!(g.feed(Down(L1), 0), vec![GbaDown(L1)]);
+    assert_eq!(g.feed(Down(R1), 40), vec![GbaDown(R1)]);
+}
+
+#[test]
+fn a_held_pair_fast_forwards_until_its_second_button_lets_go() {
+    let mut g = paired();
+    assert_eq!(g.feed(Down(Start), 0), vec![GbaDown(Start)]);
+    assert_eq!(g.feed(Down(A), 40), vec![FfStart]);
+    assert_eq!(g.feed(Up(A), 400), vec![FfStop]);
+    assert_eq!(g.feed(Up(Start), 500), vec![GbaUp(Start)]);
+}
+
+#[test]
+fn select_pressed_second_is_not_a_chord() {
+    let mut g = gestures();
+    assert_eq!(g.feed(Down(R1), 0), vec![GbaDown(R1)]);
+    assert!(
+        !g.feed(Down(Select), 40).contains(&SaveState),
+        "SELECT second saved a state"
+    );
+}
+
+#[test]
+fn start_pressed_second_is_not_a_chord() {
+    let mut g = paired();
+    assert_eq!(g.feed(Down(A), 0), vec![GbaDown(A)]);
+    assert_eq!(g.feed(Down(Start), 40), vec![GbaDown(Start)]);
+}
+
+#[test]
+fn a_button_running_its_own_shortcut_does_not_start_a_pair() {
+    let mut g = paired();
+    let mut shortcuts = today();
+    shortcuts.push((
+        Chord {
+            modifier: Some(Mod::Button(L1)),
+            button: R2,
+        },
+        SaveState,
+    ));
+    g.set_shortcuts(shortcuts);
+    assert_eq!(g.feed(Down(R2), 0), vec![FfStart]);
+    assert_eq!(g.feed(Down(L1), 40), vec![GbaDown(L1)]);
+    assert_eq!(g.feed(Up(L1), 80), vec![GbaUp(L1)]);
+    assert_eq!(g.feed(Up(R2), 400), vec![FfStop]);
+    assert_eq!(g.feed(Down(L1), 500), vec![GbaDown(L1)]);
+    assert_eq!(g.feed(Down(R2), 540), vec![SaveState]);
+}
+
+fn entry(
+    modifier: Option<Mod>,
+    button: Btn,
+    action: slot_input::Action,
+    contexts: slot_input::Contexts,
+) -> slot_input::Entry {
+    slot_input::Entry {
+        chord: Chord { modifier, button },
+        action,
+        contexts,
+    }
+}
+
+fn on_shelf(entries: Vec<slot_input::Entry>) -> Gestures {
+    let mut g = Gestures::new();
+    g.set_entries(entries);
+    g.set_context(slot_input::Context::Shelf);
+    g
+}
+
+#[test]
+fn on_the_shelf_a_single_fires_and_the_press_still_goes_through() {
+    let shelf = slot_input::Contexts::SHELF;
+    let mut g = on_shelf(vec![
+        entry(None, R1, BrightnessUp, shelf),
+        entry(None, R1, NextShelf, shelf),
+    ]);
+    assert_eq!(
+        g.feed(Down(R1), 0),
+        vec![BrightnessUp, NextShelf, GbaDown(R1)]
+    );
+    assert_eq!(g.feed(Up(R1), 40), vec![GbaUp(R1)]);
+}
+
+#[test]
+fn on_the_shelf_a_chords_first_button_waits_for_its_release() {
+    let shelf = slot_input::Contexts::SHELF;
+    let mut g = on_shelf(vec![
+        entry(Some(Mod::Button(L1)), R1, BrightnessUp, shelf),
+        entry(None, L1, PreviousShelf, shelf),
+    ]);
+    assert!(
+        g.feed(Down(L1), 0).is_empty(),
+        "L1 acted before R1 could join it"
+    );
+    assert_eq!(g.feed(Down(R1), 40), vec![BrightnessUp]);
+    assert!(g.feed(Up(R1), 80).is_empty());
+    assert!(
+        g.feed(Up(L1), 90).is_empty(),
+        "L1 switched shelves after the chord"
+    );
+    assert!(g.feed(Down(L1), 200).is_empty());
+    assert_eq!(
+        g.feed(Up(L1), 240),
+        vec![PreviousShelf, GbaDown(L1), GbaUp(L1)]
+    );
+}
+
+#[test]
+fn a_start_chord_on_the_shelf_holds_start_back_until_it_is_let_go() {
+    let all = slot_input::Contexts::ALL;
+    let mut g = on_shelf(vec![entry(
+        Some(Mod::Button(Start)),
+        Btn::Up,
+        BrightnessUp,
+        all,
+    )]);
+    assert!(g.feed(Down(Start), 0).is_empty());
+    assert_eq!(g.feed(Down(Btn::Up), 40), vec![BrightnessUp]);
+    g.feed(Up(Btn::Up), 80);
+    assert!(g.feed(Up(Start), 90).is_empty());
+    assert!(
+        g.feed(Down(Btn::Up), 200) == vec![GbaDown(Btn::Up)],
+        "Up waited though it only ever comes second"
+    );
+    g.feed(Up(Btn::Up), 240);
+    assert!(g.feed(Down(Start), 300).is_empty());
+    assert_eq!(g.feed(Up(Start), 340), vec![GbaDown(Start), GbaUp(Start)]);
+}
+
+#[test]
+fn in_a_menu_a_single_button_shortcut_does_nothing() {
+    let mut g = Gestures::new();
+    g.set_entries(vec![entry(
+        None,
+        A,
+        BrightnessUp,
+        slot_input::Contexts::GAME.with(slot_input::Contexts::SHELF),
+    )]);
+    g.set_context(slot_input::Context::Menu);
+    assert_eq!(g.feed(Down(A), 0), vec![GbaDown(A)]);
+}
+
+#[test]
+fn a_game_only_shortcut_does_nothing_on_the_shelf() {
+    let mut g = on_shelf(vec![entry(None, R2, FfStart, slot_input::Contexts::GAME)]);
+    assert_eq!(g.feed(Down(R2), 0), vec![GbaDown(R2)]);
+}
+
+#[test]
+fn a_press_seen_during_a_capture_leaves_nothing_behind() {
+    let mut g = paired();
+    g.observe(Down(L1));
+    g.observe(Up(L1));
+    assert_eq!(
+        g.feed(Down(R1), 0),
+        vec![GbaDown(R1)],
+        "a stale L1 completed the pair"
+    );
+}

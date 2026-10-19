@@ -1,5 +1,5 @@
 use slot_input::{Action, Btn, Chord, Mod};
-use slot_store::{Binding, CarouselAction, CarouselKeys, Device, Modifier, Shortcut, ShortcutKeys};
+use slot_store::{Binding, Device, Modifier, Shortcut};
 
 const PAIRS: [(Device, Btn); 14] = [
     (Device::Up, Btn::Up),
@@ -29,17 +29,18 @@ pub fn btn_device(b: Btn) -> Option<Device> {
     PAIRS.iter().find(|(_, x)| *x == b).map(|(d, _)| *d)
 }
 
-fn chord(binding: Binding) -> Chord {
+pub(super) fn chord(binding: Binding) -> Chord {
     Chord {
         modifier: binding.modifier.map(|m| match m {
             Modifier::Select => Mod::Select,
             Modifier::Menu => Mod::Menu,
+            Modifier::Button(d) => Mod::Button(device_btn(d)),
         }),
         button: device_btn(binding.button),
     }
 }
 
-fn action(s: Shortcut) -> Action {
+pub(super) fn shortcut_action(s: Shortcut) -> Action {
     match s {
         Shortcut::SaveState => Action::SaveState,
         Shortcut::LoadState => Action::LoadState,
@@ -55,22 +56,4 @@ fn action(s: Shortcut) -> Action {
         Shortcut::FastForward => Action::FfStart,
         Shortcut::Rewind => Action::RewindStart,
     }
-}
-
-pub fn shortcut_table(keys: &ShortcutKeys) -> Vec<(Chord, Action)> {
-    Shortcut::ALL
-        .iter()
-        .filter_map(|s| keys.get(*s).map(|b| (chord(b), action(*s))))
-        .collect()
-}
-
-pub fn carousel_action(keys: &CarouselKeys, action: Action) -> Option<CarouselAction> {
-    let pressed = match action {
-        Action::GbaDown(b) => Binding::plain(btn_device(b)?),
-        Action::MenuChordDown(b) => Binding::with(Modifier::Menu, btn_device(b)?),
-        _ => return None,
-    };
-    CarouselAction::ALL
-        .into_iter()
-        .find(|a| keys.get(*a) == pressed)
 }

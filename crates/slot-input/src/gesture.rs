@@ -51,12 +51,58 @@ pub enum Action {
     MenuChordDown(Btn),
     MenuChordUp(Btn),
     RepairCard,
+    PreviousShelf,
+    NextShelf,
+    Favorite,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Context {
+    #[default]
+    Game,
+    Shelf,
+    Menu,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Contexts(u8);
+
+impl Contexts {
+    pub const GAME: Contexts = Contexts(1);
+    pub const SHELF: Contexts = Contexts(2);
+    pub const MENU: Contexts = Contexts(4);
+    pub const ALL: Contexts = Contexts(7);
+
+    pub fn with(self, other: Contexts) -> Contexts {
+        Contexts(self.0 | other.0)
+    }
+
+    pub fn has(self, context: Context) -> bool {
+        let bit = match context {
+            Context::Game => Self::GAME,
+            Context::Shelf => Self::SHELF,
+            Context::Menu => Self::MENU,
+        };
+        self.0 & bit.0 != 0
+    }
+
+    pub fn meets(self, other: Contexts) -> bool {
+        self.0 & other.0 != 0
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct Entry {
+    pub chord: Chord,
+    pub action: Action,
+    pub contexts: Contexts,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Mod {
     Select,
     Menu,
+    Button(Btn),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -86,8 +132,11 @@ enum Select {
 #[derive(Default)]
 pub struct Gestures {
     select: Select,
-    shortcuts: Vec<(Chord, Action)>,
-    playing: bool,
+    entries: Vec<Entry>,
+    context: Context,
+    pressed: Vec<Btn>,
+    deferred: Vec<Btn>,
+    consumed: Vec<Btn>,
     held: Vec<(Btn, Release)>,
     ff_button: Option<Btn>,
     rewind_button: Option<Btn>,
@@ -110,6 +159,17 @@ pub struct Gestures {
     rewinding: bool,
 }
 
+pub fn anywhere(action: Action) -> bool {
+    matches!(
+        action,
+        Action::BrightnessUp | Action::BrightnessDown | Action::BlueLightUp | Action::BlueLightDown
+    )
+}
+
+fn leads(b: Btn) -> bool {
+    matches!(b, Btn::Select | Btn::Start | Btn::Menu)
+}
+
 fn ramp_due(down: Option<Millis>, last: Option<Millis>, now: Millis) -> bool {
     let Some(down) = down else {
         return false;
@@ -126,19 +186,72 @@ impl Gestures {
     }
 
     pub fn set_shortcuts(&mut self, shortcuts: Vec<(Chord, Action)>) {
-        self.shortcuts = shortcuts;
+        self.entries = shortcuts
+            .into_iter()
+            .map(|(chord, action)| Entry {
+                chord,
+                action,
+                contexts: match (chord.modifier, anywhere(action)) {
+                    (Some(Mod::Select | Mod::Menu), _) => Contexts::ALL,
+                    (Some(Mod::Button(_)), true) => Contexts::ALL,
+                    _ => Contexts::GAME,
+                },
+            })
+            .collect();
+    }
+
+    pub fn set_entries(&mut self, entries: Vec<Entry>) {
+        self.entries = entries;
     }
 
     pub fn set_playing(&mut self, playing: bool) {
-        self.playing = playing;
+        self.set_context(match playing {
+            true => Context::Game,
+            false => Context::Menu,
+        });
+    }
+
+    pub fn set_context(&mut self, context: Context) {
+        if context != self.context {
+            self.deferred.clear();
+        }
+        self.context = context;
+    }
+
+    pub fn observe(&mut self, ev: RawEvent) {
+        match ev {
+            RawEvent::Down(b) if !self.pressed.contains(&b) => self.pressed.push(b),
+            RawEvent::Down(_) => {}
+            RawEvent::Up(b) => {
+                self.pressed.retain(|x| *x != b);
+                self.deferred.retain(|x| *x != b);
+                self.consumed.retain(|x| *x != b);
+                self.held.retain(|(h, _)| *h != b);
+            }
+        }
+    }
+
+    fn active(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter().filter(|e| e.contexts.has(self.context))
+    }
+
+    fn matches(&self, modifier: Option<Mod>, button: Btn) -> Vec<Action> {
+        let chord = Chord { modifier, button };
+        self.active()
+            .filter(|e| e.chord == chord)
+            .map(|e| e.action)
+            .collect()
     }
 
     fn shortcut(&self, modifier: Option<Mod>, button: Btn) -> Option<Action> {
-        let chord = Chord { modifier, button };
-        self.shortcuts
-            .iter()
-            .find(|(c, _)| *c == chord)
-            .map(|(_, a)| *a)
+        self.matches(modifier, button).first().copied()
+    }
+
+    fn starts_a_chord(&self, b: Btn) -> bool {
+        self.active().any(|e| match e.chord.modifier {
+            Some(Mod::Button(first)) => first == b || (e.chord.button == b && !leads(first)),
+            _ => false,
+        })
     }
 
     fn hold(&mut self, b: Btn, action: Action) -> Vec<Action> {
@@ -168,8 +281,17 @@ impl Gestures {
 
     pub fn feed(&mut self, ev: RawEvent, now: Millis) -> Vec<Action> {
         match ev {
-            RawEvent::Down(b) => self.down(b, now),
-            RawEvent::Up(b) => self.up(b, now),
+            RawEvent::Down(b) => {
+                let out = self.down(b, now);
+                if !self.pressed.contains(&b) {
+                    self.pressed.push(b);
+                }
+                out
+            }
+            RawEvent::Up(b) => {
+                self.pressed.retain(|x| *x != b);
+                self.up(b, now)
+            }
         }
     }
 
@@ -240,18 +362,32 @@ impl Gestures {
                 return self.hold(b, action);
             }
         }
-        if self.playing {
-            match self.shortcut(None, b) {
-                Some(Action::FfStart) => {
-                    self.ff_button = Some(b);
-                    return self.ff_down(now);
-                }
-                Some(Action::RewindStart) => {
-                    self.rewind_button = Some(b);
-                    return self.rewind_start();
-                }
-                Some(action) => return self.hold(b, action),
-                None => {}
+        if let Some((first, action)) = self.pair(b) {
+            if let Some(at) = self.deferred.iter().position(|x| *x == first) {
+                self.deferred.remove(at);
+                self.consumed.push(first);
+            }
+            return self.fire(b, action, now);
+        }
+        let system = matches!(
+            b,
+            Btn::Select | Btn::Menu | Btn::Power | Btn::Lid | Btn::VolUp | Btn::VolDown
+        );
+        if self.context == Context::Game {
+            if let Some(action) = self.shortcut(None, b) {
+                return self.fire(b, action, now);
+            }
+        } else if !system {
+            if self.starts_a_chord(b) {
+                self.deferred.push(b);
+                return Vec::new();
+            }
+            let actions = self.matches(None, b);
+            if !actions.is_empty() {
+                let mut out = self.hand_over_select(now);
+                out.extend(actions);
+                out.push(Action::GbaDown(b));
+                return out;
             }
         }
         match b {
@@ -273,6 +409,17 @@ impl Gestures {
     }
 
     fn up(&mut self, b: Btn, now: Millis) -> Vec<Action> {
+        if let Some(at) = self.consumed.iter().position(|x| *x == b) {
+            self.consumed.remove(at);
+            return Vec::new();
+        }
+        if let Some(at) = self.deferred.iter().position(|x| *x == b) {
+            self.deferred.remove(at);
+            let mut out = self.hand_over_select(now);
+            out.extend(self.matches(None, b));
+            out.extend([Action::GbaDown(b), Action::GbaUp(b)]);
+            return out;
+        }
         if let Some(at) = self.held.iter().position(|(h, _)| *h == b) {
             return match self.held.remove(at).1 {
                 Release::Nothing => Vec::new(),
@@ -292,6 +439,40 @@ impl Gestures {
             Btn::Lid => vec![Action::LidOpen],
             Btn::VolUp | Btn::VolDown => self.volume_release(b),
             _ => vec![Action::GbaUp(b)],
+        }
+    }
+
+    fn pair(&self, b: Btn) -> Option<(Btn, Action)> {
+        if leads(b) {
+            return None;
+        }
+        self.pressed
+            .iter()
+            .filter(|h| **h != b && !self.busy(**h))
+            .find_map(|h| {
+                self.shortcut(Some(Mod::Button(*h)), b)
+                    .or_else(|| self.shortcut(Some(Mod::Button(b)), *h))
+                    .map(|action| (*h, action))
+            })
+    }
+
+    fn busy(&self, b: Btn) -> bool {
+        self.held.iter().any(|(h, _)| *h == b)
+            || (self.ff_button == Some(b) && self.ff_on)
+            || (self.rewind_button == Some(b) && self.rewinding)
+    }
+
+    fn fire(&mut self, b: Btn, action: Action, now: Millis) -> Vec<Action> {
+        match action {
+            Action::FfStart => {
+                self.ff_button = Some(b);
+                self.ff_down(now)
+            }
+            Action::RewindStart => {
+                self.rewind_button = Some(b);
+                self.rewind_start()
+            }
+            action => self.hold(b, action),
         }
     }
 

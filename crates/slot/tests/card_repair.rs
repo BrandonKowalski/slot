@@ -136,7 +136,7 @@ fn a_failed_write_alone_offers_no_repair() {
     let (mut a, _) = shelf(d.path());
     std::fs::remove_dir_all(d.path().join("Config")).ok();
     std::fs::write(d.path().join("Config"), b"").unwrap();
-    a.apply(Action::GbaDown(Btn::Y));
+    a.apply(Action::Favorite);
     a.tick_ms(3_000);
     assert!(a.card_alarm());
     assert_eq!(a.alarm_toast(), Some(Toast::CardUnwritable));

@@ -67,8 +67,7 @@ fn eject(a: &mut App) {
 }
 
 fn press(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
+    common::through(a, btn);
 }
 
 fn flip_recents(a: &mut App) {

@@ -328,7 +328,7 @@ fn a_named_shelf_that_no_longer_has_the_cart_is_an_empty_slot() {
 fn seating_a_cart_records_the_shelf_it_came_off() {
     let d = two_tetrises();
     let mut a = boot(d.path());
-    a.apply(Action::GbaDown(Btn::R1));
+    common::through(&mut a, Btn::R1);
     assert_eq!(
         a.selected_stem(),
         Some("Tetris"),

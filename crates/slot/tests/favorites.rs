@@ -34,8 +34,7 @@ fn boot_with(root: &Path, state: SlotState) -> App {
 }
 
 fn press(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
+    common::through(a, btn);
 }
 
 fn go_to(a: &mut App, shelf: &str) {

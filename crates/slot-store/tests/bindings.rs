@@ -126,3 +126,77 @@ fn the_carousel_starts_on_the_shoulders_and_y_and_reads_back() {
     write_carousel(d.path(), &moved).unwrap();
     assert_eq!(read_carousel(d.path()), moved);
 }
+
+#[test]
+fn a_pair_is_the_same_binding_in_either_order() {
+    assert_eq!(
+        Binding::pair(Device::R1, Device::L1),
+        Binding::pair(Device::L1, Device::R1)
+    );
+    assert_eq!(
+        Binding::pair(Device::L1, Device::R1),
+        with(Modifier::Button(Device::L1), Device::R1)
+    );
+    assert_eq!(
+        Binding::text(Binding::pair(Device::R1, Device::L1)),
+        "L1+R1"
+    );
+}
+
+#[test]
+fn a_pair_with_select_is_a_select_chord() {
+    assert_eq!(
+        Binding::pair(Device::A, Device::Select),
+        with(Modifier::Select, Device::A)
+    );
+    assert_eq!(
+        Binding::pair(Device::Select, Device::A),
+        with(Modifier::Select, Device::A)
+    );
+}
+
+#[test]
+fn start_leads_any_pair_it_is_in() {
+    assert_eq!(
+        Binding::pair(Device::A, Device::Start),
+        with(Modifier::Button(Device::Start), Device::A)
+    );
+    assert_eq!(
+        Binding::pair(Device::Start, Device::A),
+        with(Modifier::Button(Device::Start), Device::A)
+    );
+    assert_eq!(
+        Binding::text(Binding::pair(Device::A, Device::Start)),
+        "START+A"
+    );
+    assert!(Device::Start.leads() && Device::Select.leads() && !Device::A.leads());
+}
+
+#[test]
+fn a_button_paired_with_itself_is_that_button() {
+    assert_eq!(Binding::pair(Device::B, Device::B), plain(Device::B));
+}
+
+#[test]
+fn pairs_are_written_and_read_back_in_either_order() {
+    let d = card();
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::SaveState, Binding::pair(Device::L1, Device::R1));
+    keys.set(Shortcut::LoadState, Binding::pair(Device::Start, Device::A));
+    write_shortcuts(d.path(), &keys).unwrap();
+    assert_eq!(read_shortcuts(d.path()), keys);
+    std::fs::write(
+        d.path().join("Config/shortcuts.txt"),
+        "save_state=r1+l1\nload_state=A + Select\n",
+    )
+    .unwrap();
+    let read = read_shortcuts(d.path());
+    assert_eq!(
+        read.get(Shortcut::SaveState),
+        Binding::pair(Device::L1, Device::R1)
+    );
+    assert_eq!(
+        read.get(Shortcut::LoadState),
+        with(Modifier::Select, Device::A)
+    );
+}

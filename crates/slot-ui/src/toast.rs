@@ -2,9 +2,9 @@ use slot_gfx::{Canvas, OUT_H};
 use slot_store::GbPalette;
 
 use crate::hud::{HUD_INK, PLATE_H};
-use crate::icon::{haloed, HALO_PX};
+use crate::icon::{haloed, haloed_with, icon_coverage, Icon, HALO_PX, WARNING_INK};
 use crate::text;
-use crate::CartFace;
+use crate::{CartFace, QuickRow};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Toast {
@@ -27,6 +27,7 @@ pub enum Toast {
     CardRepaired,
     CardRepairFailed,
     Palette(GbPalette),
+    Duplicate(QuickRow),
 }
 
 impl Toast {
@@ -55,13 +56,26 @@ impl Toast {
         Self::FIXED
             .into_iter()
             .chain(GbPalette::all().map(Toast::Palette))
+            .chain(bound_rows().map(Toast::Duplicate))
             .collect()
     }
 
     pub fn index(self) -> usize {
         match self {
             Toast::Palette(p) => Self::FIXED.len() + p.index(),
+            Toast::Duplicate(row) => {
+                Self::FIXED.len()
+                    + GbPalette::all().count()
+                    + bound_rows().position(|r| r == row).unwrap_or(0)
+            }
             fixed => Self::FIXED.iter().position(|t| *t == fixed).unwrap_or(0),
+        }
+    }
+
+    pub fn icon(self) -> Option<Icon> {
+        match self {
+            Toast::Duplicate(_) => Some(Icon::Alert),
+            _ => None,
         }
     }
 
@@ -72,6 +86,7 @@ impl Toast {
     pub fn hold_ms(self) -> crate::hud::Millis {
         match self {
             Toast::CardRepaired | Toast::CardRepairFailed => REPAIR_HOLD_MS,
+            Toast::Duplicate(_) => WARNING_HOLD_MS,
             _ => crate::hud::HUD_MS,
         }
     }
@@ -84,7 +99,17 @@ impl Toast {
         }
     }
 
-    pub fn text(self) -> &'static str {
+    pub fn text(self) -> String {
+        match self {
+            Toast::Duplicate(row) if row.game_button().is_some() => {
+                format!("Same as Console {}", row.label())
+            }
+            Toast::Duplicate(row) => format!("Same as {}", row.label()),
+            other => other.fixed_text().to_string(),
+        }
+    }
+
+    fn fixed_text(self) -> &'static str {
         match self {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
@@ -105,16 +130,25 @@ impl Toast {
             Toast::CardRepaired => "SD card repaired",
             Toast::CardRepairFailed => "Card repair failed",
             Toast::Palette(p) => p.label(),
+            Toast::Duplicate(_) => "",
         }
     }
 }
 
+fn bound_rows() -> impl Iterator<Item = QuickRow> {
+    QuickRow::ALL.into_iter().filter(|r| r.binds())
+}
+
 const REPAIR_HOLD_MS: crate::hud::Millis = 6_000;
+const WARNING_HOLD_MS: crate::hud::Millis = 4_000;
 
 const TOAST_W: u32 = 240;
 const TOAST_H: u32 = 22;
 const TOAST_PX: f32 = 16.0;
 const TOAST_MIN_PX: f32 = 12.0;
+const WARNING_W: u32 = 400;
+const ICON_GAP: u32 = 8;
+const TOAST_ICON_PX: f32 = 22.0;
 
 const ALARM_W: u32 = 560;
 const ALARM_H: u32 = 44;
@@ -140,7 +174,10 @@ fn setting(toast: Toast) -> Setting {
             middle: OUT_H as f32 / 2.0,
         },
         false => Setting {
-            w: TOAST_W,
+            w: match toast.icon() {
+                Some(_) => WARNING_W,
+                None => TOAST_W,
+            },
             h: TOAST_H,
             px: TOAST_PX,
             min_px: TOAST_MIN_PX,
@@ -177,13 +214,55 @@ pub fn toast_face(toast: Toast) -> CartFace {
         };
     };
     let s = setting(toast);
-    let layout = text::fit(font, toast.text(), s.w as f32, 1, s.px, s.min_px);
-    let mut cov = text::coverage(s.w, s.h, &layout);
+    let icon = toast.icon().and_then(|i| icon_coverage(i, TOAST_ICON_PX));
+    let room = icon
+        .as_ref()
+        .map_or(s.w, |(_, iw, _)| s.w.saturating_sub(iw + ICON_GAP));
+    let layout = text::fit(font, &toast.text(), room as f32, 1, s.px, s.min_px);
+    let (mut cov, tinted) = match icon {
+        Some(icon) => beside(icon, font, &layout, &s),
+        None => (text::coverage(s.w, s.h, &layout), 0..0),
+    };
     if let Some(detail) = toast.detail() {
         let layout = text::fit(font, detail, s.w as f32, 1, DETAIL_PX, DETAIL_PX);
         cov.extend(text::coverage(s.w, DETAIL_H, &layout));
     }
-    haloed(&cov, s.w, s.h + detail_h(toast), HUD_INK)
+    if tinted.is_empty() {
+        return haloed(&cov, s.w, s.h + detail_h(toast), HUD_INK);
+    }
+    haloed_with(&cov, s.w, s.h + detail_h(toast), |x, _| {
+        match tinted.contains(&(x as u32)) {
+            true => WARNING_INK,
+            false => HUD_INK,
+        }
+    })
+}
+
+fn beside(
+    (icon, iw, ih): (Vec<u8>, u32, u32),
+    font: &fontdue::Font,
+    layout: &text::Layout,
+    s: &Setting,
+) -> (Vec<u8>, std::ops::Range<u32>) {
+    let line = layout.lines.first().map_or("", String::as_str);
+    let tw = (text::line_width(font, line, layout.px, layout.tracking).ceil() as u32 + 2)
+        .min(s.w.saturating_sub(iw + ICON_GAP));
+    let words = text::coverage(tw, s.h, layout);
+    let left = s.w.saturating_sub(iw + ICON_GAP + tw) / 2;
+    let mut cov = vec![0u8; (s.w * s.h) as usize];
+    let top = s.h.saturating_sub(ih) / 2;
+    for y in 0..ih.min(s.h) {
+        for x in 0..iw {
+            cov[((top + y) * s.w + left + x) as usize] = icon[(y * iw + x) as usize];
+        }
+    }
+    let at = left + iw + ICON_GAP;
+    for y in 0..s.h {
+        for x in 0..tw {
+            cov[(y * s.w + at + x) as usize] = words[(y * tw + x) as usize];
+        }
+    }
+    (cov, left..left + iw)
 }
 
 #[cfg(test)]
@@ -193,7 +272,7 @@ mod tests {
     fn ink_width(toast: Toast) -> u32 {
         let font = text::label_font().expect("label font");
         let s = setting(toast);
-        let layout = text::fit(font, toast.text(), s.w as f32, 1, s.px, s.min_px);
+        let layout = text::fit(font, &toast.text(), s.w as f32, 1, s.px, s.min_px);
         let cov = text::coverage(s.w, s.h, &layout);
         let cols: Vec<u32> = (0..s.w)
             .filter(|x| (0..s.h).any(|y| cov[(y * s.w + x) as usize] > 0))
@@ -219,7 +298,7 @@ mod tests {
 
     fn ink_height_at(toast: Toast, px: f32) -> u32 {
         let font = text::label_font().expect("label font");
-        let layout = text::fit(font, toast.text(), TOAST_W as f32, 1, px, px);
+        let layout = text::fit(font, &toast.text(), TOAST_W as f32, 1, px, px);
         let cov = text::coverage(TOAST_W, TOAST_H, &layout);
         let rows: Vec<u32> = (0..TOAST_H)
             .filter(|y| (0..TOAST_W).any(|x| cov[(y * TOAST_W + x) as usize] > 0))
@@ -260,7 +339,11 @@ mod tests {
         let font = text::label_font().expect("label font");
         for t in Toast::all() {
             let s = setting(t);
-            let layout = text::fit(font, t.text(), s.w as f32, 1, s.px, s.min_px);
+            let room = t
+                .icon()
+                .and_then(|i| icon_coverage(i, TOAST_ICON_PX))
+                .map_or(s.w, |(_, iw, _)| s.w - iw - ICON_GAP);
+            let layout = text::fit(font, &t.text(), room as f32, 1, s.px, s.min_px);
             assert_eq!(
                 layout.px,
                 s.px,

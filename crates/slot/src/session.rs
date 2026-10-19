@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use slot_input::{Action, Btn, Chord, Gestures, Millis, Mod, RawEvent};
+use slot_input::{Action, Btn, Chord, Contexts, Entry, Gestures, Millis, Mod, RawEvent};
 use slot_retro::Rumble;
-use slot_store::{Platform, ShortcutKeys};
+use slot_store::Platform;
 use slot_ui::FfState;
 
 pub const RUMBLE_MIN_MS: Millis = 100;
@@ -15,7 +15,7 @@ use crate::audio::{opened_sink, AudioSink, Ring, Sfx};
 use crate::core::{open_core, Opened};
 use crate::emu::{CoreState, EmuHandle, Speed};
 use crate::frames::FrameRef;
-use crate::input::{shortcut_table, Pad};
+use crate::input::Pad;
 use crate::persist;
 use crate::prefetch::Prefetch;
 
@@ -26,9 +26,10 @@ pub struct Session {
     opening: Option<Opening>,
     sink: Box<dyn AudioSink>,
     gestures: Gestures,
-    table_for: Option<(ShortcutKeys, bool)>,
+    entries: Vec<Entry>,
     captured: Vec<Btn>,
     pad: Pad,
+    sent: u16,
     rewinding: bool,
     fast: bool,
     motor: u16,
@@ -51,9 +52,10 @@ impl Session {
             opening: None,
             sink,
             gestures: Gestures::new(),
-            table_for: None,
+            entries: Vec::new(),
             captured: Vec::new(),
             pad: Pad::default(),
+            sent: 0,
             rewinding: false,
             fast: false,
             motor: 0,
@@ -171,20 +173,25 @@ impl Session {
     pub fn feed(&mut self, events: impl IntoIterator<Item = RawEvent>, now: Millis) {
         let mut actions = Vec::new();
         let latched = self.gestures.ff_latched();
-        self.gestures.set_playing(self.playing());
-        let shortcuts = self.app.shortcuts();
-        let repair = self.app.repair_offered();
-        if self.table_for != Some((shortcuts, repair)) {
-            let mut table = shortcut_table(&shortcuts);
-            if repair {
-                let chord = Chord {
-                    modifier: Some(Mod::Select),
-                    button: Btn::Start,
-                };
-                table.insert(0, (chord, Action::RepairCard));
-            }
-            self.gestures.set_shortcuts(table);
-            self.table_for = Some((shortcuts, repair));
+        self.gestures.set_context(self.app.input_context());
+        let mut entries = self.app.binding_table().entries();
+        if self.app.repair_offered() {
+            let chord = Chord {
+                modifier: Some(Mod::Select),
+                button: Btn::Start,
+            };
+            entries.insert(
+                0,
+                Entry {
+                    chord,
+                    action: Action::RepairCard,
+                    contexts: Contexts::ALL,
+                },
+            );
+        }
+        if self.entries != entries {
+            self.gestures.set_entries(entries.clone());
+            self.entries = entries;
         }
         for ev in events {
             if self.app.capturing() {
@@ -192,12 +199,14 @@ impl Session {
                     RawEvent::Down(b) => self.captured.push(b),
                     RawEvent::Up(b) => self.captured.retain(|x| *x != b),
                 }
+                self.gestures.observe(ev);
                 self.app.capture_input(ev);
                 continue;
             }
             if let RawEvent::Up(b) = ev {
                 if let Some(at) = self.captured.iter().position(|x| *x == b) {
                     self.captured.remove(at);
+                    self.gestures.observe(ev);
                     continue;
                 }
             }
@@ -218,7 +227,12 @@ impl Session {
             self.pad.apply(Action::GbaUp(btn));
         }
         if let Some(emu) = &self.emu {
-            emu.set_input(self.pad.mask(&self.app.controls()));
+            let mask = self.pad.mask(&self.app.controls());
+            if trace() && mask.0 != self.sent {
+                eprintln!("slot: pad {:#06x}", mask.0);
+            }
+            self.sent = mask.0;
+            emu.set_input(mask);
         }
     }
 

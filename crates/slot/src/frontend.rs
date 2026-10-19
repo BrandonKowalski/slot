@@ -11,11 +11,12 @@ use slot_ui::{
     date_time_text, default_game_bezel_face, footer_ink, game_bezel_face, gb_cart_shadow, hhmm,
     hint_face, icon_face, link_button_legends, menu_detail_face, menu_face, photo_face,
     prompt_legends, quick_caret_face, quick_description_face, quick_label_face, quick_legend_faces,
-    quick_pointer_face, quick_value_face, rebuild_count_face, rebuild_title_face, repair_legends,
-    set_clock_hint_face, slot_back, slot_back_light, slot_front, slot_front_light, socket_face,
-    sticker_face, title_face, toast_face, wallpaper_face, word_ink, CartFace, GbShell, Icon,
-    LinkBadge, PowerChoice, QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields,
-    Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    quick_pointer_face, quick_value_face, quick_warning_value_face, rebuild_count_face,
+    rebuild_title_face, repair_legends, set_clock_hint_face, slot_back, slot_back_light,
+    slot_front, slot_front_light, socket_face, sticker_face, title_face, toast_face,
+    wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces,
+    QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
+    HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -831,7 +832,7 @@ impl UiFaces {
             quick_legend_light: quick_legend_faces(footer_ink(true)),
             descriptions: [
                 quick_description_face(&["Supports single button and MENU+button."]),
-                quick_description_face(&["Supports single button, SELECT+button and MENU+button."]),
+                quick_description_face(&["Supports single button and two button chords."]),
             ],
             sockets: slot_store::Core::ALL
                 .iter()
@@ -934,7 +935,10 @@ fn sync_binding_faces(app: &mut App, compositor: &mut Compositor) {
             continue;
         }
         let faces = [false, true].map(|lit| {
-            let f = quick_value_face(&text, lit);
+            let f = match text.strip_prefix(crate::app::CLASH_MARK) {
+                Some(bare) => quick_warning_value_face(bare, lit),
+                None => quick_value_face(&text, lit),
+            };
             (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
         });
         app.add_binding_face(text, faces);

@@ -34,7 +34,7 @@ impl Pad {
                     match binding.modifier {
                         None => self.held.contains(&b),
                         Some(Modifier::Menu) => self.chorded.contains(&b),
-                        Some(Modifier::Select) => false,
+                        Some(Modifier::Select | Modifier::Button(_)) => false,
                     }
                 })
             })

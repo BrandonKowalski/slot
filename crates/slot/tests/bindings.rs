@@ -10,7 +10,7 @@ use slot_store::{
     read_carousel, read_controls, read_shortcuts, write_carousel, write_shortcuts, Binding,
     CarouselAction, CarouselKeys, Controls, Device, GameButton, Modifier, Shortcut, ShortcutKeys,
 };
-use slot_ui::QuickRow;
+use slot_ui::{QuickRow, Toast};
 use tempfile::TempDir;
 
 fn press(a: &mut App, b: Btn) {
@@ -58,12 +58,12 @@ fn playing(stem: &str) -> (TempDir, App) {
 }
 
 #[test]
-fn a_console_button_binds_to_the_next_press_and_moves_on() {
+fn a_console_button_binds_to_the_next_press_and_stays_on_its_row() {
     let (_d, mut a) = playing("Emerald");
     in_game_at(&mut a, QuickRow::GameA);
     bind(&mut a, &[RawEvent::Down(Btn::X)]);
     assert_eq!(a.controls().game(GameButton::A), Binding::plain(Device::X));
-    assert_eq!(a.in_game_menu(), Some(QuickRow::GameB));
+    assert_eq!(a.in_game_menu(), Some(QuickRow::GameA));
 }
 
 #[test]
@@ -281,7 +281,7 @@ fn the_controls_shelf_page_rebinds_shelf_switching_and_saves_at_once() {
         read_carousel(d.path()).get(CarouselAction::PreviousShelf),
         Binding::plain(Device::X)
     );
-    assert_eq!(s.app().quick_menu(), Some(QuickRow::ShelfNext));
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ShelfPrev));
     tap(&mut s, &mut now, Btn::B);
     assert_eq!(s.app().quick_menu(), Some(QuickRow::ControlsShelf));
     tap(&mut s, &mut now, Btn::B);
@@ -354,7 +354,8 @@ fn shortcuts_are_set_from_the_main_menu_and_saved_for_every_game_at_once() {
     step(&mut s, &mut now, &[RawEvent::Up(Btn::X)]);
     step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
     assert!(!s.app().capturing());
-    assert_eq!(s.app().quick_menu(), Some(QuickRow::ScLoad));
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ScSave));
+    tap(&mut s, &mut now, Btn::Down);
     tap(&mut s, &mut now, Btn::A);
     step(&mut s, &mut now, &[RawEvent::Down(Btn::Select)]);
     step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
@@ -439,4 +440,322 @@ fn turbo_b_moves_off_y_from_the_in_game_page() {
         read_controls(d.path()).game(GameButton::TurboB),
         Binding::plain(Device::L2)
     );
+}
+
+fn to_shortcuts(s: &mut Session, now: &mut Millis) {
+    tap(s, now, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(s, now, Btn::Down);
+    }
+    tap(s, now, Btn::A);
+    tap(s, now, Btn::Down);
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::Shortcuts));
+    tap(s, now, Btn::A);
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ScSave));
+}
+
+#[test]
+fn a_shortcut_binds_any_two_buttons_held_together() {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    to_shortcuts(&mut s, &mut now);
+    tap(&mut s, &mut now, Btn::A);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::R1)]);
+    assert!(
+        s.app().capturing(),
+        "the first button of a pair was bound alone"
+    );
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::L1)]);
+    assert!(!s.app().capturing());
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::L1)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::R1)]);
+    assert_eq!(
+        read_shortcuts(d.path()).get(Shortcut::SaveState),
+        Binding::pair(Device::L1, Device::R1)
+    );
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ScSave));
+}
+
+#[test]
+fn a_shortcut_binds_one_button_on_its_release() {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    to_shortcuts(&mut s, &mut now);
+    tap(&mut s, &mut now, Btn::A);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Start)]);
+    assert!(s.app().capturing());
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Start)]);
+    assert!(!s.app().capturing());
+    assert_eq!(
+        read_shortcuts(d.path()).get(Shortcut::SaveState),
+        Binding::plain(Device::Start)
+    );
+}
+
+#[test]
+fn a_console_button_still_binds_on_the_press() {
+    let (_d, mut a) = playing("Emerald");
+    in_game_at(&mut a, QuickRow::GameA);
+    press(&mut a, Btn::A);
+    a.capture_input(RawEvent::Down(Btn::L1));
+    assert!(!a.capturing(), "a console button waited for a second press");
+    assert_eq!(a.controls().game(GameButton::A), Binding::plain(Device::L1));
+}
+
+#[test]
+fn a_shelf_key_pair_switches_shelves_only_with_both_held() {
+    let d = shelf_card();
+    let mut keys = CarouselKeys::default();
+    keys.set(
+        CarouselAction::NextShelf,
+        Binding::pair(Device::X, Device::R2),
+    );
+    write_carousel(d.path(), &keys).expect("write carousel");
+    let (mut s, mut now) = on_shelf(d.path());
+    let before = s.app().shelf_platform_name();
+    tap(&mut s, &mut now, Btn::R2);
+    assert_eq!(s.app().shelf_platform_name(), before, "R2 alone switched");
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::R2)]);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::X)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::X)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::R2)]);
+    for _ in 0..25 {
+        step(&mut s, &mut now, &[]);
+    }
+    assert_ne!(s.app().shelf_platform_name(), before, "R2+X did not switch");
+}
+
+#[test]
+fn a_shortcut_pair_reaches_the_gestures_as_a_pair() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::SaveState, Binding::pair(Device::R1, Device::L1));
+    let table =
+        slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default(), true);
+    assert!(table.entries().iter().any(|e| e.chord
+        == slot_input::Chord {
+            modifier: Some(slot_input::Mod::Button(Btn::L1)),
+            button: Btn::R1,
+        }
+        && e.action == Action::SaveState));
+}
+
+fn bind_save_state(presses: &[RawEvent]) -> (TempDir, Session) {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    to_shortcuts(&mut s, &mut now);
+    tap(&mut s, &mut now, Btn::A);
+    for ev in presses {
+        step(&mut s, &mut now, &[*ev]);
+    }
+    assert!(!s.app().capturing());
+    (d, s)
+}
+
+#[test]
+fn a_shortcut_on_a_console_button_names_it() {
+    let (_d, s) = bind_save_state(&[RawEvent::Down(Btn::A), RawEvent::Up(Btn::A)]);
+    assert_eq!(s.app().toast(), Some(Toast::Duplicate(QuickRow::GameA)));
+    assert_eq!(
+        Toast::Duplicate(QuickRow::GameA).text(),
+        "Same as Console A Button"
+    );
+}
+
+#[test]
+fn a_pair_of_console_buttons_is_not_a_clash() {
+    let (_d, s) = bind_save_state(&[
+        RawEvent::Down(Btn::L1),
+        RawEvent::Down(Btn::R1),
+        RawEvent::Up(Btn::R1),
+        RawEvent::Up(Btn::L1),
+    ]);
+    assert_eq!(s.app().toast(), None);
+}
+
+#[test]
+fn a_pair_holding_another_shortcuts_button_names_it() {
+    let (_d, s) = bind_save_state(&[
+        RawEvent::Down(Btn::R2),
+        RawEvent::Down(Btn::A),
+        RawEvent::Up(Btn::A),
+        RawEvent::Up(Btn::R2),
+    ]);
+    assert_eq!(
+        s.app().toast(),
+        Some(Toast::Duplicate(QuickRow::ScFastForward))
+    );
+    assert_eq!(
+        Toast::Duplicate(QuickRow::ScFastForward).text(),
+        "Same as Fast Forward"
+    );
+}
+
+#[test]
+fn the_default_bindings_flag_nothing() {
+    let d = shelf_card();
+    let (s, _) = on_shelf(d.path());
+    for row in QuickRow::ALL.into_iter().filter(|r| r.binds()) {
+        assert_eq!(s.app().clash(row), None, "{row:?} is flagged by default");
+    }
+}
+
+#[test]
+fn a_shelf_key_is_only_checked_against_shelf_keys() {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    tap(&mut s, &mut now, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
+    tap(&mut s, &mut now, Btn::A);
+    tap(&mut s, &mut now, Btn::A);
+    tap(&mut s, &mut now, Btn::Down);
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ShelfNext));
+    tap(&mut s, &mut now, Btn::A);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::B)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::B)]);
+    assert_eq!(s.app().toast(), None, "the console B counted as a clash");
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ShelfNext));
+    tap(&mut s, &mut now, Btn::A);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::L1)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::L1)]);
+    assert_eq!(s.app().toast(), Some(Toast::Duplicate(QuickRow::ShelfPrev)));
+    assert_eq!(
+        read_carousel(d.path()).get(CarouselAction::NextShelf),
+        Binding::plain(Device::L1),
+        "a clash was not saved"
+    );
+}
+
+#[test]
+fn a_shelf_key_led_by_start_needs_start_first() {
+    let mut keys = CarouselKeys::default();
+    keys.set(
+        CarouselAction::Favorite,
+        Binding::pair(Device::Start, Device::A),
+    );
+    let table =
+        slot::input::Table::new(&Controls::default(), &ShortcutKeys::default(), &keys, true);
+    let shelf = || {
+        let mut g = slot_input::Gestures::new();
+        g.set_entries(table.entries());
+        g.set_context(slot_input::Context::Shelf);
+        g
+    };
+    let mut g = shelf();
+    g.feed(RawEvent::Down(Btn::Start), 0);
+    assert!(g
+        .feed(RawEvent::Down(Btn::A), 40)
+        .contains(&Action::Favorite));
+    let mut g = shelf();
+    g.feed(RawEvent::Down(Btn::A), 0);
+    assert!(!g
+        .feed(RawEvent::Down(Btn::Start), 40)
+        .contains(&Action::Favorite));
+}
+
+fn shelf_with(keys: ShortcutKeys) -> (TempDir, Session, Millis) {
+    let d = shelf_card();
+    write_shortcuts(d.path(), &keys).expect("write shortcuts");
+    let (s, now) = on_shelf(d.path());
+    (d, s, now)
+}
+
+fn chord(s: &mut Session, now: &mut Millis, first: Btn, second: Btn) {
+    step(s, now, &[RawEvent::Down(first)]);
+    step(s, now, &[RawEvent::Down(second)]);
+    step(s, now, &[RawEvent::Up(second)]);
+    step(s, now, &[RawEvent::Up(first)]);
+    for _ in 0..25 {
+        step(s, now, &[]);
+    }
+}
+
+#[test]
+fn a_brightness_pair_on_the_shoulders_works_on_the_shelf_without_switching() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(
+        Shortcut::BrightnessUp,
+        Binding::pair(Device::L1, Device::R1),
+    );
+    let (_d, mut s, mut now) = shelf_with(keys);
+    let (shelf, bright) = (s.app().shelf_platform_name(), s.app().brightness());
+    chord(&mut s, &mut now, Btn::L1, Btn::R1);
+    assert_eq!(s.app().brightness(), bright + 1);
+    assert_eq!(
+        s.app().shelf_platform_name(),
+        shelf,
+        "the chord switched shelves"
+    );
+    tap(&mut s, &mut now, Btn::L1);
+    assert_ne!(
+        s.app().shelf_platform_name(),
+        shelf,
+        "L1 alone no longer switches"
+    );
+}
+
+#[test]
+fn start_up_raises_brightness_on_the_shelf_and_start_alone_still_opens_the_chip() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(
+        Shortcut::BrightnessUp,
+        Binding::pair(Device::Start, Device::Up),
+    );
+    let (_d, mut s, mut now) = shelf_with(keys);
+    let bright = s.app().brightness();
+    chord(&mut s, &mut now, Btn::Start, Btn::Up);
+    assert_eq!(s.app().brightness(), bright + 1);
+    assert!(s.app().core_picker().is_none(), "START+Up opened the chip");
+    tap(&mut s, &mut now, Btn::Start);
+    assert!(s.app().core_picker().is_some(), "START alone did nothing");
+}
+
+#[test]
+fn brightness_on_a_shelf_key_does_both_on_the_shelf_and_is_flagged() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::BrightnessUp, Binding::plain(Device::R1));
+    keys.set(Shortcut::BrightnessDown, Binding::plain(Device::L1));
+    let (_d, mut s, mut now) = shelf_with(keys);
+    let (shelf, bright) = (s.app().shelf_platform_name(), s.app().brightness());
+    tap(&mut s, &mut now, Btn::R1);
+    assert_eq!(
+        s.app().brightness(),
+        bright + 1,
+        "R1 did not raise brightness"
+    );
+    assert_ne!(
+        s.app().shelf_platform_name(),
+        shelf,
+        "R1 did not switch shelves"
+    );
+    tap(&mut s, &mut now, Btn::L1);
+    assert_eq!(s.app().brightness(), bright, "L1 did not lower brightness");
+    assert_eq!(
+        s.app().clash(QuickRow::ScBrightUp),
+        Some(QuickRow::ShelfNext)
+    );
+    assert_eq!(
+        s.app().clash(QuickRow::ShelfNext),
+        Some(QuickRow::ScBrightUp)
+    );
+}
+
+#[test]
+fn with_turbo_off_its_rows_are_hidden_and_never_flagged() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::SaveState, Binding::plain(Device::X));
+    let d = shelf_card();
+    write_shortcuts(d.path(), &keys).expect("write shortcuts");
+    let (s, _) = on_shelf(d.path());
+    assert_eq!(s.app().clash(QuickRow::ScSave), Some(QuickRow::GameTurboA));
+    let mut state = slot_store::read_slot_state(d.path());
+    state.turbo = false;
+    slot_store::write_slot_state(d.path(), &state).expect("write slot.state");
+    let (s, _) = on_shelf(d.path());
+    for row in [QuickRow::GameTurboA, QuickRow::GameTurboB] {
+        assert!(s.app().hidden_rows().contains(&row), "{row:?} is shown");
+        assert_eq!(s.app().clash(row), None);
+    }
+    assert_eq!(s.app().clash(QuickRow::ScSave), None);
 }
