@@ -12,6 +12,8 @@ GRACE="${AGS_LID_GRACE:-60}"
 RMMOD="${AGS_RMMOD:-rmmod}"
 SYNC="${AGS_SYNC:-sync}"
 POWEROFF="${AGS_POWEROFF:-poweroff}"
+SLEEP="${AGS_SLEEP:-sleep}"
+WIFI_WAIT="${AGS_WIFI_WAIT:-5}"
 
 now() {
 	read -r up _ < "$UPTIME" 2>/dev/null || up=0
@@ -26,9 +28,19 @@ minutes() {
 	esac
 }
 
+unload_wifi() {
+	$RMMOD 8821cs 2>/dev/null &
+	waited=0
+	while kill -0 $! 2>/dev/null && [ "$waited" -lt "$WIFI_WAIT" ]; do
+		$SLEEP 1
+		waited=$((waited + 1))
+	done
+}
+
 power_off() {
 	echo "$(date +%s) lid: closed ${1}s and slot has not powered off, powering off" >> "$TRACE" 2>/dev/null
-	$RMMOD 8821cs 2>/dev/null
+	$SYNC
+	unload_wifi
 	$SYNC
 	$POWEROFF
 }

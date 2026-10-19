@@ -31,7 +31,7 @@ pub fn label_art(root: &Path, cart: &Cart) -> Option<Vec<u8>> {
     bytes.extend_from_slice(&cw.to_le_bytes());
     bytes.extend_from_slice(&ch.to_le_bytes());
     bytes.extend_from_slice(art.as_deref().unwrap_or_default());
-    if let Err(e) = std::fs::write(&cached, &bytes) {
+    if let Err(e) = slot_store::atomic_write(&cached, &bytes) {
         eprintln!("slot: label cache: {}: {e}", cached.display());
     }
     art

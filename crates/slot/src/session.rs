@@ -532,9 +532,10 @@ impl Session {
         let join = std::thread::Builder::new()
             .name("slot-open".into())
             .spawn(move || {
-                let resume = (!clean)
-                    .then(|| persist::read_resume(&root, platform, core, &stem))
-                    .flatten();
+                let resume = match clean {
+                    true => Ok(None),
+                    false => persist::read_resume(&root, platform, core, &stem),
+                };
                 launch("resume state read");
                 let palette = crate::core::palette_for(chosen, platform, &rom, player);
                 let opened = open_core(&root, core, platform, serial, colour, palette, player);
@@ -570,11 +571,26 @@ impl Session {
         self.app.set_palette_live(loaded.palette_live);
         self.app.set_named_core(loaded.opened.named);
         let ring = self.sink.ring();
-        let (core, rom, sav, resume) = (loaded.opened.core, loaded.rom, loaded.sav, loaded.resume);
+        let sav = self.app.card_read("save", loaded.sav);
+        let resume = self.app.card_read("resume", loaded.resume);
+        let (sav_unread, resume_unread) = (sav.is_none(), resume.is_none());
+        let (core, rom, sav, resume) = (
+            loaded.opened.core,
+            loaded.rom,
+            sav.flatten(),
+            resume.flatten(),
+        );
         let emu = match loaded.player.filter(|_| loaded.platform == Platform::Gba) {
             Some(p) => EmuHandle::spawn_linked(core, rom, ring, sav, resume, p),
             None => EmuHandle::spawn(core, rom, ring, sav, resume),
         };
+        if sav_unread {
+            emu.refuse_save_ram();
+        }
+        if resume_unread {
+            emu.refuse_resume();
+        }
+        self.app.set_resume_unread(resume_unread);
         emu.set_volume(self.app.output_volume());
         emu.set_driven(self.driven);
         self.app.set_snapshot(Box::new(emu.snapshot()));
@@ -621,8 +637,8 @@ struct Loaded {
     platform: Platform,
     player: Option<u8>,
     palette_live: bool,
-    sav: Option<Vec<u8>>,
-    resume: Option<Vec<u8>>,
+    sav: std::io::Result<Option<Vec<u8>>>,
+    resume: std::io::Result<Option<Vec<u8>>>,
 }
 
 struct Opening {

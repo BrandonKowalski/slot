@@ -68,6 +68,8 @@ const CARD_CHECK_MS: Millis = 2_000;
 
 const BATTERY_CRITICAL: u8 = 5;
 
+const REPAIR_BATTERY_MIN: u8 = 20;
+
 const BATTERY_POLL_MS: Millis = 10_000;
 const MENU_REVEAL_MS: Millis = 180;
 
@@ -437,6 +439,7 @@ pub struct App {
     autosave_at: Millis,
     pending_save: Option<std::thread::JoinHandle<()>>,
     card_writes: Arc<crate::card_log::CardWrites>,
+    resume_unread: bool,
     card_read_only: bool,
     card_check_at: Millis,
     battery_at: Millis,
@@ -614,6 +617,7 @@ impl App {
             autosave_at: AUTOSAVE_MS,
             pending_save: None,
             card_writes,
+            resume_unread: false,
             card_read_only: false,
             card_check_at: 0,
             battery_at: BATTERY_POLL_MS,
@@ -2087,10 +2091,20 @@ impl App {
     }
 
     pub fn repair_offered(&self) -> bool {
+        self.repair_possible() && self.charged_to_repair()
+    }
+
+    fn repair_possible(&self) -> bool {
         self.card_read_only
             && !self.repair_prompt
             && !self.shutting_down()
             && matches!(self.phase, Phase::Shelf | Phase::Playing { .. })
+    }
+
+    fn charged_to_repair(&self) -> bool {
+        self.battery.is_none_or(|b| {
+            b.percent >= REPAIR_BATTERY_MIN || matches!(b.charge, Charge::Charging | Charge::Full)
+        })
     }
 
     pub fn repair_prompt(&self) -> bool {
@@ -2157,6 +2171,25 @@ impl App {
 
     pub fn gb_palette(&self) -> Option<GbPalette> {
         self.state.gb_palettes.then_some(self.state.gb_palette)
+    }
+
+    pub fn card_read(
+        &self,
+        what: &str,
+        read: std::io::Result<Option<Vec<u8>>>,
+    ) -> Option<Option<Vec<u8>>> {
+        match read {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                eprintln!("slot: {what} read: {e}");
+                self.card_writes.failed(what, &e);
+                None
+            }
+        }
+    }
+
+    pub fn set_resume_unread(&mut self, unread: bool) {
+        self.resume_unread = unread;
     }
 
     pub fn set_palette_live(&mut self, live: bool) {
@@ -3287,11 +3320,12 @@ impl App {
             self.log_card(failing);
         }
         self.hud.set_alarm(failing, self.now());
-        self.hud.set_alarm_toast(if self.repair_offered() {
-            Toast::CardRepair
-        } else {
-            Toast::CardUnwritable
-        });
+        self.hud
+            .set_alarm_toast(match (self.repair_possible(), self.charged_to_repair()) {
+                (true, true) => Toast::CardRepair,
+                (true, false) => Toast::CardRepairCharge,
+                (false, _) => Toast::CardUnwritable,
+            });
         if self.now() >= self.battery_at {
             self.battery_at = self.now() + BATTERY_POLL_MS;
             self.battery = self.power.as_ref().and_then(|p| p.battery());
@@ -3494,7 +3528,7 @@ impl App {
         let Some(snapshot) = &self.snapshot else {
             return;
         };
-        if snapshot.resume_trusted() {
+        if snapshot.resume_trusted() || self.resume_unread {
             return;
         }
         if !self.named_core {
@@ -4492,6 +4526,7 @@ impl App {
         };
         let (state, sav) = trusted_write(snapshot.as_ref(), state, "eject");
         let state = state.filter(|_| self.state.eject_save);
+        self.state_writer.flush();
         match persist::eject(
             root,
             self.platform,
@@ -4499,11 +4534,12 @@ impl App {
             stem,
             state.as_deref(),
             sav.as_deref(),
+            &self.state,
         ) {
             Ok(()) => {
                 self.state.cart = None;
                 self.state.cart_platform = None;
-                self.card_writes.ok();
+                self.card_writes.ok("eject");
             }
             Err(e) => {
                 eprintln!("slot: eject: {e}");
@@ -5192,7 +5228,9 @@ impl App {
         let thumb = snapshot.thumb().unwrap_or_default();
         let stamp = free_stamp(&ring, self.wall_secs());
         let evicted = doomed(&ring);
-        if let Err(e) = ring.push(&state, &thumb, &stamp) {
+        let pushed = ring.push(&state, &thumb, &stamp);
+        self.card_writes.wrote("save state", &pushed);
+        if let Err(e) = pushed {
             eprintln!("slot: save: {e}");
             return;
         }

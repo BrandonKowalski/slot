@@ -753,6 +753,11 @@ impl Frontend {
     pub fn poweroff(&mut self) {
         self.session.app_mut().poweroff();
     }
+
+    pub fn stop(&mut self) {
+        self.session.app_mut().flush_resume();
+        self.session.app_mut().settle_saves();
+    }
 }
 
 fn link_legend_faces(ink: [u8; 3]) -> Vec<UndoFace> {

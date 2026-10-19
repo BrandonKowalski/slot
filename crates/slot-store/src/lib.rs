@@ -1,3 +1,10 @@
+macro_rules! eprintln {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 mod atomic;
 mod bindings;
 pub mod cart_shell;
@@ -13,7 +20,7 @@ mod scan;
 mod slot_state;
 mod stamp;
 
-pub use atomic::atomic_write;
+pub use atomic::{atomic_write, sweep_temps};
 pub use bindings::{
     read_carousel, read_controls, read_shortcuts, write_carousel, write_controls, write_shortcuts,
     Binding, CarouselAction, CarouselKeys, Controls, Device, GameButton, Modifier, Shortcut,

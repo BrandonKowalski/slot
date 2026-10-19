@@ -123,21 +123,47 @@ pub fn compose(wordmark: &Bmp, (width, height): (usize, usize)) -> Option<Bmp> {
     Some(Bmp { width, height, rgb })
 }
 
-pub fn install(wordmark: &[u8], dir: &Path) -> io::Result<Outcome> {
-    let Some(mark) = decode(wordmark) else {
-        return Ok(Outcome::Invalid);
-    };
+struct Plan {
+    logo: Vec<u8>,
+    current: Option<Vec<u8>>,
+    original: Option<Vec<u8>>,
+}
+
+fn plan(wordmark: &[u8], dir: &Path) -> Result<Plan, Outcome> {
+    let mark = decode(wordmark).ok_or(Outcome::Invalid)?;
     let current = fs::read(dir.join(LOGO)).ok();
     let original = fs::read(dir.join(ORIGINAL)).ok();
-    let Some(panel) = original.as_deref().or(current.as_deref()).and_then(size) else {
-        return Ok(Outcome::Invalid);
-    };
-    let Some(logo) = compose(&mark, panel).map(|b| encode(&b)) else {
-        return Ok(Outcome::Invalid);
-    };
+    let panel = original
+        .as_deref()
+        .or(current.as_deref())
+        .and_then(size)
+        .ok_or(Outcome::Invalid)?;
+    let logo = compose(&mark, panel)
+        .map(|b| encode(&b))
+        .ok_or(Outcome::Invalid)?;
     if current.as_deref() == Some(&logo[..]) {
-        return Ok(Outcome::Same);
+        return Err(Outcome::Same);
     }
+    Ok(Plan {
+        logo,
+        current,
+        original,
+    })
+}
+
+pub fn pending(wordmark: &[u8], dir: &Path) -> Option<Outcome> {
+    plan(wordmark, dir).err()
+}
+
+pub fn install(wordmark: &[u8], dir: &Path) -> io::Result<Outcome> {
+    let Plan {
+        logo,
+        current,
+        original,
+    } = match plan(wordmark, dir) {
+        Ok(plan) => plan,
+        Err(outcome) => return Ok(outcome),
+    };
     if let Some(current) = &current {
         if original.is_none() {
             replace(dir, ORIGINAL, current)?;
@@ -189,16 +215,22 @@ pub fn refresh(card: &Path) {
         return;
     };
     if fs::create_dir_all(MOUNT).is_err()
-        || !run("mount", &["-t", "vfat", "-o", "rw,noatime", &device, MOUNT])
+        || !run("mount", &["-t", "vfat", "-o", "ro,noatime", &device, MOUNT])
     {
         eprintln!("slot: bootlogo: could not mount {device}");
         return;
     }
-    match install(&logo, Path::new(MOUNT)) {
-        Ok(Outcome::Installed) => eprintln!("slot: bootlogo: installed"),
-        Ok(Outcome::Invalid) => eprintln!("slot: bootlogo: no logo fits this panel, left alone"),
-        Ok(_) => {}
-        Err(e) => eprintln!("slot: bootlogo: {e}"),
+    match pending(&logo, Path::new(MOUNT)) {
+        Some(Outcome::Invalid) => eprintln!("slot: bootlogo: no logo fits this panel, left alone"),
+        Some(_) => {}
+        None if !run("mount", &["-o", "remount,rw,noatime", MOUNT]) => {
+            eprintln!("slot: bootlogo: could not remount {device} to write the logo")
+        }
+        None => match install(&logo, Path::new(MOUNT)) {
+            Ok(Outcome::Installed) => eprintln!("slot: bootlogo: installed"),
+            Ok(_) => {}
+            Err(e) => eprintln!("slot: bootlogo: {e}"),
+        },
     }
     if !run("umount", &[MOUNT]) {
         eprintln!("slot: bootlogo: could not unmount {MOUNT}");

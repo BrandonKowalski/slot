@@ -43,6 +43,7 @@ fn eject_clears_the_slot_only_after_the_state_is_durable() {
         "Emerald",
         Some(&[9u8; 1024]),
         Some(b"savdata"),
+        &read_slot_state(d.path()),
     )
     .unwrap();
     assert_eq!(read_slot_state(d.path()).cart, None);
@@ -70,7 +71,8 @@ fn a_resume_that_cannot_be_written_leaves_the_cart_in_the_slot() {
         Core::Mgba,
         "Emerald",
         Some(&[9u8; 1024]),
-        None
+        None,
+        &read_slot_state(d.path()),
     )
     .is_err());
     assert_eq!(read_slot_state(d.path()).cart, Some("Emerald".into()));
@@ -90,6 +92,7 @@ fn an_unchanged_battery_save_is_not_rewritten() {
         "Emerald",
         Some(&[0u8; 8]),
         Some(b"savdata"),
+        &read_slot_state(d.path()),
     );
     let changed = eject(
         d.path(),
@@ -98,6 +101,7 @@ fn an_unchanged_battery_save_is_not_rewritten() {
         "Emerald",
         Some(&[0u8; 8]),
         Some(b"changed"),
+        &read_slot_state(d.path()),
     );
     set_mode(&saves, 0o755);
     unchanged.expect("identical bytes must not touch the card");
@@ -131,6 +135,7 @@ fn eject_preserves_the_levels() {
         "Emerald",
         Some(&[0u8; 8]),
         None,
+        &read_slot_state(d.path()),
     )
     .unwrap();
     let s = read_slot_state(d.path());

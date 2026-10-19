@@ -1,5 +1,5 @@
 use slot::bootlogo::{
-    chosen, compose, decode, encode, install, size, Bmp, Outcome, CARD_LOGO, USER_LOGO,
+    chosen, compose, decode, encode, install, pending, size, Bmp, Outcome, CARD_LOGO, USER_LOGO,
 };
 
 const BG: [u8; 3] = [11, 14, 17];
@@ -53,6 +53,16 @@ fn a_portrait_panel_gets_the_wordmark_turned_a_quarter_counter_clockwise() {
 #[test]
 fn a_wordmark_bigger_than_the_panel_is_refused() {
     assert!(compose(&mark(), (4, 3)).is_none());
+}
+
+#[test]
+fn only_a_logo_that_differs_asks_for_the_partition_to_be_written() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
+    assert_eq!(pending(&encode(&mark()), d.path()), None);
+    install(&encode(&mark()), d.path()).unwrap();
+    assert_eq!(pending(&encode(&mark()), d.path()), Some(Outcome::Same));
+    assert_eq!(pending(b"not a bmp", d.path()), Some(Outcome::Invalid));
 }
 
 #[test]

@@ -1444,7 +1444,9 @@ fn a_game_that_will_not_load_again_comes_back_out_of_the_slot() {
         "the cart came out without the alert"
     );
     assert!(
-        persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald").is_some(),
+        persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+            .unwrap()
+            .is_some(),
         "the state flushed before the reload is gone"
     );
     let deadline = Instant::now() + BAIL;

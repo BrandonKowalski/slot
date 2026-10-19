@@ -1,5 +1,8 @@
 use std::ffi::{c_void, CStr};
 use std::fmt::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static STOPPING: AtomicBool = AtomicBool::new(false);
 
 const SIGNALS: [(i32, &str); 5] = [
     (libc::SIGSEGV, "SIGSEGV"),
@@ -19,6 +22,22 @@ pub fn install() {
             libc::sigaction(sig, &action, std::ptr::null_mut());
         }
     }
+    #[cfg(not(feature = "host"))]
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_stop as *const () as usize;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+    }
+}
+
+#[cfg(not(feature = "host"))]
+extern "C" fn on_stop(_: i32) {
+    STOPPING.store(true, Ordering::Relaxed);
+}
+
+pub fn stopping() -> bool {
+    STOPPING.load(Ordering::Relaxed)
 }
 
 struct Line {

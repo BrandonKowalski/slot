@@ -632,7 +632,10 @@ fn feed_through(
 ) {
     let mut g = slot_input::Gestures::new();
     g.set_entries(a.binding_table().entries());
-    for ev in [slot_input::RawEvent::Down(btn), slot_input::RawEvent::Up(btn)] {
+    for ev in [
+        slot_input::RawEvent::Down(btn),
+        slot_input::RawEvent::Up(btn),
+    ] {
         g.set_context(a.input_context());
         for action in g.feed(ev, now) {
             apply(a, action);

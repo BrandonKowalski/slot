@@ -89,6 +89,7 @@ fn counter_after(root: &Path, hold: bool) -> u64 {
     s.app_mut().tick_ms(60_000);
     s.app_mut().settle_saves();
     let state = persist::read_resume(root, Platform::Gba, Core::Mgba, "Emerald")
+        .unwrap()
         .expect("nothing was flushed");
     u64::from_le_bytes(state.try_into().expect("the mock's state is 8 bytes"))
 }
@@ -152,4 +153,39 @@ fn an_empty_slot_loads_no_core_at_boot() {
     let s = Session::boot(d.path().to_path_buf());
     assert!(matches!(s.app().phase(), Phase::Shelf));
     assert!(!s.has_core(), "a core opened with nothing in the slot");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_save_the_card_cannot_read_is_never_replaced_with_a_blank_one() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let root = d.path();
+    common::clocked(root);
+    let sav = root.join("Saves/GBA/Emerald.sav");
+    std::fs::create_dir_all(sav.parent().unwrap()).unwrap();
+    std::fs::write(&sav, b"the player's real save").unwrap();
+    std::fs::set_permissions(&sav, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&sav).is_ok() {
+        return;
+    }
+
+    let mut s = Session::boot(root.to_path_buf());
+    s.feed([RawEvent::Down(Btn::A)], 16);
+    s.feed([RawEvent::Up(Btn::A)], 32);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        s.update(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    s.app_mut().tick_ms(60_000);
+    s.app_mut().settle_saves();
+
+    std::fs::set_permissions(&sav, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(
+        std::fs::read(&sav).unwrap(),
+        b"the player's real save",
+        "a save that failed to read was replaced by the blank one the game booted with"
+    );
 }

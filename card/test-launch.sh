@@ -63,4 +63,12 @@ head -c 1000 /dev/zero | tr '\0' 'x' > "$TMP/card/Logs/slot-session.log"
 launch
 [ ! -e "$TMP/card/Logs/slot-session.log.1" ] || fail "a small session log rotated"
 
+setup
+printf 'echo "$*" >> "%s"\n' "$TMP/link.log" > "$TMP/card/System/slotlink.sh"
+launch
+[ ! -e "$TMP/link.log" ] || fail "tore down a link no earlier run left up"
+: > "$TMP/run/slotlink.session"
+launch
+[ "$(cat "$TMP/link.log" 2>/dev/null)" = "link down" ] || fail "a link left up by a crashed run was not torn down"
+
 echo "launch: all passed"

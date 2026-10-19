@@ -81,3 +81,39 @@ fn no_log_on_the_device_puts_none_on_the_card() {
     let _ = app_playing_with_card_log(d.path(), "Emerald", Some(log));
     assert!(!d.path().join("Logs").join(CARD_LOG_NAME).exists());
 }
+
+#[test]
+fn a_settings_write_that_lands_does_not_hide_a_save_that_failed() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let off_card = tempfile::tempdir().unwrap();
+    let log = off_card.path().join(CARD_LOG_NAME);
+    let (mut a, _) = app_playing_with_card_log(d.path(), "Emerald", Some(log));
+    lock_the_card(d.path());
+    a.tick_ms(60_000);
+    a.settle_saves();
+    a.tick_ms(60_010);
+    assert!(a.card_alarm());
+    a.apply(slot_input::Action::BrightnessDown);
+    a.tick_ms(70_000);
+    a.flush_state();
+    a.tick_ms(72_100);
+    assert!(
+        a.card_alarm(),
+        "slot.state writing fine cleared the alarm for a save that still is not"
+    );
+}
+
+#[test]
+fn the_card_log_rolls_over_rather_than_growing_for_ever() {
+    let d = tempfile::tempdir().unwrap();
+    let log = d.path().join(CARD_LOG_NAME);
+    std::fs::write(&log, vec![b'x'; 300 * 1024]).unwrap();
+    slot::card_log::append(&log, "alarm on\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "alarm on\n");
+    assert_eq!(
+        std::fs::metadata(d.path().join(format!("{CARD_LOG_NAME}.1")))
+            .unwrap()
+            .len(),
+        300 * 1024
+    );
+}

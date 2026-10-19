@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use slot::audio::Ring;
 use slot::emu::{CoreState, EmuHandle, Speed};
+use slot::persist::Snapshot;
 use slot_retro::{LinkChannel, MockCore};
 
 #[derive(Default)]
@@ -128,6 +129,15 @@ fn a_joiner_runs_the_hosts_machine_and_not_its_own() {
         );
         std::thread::sleep(Duration::from_millis(10));
     }
+    let (joined, hosted) = (join.snapshot(), host.snapshot());
+    assert!(
+        !joined.save_ram_trusted() && !joined.resume_trusted(),
+        "the joiner would save the host's game over its own"
+    );
+    assert!(
+        hosted.save_ram_trusted() && hosted.resume_trusted(),
+        "the host stopped saving its own game"
+    );
 }
 
 #[test]

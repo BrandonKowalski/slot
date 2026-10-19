@@ -200,11 +200,15 @@ fn one_stem_on_two_platforms_writes_two_saves() {
     persist::write_sav(d.path(), Platform::Gb, "Tetris", &[2u8; 8]).unwrap();
 
     assert_eq!(
-        persist::read_sav(d.path(), Platform::Gba, "Tetris").unwrap(),
+        persist::read_sav(d.path(), Platform::Gba, "Tetris")
+            .unwrap()
+            .unwrap(),
         vec![1u8; 32]
     );
     assert_eq!(
-        persist::read_sav(d.path(), Platform::Gb, "Tetris").unwrap(),
+        persist::read_sav(d.path(), Platform::Gb, "Tetris")
+            .unwrap()
+            .unwrap(),
         vec![2u8; 8]
     );
     assert!(d.path().join("Saves/GBA/Tetris.sav").is_file());

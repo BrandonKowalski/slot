@@ -28,7 +28,7 @@ fn a_cart_gpsp_cannot_link_says_there_is_no_link() {
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     let all = Toast::all();
     assert_eq!(
-        all[..18],
+        all[..19],
         [
             Toast::StateSaved,
             Toast::StateLoaded,
@@ -46,6 +46,7 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::ShaderSimpletex,
             Toast::CardUnwritable,
             Toast::CardRepair,
+            Toast::CardRepairCharge,
             Toast::CardRepaired,
             Toast::CardRepairFailed,
         ],
@@ -53,12 +54,12 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     );
     let palettes = GbPalette::all().count();
     assert_eq!(
-        all[18..18 + palettes],
+        all[19..19 + palettes],
         GbPalette::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
     );
     assert_eq!(
-        all[18 + palettes..],
+        all[19 + palettes..],
         QuickRow::ALL
             .into_iter()
             .filter(|r| r.binds())

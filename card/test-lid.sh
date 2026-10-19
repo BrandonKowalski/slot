@@ -28,7 +28,7 @@ tick() {
 	AGS_PSY="$TMP/psy" AGS_SLOT_STATE="$TMP/slot.state" AGS_TRACE="$TMP/trace.log" \
 		AGS_LID_CLOSED="$TMP/closed" AGS_UPTIME="$TMP/uptime" \
 		AGS_RMMOD="$TMP/bin/rmmod" AGS_SYNC="$TMP/bin/sync" AGS_POWEROFF="$TMP/bin/poweroff" \
-		sh "$SCRIPT" once
+		AGS_WIFI_WAIT="${WIFI_WAIT:-5}" sh "$SCRIPT" once
 }
 
 fail() {
@@ -50,9 +50,10 @@ off && fail "powered off before the default 3 minutes and a minute's grace"
 at 340
 tick
 off || fail "did not power off 4 minutes after the lid closed"
-[ "$(sed 's/ *$//' "$TMP/calls.log")" = "rmmod 8821cs
+[ "$(sed 's/ *$//' "$TMP/calls.log")" = "sync
+rmmod 8821cs
 sync
-poweroff" ] || fail "power off did not unload the WiFi driver and sync first: $(cat "$TMP/calls.log")"
+poweroff" ] || fail "power off did not sync, unload the WiFi driver and sync again: $(cat "$TMP/calls.log")"
 grep -q 'lid: closed 240s and slot has not powered off' "$TMP/trace.log" || fail "the power off left no trace"
 
 setup
@@ -99,6 +100,16 @@ tick
 at 1000
 tick
 off && fail "powered off with no lid sensor"
+
+setup
+printf '#!/bin/sh\necho "rmmod $*" >> "%s"\nsleep 30\n' "$TMP/calls.log" > "$TMP/bin/rmmod"
+lid 0
+at 0
+tick
+at 240
+WIFI_WAIT=1 tick
+off || fail "a WiFi driver that never unloads stopped the power off"
+[ "$(head -1 "$TMP/calls.log")" = "sync " ] || fail "did not sync before a WiFi unload that hangs"
 
 if sh "$SCRIPT" bogus 2>/dev/null; then
 	fail "an unknown subcommand exited 0"

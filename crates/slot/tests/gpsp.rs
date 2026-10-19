@@ -441,6 +441,7 @@ fn a_gpsp_carts_resume_is_read_from_its_own_core_directory_through_the_session()
     s.app_mut().settle_saves();
 
     let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        .unwrap()
         .expect("nothing resumed");
     let n = u64::from_le_bytes(state.try_into().expect("mock state is 8 bytes"));
     assert!(
@@ -491,6 +492,7 @@ fn a_gpsp_cart_runs_the_dylib_planted_under_its_own_name_through_the_session() {
     s.app_mut().settle_saves();
 
     let state = persist::read_resume(d.path(), Platform::Gba, Core::Gpsp, "Emerald")
+        .unwrap()
         .expect("nothing resumed");
     assert!(
         state.len() > 100_000,
@@ -709,6 +711,7 @@ fn a_game_boy_carts_gpsp_line_is_dropped_and_it_runs_on_the_platform_default() {
 
     let counter = |core| {
         persist::read_resume(d.path(), Platform::Gb, core, "Tetris")
+            .unwrap()
             .map(|b| u64::from_le_bytes(b.try_into().expect("the mock's state is 8 bytes")))
     };
 

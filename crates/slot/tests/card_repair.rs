@@ -16,15 +16,16 @@ struct Card {
     root: PathBuf,
     read_only: Arc<AtomicBool>,
     result: Option<RepairResult>,
+    battery: Option<Battery>,
 }
 
 impl slot_power::Platform for Card {
     fn set_backlight(&mut self, _step: u8) {}
     fn battery(&self) -> Option<Battery> {
-        None
+        self.battery
     }
     fn charge(&self) -> Charge {
-        Charge::Discharging
+        self.battery.map_or(Charge::Discharging, |b| b.charge)
     }
     fn set_led(&mut self, _state: LedState) {}
     fn poweroff(&mut self) -> ! {
@@ -50,11 +51,20 @@ impl slot_power::Platform for Card {
 }
 
 fn power(root: &Path, result: Option<RepairResult>) -> (Power, Arc<AtomicBool>) {
+    powered(root, result, None)
+}
+
+fn powered(
+    root: &Path,
+    result: Option<RepairResult>,
+    battery: Option<Battery>,
+) -> (Power, Arc<AtomicBool>) {
     let read_only = Arc::new(AtomicBool::new(false));
     let card = Card {
         root: root.to_path_buf(),
         read_only: read_only.clone(),
         result,
+        battery,
     };
     (
         Power::new(Box::new(card), Duration::from_secs(300)),
@@ -84,6 +94,31 @@ fn a_read_only_card_on_the_shelf_offers_a_repair() {
     assert_eq!(a.alarm_toast(), Some(Toast::CardRepair));
     a.apply(Action::RepairCard);
     assert!(a.repair_prompt());
+}
+
+#[test]
+fn a_low_battery_holds_the_repair_back_until_it_charges() {
+    let d = tmp_root_with_carts(&["Emerald", "Ruby"]);
+    for (charge, offered) in [(Charge::Discharging, false), (Charge::Charging, true)] {
+        let mut a = boot(d.path());
+        let battery = Battery {
+            percent: 10,
+            charge,
+        };
+        let (p, read_only) = powered(d.path(), None, Some(battery));
+        a.set_power(p);
+        read_only.store(true, Ordering::Relaxed);
+        a.tick_ms(10_000);
+        a.tick_ms(12_100);
+        let toast = if offered {
+            Toast::CardRepair
+        } else {
+            Toast::CardRepairCharge
+        };
+        assert_eq!(a.alarm_toast(), Some(toast), "{charge:?}");
+        a.apply(Action::RepairCard);
+        assert_eq!(a.repair_prompt(), offered, "{charge:?}");
+    }
 }
 
 #[test]

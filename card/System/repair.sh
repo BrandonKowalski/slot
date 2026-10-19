@@ -10,6 +10,8 @@ FUSER="${AGS_FUSER:-fuser}"
 SYNC="${AGS_SYNC:-sync}"
 REBOOT="${AGS_REBOOT:-reboot}"
 RMMOD="${AGS_RMMOD:-rmmod}"
+WIFI_WAIT="${AGS_WIFI_WAIT:-5}"
+PASSES=3
 SPLASH="${AGS_SPLASH:-/usr/bin/baseos-splash}"
 FSCK_FAT="${AGS_FSCK_FAT:-/usr/sbin/fsck.fat}"
 FSCK_EXFAT="${AGS_FSCK_EXFAT:-$HERE/fsck.exfat}"
@@ -44,6 +46,15 @@ options() {
 	awk -v m="$1" '$2 == m { o = $4 } END { print o }' "$MOUNTS"
 }
 
+unload_wifi() {
+	$RMMOD 8821cs 2>/dev/null &
+	waited=0
+	while kill -0 $! 2>/dev/null && [ "$waited" -lt "$WIFI_WAIT" ]; do
+		$SLEEP 1
+		waited=$((waited + 1))
+	done
+}
+
 after=
 finish() {
 	echo "$1" > "$RESULT"
@@ -56,7 +67,7 @@ finish() {
 	fi
 	say "REBOOTING"
 	$SLEEP "$HOLD"
-	$RMMOD 8821cs 2>/dev/null
+	unload_wifi
 	$SYNC
 	if [ "$after" = force ]; then
 		$REBOOT -f
@@ -137,12 +148,16 @@ while [ "$1" != end ]; do
 		log "no $fsck"
 		status=failed
 	else
-		"$fsck" "$fix" "$1" >> "$LOG" 2>&1
-		fixed=$?
-		log "$(basename "$fsck") $fix $1 exit $fixed"
-		"$fsck" "$fix" "$1" >> "$LOG" 2>&1
-		check=$?
-		log "$(basename "$fsck") $fix $1 again exit $check"
+		fixed=
+		pass=0
+		while [ "$pass" -lt "$PASSES" ]; do
+			pass=$((pass + 1))
+			"$fsck" "$fix" "$1" >> "$LOG" 2>&1
+			check=$?
+			log "$(basename "$fsck") $fix $1 pass $pass exit $check"
+			[ -z "$fixed" ] && fixed=$check
+			[ "$check" -eq 0 ] && break
+		done
 		if [ "$check" -ne 0 ]; then
 			status=failed
 		elif [ "$fixed" -ne 0 ] && [ "$status" = clean ]; then
