@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slot_gfx::{Canvas, Layout, OUT_H, OUT_W};
+use slot_gfx::{Canvas, OUT_H};
 use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
@@ -52,8 +52,6 @@ pub const EJECT_S: f32 = SEATED_AT;
 
 const EJECT_HOLD_S: f32 = 0.35;
 
-pub const IN_GAME_MENU: Layout = Layout::Native;
-
 const POWER_ON_S: f32 = 0.22;
 
 const POWER_OFF_S: f32 = 0.16;
@@ -102,6 +100,14 @@ const LINK_LEGEND_Y: f32 = OUT_H as f32 - MOUTH_H;
 pub const LINK_SCRIM: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 const LINK_LEGEND_GAP: f32 = 40.0;
 const LINK_LEGEND_EDGE: f32 = 0.0;
+
+fn link_keys_w(faces: &[(TexId, u32)]) -> f32 {
+    faces
+        .iter()
+        .map(|(_, w)| w.saturating_sub(HINT_EDGE) as f32)
+        .sum::<f32>()
+        + LINK_LEGEND_GAP * faces.len().saturating_sub(1) as f32
+}
 const LID_SHADOW_W: f32 = 168.0;
 const LID_SHADOW_H: f32 = 18.0;
 const LID_SHADOW_DROP: f32 = 27.1;
@@ -420,6 +426,7 @@ pub struct App {
     screen: f32,
     blank_s: f32,
     lift: f32,
+    sp_strip: Option<TexId>,
     eject_overlay: f32,
     panel: (u32, u32),
     game_ready: bool,
@@ -596,6 +603,7 @@ impl App {
             screen: 0.0,
             blank_s: 0.0,
             lift: 1.0,
+            sp_strip: None,
             eject_overlay: 0.0,
             panel: (0, 0),
             game_ready: false,
@@ -3057,7 +3065,7 @@ impl App {
     /// The carousel strip shares this canvas, so the picture scales in the space above it.
     /// A 4:3 game frame is a different canvas; its close keeps the full-frame scale.
     fn footer_on_carousel_canvas(&self) -> bool {
-        !self.framed_panel() || self.layout() == Layout::Native
+        !self.framed_panel() || !self.shows_game()
     }
 
     pub fn screen_footer(&self) -> f32 {
@@ -3075,23 +3083,46 @@ impl App {
         self.panel = panel;
     }
 
-    pub fn layout(&self) -> Layout {
+    pub fn shows_game(&self) -> bool {
         if matches!(self.phase, Phase::Playing { .. }) && self.in_game_menu_shown().is_some() {
-            return IN_GAME_MENU;
+            return false;
         }
         if self.powering_up() {
-            return Layout::Framed;
+            return true;
         }
         match &self.phase {
-            Phase::Playing { .. } | Phase::Polaroids { .. } => Layout::Framed,
-            Phase::Ejecting { .. } if self.overlay_slide() > 0.0 => Layout::Framed,
-            Phase::Doze { cart: Some(_) } => Layout::Framed,
-            _ => Layout::Native,
+            Phase::Playing { .. } | Phase::Polaroids { .. } => true,
+            Phase::Ejecting { .. } => self.overlay_slide() > 0.0,
+            Phase::Doze { cart } => cart.is_some(),
+            _ => false,
         }
     }
 
     pub fn canvas(&self) -> Canvas {
-        Canvas::of(self.layout(), self.panel)
+        Canvas::of(self.panel)
+    }
+
+    pub fn set_sp_strip(&mut self, tex: Option<TexId>) {
+        self.sp_strip = tex;
+    }
+
+    fn draw_sp_strip(&self, out: &mut Vec<Draw>) {
+        let slide = self.overlay_slide();
+        let shown = self.shows_game() && self.sp_frame() && self.framed_panel() && slide > 0.0;
+        let Some(tex) = self.sp_strip.filter(|_| shown) else {
+            return;
+        };
+        let canvas = self.canvas();
+        let drop =
+            slot_gfx::lifted_rect(self.panel, slide).1 as f32 * canvas.h / self.panel.1 as f32;
+        out.push(Draw::Tex {
+            x: 0.0,
+            y: drop,
+            w: canvas.w,
+            h: canvas.h,
+            tex,
+            alpha: 1.0,
+        });
     }
 
     pub fn overlay_slide(&self) -> f32 {
@@ -3114,7 +3145,7 @@ impl App {
         out.push(Draw::Rect {
             x: 0.0,
             y: 0.0,
-            w: OUT_W as f32,
+            w: self.canvas().w,
             h: OUT_H as f32,
             colour: [0.0, 0.0, 0.0, 1.0],
         });
@@ -3595,8 +3626,7 @@ impl App {
                 self.chrome(cart, 0.0, out);
             }
             Phase::Ejecting { .. }
-                if self.framed_panel()
-                    && (self.layout() == Layout::Framed || self.screen > 0.0) =>
+                if self.framed_panel() && (self.shows_game() || self.screen > 0.0) =>
             {
                 self.draw_powering(out)
             }
@@ -3617,7 +3647,10 @@ impl App {
             Phase::Polaroids { .. } => {
                 self.push_game(out);
                 if let Some(p) = &self.polaroids {
-                    p.draw(
+                    p.draw_photo(self.canvas(), out);
+                    self.draw_sp_strip(out);
+                    p.draw_chrome(
+                        self.canvas(),
                         self.battery,
                         self.battery_percent,
                         self.hud_bolt,
@@ -3634,8 +3667,12 @@ impl App {
                     h: OUT_H as f32,
                     colour: [0.0, 0.0, 0.0, 1.0],
                 });
+                self.draw_sp_strip(out);
                 return;
             }
+        }
+        if !matches!(self.phase, Phase::Polaroids { .. }) {
+            self.draw_sp_strip(out);
         }
         if let (Some(row), Phase::Playing { .. }, true) =
             (self.in_game_menu_shown(), &self.phase, self.screen >= 1.0)
@@ -4178,11 +4215,12 @@ impl App {
     }
 
     fn draw_game_menu(&self, menu: GameMenu, out: &mut Vec<Draw>) {
+        let canvas = self.canvas();
         if let Some(tex) = self.link_shot {
             out.push(Draw::Tex {
                 x: 0.0,
                 y: 0.0,
-                w: OUT_W as f32,
+                w: canvas.w,
                 h: OUT_H as f32,
                 tex,
                 alpha: 1.0,
@@ -4191,12 +4229,19 @@ impl App {
         out.push(Draw::Rect {
             x: 0.0,
             y: 0.0,
-            w: OUT_W as f32,
+            w: canvas.w,
             h: OUT_H as f32,
             colour: LINK_SCRIM,
         });
         if let Some(sprites) = &self.link_sprites {
-            crate::link_screen::draw_link_art(menu, self.link_hardware, self.now(), sprites, out);
+            crate::link_screen::draw_link_art(
+                self.canvas(),
+                menu,
+                self.link_hardware,
+                self.now(),
+                sprites,
+                out,
+            );
         }
         let line = match menu {
             GameMenu::Pick(role) => self.link_menu_faces.get(role.index()).copied(),
@@ -4212,7 +4257,7 @@ impl App {
         };
         if let Some((tex, w, h)) = line {
             out.push(Draw::Tex {
-                x: ((OUT_W as f32 - w as f32) / 2.0).round(),
+                x: canvas.centred(w as f32).round(),
                 y: LINK_TEXT_Y,
                 w: w as f32,
                 h: h as f32,
@@ -4224,38 +4269,57 @@ impl App {
         // Cancel and Mode stay on the left of the footer, Swap and Link on the right, so the
         // socket in the middle of the strip stays clear.
         let (left, right): (&[LinkLegend], &[LinkLegend]) = match menu {
-            GameMenu::Pick(_) if switchable => (
-                &[LinkLegend::Cancel, LinkLegend::Mode],
-                &[LinkLegend::Swap, LinkLegend::Link],
-            ),
-            GameMenu::Pick(_) => (&[LinkLegend::Cancel], &[LinkLegend::Swap, LinkLegend::Link]),
+            GameMenu::Pick(_) if switchable => (&[LinkLegend::Mode], &[LinkLegend::Link]),
+            GameMenu::Pick(_) => (&[], &[LinkLegend::Link]),
             GameMenu::Working { .. } => (&[LinkLegend::Cancel], &[]),
             GameMenu::Linked { opened: true, .. } => (&[LinkLegend::Back], &[LinkLegend::EndLink]),
             GameMenu::Linked { .. } => (&[], &[]),
             GameMenu::Failed { .. } => (&[], &[LinkLegend::Ok]),
             GameMenu::Unplug { .. } => (&[], &[]),
         };
-        self.draw_link_keys(left, false, out);
-        self.draw_link_keys(right, true, out);
+        let (left, right) = (self.link_faces(left), self.link_faces(right));
+        let room = self.canvas().w - 2.0 * LINK_LEGEND_EDGE;
+        if link_keys_w(&left) + link_keys_w(&right) + LINK_LEGEND_GAP <= room {
+            self.draw_link_keys(&left, false, out);
+            self.draw_link_keys(&right, true, out);
+            return;
+        }
+        let all: Vec<(TexId, u32)> = left.into_iter().chain(right).collect();
+        let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
+        let gap = (room - all.iter().map(|(_, w)| seen(*w)).sum::<f32>())
+            / all.len().saturating_sub(1).max(1) as f32;
+        let mut x = LINK_LEGEND_EDGE;
+        for (tex, w) in all {
+            out.push(Draw::Tex {
+                x: x.round(),
+                y: LINK_LEGEND_Y,
+                w: w as f32,
+                h: MOUTH_H,
+                tex,
+                alpha: 1.0,
+            });
+            x += seen(w) + gap;
+        }
     }
 
-    fn draw_link_keys(&self, keys: &[LinkLegend], right: bool, out: &mut Vec<Draw>) {
-        let faces: Vec<(TexId, u32)> = keys
-            .iter()
+    fn link_faces(&self, keys: &[LinkLegend]) -> Vec<(TexId, u32)> {
+        keys.iter()
             .filter_map(|k| self.link_legend_faces.get(k.index()).copied())
-            .collect();
+            .collect()
+    }
+
+    fn draw_link_keys(&self, faces: &[(TexId, u32)], right: bool, out: &mut Vec<Draw>) {
         if faces.is_empty() {
             return;
         }
         let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
-        let total = faces.iter().map(|(_, w)| seen(*w)).sum::<f32>()
-            + LINK_LEGEND_GAP * faces.len().saturating_sub(1) as f32;
+        let total = link_keys_w(faces);
         let mut x = if right {
-            (OUT_W as f32 - LINK_LEGEND_EDGE - total).round()
+            (self.canvas().w - LINK_LEGEND_EDGE - total).round()
         } else {
             LINK_LEGEND_EDGE
         };
-        for (tex, w) in faces {
+        for &(tex, w) in faces {
             out.push(Draw::Tex {
                 x,
                 y: LINK_LEGEND_Y,
@@ -4334,9 +4398,9 @@ impl App {
         if self.single_cart() {
             return self.refuse();
         }
-        self.eject_overlay = match self.layout() {
-            Layout::Framed => self.overlay_slide(),
-            Layout::Native => 0.0,
+        self.eject_overlay = match self.shows_game() {
+            true => self.overlay_slide(),
+            false => 0.0,
         };
         self.in_game_menu = None;
         let cart = match &mut self.phase {

@@ -468,7 +468,8 @@ impl Frontend {
             return;
         };
         if let Some(rgba) = bezel_face(&path, panel.0, panel.1) {
-            compositor.set_bezel(panel.0, panel.1, &rgba);
+            let tex = compositor.create_texture(panel.0, panel.1, &rgba);
+            self.session.app_mut().set_sp_strip(Some(tex));
             eprintln!("slot: bezel {}", path.display());
         }
     }
@@ -529,10 +530,9 @@ impl Frontend {
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());
         compositor.set_screen_footer(self.session.app().screen_footer());
-        compositor.set_overlay_slide(self.session.app().overlay_slide());
         compositor.set_game_source_rect(self.session.app().source_rect());
         self.grab_link_shot(compositor);
-        compositor.begin_frame(self.session.app().layout());
+        compositor.begin_frame();
         if self.draw_rebuild(compositor) {
             return;
         }

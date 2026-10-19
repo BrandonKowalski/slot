@@ -6,9 +6,10 @@ use std::collections::VecDeque;
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Canvas, Compositor, HeadlessSurface};
-use slot_input::{InputSource, Millis, RawEvent};
+use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface};
+use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
+use slot_ui::{quick_row_top, QuickRow};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -138,4 +139,129 @@ fn a_title_shows_under_the_cart_when_titles_are_on() {
         })
         .count();
     assert!(lit > 20, "no title ink under the cart: {lit} white pixels");
+}
+
+fn panel_at(panel: &[u8], x: usize, y: usize) -> [u8; 3] {
+    let o = (y * 640 + x) * 4;
+    [panel[o], panel[o + 1], panel[o + 2]]
+}
+
+#[test]
+fn every_shortcut_row_keeps_its_label_clear_of_its_binding_on_a_4_by_3_panel() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    c.fit((640, 480));
+    let mut input = Script(VecDeque::new());
+    let mut tap = |f: &mut Frontend, b: Btn| {
+        input.0.push_back(vec![RawEvent::Down(b)]);
+        input.0.push_back(vec![RawEvent::Up(b)]);
+        f.advance(&mut input);
+        f.advance(&mut input);
+    };
+    tap(&mut f, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(&mut f, Btn::Down);
+    }
+    tap(&mut f, Btn::A);
+    tap(&mut f, Btn::Down);
+    tap(&mut f, Btn::A);
+    for row in QuickRow::SHORTCUTS {
+        assert_eq!(f.app().quick_menu(), Some(row));
+        f.compose(&mut c);
+        let px = c.read_frame();
+        let top = quick_row_top(row, &[]) as usize;
+        let ink: Vec<usize> = (56..640)
+            .filter(|&x| {
+                (top + 8..top + 44).any(|y| {
+                    let o = (y * 640 + x) * 4;
+                    px[o..o + 3].iter().all(|c| *c > 0x80)
+                })
+            })
+            .collect();
+        let gap = ink.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+        assert!(
+            gap >= 24,
+            "{row:?} runs into its binding, widest gap {gap} px"
+        );
+        tap(&mut f, Btn::Down);
+    }
+}
+
+fn run_for(f: &mut Frontend, input: &mut Script, ms: u64) {
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    while std::time::Instant::now() < until {
+        f.advance(input);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
+fn lit_rows(panel: &[u8], rows: std::ops::Range<usize>) -> usize {
+    rows.filter(|y| (0..640).any(|x| panel_at(panel, x, *y).iter().all(|c| *c > 0xc0)))
+        .count()
+}
+
+fn link_screen_on(panel: (u32, u32)) -> Option<Vec<u8>> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, panel);
+    c.fit(panel);
+    let mut input = Script(VecDeque::new());
+    input.0.push_back(vec![RawEvent::Down(Btn::A)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::A)]);
+    run_for(&mut f, &mut input, 4_000);
+    input.0.push_back(vec![RawEvent::Down(Btn::Select)]);
+    input.0.push_back(vec![RawEvent::Down(Btn::Menu)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::Menu)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::Select)]);
+    run_for(&mut f, &mut input, 1_500);
+    assert!(f.app().game_menu_open(), "the link screen did not open");
+    let mut out = Vec::new();
+    f.app().draw(&mut out);
+    let mut legends: Vec<(f32, f32)> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Tex { x, y, w, h, .. } if y > 400.0 && h == slot_ui::MOUTH_H => {
+                Some((x, x + w - slot_ui::HINT_EDGE as f32))
+            }
+            _ => None,
+        })
+        .collect();
+    legends.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(legends.len(), 2, "{legends:?}");
+    for pair in legends.windows(2) {
+        assert!(
+            pair[0].1 <= pair[1].0,
+            "link legends overlap at {panel:?}: {legends:?}"
+        );
+    }
+    assert!(legends.last().unwrap().1 <= panel.0 as f32 * 480.0 / panel.1 as f32 + 1.0);
+    f.compose(&mut c);
+    let px = c.read_window(panel);
+    write_png(&format!("native-link-{}", panel.0), panel.0, panel.1, &px);
+    Some(px)
+}
+
+#[test]
+fn the_link_screen_uses_the_whole_4_by_3_panel() {
+    let Some(link) = link_screen_on((640, 480)) else {
+        return;
+    };
+    assert!(
+        lit_rows(&link, 448..480) > 0,
+        "the link legends are not at the bottom of the panel"
+    );
+    link_screen_on((720, 480));
 }

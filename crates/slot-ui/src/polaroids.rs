@@ -1,4 +1,4 @@
-use slot_gfx::{Draw, TexId, OUT_H, OUT_W};
+use slot_gfx::{Canvas, Draw, TexId};
 use slot_power::Battery;
 use slot_store::{parse_stamp, StateEntry};
 
@@ -138,13 +138,25 @@ impl Polaroids {
         clock: Printed,
         out: &mut Vec<Draw>,
     ) {
-        self.draw_photo(out);
-        self.draw_top(battery, battery_percent, bolt, clock, out);
-        self.draw_bottom(out);
+        self.draw_photo(Canvas::FRAMED, out);
+        self.draw_chrome(Canvas::FRAMED, battery, battery_percent, bolt, clock, out);
     }
 
-    fn draw_photo(&self, out: &mut Vec<Draw>) {
-        let (w, h) = (OUT_W as f32, OUT_H as f32);
+    pub fn draw_chrome(
+        &self,
+        canvas: Canvas,
+        battery: Option<Battery>,
+        battery_percent: Printed,
+        bolt: Option<TexId>,
+        clock: Printed,
+        out: &mut Vec<Draw>,
+    ) {
+        self.draw_top(canvas, battery, battery_percent, bolt, clock, out);
+        self.draw_bottom(canvas, out);
+    }
+
+    pub fn draw_photo(&self, canvas: Canvas, out: &mut Vec<Draw>) {
+        let (w, h) = (canvas.w, canvas.h);
         out.push(match self.faces.get(self.index) {
             Some(tex) => Draw::Shot { tex: *tex },
             None => Draw::Rect {
@@ -164,16 +176,17 @@ impl Polaroids {
 
     fn draw_top(
         &self,
+        canvas: Canvas,
         battery: Option<Battery>,
         battery_percent: Printed,
         bolt: Option<TexId>,
         clock: Printed,
         out: &mut Vec<Draw>,
     ) {
-        out.push(plate(0.0));
+        out.push(plate(canvas, 0.0));
         if let Some(tex) = self.title {
             out.push(Draw::Tex {
-                x: (OUT_W as f32 - TITLE_W as f32) / 2.0,
+                x: canvas.centred(TITLE_W as f32),
                 y: (PLATE_H - TITLE_H as f32) / 2.0,
                 w: TITLE_W as f32,
                 h: TITLE_H as f32,
@@ -182,19 +195,12 @@ impl Polaroids {
             });
         }
 
-        draw_corners(
-            slot_gfx::Canvas::FRAMED,
-            battery,
-            battery_percent,
-            bolt,
-            clock,
-            out,
-        );
+        draw_corners(canvas, battery, battery_percent, bolt, clock, out);
     }
 
-    fn draw_bottom(&self, out: &mut Vec<Draw>) {
-        let top = OUT_H as f32 - PLATE_H;
-        out.push(plate(top));
+    fn draw_bottom(&self, canvas: Canvas, out: &mut Vec<Draw>) {
+        let top = canvas.h - PLATE_H;
+        out.push(plate(canvas, top));
         let y = top + (PLATE_H - HINT_H as f32) / 2.0;
         let hints = self.hints();
         let widths: Vec<f32> = hints
@@ -206,18 +212,18 @@ impl Polaroids {
         let mut x = MARGIN;
         for (i, w) in widths.iter().enumerate() {
             if i == WAYS_OUT {
-                x = OUT_W as f32 - MARGIN - tail_w;
+                x = canvas.w - MARGIN - tail_w;
             }
             out.push(hint_quad(x, y, *w, self.hint_faces.get(i).copied()));
             x += w + HINT_GAP;
         }
-        self.draw_dots(top, out);
+        self.draw_dots(canvas, top, out);
     }
 
-    fn draw_dots(&self, top: f32, out: &mut Vec<Draw>) {
+    fn draw_dots(&self, canvas: Canvas, top: f32, out: &mut Vec<Draw>) {
         let n = self.entries.len();
         let row = n as f32 * DOT + (n as f32 - 1.0).max(0.0) * DOT_GAP;
-        let mut x = (OUT_W as f32 - row) / 2.0;
+        let mut x = canvas.centred(row);
         for i in 0..n {
             out.push(Draw::Rect {
                 x,
@@ -249,11 +255,11 @@ impl Polaroids {
     }
 }
 
-fn plate(y: f32) -> Draw {
+fn plate(canvas: Canvas, y: f32) -> Draw {
     Draw::Rect {
         x: 0.0,
         y,
-        w: OUT_W as f32,
+        w: canvas.w,
         h: PLATE_H,
         colour: PLATE,
     }

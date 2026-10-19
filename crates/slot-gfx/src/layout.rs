@@ -1,12 +1,6 @@
 use crate::bezel::framed;
 use crate::surface::{OUT_H, OUT_W};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Layout {
-    Native,
-    Framed,
-}
-
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Canvas {
     pub w: f32,
@@ -19,13 +13,13 @@ impl Canvas {
         h: OUT_H as f32,
     };
 
-    pub fn of(layout: Layout, panel: (u32, u32)) -> Canvas {
-        match layout {
-            Layout::Native if framed(panel) => Canvas {
+    pub fn of(panel: (u32, u32)) -> Canvas {
+        match framed(panel) {
+            true => Canvas {
                 w: (OUT_H * panel.0 / panel.1) as f32,
                 h: OUT_H as f32,
             },
-            _ => Canvas::FRAMED,
+            false => Canvas::FRAMED,
         }
     }
 

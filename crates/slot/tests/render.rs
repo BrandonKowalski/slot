@@ -50,7 +50,7 @@ fn a_mock_frame_keeps_its_colours_through_the_game_pass() {
     };
     let src = mock_frame(7);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let frame = c.read_frame();
@@ -91,7 +91,7 @@ fn a_saved_frame_arrives_intact_on_its_screenshot() {
 
     let face = photo_face(&entries[0]);
     let tex = c.create_texture(face.w, face.h, &face.rgba);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Tex {
         x: 0.0,
         y: 0.0,
@@ -131,7 +131,7 @@ fn the_switcher_magnifies_its_screenshot_without_resampling_it() {
     let mut switcher = Polaroids::new(entries);
     switcher.set_faces(vec![tex]);
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&switcher_photo(&switcher));
     let frame = c.read_frame();
 

@@ -83,7 +83,7 @@ fn game_pass_multiplies_every_output_cell_by_the_lcd3x_mask() {
         return;
     };
     let grey = vec![0x80u8; (SRC_W * SRC_H * 4) as usize];
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&grey);
     c.draw_game();
     let frame = c.read_frame();
@@ -109,7 +109,7 @@ fn the_game_frame_keeps_its_orientation_from_upload_to_readback() {
     };
     let mut src = vec![0u8; (SRC_W * SRC_H * 4) as usize];
     src[0..3].copy_from_slice(&[255, 255, 255]);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let frame = c.read_frame();
@@ -144,7 +144,7 @@ fn the_picture_strikes_as_a_band_at_the_centre_before_it_fills_the_frame() {
     let grey = vec![0x80u8; (SRC_W * SRC_H * 4) as usize];
     let peak = |c: &mut Compositor, t: f32| {
         c.set_screen_power(t);
-        c.begin_frame(slot_gfx::Layout::Framed);
+        c.begin_frame();
         c.upload_game(&grey);
         c.draw_game();
         let frame = c.read_frame();
@@ -187,14 +187,14 @@ fn the_game_marker_draws_the_picture_where_it_sits_in_the_list() {
     };
     c.set_screen_power(1.0);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&white);
     c.draw_list(&[full([1.0, 0.0, 0.0, 1.0]), Draw::Game]);
     let under = c.read_frame();
     let blue = under.chunks_exact(4).map(|p| p[2]).max().unwrap_or(0);
     assert!(blue > 100, "the picture never drew over the red rect");
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Game, full([0.0, 0.0, 1.0, 1.0])]);
     let over = c.read_frame();
     assert_eq!(
@@ -213,7 +213,7 @@ fn a_saved_shot_is_drawn_through_the_lcd_pass() {
     let tex = c.create_texture_nearest(SRC_W, SRC_H, &shot);
     c.set_screen_power(1.0);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Tex {
         x: 0.0,
         y: 0.0,
@@ -224,7 +224,7 @@ fn a_saved_shot_is_drawn_through_the_lcd_pass() {
     }]);
     let plain = c.read_frame();
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Shot { tex }]);
     let lit = c.read_frame();
 
@@ -257,11 +257,11 @@ fn a_still_is_not_cropped_by_the_picture_mode() {
 
     let framed = |c: &mut Compositor, rect: [f32; 4]| {
         c.set_game_source_rect(rect);
-        c.begin_frame(slot_gfx::Layout::Framed);
+        c.begin_frame();
         c.upload_game(&src);
         c.draw_list(&[Draw::Shot { tex }]);
         let still = c.read_frame();
-        c.begin_frame(slot_gfx::Layout::Framed);
+        c.begin_frame();
         c.draw_game();
         (still, c.read_frame())
     };
@@ -284,7 +284,7 @@ fn draw_list_rects_land_in_top_left_pixel_space() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Rect {
         x: 2.0,
         y: 1.0,
@@ -308,7 +308,7 @@ fn a_replaced_texture_draws_its_new_contents() {
     };
     let tex = c.create_texture(1, 1, &[255, 0, 0, 255]);
     c.update_texture(tex, 1, 1, &[0, 0, 255, 255]);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Tex {
         x: 0.0,
         y: 0.0,
@@ -349,7 +349,7 @@ fn an_unturned_image_draws_exactly_as_a_plain_one() {
         .collect();
     let tex = c.create_texture(16, 8, &rgba);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Tex {
         x: 101.3,
         y: 57.6,
@@ -360,7 +360,7 @@ fn an_unturned_image_draws_exactly_as_a_plain_one() {
     }]);
     let plain = c.read_frame();
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Turned {
         x: 101.3,
         y: 57.6,
@@ -384,7 +384,7 @@ fn a_quarter_turn_takes_the_top_left_corner_to_the_top_right() {
     rgba[0..4].copy_from_slice(&[255, 0, 0, 255]);
     let tex = c.create_texture_nearest(4, 2, &rgba);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&[Draw::Turned {
         x: 100.0,
         y: 100.0,
@@ -427,7 +427,7 @@ fn the_default_source_rect_draws_exactly_as_before() {
         .collect();
     c.set_screen_power(1.0);
 
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let default = c.read_frame();
@@ -450,7 +450,7 @@ fn the_default_source_rect_draws_exactly_as_before() {
     }
 
     c.set_game_source_rect(WHOLE);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     assert!(
@@ -476,7 +476,7 @@ fn fullscreen_puts_the_pictures_corners_in_the_panels_corners() {
     c.set_screen_power(1.0);
 
     c.set_game_source_rect(WHOLE);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let actual = c.read_frame();
@@ -489,7 +489,7 @@ fn fullscreen_puts_the_pictures_corners_in_the_panels_corners() {
     }
 
     c.set_game_source_rect(GB_RECT);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let full = c.read_frame();
@@ -530,13 +530,13 @@ fn the_mask_follows_the_game_pixels_in_both_modes() {
     c.set_screen_power(1.0);
 
     c.set_game_source_rect(WHOLE);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let actual = c.read_frame();
 
     c.set_game_source_rect(GB_RECT);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&src);
     c.draw_game();
     let full = c.read_frame();
@@ -573,7 +573,7 @@ fn grid_frame(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize, usize)
     c.fit(window);
     c.set_screen_effect(ScreenEffect::Grid);
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&flat_shot([0xc0, 0xc0, 0xc0]));
     c.draw_game();
     let (w, h) = canvas_size(window);
@@ -705,7 +705,7 @@ fn stretched_gb_grid(c: &mut Compositor, window: (u32, u32)) -> (Vec<u8>, usize,
     c.fit(window);
     c.set_screen_effect(ScreenEffect::Grid);
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&gb_shaped(|_, _| [0xc0, 0xc0, 0xc0], [0, 0, 0]));
     c.draw_game();
     let (w, h) = canvas_size(window);
@@ -729,7 +729,7 @@ fn the_grid_keeps_game_boy_rows_even_when_stretched_on_a_4_by_3_panel() {
     };
     let (frame, w, h) = stretched_gb_grid(&mut c, (640, 480));
     assert_eq!((w, h), (640, 427));
-    let (cols, rows) = grid_lines(&frame, w, h);
+    let (cols, rows) = grid_lines(&frame[..w * h * 4], w, h);
     assert_eq!(cols.len(), GB_W, "dark columns: {cols:?}");
     assert!(
         cols.windows(2).all(|p| p[1] - p[0] == 4),
@@ -748,7 +748,7 @@ fn simpletex_shows_a_grey_paper_as_grey() {
     c.fit((OUT_W, OUT_H));
     c.set_screen_effect(ScreenEffect::Simpletex);
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
     c.draw_game();
     let got = px(&c.read_frame(), OUT_W as usize / 2, OUT_H as usize / 2);
@@ -766,7 +766,7 @@ fn the_dot_shader_keeps_a_white_screen_a_little_over_half_lit() {
     c.fit((OUT_W, OUT_H));
     c.set_screen_effect(ScreenEffect::Dot);
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.upload_game(&flat_shot([0xff, 0xff, 0xff]));
     c.draw_game();
     let frame = c.read_frame();

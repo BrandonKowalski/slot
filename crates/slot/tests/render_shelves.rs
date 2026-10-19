@@ -612,7 +612,7 @@ fn frame(c: &mut Compositor, out: &[Draw], name: &str) -> Vec<u8> {
 
 fn frame_named(c: &mut Compositor, out: &[Draw], name: Option<&str>) -> Vec<u8> {
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(out);
     let px = c.read_frame();
     if let (Some(name), Ok(dir)) = (name, std::env::var("SCRATCH_PNG_DIR")) {

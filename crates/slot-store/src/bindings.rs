@@ -104,7 +104,7 @@ impl Modifier {
 
     fn label(self) -> &'static str {
         match self {
-            Modifier::Select => "SELECT",
+            Modifier::Select => "SEL",
             Modifier::Menu => "MENU",
         }
     }

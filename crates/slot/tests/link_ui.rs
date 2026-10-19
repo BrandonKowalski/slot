@@ -1217,7 +1217,7 @@ fn a_switch_is_refused_over_a_resume_the_core_would_not_take() {
 }
 
 #[test]
-fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
+fn pick_names_mode_and_link_across_the_strip() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     let width = |k: LinkLegend| match k {
         LinkLegend::Cancel => hint_face("B", "Cancel").w,
@@ -1249,12 +1249,7 @@ fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
     keys.sort_by(|a, b| a.0.total_cmp(&b.0));
     assert_eq!(
         keys.iter().map(|k| k.3).collect::<Vec<_>>(),
-        [
-            LinkLegend::Cancel,
-            LinkLegend::Mode,
-            LinkLegend::Swap,
-            LinkLegend::Link
-        ],
+        [LinkLegend::Mode, LinkLegend::Link],
     );
     assert!(
         keys.iter().all(|k| k.1 == OUT_H as f32 - MOUTH_H),
@@ -1265,17 +1260,17 @@ fn pick_names_cancel_mode_swap_and_link_across_the_strip() {
     let right = x + w - HINT_EDGE as f32;
     assert!(
         left.abs() < 1.0,
-        "Cancel is not on the left of the strip: {left}"
+        "Mode is not on the left of the strip: {left}"
     );
     assert!(
         (right - OUT_W as f32).abs() < 1.0,
         "Link is not on the right of the strip: {right}"
     );
-    let mode_end = keys[1].0 + keys[1].2 - HINT_EDGE as f32;
-    let swap_start = keys[2].0;
+    let mode_end = keys[0].0 + keys[0].2 - HINT_EDGE as f32;
+    let link_start = keys[1].0;
     assert!(
-        swap_start - mode_end > 80.0,
-        "no gap between Mode and Swap for the socket: {mode_end}..{swap_start}"
+        link_start - mode_end > 80.0,
+        "no gap between Mode and Link for the socket: {mode_end}..{link_start}"
     );
 }
 
@@ -1609,12 +1604,18 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == mode)),
         "the screen offered SELECT over a game gpSP links the same either way"
     );
-    for k in [LinkLegend::Cancel, LinkLegend::Swap, LinkLegend::Link] {
-        let want = faces[k.index()].0;
+    let link = faces[LinkLegend::Link.index()].0;
+    assert!(
+        out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == link)),
+        "Link left the legend along with Mode"
+    );
+    for k in [LinkLegend::Cancel, LinkLegend::Swap] {
+        let gone = faces[k.index()].0;
         assert!(
-            out.iter()
-                .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == want)),
-            "{k:?} left the legend along with Mode"
+            !out.iter()
+                .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gone)),
+            "{k:?} is still on the pick screen"
         );
     }
 }

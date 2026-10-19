@@ -16,7 +16,7 @@ mod quad;
 mod shaders;
 mod surface;
 
-pub use bezel::{framed, lifted_rect, screen_rect};
+pub use bezel::{framed, game_rect, lifted_rect, screen_rect};
 pub use draw::{Draw, TexId};
 pub use fbdev::{egl_error, panel_mode, panel_size, FbdevSurface};
 pub use fbo::{canvas_size, Compositor, BACKDROP};
@@ -25,7 +25,7 @@ pub use grade::{blue_light_gain, BLUE_LIGHT_MAX};
 pub use headless::HeadlessSurface;
 #[cfg(feature = "host")]
 pub use host::HostSurface;
-pub use layout::{Canvas, Layout};
+pub use layout::Canvas;
 pub use lcd3x::{lcd3x_factors, lcd3x_mask, ScreenEffect};
 pub use pipeline::{SCALE, SRC_H, SRC_W, WHOLE_TEXTURE};
 pub use power::{screen_brightness, screen_rect_above, screen_scale, screen_width};

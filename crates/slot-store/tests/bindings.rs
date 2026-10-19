@@ -65,13 +65,10 @@ fn the_shortcuts_start_where_they_are_today() {
 }
 
 #[test]
-fn a_binding_reads_the_way_minui_prints_it() {
+fn a_binding_reads_short_enough_to_fit_a_4_by_3_row() {
     assert_eq!(Binding::text(plain(Device::A)), "A");
     assert_eq!(Binding::text(with(Modifier::Menu, Device::X)), "MENU+X");
-    assert_eq!(
-        Binding::text(with(Modifier::Select, Device::R1)),
-        "SELECT+R1"
-    );
+    assert_eq!(Binding::text(with(Modifier::Select, Device::R1)), "SEL+R1");
     assert_eq!(Binding::text(None), "NONE");
 }
 

@@ -156,15 +156,3 @@ void main() {
     FRAG_COLOR = vec4(texture2D(u_tex, v_uv).rgb * u_gain, 1.0);
 }
 "#;
-
-pub const BEZEL_FRAG: &str = r#"
-precision mediump float;
-uniform sampler2D u_tex;
-uniform vec3 u_gain;
-uniform float u_alpha;
-varying vec2 v_uv;
-void main() {
-    vec4 c = texture2D(u_tex, v_uv);
-    FRAG_COLOR = vec4(c.rgb * u_gain, c.a * u_alpha);
-}
-"#;

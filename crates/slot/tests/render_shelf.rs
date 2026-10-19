@@ -107,7 +107,7 @@ fn shelf(d: &TempDir, c: &mut Compositor) -> App {
 fn shot(app: &App, c: &mut Compositor, name: &str) -> Vec<u8> {
     let mut out = Vec::new();
     app.draw(&mut out);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(&out);
     let px = c.read_frame();
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
