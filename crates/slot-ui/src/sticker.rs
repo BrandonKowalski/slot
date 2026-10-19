@@ -32,6 +32,7 @@ const SMALL_PX: f32 = 9.0;
 pub struct StickerFields<'a> {
     pub battery: Option<u8>,
     pub serial: &'a str,
+    pub version: &'a str,
 }
 
 pub const CREDITS: [&str; 11] = [
@@ -70,6 +71,10 @@ fn split_check(serial: &str) -> (&str, &str) {
     serial.split_at(at)
 }
 
+fn version_line(f: &StickerFields) -> String {
+    format!("VERSION {}", f.version)
+}
+
 pub fn sticker_lines(f: &StickerFields) -> Vec<String> {
     let mut out: Vec<String> = head_rows(f).into();
     out.extend(CREDITS.iter().map(|s| s.to_string()));
@@ -77,6 +82,7 @@ pub fn sticker_lines(f: &StickerFields) -> Vec<String> {
     let (body, check) = split_check(f.serial);
     out.push(format!("{body} {check}"));
     out.push(COPYRIGHT.to_string());
+    out.push(version_line(f));
     out.push(HOME.to_string());
     out
 }
@@ -306,7 +312,8 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
         );
         ry += mh as f32 + 4.0;
     }
-    for line in [COPYRIGHT, HOME] {
+    let version = version_line(f);
+    for line in [COPYRIGHT, version.as_str(), HOME] {
         let lw = c.print_measure(line, SMALL_PX);
         ry = c.print(right_edge - lw - 10.0, ry, line, SMALL_PX, WHITE);
     }

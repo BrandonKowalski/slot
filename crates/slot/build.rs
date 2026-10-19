@@ -11,6 +11,10 @@ fn git(args: &[&str]) -> Option<String> {
 fn main() {
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/logs/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/refs/tags");
+    if std::path::Path::new("../../.git/packed-refs").exists() {
+        println!("cargo:rerun-if-changed=../../.git/packed-refs");
+    }
 
     let hash = git(&["rev-parse", "--short=8", "HEAD"])
         .or_else(|| {
@@ -26,6 +30,9 @@ fn main() {
             git(&["rev-parse", "--short=8", "HEAD"])
         })
         .unwrap_or_else(|| "unknown".into());
+    let version = git(&["describe", "--tags", "--abbrev=0"])
+        .map(|t| t.trim_start_matches('v').to_string())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into());
     let date = Command::new("date")
         .args(["-u", "+%Y-%m-%d"])
         .output()
@@ -35,5 +42,6 @@ fn main() {
         .unwrap_or_else(|| "unknown".into());
 
     println!("cargo:rustc-env=SLOT_GIT_HASH={hash}");
+    println!("cargo:rustc-env=SLOT_VERSION={version}");
     println!("cargo:rustc-env=SLOT_BUILD_DATE={date}");
 }

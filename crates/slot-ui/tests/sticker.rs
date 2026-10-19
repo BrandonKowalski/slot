@@ -4,6 +4,7 @@ fn fields() -> StickerFields<'static> {
     StickerFields {
         battery: Some(87),
         serial: "04738857",
+        version: "0.1.0",
     }
 }
 
@@ -91,4 +92,11 @@ fn the_wordmarks_top_edge_is_antialiased_not_a_hard_step() {
         edges.iter().any(|&e| e != INK),
         "every sampled column's top edge jumps straight from the ground to the ink: {edges:?}"
     );
+}
+
+#[test]
+fn the_version_rides_above_the_readme_line() {
+    let lines = sticker_lines(&fields());
+    let home = lines.iter().position(|l| l == "SEE README.").unwrap();
+    assert_eq!(lines[home - 1], "VERSION 0.1.0");
 }

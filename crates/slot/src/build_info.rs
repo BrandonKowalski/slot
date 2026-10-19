@@ -8,7 +8,7 @@ pub struct Build {
 impl Build {
     pub fn current() -> Build {
         Build {
-            version: env!("CARGO_PKG_VERSION"),
+            version: env!("SLOT_VERSION"),
             hash: env!("SLOT_GIT_HASH"),
             date: env!("SLOT_BUILD_DATE"),
         }
