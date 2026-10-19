@@ -970,7 +970,7 @@ pub struct QuickMenu<'a> {
     pub clock: Option<[(TexId, u32, u32); 2]>,
     pub wallpaper: Option<[(TexId, u32, u32); 2]>,
     pub faces: Option<&'a QuickMenuFaces>,
-    pub ground: Option<TexId>,
+    pub ground: Option<(TexId, u32)>,
     pub palette: Option<[(TexId, u32, u32); 2]>,
     pub gba_bezel: Option<[(TexId, u32, u32); 2]>,
     pub gb_bezel: Option<[(TexId, u32, u32); 2]>,
@@ -1083,10 +1083,10 @@ impl QuickMenu<'_> {
     }
 }
 
-pub fn draw_menu_ground(canvas: Canvas, ground: Option<TexId>, out: &mut Vec<Draw>) {
+pub fn draw_menu_ground(canvas: Canvas, ground: Option<(TexId, u32)>, out: &mut Vec<Draw>) {
     let (w, h) = (canvas.w, OUT_H as f32);
     match ground {
-        Some(tex) => {
+        Some((tex, tex_w)) => {
             out.push(Draw::Part {
                 x: 0.0,
                 y: 0.0,
@@ -1094,7 +1094,7 @@ pub fn draw_menu_ground(canvas: Canvas, ground: Option<TexId>, out: &mut Vec<Dra
                 h,
                 tex,
                 alpha: 1.0,
-                uv: canvas.window(OUT_W as f32),
+                uv: canvas.cover(tex_w as f32),
             });
             out.push(Draw::Rect {
                 x: 0.0,

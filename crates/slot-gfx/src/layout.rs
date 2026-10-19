@@ -33,4 +33,12 @@ impl Canvas {
         }
         [(tex_w - self.w) / 2.0 / tex_w, 0.0, self.w / tex_w, 1.0]
     }
+
+    pub fn cover(self, tex_w: f32) -> [f32; 4] {
+        if tex_w >= self.w {
+            return self.window(tex_w);
+        }
+        let shown = tex_w / self.w;
+        [0.0, (1.0 - shown) / 2.0, 1.0, shown]
+    }
 }

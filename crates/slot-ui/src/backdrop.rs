@@ -12,21 +12,59 @@ const BLUR_PNG: &[u8] = include_bytes!("../../../assets/background_default_blur.
 
 const SCRIM: f32 = 0.62;
 
-pub fn wallpaper_face(path: &Path) -> Option<Vec<u8>> {
-    art::cover(path, OUT_W, OUT_H)
+pub fn wallpaper_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
+    art::cover(path, w, h)
 }
 
 pub fn bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
     art::cover(path, w, h)
 }
 
-pub fn game_bezel_face(path: &Path) -> Option<Vec<u8>> {
-    art::cover(path, OUT_W, OUT_H)
+pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
+    let (src, sw, sh) = art::decode(path)?;
+    panel_bezel(&src, (sw, sh), (w, h), false)
 }
 
-pub fn default_game_bezel_face(colour: bool) -> Option<Vec<u8>> {
+pub fn default_game_bezel_face(colour: bool, w: u32, h: u32) -> Option<Vec<u8>> {
     let png = if colour { BEZEL_GBC_PNG } else { BEZEL_GB_PNG };
-    art::cover_bytes(png, OUT_W, OUT_H)
+    let (src, sw, sh) = art::decode_png_bytes(png)?;
+    panel_bezel(&src, (sw, sh), (w, h), true)
+}
+
+const BEZEL_GRAIN_ROWS: usize = 10;
+
+fn panel_bezel(
+    src: &[u8],
+    (sw, sh): (u32, u32),
+    (w, h): (u32, u32),
+    extend: bool,
+) -> Option<Vec<u8>> {
+    if !slot_gfx::framed((w, h)) || sw * 3 == sh * 4 {
+        return art::cover_rgba(src, sw, sh, w, h);
+    }
+    let game_h = slot_gfx::screen_rect((w, h)).3 as usize;
+    let inner = art::cover_rgba(src, sw, sh, w, game_h as u32)?;
+    let (h, row) = (h as usize, w as usize * 4);
+    let gap = h - game_h;
+    let top = gap - gap / 2;
+    let mut out = vec![0u8; row * h];
+    out[top * row..(top + game_h) * row].copy_from_slice(&inner);
+    if !extend {
+        return Some(out);
+    }
+    let ping = |d: usize| {
+        let p = d % (2 * BEZEL_GRAIN_ROWS);
+        p.min(2 * BEZEL_GRAIN_ROWS - 1 - p)
+    };
+    for d in 0..top {
+        let from = ping(d) * row;
+        out[(top - 1 - d) * row..][..row].copy_from_slice(&inner[from..from + row]);
+    }
+    for d in 0..h - top - game_h {
+        let from = (game_h - 1 - ping(d)) * row;
+        out[(top + game_h + d) * row..][..row].copy_from_slice(&inner[from..from + row]);
+    }
+    Some(out)
 }
 
 /// The carousel ground, scaled to cover the whole screen, including behind the footer.
@@ -43,18 +81,18 @@ pub fn blur_background() -> Option<&'static [u8]> {
         .as_deref()
 }
 
-pub fn draw_ground(canvas: Canvas, face: Option<TexId>, out: &mut Vec<Draw>) {
-    let Some(tex) = face else {
+pub fn draw_ground(canvas: Canvas, face: Option<(TexId, u32)>, out: &mut Vec<Draw>) {
+    let Some(face) = face else {
         return;
     };
-    out.push(ground(canvas, tex));
+    out.push(ground(canvas, face));
 }
 
-pub fn draw_backdrop(canvas: Canvas, face: Option<TexId>, out: &mut Vec<Draw>) {
-    let Some(tex) = face else {
+pub fn draw_backdrop(canvas: Canvas, face: Option<(TexId, u32)>, out: &mut Vec<Draw>) {
+    let Some(face) = face else {
         return;
     };
-    out.push(ground(canvas, tex));
+    out.push(ground(canvas, face));
     out.push(Draw::Rect {
         x: 0.0,
         y: 0.0,
@@ -64,7 +102,7 @@ pub fn draw_backdrop(canvas: Canvas, face: Option<TexId>, out: &mut Vec<Draw>) {
     });
 }
 
-fn ground(canvas: Canvas, tex: TexId) -> Draw {
+fn ground(canvas: Canvas, (tex, tex_w): (TexId, u32)) -> Draw {
     Draw::Part {
         x: 0.0,
         y: 0.0,
@@ -72,6 +110,6 @@ fn ground(canvas: Canvas, tex: TexId) -> Draw {
         h: OUT_H as f32,
         tex,
         alpha: 1.0,
-        uv: canvas.window(OUT_W as f32),
+        uv: canvas.cover(tex_w as f32),
     }
 }

@@ -10,6 +10,8 @@
 - Loading a state while a game is saving to a 128 KB flash chip no longer writes the save into the wrong half of the chip.
 - The cart insertion animation no longer stutters, and a large ROM still loading after the cart seats powers the screen on to a blank panel that brightens until the game appears. (#119)
 - On Anbernics with a left stick, the stick works as the D-pad. Left Stick as D-Pad on the Gameplay page turns it off. (#106, #107)
+- `Labels/`, `Wallpapers/` and `Bezels/` each hold a `README.txt` with the sizes and formats they take, and the site's Shelf questions cover them too. (#122)
+- On 640x480 devices a 640x480 wallpaper and a 640x480 bezel now show pixel for pixel. Both used to be scaled to 720x480 first. Bezels, including the default Game Boy and Game Boy Color ones, now reach the top and bottom of the screen. (#122)
 
 ## [1.7.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.7.0)
 

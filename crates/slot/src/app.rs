@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slot_gfx::{Canvas, OUT_H};
+use slot_gfx::{Canvas, OUT_H, OUT_W};
 use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
@@ -1185,22 +1185,34 @@ impl App {
         self.state.wallpaper = choices[next].clone();
     }
 
-    fn menu_ground(&self) -> Option<TexId> {
+    fn grounds(&self) -> [Option<(TexId, u32)>; 3] {
+        let ground = self.ground.map(|t| (t, OUT_W));
+        let blur = self.blur.map(|t| (t, OUT_W)).or(ground);
+        let own = self
+            .wallpaper
+            .map(|t| (t, self.wallpaper_size().0))
+            .or(ground);
+        [ground, blur, own]
+    }
+
+    fn menu_ground(&self) -> Option<(TexId, u32)> {
+        let [_, blur, own] = self.grounds();
         match &self.state.wallpaper {
             WallpaperPick::None => None,
-            WallpaperPick::Default | WallpaperPick::Blur => self.blur.or(self.ground),
-            WallpaperPick::Random if !self.random_drawn() => self.blur.or(self.ground),
-            WallpaperPick::File(_) | WallpaperPick::Random => self.wallpaper.or(self.ground),
+            WallpaperPick::Default | WallpaperPick::Blur => blur,
+            WallpaperPick::Random if !self.random_drawn() => blur,
+            WallpaperPick::File(_) | WallpaperPick::Random => own,
         }
     }
 
     fn draw_background(&self, out: &mut Vec<Draw>) {
+        let [ground, blur, own] = self.grounds();
         let face = match &self.state.wallpaper {
             WallpaperPick::None => None,
-            WallpaperPick::Default => self.ground,
-            WallpaperPick::Random if !self.random_drawn() => self.ground,
-            WallpaperPick::Blur => self.blur.or(self.ground),
-            WallpaperPick::File(_) | WallpaperPick::Random => self.wallpaper.or(self.ground),
+            WallpaperPick::Default => ground,
+            WallpaperPick::Random if !self.random_drawn() => ground,
+            WallpaperPick::Blur => blur,
+            WallpaperPick::File(_) | WallpaperPick::Random => own,
         };
         draw_ground(self.canvas(), face, out);
         let alpha = tint_alpha(self.state.wallpaper_tint);
@@ -3081,6 +3093,17 @@ impl App {
 
     pub fn set_panel(&mut self, panel: (u32, u32)) {
         self.panel = panel;
+    }
+
+    pub fn wallpaper_size(&self) -> (u32, u32) {
+        (Canvas::of(self.panel).w as u32, OUT_H)
+    }
+
+    pub fn game_bezel_size(&self) -> (u32, u32) {
+        match slot_gfx::framed(self.panel) {
+            true => self.panel,
+            false => (OUT_W, OUT_H),
+        }
     }
 
     pub fn shows_game(&self) -> bool {

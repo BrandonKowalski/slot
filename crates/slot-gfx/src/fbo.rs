@@ -123,8 +123,13 @@ impl Compositor {
                     self.sprites.draw(&items[from..i], &self.quad);
                     self.in_game_rect(|c| {
                         c.game.draw(&c.quad);
-                        c.draw_game_bezel();
+                        if c.panel_bezel().is_none() {
+                            c.draw_game_bezel();
+                        }
                     });
+                    if let Some(bezel) = self.panel_bezel() {
+                        self.sprites.draw(&[bezel], &self.quad);
+                    }
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
@@ -408,6 +413,21 @@ impl Compositor {
         }
         let (x, y, w, h) = blit_rect(window, self.shake);
         self.blit_part(x, y, w, h, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    fn panel_bezel(&self) -> Option<Draw> {
+        let tex = self
+            .game_bezel
+            .filter(|_| crate::bezel::framed(self.window))?;
+        let canvas = Canvas::of(self.window);
+        Some(Draw::Tex {
+            x: 0.0,
+            y: 0.0,
+            w: canvas.w,
+            h: canvas.h,
+            tex,
+            alpha: 1.0,
+        })
     }
 }
 

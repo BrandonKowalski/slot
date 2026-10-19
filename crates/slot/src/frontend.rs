@@ -89,7 +89,7 @@ struct QuickPalette {
 #[derive(Default)]
 struct BezelSync {
     tex: Option<TexId>,
-    image: Option<(Console, BezelPick)>,
+    image: Option<(Console, BezelPick, (u32, u32))>,
     labels: [String; 3],
     faces: [(Option<TexId>, Option<TexId>); 3],
 }
@@ -97,7 +97,7 @@ struct BezelSync {
 #[derive(Default)]
 struct WallpaperSync {
     tex: Option<TexId>,
-    image: Option<String>,
+    image: Option<(String, (u32, u32))>,
     label: String,
     dim: Option<TexId>,
     lit: Option<TexId>,
@@ -1006,11 +1006,12 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
 fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut BezelSync) {
     let platform = app.playing_platform();
     let pick = app.resolved_bezel(platform);
-    let shown = (platform, pick);
+    let (w, h) = app.game_bezel_size();
+    let shown = (platform, pick, (w, h));
     if state.image.as_ref() != Some(&shown) {
         let rgba = match &shown.1 {
             BezelPick::None | BezelPick::Ags102 => None,
-            BezelPick::Default => default_game_bezel_face(platform == Console::Gbc),
+            BezelPick::Default => default_game_bezel_face(platform == Console::Gbc, w, h),
             BezelPick::File(name) => app
                 .root()
                 .map(|root| {
@@ -1018,15 +1019,15 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
                         .join(platform.dir_name())
                         .join(name)
                 })
-                .and_then(|path| game_bezel_face(&path)),
+                .and_then(|path| game_bezel_face(&path, w, h)),
         };
         let tex = rgba.map(|rgba| match state.tex {
             Some(id) => {
-                compositor.update_texture(id, OUT_W, OUT_H, &rgba);
+                compositor.update_texture(id, w, h, &rgba);
                 id
             }
             None => {
-                let id = compositor.create_texture(OUT_W, OUT_H, &rgba);
+                let id = compositor.create_texture(w, h, &rgba);
                 state.tex = Some(id);
                 id
             }
@@ -1062,22 +1063,23 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
 }
 
 fn sync_wallpaper(app: &mut App, compositor: &mut Compositor, state: &mut WallpaperSync) {
-    let shown = app.shown_wallpaper();
+    let (w, h) = app.wallpaper_size();
+    let shown = app.shown_wallpaper().map(|name| (name, (w, h)));
     if state.image != shown {
         state.image = shown.clone();
-        if let Some(name) = &shown {
+        if let Some((name, _)) = &shown {
             if let Some(rgba) = app
                 .root()
                 .map(|root| root.join("Wallpapers").join(name))
-                .and_then(|path| wallpaper_face(&path))
+                .and_then(|path| wallpaper_face(&path, w, h))
             {
                 let id = match state.tex {
                     Some(id) => {
-                        compositor.update_texture(id, OUT_W, OUT_H, &rgba);
+                        compositor.update_texture(id, w, h, &rgba);
                         id
                     }
                     None => {
-                        let id = compositor.create_texture(OUT_W, OUT_H, &rgba);
+                        let id = compositor.create_texture(w, h, &rgba);
                         state.tex = Some(id);
                         id
                     }
