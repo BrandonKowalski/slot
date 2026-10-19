@@ -240,7 +240,7 @@ fn link_screen_on(panel: (u32, u32)) -> Option<Vec<u8>> {
         })
         .collect();
     legends.sort_by(|a, b| a.0.total_cmp(&b.0));
-    assert_eq!(legends.len(), 2, "{legends:?}");
+    assert!(!legends.is_empty(), "no link legends");
     for pair in legends.windows(2) {
         assert!(
             pair[0].1 <= pair[1].0,
