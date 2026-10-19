@@ -178,6 +178,7 @@ tasks:
     deps: [core]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_SILENT: '0'
     cmds:
       - cargo run --release -p slot
 
@@ -186,6 +187,7 @@ tasks:
     deps: [core]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_SILENT: '0'
       SLOT_BARE: '1'
     cmds:
       - cargo run --release -p slot
@@ -195,6 +197,7 @@ tasks:
     deps: [core]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_SILENT: '0'
       SLOT_WINDOW: '1280x960'
     cmds:
       - cargo run --release -p slot
@@ -204,6 +207,7 @@ tasks:
     deps: [core]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
+      SLOT_SILENT: '0'
     cmds:
       - cargo run -p slot
 
