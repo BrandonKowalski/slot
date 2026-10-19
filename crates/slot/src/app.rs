@@ -22,7 +22,7 @@ use slot_ui::{
 
 use crate::audio::Sfx;
 use crate::core_picker::{Chip, CorePicker, Outcome, Press};
-use crate::link_kind::{link_carried, link_kind, serial_option, LinkKind};
+use crate::link_kind::{link_carried, link_dual, link_kind, serial_option, LinkKind};
 use crate::link_radio::{radio_jobs, LinkRole, RadioJob, RadioJobs};
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
@@ -4725,10 +4725,10 @@ impl App {
     }
 
     fn link_switchable(&self, stem: &str) -> bool {
-        self.auto_link(stem).is_some_and(|(cart, auto)| {
-            serial_option(self.link_hardware.other(), auto, &cart.code, &cart.title)
-                != serial_option(self.link_hardware, auto, &cart.code, &cart.title)
-        })
+        self.core == Core::Gpsp
+            && self
+                .auto_link(stem)
+                .is_some_and(|(cart, _)| link_dual(&cart.code, &cart.title))
     }
 
     fn pick_link(&mut self, role: LinkRow) {

@@ -27,7 +27,7 @@ const BAIL: Duration = Duration::from_secs(5);
 
 fn playing_on(core: Core) -> (App, TempDir) {
     let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
-    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
+    common::write_hack_header(&d, "Emerald", "POKEMON EMER", "BPEE");
     let mut app = common::boot(d.path());
     app.apply(Action::Insert);
     app.set_core(core);
@@ -507,7 +507,7 @@ fn the_link_screen_draws_its_role_over_the_game() {
 
 fn session_playing_on_gpsp() -> (Session, TempDir, Millis) {
     let d = common::tmp_root_with_carts(&["Emerald"]);
-    common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
+    common::write_hack_header(&d, "Emerald", "POKEMON EMER", "BPEE");
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).expect("write core");
     write_slot_state(
         d.path(),
@@ -1364,7 +1364,12 @@ fn a_link_in_a_switched_mode_reloads_the_game_and_then_starts_the_link() {
 fn session_on_a_real_core() -> Option<(Session, TempDir, Millis)> {
     let core = common::vendored_core()?;
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
-    common::write_real_cart_as(&d, "Emerald", "POKEMON RUBY", "AXVE");
+    common::write_real_cart_as(&d, "Emerald", "POKEMON EMER", "BPEE");
+    let rom = d.path().join("Games/GBA").join("Emerald.gba");
+    let mut bytes = std::fs::read(&rom).expect("read rom");
+    bytes[0xb2] = 0;
+    bytes[0xbd] = bytes[0xbd].wrapping_add(0x96);
+    std::fs::write(&rom, bytes).expect("rewrite rom");
     slot_store::write_selected_core(d.path(), "Emerald", Core::Gpsp).expect("write core");
     std::fs::copy(
         &core,
@@ -1616,6 +1621,51 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
             !out.iter()
                 .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gone)),
             "{k:?} is still on the pick screen"
+        );
+    }
+}
+
+#[test]
+fn select_on_mgba_keeps_the_cable_and_the_screen_opens_again() {
+    let d = common::tmp_root_with_carts(&["Kirby", "Zzz"]);
+    common::write_retail_header(&d, "Kirby", "AGB KIRBY AM", "B8KE");
+    let mut app = seated_on(&d, Core::Mgba);
+    app.apply(Action::GameMenu);
+    assert_eq!(drawn_hardware(&app), LinkKind::Cable);
+    select(&mut app);
+    assert_eq!(
+        drawn_hardware(&app),
+        LinkKind::Cable,
+        "mGBA switched to an adapter it cannot emulate"
+    );
+    app.apply(Action::GbaDown(Btn::B));
+    app.apply(Action::GameMenu);
+    assert!(
+        app.game_menu_open(),
+        "the link screen never opened again, #131"
+    );
+    assert_ne!(app.toast(), Some(Toast::NeedsGpsp));
+}
+
+#[test]
+fn only_a_pokemon_cart_with_both_links_switches_on_gpsp() {
+    for (title, code, switches) in [
+        ("POKEMON RUBY", "AXVE", false),
+        ("ADVANCEWARS", "AWRE", false),
+        ("MARIO GOLF", "BMGE", false),
+        ("POKEMON EMER", "BPEE", true),
+        ("POKEMON FIRE", "BPRE", true),
+    ] {
+        let d = common::tmp_root_with_carts(&["Cart", "Zzz"]);
+        common::write_retail_header(&d, "Cart", title, code);
+        let mut app = seated_on_gpsp(&d);
+        app.apply(Action::GameMenu);
+        let before = drawn_hardware(&app);
+        select(&mut app);
+        assert_eq!(
+            drawn_hardware(&app) != before,
+            switches,
+            "{code} answered SELECT the wrong way"
         );
     }
 }

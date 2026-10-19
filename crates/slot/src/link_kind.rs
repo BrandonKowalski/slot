@@ -51,6 +51,10 @@ pub fn serial_option(chosen: LinkKind, auto: LinkKind, code: &str, title: &str) 
     }
 }
 
+pub fn link_dual(code: &str, title: &str) -> bool {
+    pokemon(code, title) && WIRELESS.contains(&code)
+}
+
 pub fn link_carried(code: &str, title: &str) -> bool {
     WIRELESS.contains(&code)
         || pokemon(code, title)

@@ -114,6 +114,13 @@ pub fn write_retail_header(d: &TempDir, stem: &str, title: &str, code: &str) {
     std::fs::write(rom_path(d, stem), rom).expect("write rom");
 }
 
+pub fn write_hack_header(d: &TempDir, stem: &str, title: &str, code: &str) {
+    write_retail_header(d, stem, title, code);
+    let mut rom = std::fs::read(rom_path(d, stem)).expect("read rom");
+    rom[0xb2] = 0;
+    std::fs::write(rom_path(d, stem), rom).expect("write rom");
+}
+
 pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }

@@ -513,7 +513,7 @@ fn mode_cap_ink() -> usize {
 
 #[test]
 fn the_legend_shows_select_mode_only_where_the_hardware_can_be_switched() {
-    let switchable = legend_pixels("POKEMON RUBY", "AXVE", "legend-switchable");
+    let switchable = legend_pixels("POKEMON EMER", "BPEE", "legend-switchable");
     let fixed = legend_pixels("MARIO GOLF", "BMGE", "legend-fixed");
 
     assert!(
