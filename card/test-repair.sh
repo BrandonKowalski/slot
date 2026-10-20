@@ -50,7 +50,7 @@ repair() {
 		AGS_UMOUNT="$TMP/bin/umount" AGS_MOUNT="$TMP/bin/mount" AGS_FUSER="$TMP/bin/fuser" \
 		AGS_SYNC="$TMP/bin/sync" AGS_REBOOT="$TMP/bin/reboot" AGS_RMMOD="$TMP/bin/rmmod" AGS_SPLASH="$TMP/bin/splash" \
 		AGS_FSCK_FAT="$TMP/bin/fsck.fat" AGS_FSCK_EXFAT="$TMP/bin/fsck.exfat" \
-		AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" \
+		AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" AGS_WIFI_WAIT=100000 \
 		sh "$SCRIPT" /dev/mmcblk0p7 /mnt/sdcard "${1:-vfat}"
 }
 
@@ -155,7 +155,7 @@ AGS_DATA="$TMP/data" AGS_RUN="$TMP/run" AGS_MOUNTS="$TMP/mounts" \
 	AGS_UMOUNT="$TMP/bin/umount" AGS_MOUNT="$TMP/bin/mount" AGS_FUSER="$TMP/bin/fuser" \
 	AGS_SYNC="$TMP/bin/sync" AGS_REBOOT="$TMP/bin/reboot" AGS_RMMOD="$TMP/bin/rmmod" AGS_SPLASH="$TMP/bin/splash" \
 	AGS_FSCK_FAT="$TMP/bin/fsck.fat" AGS_FSCK_EXFAT="$TMP/bin/fsck.exfat" \
-	AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" \
+	AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" AGS_WIFI_WAIT=100000 \
 	sh "$SCRIPT" /dev/mmcblk0p7 /mnt/sdcard vfat /dev/mmcblk1p1 /mnt/other exfat
 called "splash --important -1 UNMOUNTING DISKS" || fail "two cards were not called disks"
 called "umount /mnt/other" || fail "the second card was not unmounted"
