@@ -7,7 +7,7 @@ use common::{repo_root, session_with_platform, tmp_root_with_gb_carts};
 use slot::app::Phase;
 use slot::session::Session;
 use slot_input::{Btn, Millis, RawEvent};
-use slot_store::{write_slot_state, GbPalette, SlotState};
+use slot_store::{write_slot_state, SlotState};
 use slot_ui::QuickRow;
 use tempfile::TempDir;
 
@@ -88,8 +88,7 @@ fn the_chord_recolours_the_running_game() {
     write_slot_state(
         d.path(),
         &SlotState {
-            gb_palettes: true,
-            gb_palette: GbPalette::parse("SGB 4-H").unwrap(),
+            gb_palettes: false,
             ..SlotState::default()
         },
     )
@@ -97,12 +96,9 @@ fn the_chord_recolours_the_running_game() {
     let (mut s, _motor) = session_with_platform(d.path());
     let mut now = 0;
     play(&mut s, &mut now);
-    until(
-        &mut s,
-        &mut now,
-        "a title screen in SGB 4-H's colours",
-        |f| mean_saturation(f) > 6.0,
-    );
+    until(&mut s, &mut now, "a title screen in Auto's colours", |f| {
+        mean_saturation(f) > 6.0
+    });
 
     for ev in [
         RawEvent::Down(Btn::Select),
@@ -112,10 +108,7 @@ fn the_chord_recolours_the_running_game() {
     ] {
         event(&mut s, ev, &mut now);
     }
-    assert_eq!(
-        s.app().gb_palette().map(GbPalette::core_name),
-        Some("Grayscale")
-    );
+    assert_eq!(Some(s.app().gb_colors().core_name()), Some("Grayscale"));
     until(&mut s, &mut now, "the picture to turn to Grayscale", |f| {
         mean_saturation(f) < 4.0
     });
@@ -141,8 +134,7 @@ fn a_palette_picked_behind_the_menu_outlasts_the_menu() {
     write_slot_state(
         d.path(),
         &SlotState {
-            gb_palettes: true,
-            gb_palette: GbPalette::parse("SGB 4-H").unwrap(),
+            gb_palettes: false,
             ..SlotState::default()
         },
     )
@@ -150,23 +142,26 @@ fn a_palette_picked_behind_the_menu_outlasts_the_menu() {
     let (mut s, _motor) = session_with_platform(d.path());
     let mut now = 0;
     play(&mut s, &mut now);
-    until(
-        &mut s,
-        &mut now,
-        "a title screen in SGB 4-H's colours",
-        |f| mean_saturation(f) > 6.0,
-    );
+    until(&mut s, &mut now, "a title screen in Auto's colours", |f| {
+        mean_saturation(f) > 6.0
+    });
 
     tap(&mut s, &mut now, Btn::Menu);
-    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A, Btn::Down, Btn::Down] {
+    for btn in [
+        Btn::Down,
+        Btn::Down,
+        Btn::A,
+        Btn::A,
+        Btn::Down,
+        Btn::Down,
+        Btn::Down,
+        Btn::Down,
+    ] {
         tap(&mut s, &mut now, btn);
     }
     assert_eq!(s.app().in_game_menu(), Some(QuickRow::Palette));
     tap(&mut s, &mut now, Btn::Right);
-    assert_eq!(
-        s.app().gb_palette().map(GbPalette::core_name),
-        Some("Grayscale")
-    );
+    assert_eq!(Some(s.app().gb_colors().core_name()), Some("Grayscale"));
     while s.app().in_game_menu().is_some() {
         tap(&mut s, &mut now, Btn::B);
     }
@@ -177,7 +172,7 @@ fn a_palette_picked_behind_the_menu_outlasts_the_menu() {
     let f = s.frame().expect("no frame");
     assert!(
         mean_saturation(&f) < 4.0,
-        "the game went back to SGB 4-H once the menu closed, saturation {}",
+        "the game went back to Auto once the menu closed, saturation {}",
         mean_saturation(&f)
     );
 }

@@ -88,3 +88,52 @@ impl GbPalette {
         Self::all().find(|p| p.core_name() == name)
     }
 }
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum GbColors {
+    Auto,
+    Palette(GbPalette),
+}
+
+impl GbColors {
+    pub fn all() -> impl Iterator<Item = GbColors> {
+        std::iter::once(GbColors::Auto).chain(GbPalette::all().map(GbColors::Palette))
+    }
+
+    pub fn index(self) -> usize {
+        match self {
+            GbColors::Auto => 0,
+            GbColors::Palette(p) => p.index() + 1,
+        }
+    }
+
+    pub fn next(self) -> GbColors {
+        match self {
+            GbColors::Auto => GbColors::Palette(GbPalette(0)),
+            GbColors::Palette(p) if p.index() + 1 == GbPalette::COUNT => GbColors::Auto,
+            GbColors::Palette(p) => GbColors::Palette(p.next()),
+        }
+    }
+
+    pub fn prev(self) -> GbColors {
+        match self {
+            GbColors::Auto => GbColors::Palette(GbPalette((GbPalette::COUNT - 1) as u8)),
+            GbColors::Palette(p) if p.index() == 0 => GbColors::Auto,
+            GbColors::Palette(p) => GbColors::Palette(p.prev()),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            GbColors::Auto => "Auto",
+            GbColors::Palette(p) => p.label(),
+        }
+    }
+
+    pub fn core_name(self) -> &'static str {
+        match self {
+            GbColors::Auto => "Auto",
+            GbColors::Palette(p) => p.core_name(),
+        }
+    }
+}

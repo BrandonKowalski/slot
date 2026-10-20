@@ -1,0 +1,85 @@
+--- a/src/gb/serialize.c
++++ b/src/gb/serialize.c
+@@ -195,7 +195,11 @@
+ 		gb->eiPending.when = when + mTimingCurrentTime(&gb->timing);
+ 	}
+ 
++	enum GBModel requested = gb->model;
+ 	gb->model = state->model;
++	if ((gb->model & GB_MODEL_SGB) && requested != GB_MODEL_AUTODETECT && !(requested & GB_MODEL_SGB) && requested < GB_MODEL_CGB) {
++		gb->model &= ~GB_MODEL_SGB;
++	}
+ 
+ 	if (gb->model < GB_MODEL_CGB) {
+ 		gb->audio.style = GB_AUDIO_DMG;
+--- a/src/platform/libretro/libretro.c
++++ b/src/platform/libretro/libretro.c
+@@ -30,6 +30,7 @@
+ #include <mgba/internal/gba/io.h>
+ #include <mgba/internal/gba/sio/lockstep.h>
+ #endif
++#include <mgba-util/crc32.h>
+ #include <mgba-util/memory.h>
+ #include <mgba-util/vfs.h>
+ #include "libretro-vfs.h"
+@@ -1193,6 +1194,38 @@
+ 	var.key = "mgba_gb_colors";
+ 	var.value = 0;
+ 	if (environCallback(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
++		if (strcmp(var.value, "Auto") == 0) {
++			var.value = "GBC Dark Green \xe2\x86\x92" "A";
++			if (core->platform(core) == mPLATFORM_GB && ((struct GB*) core->board)->memory.rom) {
++				struct GB* gb = core->board;
++				struct GBCartridgeOverride ov;
++				memset(&ov, 0, sizeof(ov));
++				ov.headerCrc32 = doCrc32(&gb->memory.rom[0x100], sizeof(struct GBCartridge));
++				if (GBOverrideColorFind(&ov, GB_COLORS_CGB)) {
++					uint32_t pal[12] = {0};
++					int i;
++					for (i = 0; i < 12; ++i) {
++						if (!(ov.gbColors[i] & 0xFF000000)) {
++							continue;
++						}
++						pal[i] = ov.gbColors[i];
++						if (i < 8) {
++							pal[i + 4] = ov.gbColors[i];
++						}
++						if (i < 4) {
++							pal[i + 8] = ov.gbColors[i];
++						}
++					}
++					char key[12];
++					for (i = 0; i < 12; ++i) {
++						snprintf(key, sizeof(key), "gb.pal[%i]", i);
++						mCoreConfigSetUIntValue(&core->config, key, pal[i] & 0xFFFFFF);
++					}
++					core->reloadConfigOption(core, "gb.pal", NULL);
++					return;
++				}
++			}
++		}
+ 		const struct GBColorPreset* presets;
+ 		size_t listSize = GBColorPresetList(&presets);
+ 		size_t i;
+@@ -1377,6 +1410,9 @@
+ 	size_t i;
+ 	for (i = 0; i < listSize && i < RETRO_NUM_CORE_OPTION_VALUES_MAX; ++i) {
+ 		option_defs_us[colorOpt].values[i].value = presets[i].name;
++	}
++	if (i + 1 < RETRO_NUM_CORE_OPTION_VALUES_MAX) {
++		option_defs_us[colorOpt].values[i].value = "Auto";
+ 	}
+ #endif
+ 
+@@ -2675,6 +2711,11 @@
+ 
+ 	_reloadSettings();
+ 	core->loadROM(core, rom);
++#ifdef M_CORE_GB
++	if (core->platform(core) == mPLATFORM_GB) {
++		_updateGbPal();
++	}
++#endif
+ 	deferredSetup = true;
+ 
+ 	const char* sysDir = 0;

@@ -112,3 +112,16 @@ fn the_mute_survives_a_reboot() {
     assert!(b.muted());
     assert_eq!(b.volume(), 70);
 }
+
+#[test]
+fn turning_the_volume_up_saves_the_unmute_with_the_level() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let mut a = app_playing_with_volume(d.path(), 70);
+    a.apply_at(Action::MuteToggle, 0);
+    a.flush_state();
+    a.apply_at(Action::VolumeUp, 1_000);
+    a.flush_state();
+    let saved = read_slot_state(d.path());
+    assert_eq!(saved.volume, 75);
+    assert!(!saved.muted, "the card still says muted after the sound came back");
+}

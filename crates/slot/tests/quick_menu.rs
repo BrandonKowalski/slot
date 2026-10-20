@@ -7,8 +7,8 @@ use common::{
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{
-    read_slot_state, write_slot_state, Appearance, BezelPick, Platform, Shader, SlotState,
-    WallpaperPick,
+    read_slot_state, write_slot_state, Appearance, BezelPick, GbColors, GbPalette, Platform,
+    Shader, SlotState, WallpaperPick,
 };
 use slot_ui::{
     Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, OUT_H,
@@ -362,10 +362,12 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     let (_d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::Screen);
     press(&mut a, Btn::A);
-    assert_eq!(a.quick_menu(), Some(QuickRow::ScreenGba));
+    assert_eq!(a.quick_menu(), Some(QuickRow::ScreenGeneral));
     for want in [
+        QuickRow::ScreenGba,
         QuickRow::ScreenGbc,
         QuickRow::ScreenGb,
+        QuickRow::ScreenGeneral,
         QuickRow::ScreenGba,
         QuickRow::ScreenGbc,
         QuickRow::ScreenGb,
@@ -381,7 +383,7 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     assert_eq!(a.quick_menu(), Some(QuickRow::GbShader));
     for want in [
         QuickRow::GbColourCorrection,
-        QuickRow::GbPalettes,
+        QuickRow::GbPalette,
         QuickRow::GbBezel,
         QuickRow::GbShader,
     ] {
@@ -931,20 +933,90 @@ fn only_the_clock_from_the_menu_offers_b_back() {
 }
 
 #[test]
-fn gb_palettes_flips_on_either_arrow_and_saves() {
-    let (d, mut a, _) = on_carousel();
-    open_at(&mut a, QuickRow::GbPalettes);
-    assert_eq!(a.quick_value(QuickRow::GbPalettes), Some(QuickValue::Off));
-    for (btn, want) in [(Btn::Right, true), (Btn::Left, false), (Btn::Left, true)] {
+fn brightness_steps_from_one_to_nine_and_never_to_zero() {
+    let (d, mut a, _) = on_carousel_with(SlotState {
+        brightness: 3,
+        ..SlotState::default()
+    });
+    open_at(&mut a, QuickRow::Brightness);
+    assert_eq!(
+        a.quick_value(QuickRow::Brightness),
+        Some(QuickValue::Level3)
+    );
+    for (btn, want) in [(Btn::Left, 2), (Btn::Left, 1), (Btn::Left, 1)] {
         press(&mut a, btn);
+        assert_eq!(a.brightness(), want, "{btn:?}");
+    }
+    for _ in 0..12 {
+        press(&mut a, Btn::Right);
+    }
+    assert_eq!(a.brightness(), 9);
+    a.flush_state();
+    assert_eq!(read_slot_state(d.path()).brightness, 9);
+
+    let (_d, mut a, _) = on_carousel_with(SlotState {
+        brightness: 1,
+        ..SlotState::default()
+    });
+    a.apply(Action::BrightnessDown);
+    assert_eq!(a.brightness(), 0);
+    open_at(&mut a, QuickRow::Brightness);
+    assert_eq!(
+        a.quick_value(QuickRow::Brightness),
+        Some(QuickValue::Level0)
+    );
+    press(&mut a, Btn::Left);
+    assert_eq!(a.brightness(), 0, "Left at 0 moved the backlight");
+    press(&mut a, Btn::Right);
+    assert_eq!(a.brightness(), 1);
+}
+
+#[test]
+fn blue_light_steps_off_to_nine() {
+    let (_d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::BlueLight);
+    assert_eq!(a.blue_light(), 0);
+    assert_eq!(a.quick_value(QuickRow::BlueLight), Some(QuickValue::Off));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.blue_light(), 1);
+    assert_eq!(a.quick_value(QuickRow::BlueLight), Some(QuickValue::Level1));
+    press(&mut a, Btn::Left);
+    press(&mut a, Btn::Left);
+    assert_eq!(a.blue_light(), 0);
+    for _ in 0..12 {
+        press(&mut a, Btn::Right);
+    }
+    assert_eq!(a.blue_light(), 9);
+}
+
+#[test]
+fn the_game_boy_page_steps_the_palette_from_auto() {
+    let (d, mut a, _) = on_carousel();
+    assert_eq!(
+        QuickRow::SCREEN_GB,
+        [
+            QuickRow::GbShader,
+            QuickRow::GbColourCorrection,
+            QuickRow::GbPalette,
+            QuickRow::GbBezel,
+        ]
+    );
+    open_at(&mut a, QuickRow::GbPalette);
+    assert_eq!(a.gb_colors(), GbColors::Auto);
+    assert_eq!(a.gb_colors_label(), "Auto");
+    let grey = GbColors::Palette(GbPalette::parse("Grayscale").unwrap());
+    let last = GbColors::Palette(GbPalette::parse("SGB 4-H").unwrap());
+    for (btn, want) in [
+        (Btn::Right, grey),
+        (Btn::Left, GbColors::Auto),
+        (Btn::Left, last),
+    ] {
+        press(&mut a, btn);
+        assert_eq!(a.gb_colors(), want, "{btn:?}");
         assert_eq!(
-            read_slot_state(d.path()).gb_palettes,
+            read_slot_state(d.path()).gb_colors(),
             want,
             "{btn:?} never reached the card"
-        );
-        assert_eq!(
-            a.quick_value(QuickRow::GbPalettes),
-            Some(QuickValue::flag(want))
         );
     }
 }

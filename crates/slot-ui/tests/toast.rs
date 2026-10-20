@@ -1,4 +1,4 @@
-use slot_store::GbPalette;
+use slot_store::{GbColors, GbPalette};
 use slot_ui::{
     toast_face, toast_rect, Canvas, Draw, Hud, HudKind, QuickRow, TexId, Toast, ALARM_BAND_H,
     OUT_H, OUT_W, PLATE_H,
@@ -52,10 +52,11 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );
-    let palettes = GbPalette::all().count();
+    let palettes = GbColors::all().count();
+    assert_eq!(palettes, 49);
     assert_eq!(
         all[19..19 + palettes],
-        GbPalette::all().map(Toast::Palette).collect::<Vec<_>>()[..],
+        GbColors::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
     );
     assert_eq!(
@@ -192,7 +193,11 @@ fn a_toast_takes_the_band_from_the_bar() {
 #[test]
 fn a_palette_banner_names_the_palette_without_its_boot_combo() {
     let p = GbPalette::parse("GBC Dark Green →A").unwrap();
-    assert_eq!(Toast::Palette(p).text(), "GBC Dark Green");
+    assert_eq!(
+        Toast::Palette(GbColors::Palette(p)).text(),
+        "GBC Dark Green"
+    );
+    assert_eq!(Toast::Palette(GbColors::Auto).text(), "Auto");
 }
 
 fn band(h: &Hud, now: u64) -> Option<(f32, f32, [f32; 4])> {

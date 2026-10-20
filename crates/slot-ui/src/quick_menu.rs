@@ -25,7 +25,7 @@ pub enum QuickRow {
     EjectSave,
     Turbo,
     Rewind,
-    GbPalettes,
+    GbPalette,
     Theme,
     Wallpaper,
     Recents,
@@ -85,10 +85,15 @@ pub enum QuickRow {
     ControlsShelf,
     ControlsInGame,
     LeftStick,
+    ScreenGeneral,
+    Brightness,
+    BlueLight,
+    PlayBrightness,
+    PlayBlueLight,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 74] = [
+    pub const ALL: [QuickRow; 79] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -103,7 +108,7 @@ impl QuickRow {
         QuickRow::EjectSave,
         QuickRow::Turbo,
         QuickRow::Rewind,
-        QuickRow::GbPalettes,
+        QuickRow::GbPalette,
         QuickRow::Theme,
         QuickRow::Wallpaper,
         QuickRow::Recents,
@@ -163,6 +168,11 @@ impl QuickRow {
         QuickRow::ControlsShelf,
         QuickRow::ControlsInGame,
         QuickRow::LeftStick,
+        QuickRow::ScreenGeneral,
+        QuickRow::Brightness,
+        QuickRow::BlueLight,
+        QuickRow::PlayBrightness,
+        QuickRow::PlayBlueLight,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -226,8 +236,14 @@ impl QuickRow {
         QuickRow::ScRewind,
     ];
 
-    pub const SCREEN: [QuickRow; 3] =
-        [QuickRow::ScreenGba, QuickRow::ScreenGbc, QuickRow::ScreenGb];
+    pub const SCREEN: [QuickRow; 4] = [
+        QuickRow::ScreenGeneral,
+        QuickRow::ScreenGba,
+        QuickRow::ScreenGbc,
+        QuickRow::ScreenGb,
+    ];
+
+    pub const SCREEN_GENERAL: [QuickRow; 2] = [QuickRow::Brightness, QuickRow::BlueLight];
 
     pub const SCREEN_GBA: [QuickRow; 3] = [
         QuickRow::GbaShader,
@@ -244,7 +260,7 @@ impl QuickRow {
     pub const SCREEN_GB: [QuickRow; 4] = [
         QuickRow::GbShader,
         QuickRow::GbColourCorrection,
-        QuickRow::GbPalettes,
+        QuickRow::GbPalette,
         QuickRow::GbBezel,
     ];
 
@@ -271,7 +287,9 @@ impl QuickRow {
         QuickRow::PlayControls,
     ];
 
-    pub const PLAY_SCREEN: [QuickRow; 4] = [
+    pub const PLAY_SCREEN: [QuickRow; 6] = [
+        QuickRow::PlayBrightness,
+        QuickRow::PlayBlueLight,
         QuickRow::Shader,
         QuickRow::ColourCorrection,
         QuickRow::Palette,
@@ -284,7 +302,12 @@ impl QuickRow {
 
     pub fn page(self) -> &'static [QuickRow] {
         match self {
-            QuickRow::ScreenGba | QuickRow::ScreenGbc | QuickRow::ScreenGb => &QuickRow::SCREEN,
+            QuickRow::ScreenGeneral
+            | QuickRow::ScreenGba
+            | QuickRow::ScreenGbc
+            | QuickRow::ScreenGb => &QuickRow::SCREEN,
+            QuickRow::Brightness | QuickRow::BlueLight => &QuickRow::SCREEN_GENERAL,
+            QuickRow::PlayBrightness | QuickRow::PlayBlueLight => &QuickRow::PLAY_SCREEN,
             QuickRow::GbaShader | QuickRow::GbaColourCorrection | QuickRow::GbaBezel => {
                 &QuickRow::SCREEN_GBA
             }
@@ -293,7 +316,7 @@ impl QuickRow {
             }
             QuickRow::GbShader
             | QuickRow::GbColourCorrection
-            | QuickRow::GbPalettes
+            | QuickRow::GbPalette
             | QuickRow::GbBezel => &QuickRow::SCREEN_GB,
             QuickRow::FastForward
             | QuickRow::FastForwardSound
@@ -330,13 +353,14 @@ impl QuickRow {
 
     pub fn parent(self) -> Option<QuickRow> {
         match self.page()[0] {
-            QuickRow::ScreenGba => Some(QuickRow::Screen),
+            QuickRow::ScreenGeneral => Some(QuickRow::Screen),
+            QuickRow::Brightness => Some(QuickRow::ScreenGeneral),
             QuickRow::GbaShader => Some(QuickRow::ScreenGba),
             QuickRow::GbcShader => Some(QuickRow::ScreenGbc),
             QuickRow::GbShader => Some(QuickRow::ScreenGb),
             QuickRow::FastForward => Some(QuickRow::Game),
             QuickRow::PlayScreen => Some(QuickRow::Settings),
-            QuickRow::Shader => Some(QuickRow::PlayScreen),
+            QuickRow::PlayBrightness => Some(QuickRow::PlayScreen),
             QuickRow::GameUp => Some(QuickRow::ControlsInGame),
             QuickRow::ScSave => Some(QuickRow::Shortcuts),
             QuickRow::Theme => Some(QuickRow::General),
@@ -378,6 +402,7 @@ impl QuickRow {
             QuickRow::Controls => Some(QuickRow::CONTROL_PAGES[0]),
             QuickRow::ControlsShelf => Some(QuickRow::SHELF_KEYS[0]),
             QuickRow::ControlsInGame => Some(QuickRow::CONTROLS[0]),
+            QuickRow::ScreenGeneral => Some(QuickRow::SCREEN_GENERAL[0]),
             QuickRow::ScreenGba => Some(QuickRow::SCREEN_GBA[0]),
             QuickRow::ScreenGbc => Some(QuickRow::SCREEN_GBC[0]),
             QuickRow::ScreenGb => Some(QuickRow::SCREEN_GB[0]),
@@ -407,6 +432,9 @@ impl QuickRow {
             QuickRow::Screen => "Screen",
             QuickRow::Rumble => "Rumble",
             QuickRow::LeftStick => "Left Stick as D-Pad",
+            QuickRow::ScreenGeneral => "General",
+            QuickRow::Brightness | QuickRow::PlayBrightness => "Brightness",
+            QuickRow::BlueLight | QuickRow::PlayBlueLight => "Blue Light",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
             QuickRow::GbaShader => "Shader",
@@ -419,7 +447,7 @@ impl QuickRow {
             QuickRow::EjectSave => "Auto Save on Eject",
             QuickRow::Turbo => "Turbo Buttons",
             QuickRow::Rewind => "Rewind",
-            QuickRow::GbPalettes => "Palettes",
+            QuickRow::GbPalette => "Palette",
             QuickRow::Theme => "Theme",
             QuickRow::Wallpaper => "Wallpaper",
             QuickRow::Recents => "Recents",
@@ -501,6 +529,7 @@ impl QuickRow {
                 | QuickRow::ScreenGba
                 | QuickRow::ScreenGbc
                 | QuickRow::ScreenGb
+                | QuickRow::ScreenGeneral
         )
     }
 
@@ -592,10 +621,20 @@ pub enum QuickValue {
     Min10,
     Min15,
     Min30,
+    Level0,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+    Level5,
+    Level6,
+    Level7,
+    Level8,
+    Level9,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 23] = [
+    pub const ALL: [QuickValue; 33] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -619,6 +658,29 @@ impl QuickValue {
         QuickValue::Min10,
         QuickValue::Min15,
         QuickValue::Min30,
+        QuickValue::Level0,
+        QuickValue::Level1,
+        QuickValue::Level2,
+        QuickValue::Level3,
+        QuickValue::Level4,
+        QuickValue::Level5,
+        QuickValue::Level6,
+        QuickValue::Level7,
+        QuickValue::Level8,
+        QuickValue::Level9,
+    ];
+
+    pub const LEVELS: [QuickValue; 10] = [
+        QuickValue::Level0,
+        QuickValue::Level1,
+        QuickValue::Level2,
+        QuickValue::Level3,
+        QuickValue::Level4,
+        QuickValue::Level5,
+        QuickValue::Level6,
+        QuickValue::Level7,
+        QuickValue::Level8,
+        QuickValue::Level9,
     ];
 
     pub const LID_OFF: [QuickValue; 6] = [
@@ -659,7 +721,21 @@ impl QuickValue {
             QuickValue::Min10 => "10 min",
             QuickValue::Min15 => "15 min",
             QuickValue::Min30 => "30 min",
+            QuickValue::Level0 => "0",
+            QuickValue::Level1 => "1",
+            QuickValue::Level2 => "2",
+            QuickValue::Level3 => "3",
+            QuickValue::Level4 => "4",
+            QuickValue::Level5 => "5",
+            QuickValue::Level6 => "6",
+            QuickValue::Level7 => "7",
+            QuickValue::Level8 => "8",
+            QuickValue::Level9 => "9",
         }
+    }
+
+    pub fn level(n: u8) -> QuickValue {
+        QuickValue::LEVELS[usize::from(n).min(QuickValue::LEVELS.len() - 1)]
     }
 
     pub fn speed(frames: u8) -> Option<QuickValue> {
@@ -1073,7 +1149,7 @@ impl QuickMenu<'_> {
             let value = match row {
                 QuickRow::DateTime => self.clock.map(|c| c[lit as usize]),
                 QuickRow::Wallpaper => self.wallpaper.map(|c| c[lit as usize]),
-                QuickRow::Palette => self.palette.map(|c| c[lit as usize]),
+                QuickRow::Palette | QuickRow::GbPalette => self.palette.map(|c| c[lit as usize]),
                 QuickRow::GbaBezel => self.gba_bezel.map(|c| c[lit as usize]),
                 QuickRow::GbBezel => self.gb_bezel.map(|c| c[lit as usize]),
                 QuickRow::GbcBezel => self.gbc_bezel.map(|c| c[lit as usize]),

@@ -1,5 +1,5 @@
 use slot_gfx::{Canvas, OUT_H};
-use slot_store::GbPalette;
+use slot_store::GbColors;
 
 use crate::hud::{HUD_INK, PLATE_H};
 use crate::icon::{haloed, haloed_with, icon_coverage, Icon, HALO_PX, WARNING_INK};
@@ -27,7 +27,7 @@ pub enum Toast {
     CardRepairCharge,
     CardRepaired,
     CardRepairFailed,
-    Palette(GbPalette),
+    Palette(GbColors),
     Duplicate(QuickRow),
 }
 
@@ -57,7 +57,7 @@ impl Toast {
     pub fn all() -> Vec<Toast> {
         Self::FIXED
             .into_iter()
-            .chain(GbPalette::all().map(Toast::Palette))
+            .chain(GbColors::all().map(Toast::Palette))
             .chain(bound_rows().map(Toast::Duplicate))
             .collect()
     }
@@ -67,7 +67,7 @@ impl Toast {
             Toast::Palette(p) => Self::FIXED.len() + p.index(),
             Toast::Duplicate(row) => {
                 Self::FIXED.len()
-                    + GbPalette::all().count()
+                    + GbColors::all().count()
                     + bound_rows().position(|r| r == row).unwrap_or(0)
             }
             fixed => Self::FIXED.iter().position(|t| *t == fixed).unwrap_or(0),

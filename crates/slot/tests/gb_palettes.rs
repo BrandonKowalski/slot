@@ -7,7 +7,7 @@ use common::{repo_root, session_with_platform, tmp_root_with_carts, tmp_root_wit
 use slot::app::Phase;
 use slot::session::Session;
 use slot_input::{Action, Btn, Millis, RawEvent};
-use slot_store::{read_slot_state, write_slot_state, GbPalette, SlotState};
+use slot_store::{read_slot_state, write_slot_state, GbColors, GbPalette, SlotState};
 use slot_ui::Toast;
 use tempfile::TempDir;
 
@@ -72,13 +72,13 @@ fn select_r2_steps_the_palette_and_names_it_in_a_game_boy_only_game() {
         "palettes are on and the cart is Game Boy only"
     );
 
-    let before = s.app().gb_palette().expect("palettes are on");
+    let before = s.app().gb_colors();
     s.app_mut().apply(Action::PaletteNext);
-    let after = s.app().gb_palette().expect("palettes are on");
+    let after = s.app().gb_colors();
     assert_eq!(after, before.next());
     assert_eq!(s.app().toast(), Some(Toast::Palette(after)));
     assert_eq!(
-        read_slot_state(d.path()).gb_palette,
+        read_slot_state(d.path()).gb_colors(),
         after,
         "the pick was not saved"
     );
@@ -93,35 +93,54 @@ fn select_l2_steps_the_palette_back_and_names_it() {
     let (mut s, _motor) = session_with_platform(d.path());
     let mut now = 0;
     play(&mut s, &mut now);
-    let before = s.app().gb_palette().expect("palettes are on");
+    let before = s.app().gb_colors();
     s.app_mut().apply(Action::PalettePrev);
-    let after = s.app().gb_palette().expect("palettes are on");
+    let after = s.app().gb_colors();
     assert_eq!(after, before.prev());
     assert_eq!(s.app().toast(), Some(Toast::Palette(after)));
-    assert_eq!(read_slot_state(d.path()).gb_palette, after);
+    assert_eq!(read_slot_state(d.path()).gb_colors(), after);
 }
 
 #[test]
-fn select_r2_does_nothing_with_palettes_off_or_in_a_colour_game() {
-    for (cgb, on) in [(0x00, false), (0x80, true)] {
-        let Some(d) = catrap_with_colour_flag(cgb, on) else {
-            eprintln!("no Catrap on this machine's card, skipping");
-            return;
-        };
-        let (mut s, _motor) = session_with_platform(d.path());
-        let mut now = 0;
-        play(&mut s, &mut now);
-        assert!(!s.app().palette_live(), "cgb={cgb:#x} on={on}");
-        let before = read_slot_state(d.path()).gb_palette;
-        s.app_mut().apply(Action::PaletteNext);
-        assert_eq!(
-            s.app().toast(),
-            None,
-            "cgb={cgb:#x} on={on}: a palette toast showed"
-        );
-        assert_eq!(read_slot_state(d.path()).gb_palette, before);
-        assert_eq!(GbPalette::DEFAULT, before);
-    }
+fn select_r2_steps_from_auto_with_palettes_off() {
+    let Some(d) = catrap_with_colour_flag(0x00, false) else {
+        eprintln!("no Catrap on this machine's card, skipping");
+        return;
+    };
+    let (mut s, _motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    assert!(s.app().palette_live(), "Auto is a palette like any other");
+    assert_eq!(s.app().gb_colors(), GbColors::Auto);
+    let grey = GbColors::Palette(GbPalette::parse("Grayscale").unwrap());
+    s.app_mut().apply(Action::PaletteNext);
+    assert_eq!(s.app().gb_colors(), grey);
+    assert_eq!(s.app().toast(), Some(Toast::Palette(grey)));
+    assert_eq!(read_slot_state(d.path()).gb_colors(), grey);
+    s.app_mut().apply(Action::PalettePrev);
+    assert_eq!(s.app().gb_colors(), GbColors::Auto);
+    assert_eq!(s.app().toast(), Some(Toast::Palette(GbColors::Auto)));
+    assert_eq!(read_slot_state(d.path()).gb_colors(), GbColors::Auto);
+}
+
+#[test]
+fn select_r2_does_nothing_in_a_colour_game() {
+    let Some(d) = catrap_with_colour_flag(0x80, true) else {
+        eprintln!("no Catrap on this machine's card, skipping");
+        return;
+    };
+    let (mut s, _motor) = session_with_platform(d.path());
+    let mut now = 0;
+    play(&mut s, &mut now);
+    assert!(!s.app().palette_live());
+    let before = read_slot_state(d.path()).gb_colors();
+    s.app_mut().apply(Action::PaletteNext);
+    assert_eq!(
+        s.app().toast(),
+        None,
+        "a palette toast showed in a colour game"
+    );
+    assert_eq!(read_slot_state(d.path()).gb_colors(), before);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::atomic::atomic_write;
-use crate::gb_palette::GbPalette;
+use crate::gb_palette::{GbColors, GbPalette};
 use crate::platform::Platform;
 
 pub const BRIGHTNESS_MAX: u8 = 9;
@@ -235,6 +235,23 @@ pub struct SlotState {
 }
 
 impl SlotState {
+    pub fn gb_colors(&self) -> GbColors {
+        match self.gb_palettes {
+            true => GbColors::Palette(self.gb_palette),
+            false => GbColors::Auto,
+        }
+    }
+
+    pub fn set_gb_colors(&mut self, to: GbColors) {
+        match to {
+            GbColors::Auto => self.gb_palettes = false,
+            GbColors::Palette(p) => {
+                self.gb_palettes = true;
+                self.gb_palette = p;
+            }
+        }
+    }
+
     pub fn played(&mut self, platform: Platform, stem: &str) {
         self.recents
             .retain(|r| !(r.platform == platform && r.stem == stem));

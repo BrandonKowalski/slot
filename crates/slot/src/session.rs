@@ -295,7 +295,7 @@ impl Session {
             }
         }
         let mut recoloured = false;
-        if let Some(p) = self.app.take_gb_palette() {
+        if let Some(p) = self.app.take_gb_colors() {
             if let Some(emu) = &self.emu {
                 emu.set_option("mgba_gb_colors", p.core_name());
                 recoloured = true;
@@ -493,10 +493,8 @@ impl Session {
         match self.emu.as_ref().map(EmuHandle::state) {
             Some(CoreState::Loading) => {}
             Some(CoreState::Ready) => {
-                if let (true, Some(p), Some(emu)) =
-                    (self.app.palette_live(), self.app.gb_palette(), &self.emu)
-                {
-                    emu.set_option("mgba_gb_colors", p.core_name());
+                if let (true, Some(emu)) = (self.app.palette_live(), &self.emu) {
+                    emu.set_option("mgba_gb_colors", self.app.gb_colors().core_name());
                 }
                 self.app.on_core_ready()
             }
@@ -527,7 +525,7 @@ impl Session {
         let stem = stem.to_owned();
         let clean = self.app.starting_clean();
         let player = self.app.link_player();
-        let chosen = self.app.gb_palette();
+        let chosen = self.app.gb_colors();
         let colour = self.app.colour_correction_for(platform);
         let join = std::thread::Builder::new()
             .name("slot-open".into())

@@ -265,7 +265,7 @@ fn every_fast_forward_speed_sits_on_the_rows_right_edge_and_clears_the_label() {
 }
 
 #[test]
-fn the_screen_page_sets_gb_palettes_in_line_with_the_rows_above() {
+fn the_game_boy_page_shows_the_palette_by_name() {
     let Ok(surface) = HeadlessSurface::new() else {
         return;
     };
@@ -286,16 +286,16 @@ fn the_screen_page_sets_gb_palettes_in_line_with_the_rows_above() {
         tap(&mut f, &mut input, Btn::Down);
     }
     tap(&mut f, &mut input, Btn::A);
-    for _ in 0..QuickRow::GbPalettes.position(&[]) {
+    for _ in 0..QuickRow::GbPalette.position(&[]) {
         tap(&mut f, &mut input, Btn::Down);
     }
     let px = composed(&mut f, &mut c, "screen-page");
 
-    let top = quick_row_top(QuickRow::GbPalettes, &[]) as usize;
-    beside("Palettes", pointer(&px, top));
+    let top = quick_row_top(QuickRow::GbPalette, &[]) as usize;
+    beside("Palette", pointer(&px, top));
     for row in QuickRow::SCREEN_GB {
         let top = quick_row_top(row, &[]) as usize;
-        if row != QuickRow::GbPalettes {
+        if row != QuickRow::GbPalette {
             assert!(pointer(&px, top).is_none(), "a pointer at {row:?} as well");
         }
         let label = inked(&px, 56..360, top);
@@ -371,6 +371,50 @@ fn the_general_page_renders() {
     }
     assert_eq!(f.app().quick_menu(), Some(QuickRow::DateTime));
     composed(&mut f, &mut c, "general-bottom");
+}
+
+#[test]
+fn the_general_screen_page_renders() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::Menu);
+    for _ in 0..QuickRow::Screen.position(&[]) {
+        tap(&mut f, &mut input, Btn::Down);
+    }
+    tap(&mut f, &mut input, Btn::A);
+    assert_eq!(f.app().quick_menu(), Some(QuickRow::ScreenGeneral));
+    composed(&mut f, &mut c, "screen-pages");
+    tap(&mut f, &mut input, Btn::A);
+    assert_eq!(f.app().quick_menu(), Some(QuickRow::Brightness));
+    let px = composed(&mut f, &mut c, "screen-general");
+    beside(
+        "Brightness",
+        pointer(&px, quick_row_top(QuickRow::Brightness, &[]) as usize),
+    );
+    for row in QuickRow::SCREEN_GENERAL {
+        let top = quick_row_top(row, &[]) as usize;
+        let label = inked(&px, 56..360, top);
+        let first = *label.first().expect("a row with no label");
+        assert!(
+            (64..=68).contains(&first),
+            "{row:?}'s label starts at x {first}"
+        );
+        let value = inked(&px, 360..OUT_W as usize, top);
+        let last = *value.last().expect("a row with no value");
+        assert!(
+            (679..=688).contains(&last),
+            "{row:?}'s value ends at x {last}"
+        );
+    }
 }
 
 #[test]

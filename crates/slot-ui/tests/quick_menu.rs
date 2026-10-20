@@ -103,7 +103,11 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::SCREEN.map(QuickRow::label),
-        ["Game Boy Advance", "Game Boy Color", "Game Boy"]
+        ["General", "Game Boy Advance", "Game Boy Color", "Game Boy"]
+    );
+    assert_eq!(
+        QuickRow::SCREEN_GENERAL.map(QuickRow::label),
+        ["Brightness", "Blue Light"]
     );
     assert_eq!(
         QuickRow::SCREEN_GBA.map(QuickRow::label),
@@ -115,7 +119,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::SCREEN_GB.map(QuickRow::label),
-        ["Shader", "Color Correction", "Palettes", "Bezel"]
+        ["Shader", "Color Correction", "Palette", "Bezel"]
     );
     assert_eq!(
         QuickRow::GAME.map(QuickRow::label),
@@ -151,12 +155,14 @@ fn the_rows_run_in_the_order_the_user_chose() {
             QuickRow::Shortcuts,
             QuickRow::Controls,
             QuickRow::ControlsShelf,
-            QuickRow::ControlsInGame
+            QuickRow::ControlsInGame,
+            QuickRow::ScreenGeneral
         ]
     );
     for page in [
         &QuickRow::MAIN[..],
         &QuickRow::SCREEN[..],
+        &QuickRow::SCREEN_GENERAL[..],
         &QuickRow::GAME[..],
         &QuickRow::GENERAL[..],
         &QuickRow::PLAY[..],
@@ -216,6 +222,16 @@ fn the_values_read_as_the_menu_prints_them() {
             "10 min",
             "15 min",
             "30 min",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
@@ -332,6 +348,8 @@ fn the_in_game_pages_hold_their_rows_in_order() {
     assert_eq!(
         QuickRow::PLAY_SCREEN,
         [
+            QuickRow::PlayBrightness,
+            QuickRow::PlayBlueLight,
             QuickRow::Shader,
             QuickRow::ColourCorrection,
             QuickRow::Palette,
@@ -346,7 +364,11 @@ fn the_in_game_pages_hold_their_rows_in_order() {
 #[test]
 fn in_game_pages_climb_back_through_settings() {
     assert_eq!(QuickRow::Settings.child(), Some(QuickRow::PlayScreen));
-    assert_eq!(QuickRow::PlayScreen.child(), Some(QuickRow::Shader));
+    assert_eq!(QuickRow::PlayScreen.child(), Some(QuickRow::PlayBrightness));
+    assert_eq!(
+        QuickRow::PlayBrightness.parent_in_game(),
+        Some(QuickRow::PlayScreen)
+    );
     assert_eq!(QuickRow::PlayGameplay.child(), Some(QuickRow::FastForward));
     assert_eq!(
         QuickRow::Shader.parent_in_game(),
@@ -375,6 +397,8 @@ fn in_game_rows_read_as_the_menu_shows_them() {
         (QuickRow::Shader, "Shader"),
         (QuickRow::ColourCorrection, "Color Correction"),
         (QuickRow::Palette, "Palette"),
+        (QuickRow::PlayBrightness, "Brightness"),
+        (QuickRow::PlayBlueLight, "Blue Light"),
     ];
     for (row, label) in labels {
         assert_eq!(row.label(), label);
@@ -391,19 +415,33 @@ fn in_game_rows_read_as_the_menu_shows_them() {
 }
 
 #[test]
-fn a_hidden_palette_and_bezel_leave_two_screen_rows() {
+fn a_hidden_palette_and_bezel_leave_four_screen_rows() {
     let hidden = [QuickRow::Palette, QuickRow::Bezel];
     assert_eq!(
         QuickRow::Shader.shown(&hidden),
-        vec![QuickRow::Shader, QuickRow::ColourCorrection]
+        vec![
+            QuickRow::PlayBrightness,
+            QuickRow::PlayBlueLight,
+            QuickRow::Shader,
+            QuickRow::ColourCorrection
+        ]
     );
-    assert_eq!(QuickRow::ColourCorrection.down(&hidden), QuickRow::Shader);
+    assert_eq!(
+        QuickRow::ColourCorrection.down(&hidden),
+        QuickRow::PlayBrightness
+    );
 }
 
 #[test]
 fn screen_opens_a_page_per_console_and_each_backs_out_to_its_console() {
-    assert_eq!(QuickRow::Screen.child(), Some(QuickRow::ScreenGba));
+    assert_eq!(QuickRow::Screen.child(), Some(QuickRow::ScreenGeneral));
+    assert_eq!(QuickRow::ScreenGeneral.child(), Some(QuickRow::Brightness));
+    assert!(QuickRow::ScreenGeneral.opens());
+    assert!(QuickRow::ScreenGeneral.centred());
+    assert!(!QuickRow::Brightness.centred());
+    assert!(!QuickRow::Brightness.opens());
     for (console, page) in [
+        (QuickRow::ScreenGeneral, &QuickRow::SCREEN_GENERAL[..]),
         (QuickRow::ScreenGba, &QuickRow::SCREEN_GBA[..]),
         (QuickRow::ScreenGbc, &QuickRow::SCREEN_GBC[..]),
         (QuickRow::ScreenGb, &QuickRow::SCREEN_GB[..]),

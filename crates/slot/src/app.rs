@@ -8,7 +8,7 @@ use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Cart, Core,
-    GbPalette, Platform, Recent, Shader, SlotState, StateEntry, StateRing, WallpaperPick,
+    GbColors, Platform, Recent, Shader, SlotState, StateEntry, StateRing, WallpaperPick,
     WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
@@ -384,7 +384,7 @@ pub struct App {
     core: Core,
     colour_pending: Option<bool>,
     palette_live: bool,
-    palette_pending: Option<GbPalette>,
+    palette_pending: Option<GbColors>,
     link_player: Option<u8>,
     platform: Platform,
     named_core: bool,
@@ -919,8 +919,8 @@ impl App {
         hidden
     }
 
-    pub fn gb_palette_label(&self) -> &'static str {
-        self.state.gb_palette.label()
+    pub fn gb_colors_label(&self) -> &'static str {
+        self.state.gb_colors().label()
     }
 
     pub fn set_quick_palette_faces(&mut self, dim: (TexId, u32, u32), lit: (TexId, u32, u32)) {
@@ -938,15 +938,24 @@ impl App {
             (QuickRow::Bezel, Platform::Gba) => QuickRow::GbaBezel,
             (QuickRow::Bezel, Platform::Gb) => QuickRow::GbBezel,
             (QuickRow::Bezel, Platform::Gbc) => QuickRow::GbcBezel,
+            (QuickRow::PlayBrightness, _) => QuickRow::Brightness,
+            (QuickRow::PlayBlueLight, _) => QuickRow::BlueLight,
             (row, _) => row,
         }
     }
 
     pub fn quick_value(&self, row: QuickRow) -> Option<QuickValue> {
         match row {
-            QuickRow::Shader | QuickRow::ColourCorrection => {
-                self.quick_value(self.playing_row(row))
-            }
+            QuickRow::Shader
+            | QuickRow::ColourCorrection
+            | QuickRow::PlayBrightness
+            | QuickRow::PlayBlueLight => self.quick_value(self.playing_row(row)),
+            QuickRow::Brightness => Some(QuickValue::level(self.state.brightness)),
+            QuickRow::BlueLight => Some(match self.state.blue_light {
+                0 => QuickValue::Off,
+                n => QuickValue::level(n),
+            }),
+            QuickRow::ScreenGeneral => None,
             QuickRow::FastForward => QuickValue::speed(self.state.ff_speed),
             QuickRow::FastForwardSound => Some(QuickValue::flag(self.state.ff_sound)),
             QuickRow::GbaColourCorrection => {
@@ -956,7 +965,6 @@ impl App {
             QuickRow::GbcColourCorrection => {
                 Some(QuickValue::flag(self.state.colour_correction_gbc))
             }
-            QuickRow::GbPalettes => Some(QuickValue::flag(self.state.gb_palettes)),
             QuickRow::GbaShader => Some(shader_value(self.state.shader_gba)),
             QuickRow::GbShader => Some(shader_value(self.state.shader_gb)),
             QuickRow::GbcShader => Some(shader_value(self.state.shader_gbc)),
@@ -1001,6 +1009,7 @@ impl App {
             | QuickRow::PlayScreen
             | QuickRow::PlayGameplay
             | QuickRow::Palette
+            | QuickRow::GbPalette
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb
@@ -2169,8 +2178,8 @@ impl App {
         self.colour_pending.take()
     }
 
-    pub fn gb_palette(&self) -> Option<GbPalette> {
-        self.state.gb_palettes.then_some(self.state.gb_palette)
+    pub fn gb_colors(&self) -> GbColors {
+        self.state.gb_colors()
     }
 
     pub fn card_read(
@@ -2200,7 +2209,7 @@ impl App {
         self.palette_live
     }
 
-    pub fn take_gb_palette(&mut self) -> Option<GbPalette> {
+    pub fn take_gb_colors(&mut self) -> Option<GbColors> {
         self.palette_pending.take()
     }
 
@@ -2525,6 +2534,7 @@ impl App {
             }
             QuickRow::About => self.phase = Phase::About,
             QuickRow::Screen
+            | QuickRow::ScreenGeneral
             | QuickRow::Game
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
@@ -2539,7 +2549,11 @@ impl App {
                     self.phase = Phase::QuickMenu { row };
                 }
             }
-            QuickRow::EjectSave
+            QuickRow::Brightness
+            | QuickRow::BlueLight
+            | QuickRow::PlayBrightness
+            | QuickRow::PlayBlueLight
+            | QuickRow::EjectSave
             | QuickRow::Turbo
             | QuickRow::Rewind
             | QuickRow::FastForward
@@ -2550,7 +2564,7 @@ impl App {
             | QuickRow::GbaShader
             | QuickRow::GbShader
             | QuickRow::GbcShader
-            | QuickRow::GbPalettes
+            | QuickRow::GbPalette
             | QuickRow::Rumble
             | QuickRow::LeftStick
             | QuickRow::Theme
@@ -2606,12 +2620,30 @@ impl App {
 
     fn change_setting(&mut self, row: QuickRow, right: bool) {
         let row = self.playing_row(row);
-        if row == QuickRow::Palette {
-            let to = match right {
-                true => self.state.gb_palette.next(),
-                false => self.state.gb_palette.prev(),
+        if let QuickRow::Brightness | QuickRow::BlueLight = row {
+            let (kind, now, max) = match row {
+                QuickRow::Brightness => {
+                    (HudKind::Brightness, self.state.brightness, BRIGHTNESS_MAX)
+                }
+                _ => (HudKind::BlueLight, self.state.blue_light, BLUE_LIGHT_MAX),
             };
-            self.state.gb_palette = to;
+            let floor = match kind {
+                HudKind::Brightness => 1,
+                _ => 0,
+            };
+            let to = match right {
+                true => up(now, 1, max).max(floor),
+                false => now.saturating_sub(1).max(floor).min(now),
+            };
+            self.set_level(kind, to);
+            return;
+        }
+        if let QuickRow::Palette | QuickRow::GbPalette = row {
+            let to = match right {
+                true => self.state.gb_colors().next(),
+                false => self.state.gb_colors().prev(),
+            };
+            self.state.set_gb_colors(to);
             self.palette_pending = Some(to);
             self.persist();
             return;
@@ -2706,10 +2738,14 @@ impl App {
             QuickRow::EjectSave => s.eject_save = !s.eject_save,
             QuickRow::Turbo => s.turbo = !s.turbo,
             QuickRow::Rewind => s.rewind = !s.rewind,
-            QuickRow::GbPalettes => s.gb_palettes = !s.gb_palettes,
             QuickRow::Theme => s.appearance = s.appearance.toggle(),
             QuickRow::WallpaperTint => s.wallpaper_tint = s.wallpaper_tint.step(right),
-            QuickRow::Wallpaper
+            QuickRow::ScreenGeneral
+            | QuickRow::Brightness
+            | QuickRow::BlueLight
+            | QuickRow::PlayBrightness
+            | QuickRow::PlayBlueLight
+            | QuickRow::Wallpaper
             | QuickRow::Recents
             | QuickRow::ShowTitles
             | QuickRow::DateTime
@@ -2725,6 +2761,7 @@ impl App {
             | QuickRow::Shader
             | QuickRow::ColourCorrection
             | QuickRow::Palette
+            | QuickRow::GbPalette
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb
@@ -2821,10 +2858,10 @@ impl App {
         if let Action::PaletteNext | Action::PalettePrev = action {
             if self.palette_live && matches!(self.phase, Phase::Playing { .. }) {
                 let to = match action {
-                    Action::PalettePrev => self.state.gb_palette.prev(),
-                    _ => self.state.gb_palette.next(),
+                    Action::PalettePrev => self.state.gb_colors().prev(),
+                    _ => self.state.gb_colors().next(),
                 };
-                self.state.gb_palette = to;
+                self.state.set_gb_colors(to);
                 self.palette_pending = Some(to);
                 self.persist();
                 self.hud.toast(Toast::Palette(to), self.now());
@@ -2858,6 +2895,17 @@ impl App {
         if kind == HudKind::Volume {
             self.remember_volume();
         }
+        let unmuted = kind == HudKind::Volume && std::mem::take(self.muted_mut());
+        let moved = self.set_level(kind, value);
+        let (shown, now) = (self.hud_value(kind, value), self.now());
+        self.hud.show(kind, shown, self.muted(), now);
+        if unmuted && !moved {
+            self.persist_soon();
+        }
+        true
+    }
+
+    fn set_level(&mut self, kind: HudKind, value: u8) -> bool {
         let level = match kind {
             HudKind::Brightness => &mut self.state.brightness,
             HudKind::BlueLight => &mut self.state.blue_light,
@@ -2867,16 +2915,13 @@ impl App {
         };
         let moved = *level != value;
         *level = value;
-        let unmuted = kind == HudKind::Volume && std::mem::take(self.muted_mut());
-        let (shown, now) = (self.hud_value(kind, value), self.now());
-        self.hud.show(kind, shown, self.muted(), now);
         if let (HudKind::Brightness, Some(power)) = (kind, &mut self.power) {
             power.set_backlight(value);
         }
-        if moved || unmuted {
+        if moved {
             self.persist_soon();
         }
-        true
+        moved
     }
 
     fn remember_volume(&mut self) {
@@ -3646,7 +3691,7 @@ impl App {
                 wallpaper: self.quick_wallpaper_faces,
                 faces: self.quick_menu_faces.as_ref(),
                 ground: self.menu_ground(),
-                palette: None,
+                palette: self.quick_palette_faces,
                 gba_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gba)],
                 gb_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gb)],
                 gbc_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gbc)],

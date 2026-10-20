@@ -66,7 +66,7 @@ fn shipped(root: &Path, dylib: &Path, rom: &Path, palette: Option<GbPalette>) ->
         Platform::Gb,
         "auto",
         false,
-        palette,
+        palette.map(slot_store::GbColors::Palette),
         std::slice::from_ref(&dylib.to_path_buf()),
     );
     core.load(rom).expect("the core would not take the rom");
@@ -219,5 +219,115 @@ fn a_named_palette_colours_plain_and_sgb_carts_alike() {
     assert_ne!(
         grey_sgb, auto_sgb,
         "the palette changed nothing on an SGB cart"
+    );
+}
+
+fn colours_core(
+    root: &Path,
+    dylib: &Path,
+    rom: &Path,
+    model: &str,
+    preset: &str,
+    colours: &str,
+) -> LibretroCore {
+    let mut core = LibretroCore::open_with(
+        dylib,
+        &slot::root::bios_dir(root),
+        &slot::root::saves_dir(root),
+    )
+    .expect("open the core");
+    core.set_option("mgba_sgb_borders", "OFF");
+    core.set_option("mgba_color_correction", "OFF");
+    core.set_option("mgba_gb_model", model);
+    core.set_option("mgba_gb_colors_preset", preset);
+    core.set_option("mgba_gb_colors", colours);
+    core.load(rom).expect("the core would not take the rom");
+    core
+}
+
+fn run_then_look(core: &mut LibretroCore, frames: usize) -> Vec<u8> {
+    for _ in 0..frames {
+        core.run_frame(ButtonMask(0));
+    }
+    to_rgba(core.video_xrgb8888())
+}
+
+#[test]
+fn auto_and_grayscale_switch_live_on_the_plain_model() {
+    let Some(dylib) = vendored_core() else {
+        eprintln!("no mgba dylib, skipping");
+        return;
+    };
+    let Some(rom) = card_cart("sdcard/Games/GB/Catrap (USA).gb") else {
+        eprintln!("no Catrap on this machine's card, skipping");
+        return;
+    };
+    let _g = core_lock();
+    let d = common::tmp_root_with_carts(&[]);
+    let mut core = colours_core(d.path(), &dylib, &rom, "Game Boy", "0", "Auto");
+    let auto = run_then_look(&mut core, FRAMES);
+    assert!(
+        mean_saturation(&auto) > 6.0,
+        "Auto left the plain model grey: {:.1}",
+        mean_saturation(&auto)
+    );
+    core.set_option("mgba_gb_colors", "Grayscale");
+    let grey = run_then_look(&mut core, 30);
+    assert!(
+        mean_saturation(&grey) < 4.0,
+        "Grayscale did not take over live: {:.1}",
+        mean_saturation(&grey)
+    );
+    core.set_option("mgba_gb_colors", "Auto");
+    let back = run_then_look(&mut core, 30);
+    assert!(
+        mean_saturation(&back) > 6.0,
+        "Auto did not come back live: {:.1}",
+        mean_saturation(&back)
+    );
+}
+
+#[test]
+fn a_super_game_boy_state_takes_palettes_after_loading() {
+    let Some(dylib) = vendored_core() else {
+        eprintln!("no mgba dylib, skipping");
+        return;
+    };
+    let Some(rom) = card_cart("sdcard/Games/GB/Catrap (USA).gb") else {
+        eprintln!("no Catrap on this machine's card, skipping");
+        return;
+    };
+    let _g = core_lock();
+    let d = common::tmp_root_with_carts(&[]);
+    let sgb = as_sgb(&rom, d.path());
+    let mut old = colours_core(
+        d.path(),
+        &dylib,
+        &sgb,
+        "Autodetect",
+        "1",
+        "GBC Dark Green →A",
+    );
+    run_then_look(&mut old, FRAMES);
+    let state = old.serialize().expect("serialize");
+    assert_eq!(
+        state[8], 0x20,
+        "the old settings did not run it as a Super Game Boy"
+    );
+    drop(old);
+
+    let mut new = colours_core(d.path(), &dylib, &sgb, "Game Boy", "0", "Auto");
+    new.unserialize(&state).expect("the old state was refused");
+    new.set_option("mgba_gb_colors", "Grayscale");
+    let grey = run_then_look(&mut new, 30);
+    assert!(
+        mean_saturation(&grey) < 4.0,
+        "a Super Game Boy state ignored Grayscale: {:.1}",
+        mean_saturation(&grey)
+    );
+    let again = new.serialize().expect("serialize");
+    assert_eq!(
+        again[8], 0x00,
+        "the next state still carries the Super Game Boy"
     );
 }

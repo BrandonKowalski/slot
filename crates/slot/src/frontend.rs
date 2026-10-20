@@ -1135,10 +1135,10 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
 }
 
 fn sync_quick_palette(app: &mut App, compositor: &mut Compositor, state: &mut QuickPalette) {
-    if app.in_game_menu().is_none() {
+    if app.in_game_menu().is_none() && app.quick_menu().is_none() {
         return;
     }
-    let text = app.gb_palette_label();
+    let text = app.gb_colors_label();
     if text == state.shown {
         return;
     }

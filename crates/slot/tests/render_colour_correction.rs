@@ -108,7 +108,7 @@ fn picture(
         platform,
         "auto",
         colour,
-        palette,
+        palette.map(slot_store::GbColors::Palette),
         std::slice::from_ref(&dylib.to_path_buf()),
     );
     core.load(rom).expect("the core would not take the rom");

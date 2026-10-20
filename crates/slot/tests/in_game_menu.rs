@@ -126,11 +126,49 @@ fn colour_correction_toggles_the_running_platform_and_asks_the_core() {
 fn palette_steps_the_palette_and_asks_the_core() {
     let (_d, mut a) = playing();
     a.set_palette_live(true);
-    let before = a.gb_palette_label();
+    let before = a.gb_colors_label();
     go_to(&mut a, QuickRow::Palette);
     press(&mut a, Btn::Right);
-    assert_ne!(a.gb_palette_label(), before);
-    assert!(a.take_gb_palette().is_some());
+    assert_ne!(a.gb_colors_label(), before);
+    assert!(a.take_gb_colors().is_some());
+}
+
+#[test]
+fn the_in_game_screen_page_leads_with_brightness_and_blue_light() {
+    let (d, mut a) = playing();
+    let (power, backlight) = common::panel(d.path(), std::time::Duration::from_secs(300));
+    a.set_power(power);
+    assert_eq!(
+        QuickRow::PlayBrightness.shown(&a.in_game_hidden())[..2],
+        [QuickRow::PlayBrightness, QuickRow::PlayBlueLight]
+    );
+    let before = a.brightness();
+    go_to(&mut a, QuickRow::PlayBrightness);
+    press(&mut a, Btn::Right);
+    assert_eq!(a.brightness(), before + 1);
+    assert_eq!(
+        backlight.load(std::sync::atomic::Ordering::Relaxed),
+        before + 1,
+        "the row moved the number and not the backlight"
+    );
+    press(&mut a, Btn::Down);
+    assert_eq!(a.in_game_menu(), Some(QuickRow::PlayBlueLight));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.blue_light(), 1);
+}
+
+#[test]
+fn the_palette_row_shows_with_auto_in_a_game_boy_only_game() {
+    let (_d, mut a) = playing();
+    a.set_palette_live(true);
+    assert_eq!(a.gb_colors(), slot_store::GbColors::Auto);
+    assert!(!a.in_game_hidden().contains(&QuickRow::Palette));
+    go_to(&mut a, QuickRow::Palette);
+    assert_eq!(a.gb_colors_label(), "Auto");
+    press(&mut a, Btn::Right);
+    let grey = slot_store::GbColors::Palette(slot_store::GbPalette::parse("Grayscale").unwrap());
+    assert_eq!(a.gb_colors(), grey);
+    assert_eq!(a.take_gb_colors(), Some(grey));
 }
 
 #[test]

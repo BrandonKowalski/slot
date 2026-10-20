@@ -86,10 +86,10 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         tap(&mut f, &mut input, btn);
     }
     run_for(&mut f, &mut input, 0.3);
-    assert_eq!(f.app().in_game_menu(), Some(QuickRow::Shader));
+    assert_eq!(f.app().in_game_menu(), Some(QuickRow::PlayBrightness));
     let screen = composed(&mut f, &mut c, "screen");
 
-    let panel = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize - 16;
+    let panel = quick_row_top(QuickRow::PlayBrightness, &f.app().in_game_hidden()) as usize - 16;
     let (mut probed, mut lit) = (0, 0);
     for y in (48..panel).step_by(17) {
         for x in (0..150).chain(570..OUT_W as usize).step_by(13) {
@@ -128,14 +128,14 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         );
     }
 
-    let row = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize;
+    let row = quick_row_top(QuickRow::PlayBrightness, &f.app().in_game_hidden()) as usize;
     let ink = (row..row + 40)
         .flat_map(|y| (64..400).map(move |x| (x, y)))
         .filter(|&(x, y)| bright(at(&screen, x, y)) > 600)
         .count();
     assert!(
         ink > 100,
-        "no Shader label in the panel: {ink} bright pixels"
+        "no Brightness label in the panel: {ink} bright pixels"
     );
     let below = at(&screen, 700, OUT_H as usize - 4);
     let above = at(&screen, 700, panel - 8);
@@ -143,6 +143,50 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         bright(below) <= bright(above),
         "the panel is not darker than the game above it"
     );
+}
+
+#[test]
+fn the_in_game_screen_page_renders() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::A);
+    run_for(&mut f, &mut input, 4.0);
+    tap(&mut f, &mut input, Btn::Menu);
+    run_for(&mut f, &mut input, 0.5);
+    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A] {
+        tap(&mut f, &mut input, btn);
+    }
+    run_for(&mut f, &mut input, 0.3);
+    assert_eq!(f.app().in_game_menu(), Some(QuickRow::PlayBrightness));
+    let hidden = f.app().in_game_hidden();
+    for row in [QuickRow::PlayBrightness, QuickRow::PlayBlueLight] {
+        if f.app().in_game_menu() != Some(row) {
+            tap(&mut f, &mut input, Btn::Down);
+            run_for(&mut f, &mut input, 0.2);
+        }
+        assert_eq!(f.app().in_game_menu(), Some(row));
+        let px = composed(&mut f, &mut c, &format!("screen-{row:?}"));
+        let top = quick_row_top(row, &hidden) as usize;
+        let value = (top..top + 40)
+            .flat_map(|y| (360..OUT_W as usize).map(move |x| (x, y)))
+            .filter(|&(x, y)| bright(at(&px, x, y)) > 600)
+            .map(|(x, _)| x)
+            .max()
+            .expect("a row with no value");
+        assert!(
+            (679..=688).contains(&value),
+            "{row:?}'s value ends at x {value}"
+        );
+    }
 }
 
 #[test]
