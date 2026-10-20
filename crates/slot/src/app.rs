@@ -33,7 +33,7 @@ use slot_store::{
     Binding, CarouselKeys, Controls, Device, GameButton, Modifier, ShortcutKeys, LID_OFF_MIN,
 };
 
-pub const PRESS_A_BUTTON: &str = "Press a button";
+pub const RECORDING: &str = "Recording";
 pub const CLASH_MARK: &str = "!";
 
 #[derive(Copy, Clone, Debug)]
@@ -1771,7 +1771,7 @@ impl App {
             .filter(|r| r.binds())
             .map(|r| self.bound_text(*r))
             .collect();
-        texts.push(PRESS_A_BUTTON.to_string());
+        texts.push(RECORDING.to_string());
         texts.sort();
         texts.dedup();
         texts
@@ -1793,7 +1793,7 @@ impl App {
                     return None;
                 }
                 let text = match self.capture_row() == Some(*r) {
-                    true => PRESS_A_BUTTON.to_string(),
+                    true => RECORDING.to_string(),
                     false => self.bound_text(*r),
                 };
                 self.binding_faces.get(&text).copied()
