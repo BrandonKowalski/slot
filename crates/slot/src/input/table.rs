@@ -104,5 +104,6 @@ fn overlaps(pair: Binding, single: Binding) -> bool {
     let Some(Modifier::Button(first)) = pair.modifier else {
         return false;
     };
-    single.modifier.is_none() && (single.button == first || single.button == pair.button)
+    single.modifier.is_none()
+        && (single.button == first || (!first.leads() && single.button == pair.button))
 }

@@ -562,6 +562,39 @@ fn a_shortcut_on_a_console_button_names_it() {
 }
 
 #[test]
+fn a_start_pair_clashes_only_with_a_single_on_start() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::PaletteBack, Binding::pair(Device::Start, Device::L2));
+    keys.set(Shortcut::PaletteNext, Binding::pair(Device::Start, Device::R2));
+    keys.set(Shortcut::FastForward, Binding::plain(Device::L2));
+    keys.set(Shortcut::Rewind, Binding::plain(Device::R2));
+    let table =
+        slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default(), true);
+    for row in [
+        QuickRow::ScPaletteBack,
+        QuickRow::ScPaletteNext,
+        QuickRow::ScFastForward,
+        QuickRow::ScRewind,
+    ] {
+        assert_eq!(table.clash(row), None, "{row:?}: L2 or R2 alone never beats START first");
+    }
+    keys.set(Shortcut::Rewind, Binding::plain(Device::Start));
+    let table =
+        slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default(), true);
+    assert!(table.clash(QuickRow::ScRewind).is_some(), "START alone does block a START pair");
+}
+
+#[test]
+fn an_unordered_pair_still_clashes_with_a_single_on_either_button() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::SaveState, Binding::pair(Device::L1, Device::R1));
+    keys.set(Shortcut::Rewind, Binding::plain(Device::R1));
+    let table =
+        slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default(), true);
+    assert_eq!(table.clash(QuickRow::ScSave), Some(QuickRow::ScRewind));
+}
+
+#[test]
 fn a_pair_of_console_buttons_is_not_a_clash() {
     let (_d, s) = bind_save_state(&[
         RawEvent::Down(Btn::L1),
