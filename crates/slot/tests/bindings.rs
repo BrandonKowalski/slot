@@ -564,8 +564,14 @@ fn a_shortcut_on_a_console_button_names_it() {
 #[test]
 fn a_start_pair_clashes_only_with_a_single_on_start() {
     let mut keys = ShortcutKeys::default();
-    keys.set(Shortcut::PaletteBack, Binding::pair(Device::Start, Device::L2));
-    keys.set(Shortcut::PaletteNext, Binding::pair(Device::Start, Device::R2));
+    keys.set(
+        Shortcut::PaletteBack,
+        Binding::pair(Device::Start, Device::L2),
+    );
+    keys.set(
+        Shortcut::PaletteNext,
+        Binding::pair(Device::Start, Device::R2),
+    );
     keys.set(Shortcut::FastForward, Binding::plain(Device::L2));
     keys.set(Shortcut::Rewind, Binding::plain(Device::R2));
     let table =
@@ -576,12 +582,19 @@ fn a_start_pair_clashes_only_with_a_single_on_start() {
         QuickRow::ScFastForward,
         QuickRow::ScRewind,
     ] {
-        assert_eq!(table.clash(row), None, "{row:?}: L2 or R2 alone never beats START first");
+        assert_eq!(
+            table.clash(row),
+            None,
+            "{row:?}: L2 or R2 alone never beats START first"
+        );
     }
     keys.set(Shortcut::Rewind, Binding::plain(Device::Start));
     let table =
         slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default(), true);
-    assert!(table.clash(QuickRow::ScRewind).is_some(), "START alone does block a START pair");
+    assert!(
+        table.clash(QuickRow::ScRewind).is_some(),
+        "START alone does block a START pair"
+    );
 }
 
 #[test]

@@ -348,12 +348,12 @@ fn the_in_game_pages_hold_their_rows_in_order() {
     assert_eq!(
         QuickRow::PLAY_SCREEN,
         [
-            QuickRow::PlayBrightness,
-            QuickRow::PlayBlueLight,
             QuickRow::Shader,
-            QuickRow::ColourCorrection,
+            QuickRow::Bezel,
             QuickRow::Palette,
-            QuickRow::Bezel
+            QuickRow::ColourCorrection,
+            QuickRow::PlayBrightness,
+            QuickRow::PlayBlueLight
         ]
     );
     for row in QuickRow::PLAY {
@@ -364,7 +364,7 @@ fn the_in_game_pages_hold_their_rows_in_order() {
 #[test]
 fn in_game_pages_climb_back_through_settings() {
     assert_eq!(QuickRow::Settings.child(), Some(QuickRow::PlayScreen));
-    assert_eq!(QuickRow::PlayScreen.child(), Some(QuickRow::PlayBrightness));
+    assert_eq!(QuickRow::PlayScreen.child(), Some(QuickRow::Shader));
     assert_eq!(
         QuickRow::PlayBrightness.parent_in_game(),
         Some(QuickRow::PlayScreen)
@@ -420,16 +420,66 @@ fn a_hidden_palette_and_bezel_leave_four_screen_rows() {
     assert_eq!(
         QuickRow::Shader.shown(&hidden),
         vec![
-            QuickRow::PlayBrightness,
-            QuickRow::PlayBlueLight,
             QuickRow::Shader,
-            QuickRow::ColourCorrection
+            QuickRow::ColourCorrection,
+            QuickRow::PlayBrightness,
+            QuickRow::PlayBlueLight
         ]
     );
+    assert_eq!(QuickRow::PlayBlueLight.down(&hidden), QuickRow::Shader);
+}
+
+#[test]
+fn the_in_game_screen_panel_shows_three_rows_and_scrolls_the_rest() {
+    assert_eq!(slot_ui::quick_window(QuickRow::Shader, &[]), (0, 3));
+    assert_eq!(slot_ui::quick_window(QuickRow::Palette, &[]), (1, 3));
     assert_eq!(
-        QuickRow::ColourCorrection.down(&hidden),
-        QuickRow::PlayBrightness
+        slot_ui::quick_window(QuickRow::ColourCorrection, &[]),
+        (2, 3)
     );
+    assert_eq!(slot_ui::quick_window(QuickRow::PlayBlueLight, &[]), (3, 3));
+    let hidden = [QuickRow::Palette, QuickRow::Bezel];
+    assert_eq!(
+        slot_ui::quick_window(QuickRow::PlayBlueLight, &hidden),
+        (1, 3)
+    );
+}
+
+#[test]
+fn a_scroll_bar_shows_only_on_a_page_with_rows_out_of_sight() {
+    let top = slot_ui::quick_scroll(QuickRow::Shader, &[]).expect("six rows in three");
+    assert!(
+        (top.thumb_y - top.y).abs() < 0.5,
+        "the thumb is not at the top"
+    );
+    assert!(
+        (top.thumb_h - top.h / 6.0).abs() < 0.5,
+        "the thumb is not one row of six"
+    );
+    let end = slot_ui::quick_scroll(QuickRow::PlayBlueLight, &[]).expect("six rows in three");
+    assert!(
+        (end.thumb_y + end.thumb_h - (end.y + end.h)).abs() < 0.5,
+        "the thumb is not at the bottom"
+    );
+    assert!(
+        slot_ui::quick_scroll(QuickRow::Shader, &[QuickRow::Palette, QuickRow::Bezel]).is_some(),
+        "four rows in three still scroll"
+    );
+    assert_eq!(slot_ui::quick_scroll(QuickRow::Rumble, &[]), None);
+    assert!(slot_ui::quick_scroll(QuickRow::GameUp, &[]).is_some());
+}
+
+#[test]
+fn the_thumb_reaches_the_bottom_only_on_the_last_row() {
+    let rows = QuickRow::CONTROLS;
+    let mut last_y = f32::MIN;
+    for (i, row) in rows.iter().enumerate() {
+        let bar = slot_ui::quick_scroll(*row, &[]).expect("the controls page scrolls");
+        let at_bottom = (bar.thumb_y + bar.thumb_h - (bar.y + bar.h)).abs() < 0.5;
+        assert_eq!(at_bottom, i == rows.len() - 1, "{row:?} at {i}");
+        assert!(bar.thumb_y > last_y, "{row:?}: the thumb did not move down");
+        last_y = bar.thumb_y;
+    }
 }
 
 #[test]
@@ -460,11 +510,11 @@ fn screen_opens_a_page_per_console_and_each_backs_out_to_its_console() {
 fn screen_rows_in_game_sit_in_a_panel_at_the_bottom() {
     let hidden = [QuickRow::Palette];
     let shader = slot_ui::quick_row_top(QuickRow::Shader, &hidden);
-    let colour = slot_ui::quick_row_top(QuickRow::ColourCorrection, &hidden);
-    assert_eq!(colour - shader, slot_ui::QUICK_PITCH);
+    let bezel = slot_ui::quick_row_top(QuickRow::Bezel, &hidden);
+    assert_eq!(bezel - shader, slot_ui::QUICK_PITCH);
     assert!(
         shader > slot_ui::OUT_H as f32 / 2.0,
-        "the panel starts at {shader}"
+        "the panel starts at {shader}, covering more than three rows of the game"
     );
     assert!(slot_ui::quick_row_top(QuickRow::FastForward, &[]) < shader);
 }

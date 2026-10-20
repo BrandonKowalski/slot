@@ -134,12 +134,13 @@ fn palette_steps_the_palette_and_asks_the_core() {
 }
 
 #[test]
-fn the_in_game_screen_page_leads_with_brightness_and_blue_light() {
+fn the_in_game_screen_page_ends_with_brightness_and_blue_light() {
     let (d, mut a) = playing();
     let (power, backlight) = common::panel(d.path(), std::time::Duration::from_secs(300));
     a.set_power(power);
+    let shown = QuickRow::PlayBrightness.shown(&a.in_game_hidden());
     assert_eq!(
-        QuickRow::PlayBrightness.shown(&a.in_game_hidden())[..2],
+        shown[shown.len() - 2..],
         [QuickRow::PlayBrightness, QuickRow::PlayBlueLight]
     );
     let before = a.brightness();

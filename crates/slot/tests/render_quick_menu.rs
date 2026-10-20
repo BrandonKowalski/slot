@@ -9,7 +9,7 @@ use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
-use slot_ui::{quick_row_top, quick_row_top_at, QuickRow, QUICK_VISIBLE};
+use slot_ui::{quick_row_top, quick_row_top_at, quick_scroll, QuickRow, QUICK_VISIBLE};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -485,7 +485,22 @@ fn the_shortcuts_page_renders() {
     tap(&mut f, &mut input, Btn::Down);
     tap(&mut f, &mut input, Btn::A);
     assert_eq!(f.app().quick_menu(), Some(QuickRow::ScSave));
-    composed(&mut f, &mut c, "shortcuts");
+    let px = composed(&mut f, &mut c, "shortcuts");
+    let bar = quick_scroll(QuickRow::ScSave, &f.app().hidden_rows()).expect("the page scrolls");
+    let x = OUT_W as usize - 14;
+    let lum = |y: f32| {
+        at(&px, x, y as usize)
+            .iter()
+            .map(|&c| u32::from(c))
+            .sum::<u32>()
+    };
+    let thumb = lum(bar.thumb_y + bar.thumb_h / 2.0);
+    let track = lum(bar.thumb_y + bar.thumb_h + 20.0);
+    let clear = lum(bar.y - 20.0);
+    assert!(
+        thumb > track && track > clear,
+        "no scroll bar at the right edge: thumb {thumb}, track {track}, above it {clear}"
+    );
 }
 
 #[test]

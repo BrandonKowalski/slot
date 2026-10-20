@@ -288,12 +288,12 @@ impl QuickRow {
     ];
 
     pub const PLAY_SCREEN: [QuickRow; 6] = [
+        QuickRow::Shader,
+        QuickRow::Bezel,
+        QuickRow::Palette,
+        QuickRow::ColourCorrection,
         QuickRow::PlayBrightness,
         QuickRow::PlayBlueLight,
-        QuickRow::Shader,
-        QuickRow::ColourCorrection,
-        QuickRow::Palette,
-        QuickRow::Bezel,
     ];
 
     pub fn index(self) -> usize {
@@ -360,7 +360,7 @@ impl QuickRow {
             QuickRow::GbShader => Some(QuickRow::ScreenGb),
             QuickRow::FastForward => Some(QuickRow::Game),
             QuickRow::PlayScreen => Some(QuickRow::Settings),
-            QuickRow::PlayBrightness => Some(QuickRow::PlayScreen),
+            QuickRow::Shader => Some(QuickRow::PlayScreen),
             QuickRow::GameUp => Some(QuickRow::ControlsInGame),
             QuickRow::ScSave => Some(QuickRow::Shortcuts),
             QuickRow::Theme => Some(QuickRow::General),
@@ -1176,6 +1176,25 @@ impl QuickMenu<'_> {
             push(out, tex, vx, y, w, h);
             push(out, left_tex, vx + pad - CARET_GAP - lw as f32, y, lw, lh);
         }
+        if let Some(bar) = quick_scroll(self.row, self.hidden) {
+            let x = self.canvas.w - SCROLL_INSET - SCROLL_W;
+            let ink = DIM_INK.map(|c| f32::from(c) / 255.0);
+            out.push(Draw::Rect {
+                x,
+                y: bar.y,
+                w: SCROLL_W,
+                h: bar.h,
+                colour: [ink[0], ink[1], ink[2], 0.3],
+            });
+            let lit = crate::hud::HUD_INK.map(|c| f32::from(c) / 255.0);
+            out.push(Draw::Rect {
+                x,
+                y: bar.thumb_y,
+                w: SCROLL_W,
+                h: bar.thumb_h,
+                colour: [lit[0], lit[1], lit[2], 1.0],
+            });
+        }
         if let Some((tex, w, h)) = self.description {
             let y = OUT_H as f32 - MOUTH_H - h as f32 - DESCRIPTION_GAP;
             push(out, tex, self.canvas.centred(w as f32), y, w, h);
@@ -1228,25 +1247,64 @@ pub fn draw_menu_ground(canvas: Canvas, ground: Option<(TexId, u32)>, out: &mut 
 
 pub const QUICK_VISIBLE: usize = 6;
 
+const PANEL_VISIBLE: usize = 3;
+
+const SCROLL_INSET: f32 = 12.0;
+
+const SCROLL_W: f32 = 4.0;
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct QuickScroll {
+    pub y: f32,
+    pub h: f32,
+    pub thumb_y: f32,
+    pub thumb_h: f32,
+}
+
 fn scrolls(page: &[QuickRow]) -> bool {
     [
         &QuickRow::CONTROLS[..],
         &QuickRow::SHORTCUTS,
         &QuickRow::GENERAL,
+        &QuickRow::PLAY_SCREEN,
     ]
     .contains(&page)
 }
 
+fn visible(page: &[QuickRow]) -> usize {
+    match page == QuickRow::PLAY_SCREEN {
+        true => PANEL_VISIBLE,
+        false => QUICK_VISIBLE,
+    }
+}
+
 pub fn quick_window(selected: QuickRow, hidden: &[QuickRow]) -> (usize, usize) {
     let count = selected.shown(hidden).len();
-    if !scrolls(selected.page()) || count <= QUICK_VISIBLE {
+    let fits = visible(selected.page());
+    if !scrolls(selected.page()) || count <= fits {
         return (0, count);
     }
     let at = selected.position(hidden);
-    let start = at
-        .saturating_sub(QUICK_VISIBLE / 2)
-        .min(count - QUICK_VISIBLE);
-    (start, QUICK_VISIBLE)
+    let start = at.saturating_sub(fits / 2).min(count - fits);
+    (start, fits)
+}
+
+pub fn quick_scroll(selected: QuickRow, hidden: &[QuickRow]) -> Option<QuickScroll> {
+    let shown = selected.shown(hidden);
+    let (start, len) = quick_window(selected, hidden);
+    if len >= shown.len() {
+        return None;
+    }
+    let y = quick_row_top_at(shown[start], selected, hidden);
+    let h = QUICK_PITCH * len as f32;
+    let thumb_h = h / shown.len() as f32;
+    let along = selected.position(hidden) as f32 / (shown.len() - 1) as f32;
+    Some(QuickScroll {
+        y,
+        h,
+        thumb_y: y + (h - thumb_h) * along,
+        thumb_h,
+    })
 }
 
 pub fn quick_row_top_at(row: QuickRow, selected: QuickRow, hidden: &[QuickRow]) -> f32 {

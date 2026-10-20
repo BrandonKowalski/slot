@@ -10,7 +10,7 @@ use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
-use slot_ui::{quick_row_top, QuickRow};
+use slot_ui::{quick_row_top, QuickRow, MOUTH_H};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -86,10 +86,10 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         tap(&mut f, &mut input, btn);
     }
     run_for(&mut f, &mut input, 0.3);
-    assert_eq!(f.app().in_game_menu(), Some(QuickRow::PlayBrightness));
+    assert_eq!(f.app().in_game_menu(), Some(QuickRow::Shader));
     let screen = composed(&mut f, &mut c, "screen");
 
-    let panel = quick_row_top(QuickRow::PlayBrightness, &f.app().in_game_hidden()) as usize - 16;
+    let panel = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize - 16;
     let (mut probed, mut lit) = (0, 0);
     for y in (48..panel).step_by(17) {
         for x in (0..150).chain(570..OUT_W as usize).step_by(13) {
@@ -128,25 +128,30 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
         );
     }
 
-    let row = quick_row_top(QuickRow::PlayBrightness, &f.app().in_game_hidden()) as usize;
+    let row = quick_row_top(QuickRow::Shader, &f.app().in_game_hidden()) as usize;
     let ink = (row..row + 40)
         .flat_map(|y| (64..400).map(move |x| (x, y)))
         .filter(|&(x, y)| bright(at(&screen, x, y)) > 600)
         .count();
     assert!(
         ink > 100,
-        "no Brightness label in the panel: {ink} bright pixels"
+        "no Shader label in the panel: {ink} bright pixels"
     );
-    let below = at(&screen, 700, OUT_H as usize - 4);
-    let above = at(&screen, 700, panel - 8);
+    let band = |rows: std::ops::Range<usize>| {
+        let n = rows.len() as u32;
+        rows.map(|y| bright(at(&screen, 700, y))).sum::<u32>() / n
+    };
+    let mouth = OUT_H as usize - MOUTH_H as usize;
+    let below = band(mouth - 17..mouth - 2);
+    let above = band(panel - 23..panel - 8);
     assert!(
-        bright(below) <= bright(above),
-        "the panel is not darker than the game above it"
+        below <= above,
+        "the panel is not darker than the game above it: {below} under, {above} over"
     );
 }
 
 #[test]
-fn the_in_game_screen_page_renders() {
+fn the_brightness_rows_render_on_the_screen_page() {
     let Ok(surface) = HeadlessSurface::new() else {
         return;
     };
@@ -165,8 +170,10 @@ fn the_in_game_screen_page_renders() {
     for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A] {
         tap(&mut f, &mut input, btn);
     }
+    while f.app().in_game_menu() != Some(QuickRow::PlayBrightness) {
+        tap(&mut f, &mut input, Btn::Down);
+    }
     run_for(&mut f, &mut input, 0.3);
-    assert_eq!(f.app().in_game_menu(), Some(QuickRow::PlayBrightness));
     let hidden = f.app().in_game_hidden();
     for row in [QuickRow::PlayBrightness, QuickRow::PlayBlueLight] {
         if f.app().in_game_menu() != Some(row) {
@@ -177,7 +184,7 @@ fn the_in_game_screen_page_renders() {
         let px = composed(&mut f, &mut c, &format!("screen-{row:?}"));
         let top = quick_row_top(row, &hidden) as usize;
         let value = (top..top + 40)
-            .flat_map(|y| (360..OUT_W as usize).map(move |x| (x, y)))
+            .flat_map(|y| (360..OUT_W as usize - 24).map(move |x| (x, y)))
             .filter(|&(x, y)| bright(at(&px, x, y)) > 600)
             .map(|(x, _)| x)
             .max()
