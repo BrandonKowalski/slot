@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::{Battery, Charge, LedState, Platform};
+use crate::{Battery, Charge, LedState, Platform, RepairResult};
 
 const TOP_STEP: u32 = 9;
 
@@ -21,6 +21,14 @@ const DEV_INPUT: &str = "/dev/input";
 const RUN_DIR: &str = "/run";
 
 const CARD_LOG: &str = "/data/slot-card.log";
+
+const REPAIR_SCRIPT: &str = "repair.sh";
+
+const FSCK_EXFAT: &str = "fsck.exfat";
+
+const REPAIR_STAGE: &str = "/tmp/slot-repair";
+
+const REPAIR_RESULT: &str = "/data/slot-repair.result";
 
 const WIFI_MODULE: &str = "8821cs";
 
@@ -279,6 +287,29 @@ struct FfEvent {
 #[cfg(unix)]
 extern "C" {
     fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
+    fn fcntl(fd: c_int, cmd: c_int, ...) -> c_int;
+}
+
+const F_GETFD: c_int = 1;
+const F_SETFD: c_int = 2;
+const FD_CLOEXEC: c_int = 1;
+
+fn close_on_exec() {
+    let Ok(fds) = fs::read_dir("/proc/self/fd") else {
+        return;
+    };
+    let fds: Vec<c_int> = fds
+        .filter_map(|e| e.ok()?.file_name().to_str()?.parse().ok())
+        .filter(|fd| *fd > 2)
+        .collect();
+    for fd in fds {
+        unsafe {
+            let flags = fcntl(fd, F_GETFD);
+            if flags >= 0 {
+                fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+            }
+        }
+    }
 }
 
 fn upload(node: &fs::File, id: i16) -> Option<i16> {
@@ -509,8 +540,42 @@ impl Platform for DevicePlatform {
         std::process::exit(0)
     }
 
+    fn repair_card(&mut self) -> ! {
+        let mount = fs::read_to_string("/proc/mounts")
+            .ok()
+            .and_then(|m| card_mount_in(&m, &self.root));
+        match (mount, stage_repair(&self.root, Path::new(REPAIR_STAGE))) {
+            (Some(m), Ok(script)) => {
+                close_on_exec();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    let e = Command::new("/bin/sh")
+                        .arg(&script)
+                        .arg(&m.device)
+                        .arg(&m.point)
+                        .arg(&m.fs)
+                        .exec();
+                    eprintln!("slot: repair: {e}");
+                }
+            }
+            (None, _) => eprintln!(
+                "slot: repair: no block device under {}",
+                self.root.display()
+            ),
+            (_, Err(e)) => eprintln!("slot: repair: {e}"),
+        }
+        self.restart()
+    }
+
+    fn take_repair_result(&mut self) -> Option<RepairResult> {
+        take_repair_result(Path::new(REPAIR_RESULT))
+    }
+
     fn poweroff(&mut self) -> ! {
-        self.breadcrumb("poweroff: reached slot, about to sync");
+        self.breadcrumb("poweroff: reached slot, unloading the WiFi driver");
+        let _ = Command::new("rmmod").arg(WIFI_MODULE).status();
+        self.breadcrumb("poweroff: WiFi driver unloaded, about to sync");
         let _ = Command::new("sync").status();
         self.breadcrumb("poweroff: sync returned, about to signal init");
         let _ = Command::new("poweroff").status();
@@ -593,15 +658,76 @@ pub fn card_kernel_lines(dmesg: &str) -> Vec<String> {
     lines.into_iter().skip(skip).collect()
 }
 
-pub fn read_only_in(mounts: &str, path: &Path) -> bool {
+struct MountLine<'a> {
+    device: &'a str,
+    point: &'a Path,
+    fs: &'a str,
+    options: &'a str,
+}
+
+fn closest_mount<'a>(mounts: &'a str, path: &Path) -> Option<MountLine<'a>> {
     mounts
         .lines()
         .filter_map(|l| {
             let mut f = l.split_whitespace();
-            let point = Path::new(f.nth(1)?);
-            let options = f.nth(1)?;
-            path.starts_with(point).then_some((point, options))
+            let device = f.next()?;
+            let point = Path::new(f.next()?);
+            let fs = f.next()?;
+            let options = f.next()?;
+            path.starts_with(point).then_some(MountLine {
+                device,
+                point,
+                fs,
+                options,
+            })
         })
-        .max_by_key(|(point, _)| point.as_os_str().len())
-        .is_some_and(|(_, options)| options.split(',').any(|o| o == "ro"))
+        .max_by_key(|m| m.point.as_os_str().len())
+}
+
+pub fn read_only_in(mounts: &str, path: &Path) -> bool {
+    closest_mount(mounts, path).is_some_and(|m| m.options.split(',').any(|o| o == "ro"))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardMount {
+    pub device: String,
+    pub point: PathBuf,
+    pub fs: String,
+}
+
+pub fn card_mount_in(mounts: &str, path: &Path) -> Option<CardMount> {
+    let m = closest_mount(mounts, path)?;
+    m.device.starts_with("/dev/").then(|| CardMount {
+        device: m.device.to_owned(),
+        point: m.point.to_path_buf(),
+        fs: m.fs.to_owned(),
+    })
+}
+
+pub fn stage_repair(root: &Path, stage: &Path) -> std::io::Result<PathBuf> {
+    let system = root.join("System");
+    fs::create_dir_all(stage)?;
+    let script = stage.join(REPAIR_SCRIPT);
+    fs::copy(system.join(REPAIR_SCRIPT), &script)?;
+    let fsck = system.join(FSCK_EXFAT);
+    if fsck.exists() {
+        let staged = stage.join(FSCK_EXFAT);
+        fs::copy(&fsck, &staged)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))?;
+        }
+    }
+    Ok(script)
+}
+
+pub fn take_repair_result(file: &Path) -> Option<RepairResult> {
+    let text = fs::read_to_string(file).ok()?;
+    let _ = fs::remove_file(file);
+    Some(match text.trim() {
+        "repaired" => RepairResult::Repaired,
+        "clean" => RepairResult::Clean,
+        _ => RepairResult::Failed,
+    })
 }

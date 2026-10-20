@@ -32,7 +32,6 @@ const SMALL_PX: f32 = 9.0;
 pub struct StickerFields<'a> {
     pub battery: Option<u8>,
     pub serial: &'a str,
-    pub dirty_digit: char,
 }
 
 pub const CREDITS: [&str; 11] = [
@@ -66,11 +65,17 @@ pub fn head_rows(f: &StickerFields) -> [String; 3] {
     ]
 }
 
+fn split_check(serial: &str) -> (&str, &str) {
+    let at = serial.char_indices().last().map_or(0, |(i, _)| i);
+    serial.split_at(at)
+}
+
 pub fn sticker_lines(f: &StickerFields) -> Vec<String> {
     let mut out: Vec<String> = head_rows(f).into();
     out.extend(CREDITS.iter().map(|s| s.to_string()));
     out.extend(ORIGIN.iter().map(|s| s.to_string()));
-    out.push(format!("{} {}", f.serial, f.dirty_digit));
+    let (body, check) = split_check(f.serial);
+    out.push(format!("{body} {check}"));
     out.push(COPYRIGHT.to_string());
     out.push(HOME.to_string());
     out
@@ -237,18 +242,27 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
 
     let bars_y = panel_y + 14;
     let bars_h = 62;
-    let payload = format!("SLOT-{}-{}", f.serial, f.dirty_digit);
+    let payload = format!("SLOT-{}", f.serial);
     if let Some(run) = code39(&format!("*{payload}*")) {
         let syms = run.len() as f32 / 9.0;
         let per_sym = 3.0 * CODE39_WIDE + 7.0 * CODE39_NARROW;
         let scale = ((panel_w as f32 - 12.0) / (syms * per_sym + 20.0 * CODE39_NARROW)).min(2.0);
-        let narrow = ((CODE39_NARROW * scale).round() as u32).max(1);
-        let wide = ((CODE39_WIDE * scale).round() as u32).max(narrow * 2);
-        let total: u32 = run
-            .iter()
-            .map(|w| if *w { wide } else { narrow })
-            .sum::<u32>()
-            + (run.len() as u32 / 9) * narrow;
+        let total_for = |narrow: u32, wide: u32| -> u32 {
+            run.iter()
+                .map(|w| if *w { wide } else { narrow })
+                .sum::<u32>()
+                + (run.len() as u32 / 9) * narrow
+        };
+        let top = ((CODE39_NARROW * scale).round() as u32).max(1);
+        let (narrow, wide, total) = (1..=top)
+            .rev()
+            .flat_map(|n| {
+                let w = ((CODE39_WIDE * n as f32).round() as u32).max(n * 2);
+                (n * 2..=w).rev().map(move |w| (n, w))
+            })
+            .map(|(n, w)| (n, w, total_for(n, w)))
+            .find(|&(n, _, t)| t + 20 * n <= panel_w)
+            .unwrap_or((1, 2, total_for(1, 2)));
         let mut x = panel_x + panel_w.saturating_sub(total) / 2;
         for chunk in run.chunks_exact(9) {
             for (n, is_wide) in chunk.iter().enumerate() {
@@ -263,17 +277,18 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
     }
 
     let sy = (bars_y + bars_h + 4) as f32;
-    let hash_w = c.print_measure(f.serial, SERIAL_PX);
+    let (body, check) = split_check(f.serial);
+    let hash_w = c.print_measure(body, SERIAL_PX);
     let box_w = SERIAL_PX * 0.9;
     let total = hash_w + 10.0 + box_w;
     let sx = panel_x as f32 + (panel_w as f32 - total) / 2.0;
-    c.print(sx, sy, f.serial, SERIAL_PX, BLACK);
+    c.print(sx, sy, body, SERIAL_PX, BLACK);
     let bx = sx + hash_w + 10.0;
     c.outline(bx, sy + 1.0, box_w, SERIAL_PX * 1.25, 2.0, BLACK);
     c.print(
         bx + box_w * 0.28,
         sy + 2.0,
-        &f.dirty_digit.to_string(),
+        check,
         SERIAL_PX * 0.85,
         BLACK,
     );

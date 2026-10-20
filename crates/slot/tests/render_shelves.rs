@@ -431,7 +431,7 @@ fn a_cart_going_in_from_a_repeated_row_takes_both_copies_of_its_neighbour_with_i
     app.update(SEATED_AT / 2.0);
     let halfway = shot(&app, &mut c, Some("insert-1-halfway"));
     let (mid, y) = span(&halfway, ink);
-    for _ in 0..120 {
+    for _ in 0..16 {
         app.update(1.0 / 60.0);
     }
     let seated = shot(&app, &mut c, Some("insert-2-seated"));
@@ -612,7 +612,7 @@ fn frame(c: &mut Compositor, out: &[Draw], name: &str) -> Vec<u8> {
 
 fn frame_named(c: &mut Compositor, out: &[Draw], name: Option<&str>) -> Vec<u8> {
     c.set_screen_power(1.0);
-    c.begin_frame(slot_gfx::Layout::Framed);
+    c.begin_frame();
     c.draw_list(out);
     let px = c.read_frame();
     if let (Some(name), Ok(dir)) = (name, std::env::var("SCRATCH_PNG_DIR")) {

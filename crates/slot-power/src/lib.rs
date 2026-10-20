@@ -4,8 +4,9 @@ mod power;
 mod sim;
 
 pub use device::{
-    card_kernel_lines, has_bit, motor_change, read_only, read_only_in, record_first_frame,
-    rumble_node, trace_first_frame, uptime_seconds, DevicePlatform,
+    card_kernel_lines, card_mount_in, has_bit, motor_change, read_only, read_only_in,
+    record_first_frame, rumble_node, stage_repair, take_repair_result, trace_first_frame,
+    uptime_seconds, CardMount, DevicePlatform,
 };
 pub use motor::Motor;
 pub use power::Power;
@@ -26,6 +27,13 @@ pub enum Charge {
 pub struct Battery {
     pub percent: u8,
     pub charge: Charge,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum RepairResult {
+    Repaired,
+    Clean,
+    Failed,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -67,6 +75,14 @@ pub trait Platform: Send {
 
     fn card_kernel_lines(&self) -> Vec<String> {
         Vec::new()
+    }
+
+    fn repair_card(&mut self) -> ! {
+        self.restart()
+    }
+
+    fn take_repair_result(&mut self) -> Option<RepairResult> {
+        None
     }
 }
 

@@ -64,7 +64,18 @@ impl Icon {
 const HALO: [u8; 3] = [0x08, 0x08, 0x0a];
 pub const HALO_PX: u32 = 1;
 
+pub const WARNING_INK: [u8; 3] = [0xff, 0xb8, 0x2e];
+
 pub fn haloed(cov: &[u8], cw: u32, ch: u32, colour: [u8; 3]) -> CartFace {
+    haloed_with(cov, cw, ch, |_, _| colour)
+}
+
+pub fn haloed_with(
+    cov: &[u8],
+    cw: u32,
+    ch: u32,
+    colour_at: impl Fn(isize, isize) -> [u8; 3],
+) -> CartFace {
     let pad = HALO_PX as usize;
     let (cw, ch) = (cw as usize, ch as usize);
     let (w, h) = (cw + 2 * pad, ch + 2 * pad);
@@ -88,6 +99,7 @@ pub fn haloed(cov: &[u8], cw: u32, ch: u32, colour: [u8; 3]) -> CartFace {
                 }
             }
             if ink > 0 {
+                let colour = colour_at(gx, gy);
                 let a = ink as u32;
                 let inv = 255 - a;
                 let mix = |c: u8, s: u8| ((c as u32 * a + s as u32 * inv) / 255) as u8;
@@ -213,6 +225,10 @@ struct Raster {
 }
 
 type Cache = Mutex<HashMap<(Icon, u32), Arc<Raster>>>;
+
+pub(crate) fn icon_coverage(icon: Icon, px: f32) -> Option<(Vec<u8>, u32, u32)> {
+    raster(icon, px).map(|r| (r.cov.clone(), r.w, r.h))
+}
 
 fn raster(icon: Icon, px: f32) -> Option<Arc<Raster>> {
     static CACHE: OnceLock<Cache> = OnceLock::new();

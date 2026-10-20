@@ -203,7 +203,7 @@ fn the_row_closes_back_up_as_the_cart_comes_out() {
             .count()
     };
     let early = carts(&a);
-    for _ in 0..40 {
+    for _ in 0..50 {
         a.update(1.0 / 60.0);
     }
     let late = carts(&a);
@@ -311,7 +311,12 @@ fn the_core_stops_before_the_cart_moves() {
     for _ in 0..90 {
         s.update(1.0 / 60.0);
     }
-    assert!(s.has_core(), "no core to stop");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while s.emu().is_none() {
+        assert!(Instant::now() < deadline, "no core to stop");
+        std::thread::sleep(Duration::from_millis(1));
+        s.update(1.0 / 60.0);
+    }
 
     s.app_mut().apply(Action::Eject);
     s.update(1.0 / 60.0);

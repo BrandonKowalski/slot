@@ -6,9 +6,10 @@ use std::collections::VecDeque;
 
 use common::{clocked, tmp_root_with_carts};
 use slot::frontend::Frontend;
-use slot_gfx::{Canvas, Compositor, HeadlessSurface};
-use slot_input::{InputSource, Millis, RawEvent};
+use slot_gfx::{Canvas, Compositor, Draw, HeadlessSurface};
+use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
+use slot_ui::{quick_row_top, QuickRow};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -138,4 +139,312 @@ fn a_title_shows_under_the_cart_when_titles_are_on() {
         })
         .count();
     assert!(lit > 20, "no title ink under the cart: {lit} white pixels");
+}
+
+#[test]
+fn a_panel_sized_wallpaper_lands_pixel_for_pixel_on_a_4_by_3_panel() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Zzz"]);
+    clocked(d.path());
+    let (w, h) = (640usize, 480usize);
+    let mut paper = vec![0u8; w * h * 4];
+    for (i, px) in paper.chunks_mut(4).enumerate() {
+        let colour = match i % w {
+            0..=1 => [255, 0, 0, 255],
+            638..=639 => [0, 0, 255, 255],
+            _ => [128, 128, 128, 255],
+        };
+        px.copy_from_slice(&colour);
+    }
+    let dir = d.path().join("Wallpapers");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = std::fs::File::create(dir.join("edges.png")).unwrap();
+    let mut e = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+    e.set_color(png::ColorType::Rgba);
+    e.set_depth(png::BitDepth::Eight);
+    e.write_header().unwrap().write_image_data(&paper).unwrap();
+    let state = slot_store::read_slot_state(d.path());
+    slot_store::write_slot_state(
+        d.path(),
+        &slot_store::SlotState {
+            wallpaper: slot_store::WallpaperPick::File("edges.png".into()),
+            ..state
+        },
+    )
+    .unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    let mut input = Script(VecDeque::new());
+    for _ in 0..10 {
+        f.advance(&mut input);
+    }
+    c.fit((640, 480));
+    f.compose(&mut c);
+    f.compose(&mut c);
+    let frame = c.read_frame();
+    write_png("native-wallpaper-edges", 640, 480, &frame);
+    let at = |x: usize, y: usize| {
+        let o = (y * w + x) * 4;
+        [frame[o], frame[o + 1], frame[o + 2]]
+    };
+    for y in [20, 380] {
+        assert_eq!(at(0, y), [255, 0, 0], "left edge at y {y}");
+        assert_eq!(at(1, y), [255, 0, 0], "second column at y {y}");
+        assert_eq!(at(2, y), [128, 128, 128], "third column at y {y}");
+        assert_eq!(at(639, y), [0, 0, 255], "right edge at y {y}");
+        assert_eq!(
+            at(637, y),
+            [128, 128, 128],
+            "inside the right edge at y {y}"
+        );
+    }
+}
+
+fn gb_bezel_on_a_4_by_3_panel(
+    name: &str,
+    pick: slot_store::BezelPick,
+    file: Option<(usize, usize)>,
+) -> Option<Vec<u8>> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    clocked(d.path());
+    if let Some((w, h)) = file {
+        let mut bezel = vec![0u8; w * h * 4];
+        for (i, px) in bezel.chunks_mut(4).enumerate() {
+            let colour = match (i % w, i / w) {
+                (0..=1, _) => [255, 0, 0, 255],
+                (x, _) if x >= w - 2 => [0, 0, 255, 255],
+                (_, 0..=1) => [0, 255, 0, 255],
+                (_, y) if y >= h - 2 => [255, 255, 0, 255],
+                _ => [0, 0, 0, 0],
+            };
+            px.copy_from_slice(&colour);
+        }
+        let dir = d.path().join("Bezels/GB");
+        let file = std::fs::File::create(dir.join("edges.png")).unwrap();
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+        e.set_color(png::ColorType::Rgba);
+        e.set_depth(png::BitDepth::Eight);
+        e.write_header().unwrap().write_image_data(&bezel).unwrap();
+    }
+    let state = slot_store::read_slot_state(d.path());
+    slot_store::write_slot_state(
+        d.path(),
+        &slot_store::SlotState {
+            bezel_gb: pick,
+            ..state
+        },
+    )
+    .unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    c.fit((640, 480));
+    let mut input = Script(VecDeque::new());
+    input.0.push_back(vec![RawEvent::Down(slot_input::Btn::A)]);
+    input.0.push_back(vec![RawEvent::Up(slot_input::Btn::A)]);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    while std::time::Instant::now() < until {
+        f.advance(&mut input);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    f.compose(&mut c);
+    f.compose(&mut c);
+    let panel = c.read_window((640, 480));
+    write_png(name, 640, 480, &panel);
+    Some(panel)
+}
+
+fn panel_at(panel: &[u8], x: usize, y: usize) -> [u8; 3] {
+    let o = (y * 640 + x) * 4;
+    [panel[o], panel[o + 1], panel[o + 2]]
+}
+
+#[test]
+fn a_panel_sized_bezel_lands_pixel_for_pixel_on_a_4_by_3_panel() {
+    let Some(panel) = gb_bezel_on_a_4_by_3_panel(
+        "native-bezel-panel",
+        slot_store::BezelPick::File("edges.png".into()),
+        Some((640, 480)),
+    ) else {
+        return;
+    };
+    let at = |x, y| panel_at(&panel, x, y);
+    for y in [100, 300] {
+        assert_eq!(at(0, y), [255, 0, 0], "left edge at y {y}");
+        assert_eq!(at(1, y), [255, 0, 0], "second column at y {y}");
+        assert_ne!(at(2, y), [255, 0, 0], "third column at y {y}");
+        assert_eq!(at(639, y), [0, 0, 255], "right edge at y {y}");
+        assert_ne!(at(637, y), [0, 0, 255], "inside the right edge at y {y}");
+    }
+    assert_eq!(at(320, 0), [0, 255, 0], "top edge");
+    assert_eq!(at(320, 1), [0, 255, 0], "second row");
+    assert_ne!(at(320, 2), [0, 255, 0], "third row");
+    assert_eq!(at(320, 479), [255, 255, 0], "bottom edge");
+    assert_eq!(at(320, 478), [255, 255, 0], "second row from the bottom");
+    assert_ne!(at(320, 477), [255, 255, 0], "third row from the bottom");
+}
+
+#[test]
+fn a_bezel_the_size_of_the_game_area_sits_on_it_on_a_4_by_3_panel() {
+    let Some(panel) = gb_bezel_on_a_4_by_3_panel(
+        "native-bezel-edges",
+        slot_store::BezelPick::File("edges.png".into()),
+        Some((640, 427)),
+    ) else {
+        return;
+    };
+    let at = |x, y| panel_at(&panel, x, y);
+    assert_eq!(at(0, 200), [255, 0, 0], "left edge");
+    assert_eq!(at(639, 200), [0, 0, 255], "right edge");
+    assert_eq!(at(320, 26), [0, 0, 0], "above the game area");
+    assert_eq!(at(320, 27), [0, 255, 0], "top edge");
+    assert_eq!(at(320, 28), [0, 255, 0], "second row");
+    assert_eq!(at(320, 453), [255, 255, 0], "bottom edge");
+    assert_eq!(at(320, 454), [0, 0, 0], "below the game area");
+}
+
+#[test]
+fn the_default_bezel_reaches_the_top_and_bottom_of_a_4_by_3_panel() {
+    let Some(panel) =
+        gb_bezel_on_a_4_by_3_panel("native-bezel-default", slot_store::BezelPick::Default, None)
+    else {
+        return;
+    };
+    for y in [0, 13, 26, 453, 466, 479] {
+        for x in [5, 320, 634] {
+            let px = panel_at(&panel, x, y);
+            assert!(
+                px.iter().all(|c| (0x20..0x80).contains(c)),
+                "the bezel's grain is missing at {x}, {y}: {px:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_shortcut_row_keeps_its_label_clear_of_its_binding_on_a_4_by_3_panel() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    c.fit((640, 480));
+    let mut input = Script(VecDeque::new());
+    let mut tap = |f: &mut Frontend, b: Btn| {
+        input.0.push_back(vec![RawEvent::Down(b)]);
+        input.0.push_back(vec![RawEvent::Up(b)]);
+        f.advance(&mut input);
+        f.advance(&mut input);
+    };
+    tap(&mut f, Btn::Menu);
+    for _ in 0..QuickRow::Controls.position(&[]) {
+        tap(&mut f, Btn::Down);
+    }
+    tap(&mut f, Btn::A);
+    tap(&mut f, Btn::Down);
+    tap(&mut f, Btn::A);
+    for row in QuickRow::SHORTCUTS {
+        assert_eq!(f.app().quick_menu(), Some(row));
+        f.compose(&mut c);
+        let px = c.read_frame();
+        let top = quick_row_top(row, &[]) as usize;
+        let ink: Vec<usize> = (56..640)
+            .filter(|&x| {
+                (top + 8..top + 44).any(|y| {
+                    let o = (y * 640 + x) * 4;
+                    px[o..o + 3].iter().all(|c| *c > 0x80)
+                })
+            })
+            .collect();
+        let gap = ink.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+        assert!(
+            gap >= 24,
+            "{row:?} runs into its binding, widest gap {gap} px"
+        );
+        tap(&mut f, Btn::Down);
+    }
+}
+
+fn run_for(f: &mut Frontend, input: &mut Script, ms: u64) {
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    while std::time::Instant::now() < until {
+        f.advance(input);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
+fn lit_rows(panel: &[u8], rows: std::ops::Range<usize>) -> usize {
+    rows.filter(|y| (0..640).any(|x| panel_at(panel, x, *y).iter().all(|c| *c > 0xc0)))
+        .count()
+}
+
+fn link_screen_on(panel: (u32, u32)) -> Option<Vec<u8>> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, panel);
+    c.fit(panel);
+    let mut input = Script(VecDeque::new());
+    input.0.push_back(vec![RawEvent::Down(Btn::A)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::A)]);
+    run_for(&mut f, &mut input, 4_000);
+    input.0.push_back(vec![RawEvent::Down(Btn::Select)]);
+    input.0.push_back(vec![RawEvent::Down(Btn::Menu)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::Menu)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::Select)]);
+    run_for(&mut f, &mut input, 1_500);
+    assert!(f.app().game_menu_open(), "the link screen did not open");
+    let mut out = Vec::new();
+    f.app().draw(&mut out);
+    let mut legends: Vec<(f32, f32)> = out
+        .iter()
+        .filter_map(|d| match *d {
+            Draw::Tex { x, y, w, h, .. } if y > 400.0 && h == slot_ui::MOUTH_H => {
+                Some((x, x + w - slot_ui::HINT_EDGE as f32))
+            }
+            _ => None,
+        })
+        .collect();
+    legends.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert!(!legends.is_empty(), "no link legends");
+    for pair in legends.windows(2) {
+        assert!(
+            pair[0].1 <= pair[1].0,
+            "link legends overlap at {panel:?}: {legends:?}"
+        );
+    }
+    assert!(legends.last().unwrap().1 <= panel.0 as f32 * 480.0 / panel.1 as f32 + 1.0);
+    f.compose(&mut c);
+    let px = c.read_window(panel);
+    write_png(&format!("native-link-{}", panel.0), panel.0, panel.1, &px);
+    Some(px)
+}
+
+#[test]
+fn the_link_screen_uses_the_whole_4_by_3_panel() {
+    let Some(link) = link_screen_on((640, 480)) else {
+        return;
+    };
+    assert!(
+        lit_rows(&link, 448..480) > 0,
+        "the link legends are not at the bottom of the panel"
+    );
+    link_screen_on((720, 480));
 }

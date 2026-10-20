@@ -10,6 +10,16 @@ pub fn screen_rect(panel: (u32, u32)) -> (i32, i32, i32, i32) {
     ((panel.0 - w) as i32 / 2, 0, w as i32, h as i32)
 }
 
+pub fn game_rect(panel: (u32, u32), sp_frame: bool) -> (i32, i32, i32, i32) {
+    let (x, _, w, h) = screen_rect(panel);
+    let gap = panel.1 as i32 - h;
+    let y = match sp_frame {
+        true => 0,
+        false => gap - gap / 2,
+    };
+    (x, y, w, h)
+}
+
 pub fn lifted_rect(panel: (u32, u32), lift: f32) -> (i32, i32, i32, i32) {
     let (x, _, w, h) = screen_rect(panel);
     let t = lift.clamp(0.0, 1.0);

@@ -12,7 +12,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/logs/HEAD");
 
-    let hash = git(&["rev-parse", "--short", "HEAD"])
+    let hash = git(&["rev-parse", "--short=8", "HEAD"])
         .or_else(|| {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
             let root = root.canonicalize().ok()?;
@@ -23,10 +23,9 @@ fn main() {
                 "safe.directory",
                 root.to_str()?,
             ])?;
-            git(&["rev-parse", "--short", "HEAD"])
+            git(&["rev-parse", "--short=8", "HEAD"])
         })
         .unwrap_or_else(|| "unknown".into());
-    let dirty = git(&["status", "--porcelain"]).is_some_and(|s| !s.is_empty());
     let date = Command::new("date")
         .args(["-u", "+%Y-%m-%d"])
         .output()
@@ -36,6 +35,5 @@ fn main() {
         .unwrap_or_else(|| "unknown".into());
 
     println!("cargo:rustc-env=SLOT_GIT_HASH={hash}");
-    println!("cargo:rustc-env=SLOT_GIT_DIRTY={}", u8::from(dirty));
     println!("cargo:rustc-env=SLOT_BUILD_DATE={date}");
 }

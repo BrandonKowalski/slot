@@ -2,9 +2,9 @@ use crate::draw::{Draw, Sprites, TexId};
 use crate::grade::blue_light_gain;
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
-use crate::shaders::{BEZEL_FRAG, BLIT_FRAG, BLIT_VERT, TURN_VERT};
+use crate::shaders::{BLIT_FRAG, BLIT_VERT, TURN_VERT};
 use crate::surface::{blit_rect, GfxError, Surface, OUT_H, OUT_W};
-use crate::{Canvas, Layout};
+use crate::Canvas;
 
 pub const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
@@ -26,16 +26,10 @@ pub struct Compositor {
     gain: [f32; 3],
     shake: f32,
     window: (u32, u32),
-    layout: Layout,
-    slide: f32,
     screen: f32,
     quad: Quad,
     game: GamePass,
     sprites: Sprites,
-    bezel_prog: gl::types::GLuint,
-    u_bezel_gain: gl::types::GLint,
-    u_bezel_alpha: gl::types::GLint,
-    bezel: Option<gl::types::GLuint>,
     game_bezel: Option<TexId>,
     sp_frame: bool,
     game_fit: bool,
@@ -46,7 +40,6 @@ impl Compositor {
     pub fn new(surface: &dyn Surface) -> Result<Self, GfxError> {
         crate::gl::load(surface);
         let blit = crate::shaders::program(BLIT_VERT, BLIT_FRAG)?;
-        let bezel_prog = crate::shaders::program(BLIT_VERT, BEZEL_FRAG)?;
         let tex = crate::gl::texture(OUT_W, OUT_H, gl::NEAREST, gl::CLAMP_TO_EDGE, gl::RGBA, None);
         unsafe {
             let mut fbo = 0;
@@ -65,7 +58,6 @@ impl Compositor {
                 gl::DeleteFramebuffers(1, &fbo);
                 gl::DeleteTextures(1, &tex);
                 gl::DeleteProgram(blit);
-                gl::DeleteProgram(bezel_prog);
                 return Err(GfxError::Framebuffer(status));
             }
             gl::UseProgram(blit);
@@ -73,17 +65,6 @@ impl Compositor {
             let u_gain = crate::gl::uniform_location(blit, "u_gain");
             let u_blit_uv = crate::gl::uniform_location(blit, "u_uv");
             gl::Uniform4f(u_blit_uv, 0.0, 0.0, 1.0, 1.0);
-            gl::UseProgram(bezel_prog);
-            gl::Uniform1i(crate::gl::uniform_location(bezel_prog, "u_tex"), 0);
-            let u_bezel_gain = crate::gl::uniform_location(bezel_prog, "u_gain");
-            let u_bezel_alpha = crate::gl::uniform_location(bezel_prog, "u_alpha");
-            gl::Uniform4f(
-                crate::gl::uniform_location(bezel_prog, "u_uv"),
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-            );
 
             Ok(Compositor {
                 fbo,
@@ -95,16 +76,10 @@ impl Compositor {
                 gain: blue_light_gain(0),
                 shake: 0.0,
                 window: (OUT_W, OUT_H),
-                layout: Layout::Framed,
-                slide: 1.0,
                 screen: 0.0,
                 quad: Quad::new(),
                 game: GamePass::new()?,
                 sprites: Sprites::new()?,
-                bezel_prog,
-                u_bezel_gain,
-                u_bezel_alpha,
-                bezel: None,
                 game_bezel: None,
                 sp_frame: true,
                 game_fit: false,
@@ -139,7 +114,7 @@ impl Compositor {
     }
 
     pub fn draw_game(&mut self) {
-        self.game.draw(&self.quad);
+        self.in_game_rect(|c| c.game.draw(&c.quad));
     }
 
     pub fn draw_list(&mut self, items: &[Draw]) {
@@ -150,8 +125,13 @@ impl Compositor {
                     self.draw_sprites(&items[from..i]);
                     self.in_game_rect(|c| {
                         c.game.draw(&c.quad);
-                        c.draw_game_bezel();
+                        if c.panel_bezel().is_none() {
+                            c.draw_game_bezel();
+                        }
                     });
+                    if let Some(bezel) = self.panel_bezel() {
+                        self.sprites.draw(&[bezel], &self.quad);
+                    }
                 }
                 Draw::Shot { tex } => {
                     self.draw_sprites(&items[from..i]);
@@ -183,8 +163,7 @@ impl Compositor {
                         }],
                         &self.quad,
                     );
-                    self.sprites
-                        .set_target(Canvas::of(self.layout, self.window));
+                    self.sprites.set_target(Canvas::of(self.window));
                 }
                 _ => continue,
             }
@@ -245,8 +224,7 @@ impl Compositor {
             }],
             &self.quad,
         );
-        self.sprites
-            .set_target(Canvas::of(self.layout, self.window));
+        self.sprites.set_target(Canvas::of(self.window));
     }
 
     pub fn set_paper(&mut self, size: u32, gray: &[u8]) {
@@ -261,7 +239,7 @@ impl Compositor {
     }
 
     fn native(&self) -> bool {
-        self.layout == Layout::Native && crate::bezel::framed(self.window)
+        crate::bezel::framed(self.window)
     }
 
     fn resize(&mut self, size: (u32, u32)) {
@@ -290,10 +268,6 @@ impl Compositor {
         }
         self.tex = tex;
         self.size = size;
-    }
-
-    pub fn set_overlay_slide(&mut self, t: f32) {
-        self.slide = t;
     }
 
     pub fn set_screen_power(&mut self, t: f32) {
@@ -386,15 +360,14 @@ impl Compositor {
         buf.chunks_exact(stride).rev().flatten().copied().collect()
     }
 
-    pub fn begin_frame(&mut self, layout: Layout) {
-        self.layout = layout;
+    pub fn begin_frame(&mut self) {
         let size = if self.game_fit || self.native() {
             self.window
         } else {
             canvas_size(self.window)
         };
         self.resize(size);
-        self.sprites.set_target(Canvas::of(layout, self.window));
+        self.sprites.set_target(Canvas::of(self.window));
         self.game.set_fit(self.game_fit.then_some(self.window));
         self.game.set_fbo_scale(
             self.size.0 as f32 / OUT_W as f32,
@@ -410,25 +383,6 @@ impl Compositor {
             };
             gl::ClearColor(bg[0], bg[1], bg[2], bg[3]);
             gl::Clear(gl::COLOR_BUFFER_BIT);
-        }
-    }
-
-    pub fn set_bezel(&mut self, w: u32, h: u32, rgba: &[u8]) {
-        let stride = w as usize * 4;
-        let mut bottom_up = Vec::with_capacity(rgba.len());
-        for row in rgba.chunks_exact(stride).rev() {
-            bottom_up.extend_from_slice(row);
-        }
-        let tex = crate::gl::texture(
-            w,
-            h,
-            gl::LINEAR,
-            gl::CLAMP_TO_EDGE,
-            gl::RGBA,
-            Some(&bottom_up),
-        );
-        if let Some(old) = self.bezel.replace(tex) {
-            unsafe { gl::DeleteTextures(1, &old) };
         }
     }
 
@@ -489,7 +443,7 @@ impl Compositor {
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
         }
         if self.game_fit || self.native() {
-            let canvas = Canvas::of(Layout::Native, window);
+            let canvas = Canvas::of(window);
             let dx = (self.shake * window.0 as f32 / canvas.w).round() as i32;
             self.blit_part(
                 dx,
@@ -500,37 +454,30 @@ impl Compositor {
             );
             return;
         }
-        let framed = crate::bezel::framed(window);
-        let (x, mut y, w, h) = blit_rect(window, self.shake);
-        if framed && !self.sp_frame {
-            y = (window.1 as i32 - h) / 2;
-        }
+        let (x, y, w, h) = blit_rect(window, self.shake);
         self.blit_part(x, y, w, h, [0.0, 0.0, 1.0, 1.0]);
-        let Some(bezel) = self
-            .bezel
-            .filter(|_| framed && self.sp_frame && self.slide > 0.0)
-        else {
-            return;
-        };
-        let drop = crate::bezel::lifted_rect(window, self.slide).1;
-        unsafe {
-            gl::Viewport(0, -drop, window.0 as i32, window.1 as i32);
-            gl::UseProgram(self.bezel_prog);
-            gl::Uniform3f(self.u_bezel_gain, self.gain[0], self.gain[1], self.gain[2]);
-            gl::Uniform1f(self.u_bezel_alpha, 1.0);
-            gl::BindTexture(gl::TEXTURE_2D, bezel);
-            gl::Enable(gl::BLEND);
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-        }
-        self.quad.draw();
-        unsafe { gl::Disable(gl::BLEND) };
+    }
+
+    fn panel_bezel(&self) -> Option<Draw> {
+        let tex = self
+            .game_bezel
+            .filter(|_| !self.game_fit && crate::bezel::framed(self.window))?;
+        let canvas = Canvas::of(self.window);
+        Some(Draw::Tex {
+            x: 0.0,
+            y: 0.0,
+            w: canvas.w,
+            h: canvas.h,
+            tex,
+            alpha: 1.0,
+        })
     }
 }
 
 impl Compositor {
     fn draw_sprites(&self, items: &[Draw]) {
         if self.game_fit {
-            let canvas = Canvas::of(self.layout, self.window);
+            let canvas = Canvas::of(self.window);
             let scale = (self.size.0 as f32 / canvas.w).min(self.size.1 as f32 / canvas.h);
             let w = (canvas.w * scale).round() as i32;
             let h = (canvas.h * scale).round() as i32;
@@ -553,15 +500,12 @@ impl Compositor {
         if self.game_fit || !self.native() {
             return draw(self);
         }
-        let (w, h) = canvas_size(self.window);
+        let (x, top, w, h) = crate::bezel::game_rect(self.window, self.sp_frame);
         self.game
             .set_fbo_scale(w as f32 / OUT_W as f32, h as f32 / OUT_H as f32);
-        let y = match self.sp_frame {
-            true => self.size.1 - h,
-            false => (self.size.1 - h) / 2,
-        };
-        self.game.set_origin(0.0, y as f32);
-        unsafe { gl::Viewport(0, y as i32, w as i32, h as i32) };
+        let y = self.size.1 as i32 - top - h;
+        self.game.set_origin(x as f32, y as f32);
+        unsafe { gl::Viewport(x, y, w, h) };
         draw(self);
         self.game.set_origin(0.0, 0.0);
         self.game.set_fbo_scale(
@@ -596,10 +540,6 @@ impl Drop for Compositor {
             gl::DeleteFramebuffers(1, &self.fbo);
             gl::DeleteTextures(1, &self.tex);
             gl::DeleteProgram(self.blit);
-            gl::DeleteProgram(self.bezel_prog);
-            if let Some(tex) = self.bezel {
-                gl::DeleteTextures(1, &tex);
-            }
             if let Some(turn) = &self.turn {
                 gl::DeleteProgram(turn.prog);
                 if turn.fbo != 0 {

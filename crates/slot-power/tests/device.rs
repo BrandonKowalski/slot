@@ -435,3 +435,76 @@ fn the_kernel_log_keeps_the_latest_card_lines() {
     assert_eq!(kept.len(), 40);
     assert_eq!(kept.last().unwrap(), "[99] FAT-fs (mmcblk0p7): line 99");
 }
+
+#[test]
+fn the_card_is_found_with_its_device_and_filesystem() {
+    let m = slot_power::card_mount_in(MOUNTS, Path::new("/mnt/sdcard")).unwrap();
+    assert_eq!(m.device, "/dev/mmcblk0p7");
+    assert_eq!(m.point, Path::new("/mnt/sdcard"));
+    assert_eq!(m.fs, "vfat");
+    let other = slot_power::card_mount_in(MOUNTS, Path::new("/mnt/other/Saves")).unwrap();
+    assert_eq!(other.device, "/dev/mmcblk1p1");
+    assert_eq!(other.point, Path::new("/mnt/other"));
+    assert_eq!(other.fs, "exfat");
+}
+
+#[test]
+fn a_card_on_no_block_device_is_not_one_to_repair() {
+    assert!(slot_power::card_mount_in(MOUNTS, Path::new("/mnt/sdcard/System/slot")).is_none());
+}
+
+#[test]
+fn the_repair_is_staged_off_the_card() {
+    let card = tempfile::tempdir().unwrap();
+    let stage = tempfile::tempdir().unwrap();
+    let system = card.path().join("System");
+    fs::create_dir_all(&system).unwrap();
+    fs::write(system.join("repair.sh"), "#!/bin/sh\n").unwrap();
+    fs::write(system.join("fsck.exfat"), "elf").unwrap();
+    let script = slot_power::stage_repair(card.path(), stage.path()).unwrap();
+    assert_eq!(script, stage.path().join("repair.sh"));
+    assert_eq!(fs::read_to_string(&script).unwrap(), "#!/bin/sh\n");
+    assert_eq!(
+        fs::read_to_string(stage.path().join("fsck.exfat")).unwrap(),
+        "elf"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(stage.path().join("fsck.exfat"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_ne!(
+            mode & 0o111,
+            0,
+            "fsck.exfat was staged without its execute bit"
+        );
+    }
+}
+
+#[test]
+fn a_card_without_the_script_cannot_stage_a_repair() {
+    let card = tempfile::tempdir().unwrap();
+    let stage = tempfile::tempdir().unwrap();
+    assert!(slot_power::stage_repair(card.path(), stage.path()).is_err());
+}
+
+#[test]
+fn the_repair_result_is_read_once() {
+    use slot_power::RepairResult;
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("slot-repair.result");
+    assert_eq!(slot_power::take_repair_result(&file), None);
+    for (text, want) in [
+        ("repaired\n", RepairResult::Repaired),
+        ("clean\n", RepairResult::Clean),
+        ("failed\n", RepairResult::Failed),
+        ("busy\n", RepairResult::Failed),
+        ("unsupported\n", RepairResult::Failed),
+    ] {
+        fs::write(&file, text).unwrap();
+        assert_eq!(slot_power::take_repair_result(&file), Some(want), "{text}");
+        assert!(!file.exists(), "{text} was left to be shown again");
+    }
+}

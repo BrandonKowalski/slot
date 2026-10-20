@@ -10,7 +10,7 @@ pub fn cover_bytes(bytes: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
     cover_rgba(&src, sw, sh, w, h)
 }
 
-fn cover_rgba(src: &[u8], sw: u32, sh: u32, w: u32, h: u32) -> Option<Vec<u8>> {
+pub(crate) fn cover_rgba(src: &[u8], sw: u32, sh: u32, w: u32, h: u32) -> Option<Vec<u8>> {
     if sw == 0 || sh == 0 {
         return None;
     }
@@ -57,7 +57,7 @@ fn box_average(src: &[u8], sw: u32, sh: u32, x0: f32, y0: f32, x1: f32, y1: f32)
     out
 }
 
-fn decode(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+pub(crate) fn decode(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
     let bytes = std::fs::read(path).ok()?;
     decode_png_bytes(&bytes)
 }

@@ -109,14 +109,57 @@ fn a_window_that_loses_focus_lets_go_of_the_keys_held_in_it() {
 }
 
 #[test]
-fn x_and_y_reach_the_pad_as_their_own_bits() {
+fn the_pad_presses_the_console_buttons_bound_to_what_is_held() {
     use slot::input::Pad;
     use slot_input::Action;
     use slot_retro::ButtonMask;
+    use slot_store::{Binding, Controls, Device, GameButton, Modifier};
+    let mut c = Controls::default();
+    c.set_game(GameButton::TurboA, None);
+    c.set_game(GameButton::TurboB, None);
     let mut pad = Pad::default();
     pad.apply(Action::GbaDown(Btn::X));
-    pad.apply(Action::GbaDown(Btn::Y));
-    assert_eq!(pad.mask().0, ButtonMask::X | ButtonMask::Y);
+    assert_eq!(
+        pad.mask(&c).0,
+        0,
+        "X reached the game with nothing bound to it"
+    );
+    c.set_game(GameButton::A, Binding::plain(Device::X));
+    assert_eq!(pad.mask(&c).0, ButtonMask::A);
+    pad.apply(Action::GbaDown(Btn::A));
+    assert_eq!(
+        pad.mask(&c).0,
+        ButtonMask::A,
+        "A still pressed A after A moved to X"
+    );
     pad.apply(Action::GbaUp(Btn::X));
-    assert_eq!(pad.mask().0, ButtonMask::Y);
+    assert_eq!(pad.mask(&c).0, 0);
+    c.set_game(GameButton::B, Binding::with(Modifier::Menu, Device::Y));
+    pad.apply(Action::GbaDown(Btn::Y));
+    assert_eq!(pad.mask(&c).0, 0, "plain Y pressed a MENU+Y binding");
+    pad.apply(Action::MenuChordDown(Btn::Y));
+    assert_eq!(pad.mask(&c).0, ButtonMask::B);
+}
+
+#[test]
+fn turbo_a_and_b_fire_from_whatever_they_are_bound_to() {
+    use slot::input::Pad;
+    use slot_input::Action;
+    use slot_retro::ButtonMask;
+    use slot_store::{Binding, Controls, Device, GameButton};
+    let mut c = Controls::default();
+    let mut pad = Pad::default();
+    pad.apply(Action::GbaDown(Btn::X));
+    assert_eq!(pad.mask(&c).turbo(0).0, ButtonMask::A);
+    assert_eq!(pad.mask(&c).turbo(3).0, 0);
+    assert_eq!(pad.mask(&c).without_turbo().0, 0);
+    pad.apply(Action::GbaUp(Btn::X));
+    pad.apply(Action::GbaDown(Btn::Y));
+    assert_eq!(pad.mask(&c).turbo(0).0, ButtonMask::B);
+    pad.apply(Action::GbaUp(Btn::Y));
+    c.set_game(GameButton::TurboA, Binding::plain(Device::L2));
+    pad.apply(Action::GbaDown(Btn::X));
+    assert_eq!(pad.mask(&c).turbo(0).0, 0, "X kept turbo A after it moved");
+    pad.apply(Action::GbaDown(Btn::L2));
+    assert_eq!(pad.mask(&c).turbo(0).0, ButtonMask::A);
 }

@@ -123,7 +123,7 @@ pub fn line_width(font: &Font, line: &str, px: f32, tracking: f32) -> f32 {
     w + tracking * (n as f32 - 1.0).max(0.0)
 }
 
-fn tracking_for(px: f32) -> f32 {
+pub(crate) fn tracking_for(px: f32) -> f32 {
     (px * 0.10).round()
 }
 

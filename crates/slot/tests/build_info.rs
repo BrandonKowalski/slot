@@ -3,26 +3,15 @@ use slot::build_info::Build;
 fn sample() -> Build {
     Build {
         version: "0.1.0",
-        hash: "9e11a10",
-        dirty: false,
+        hash: "9e11a10c",
         date: "2026-08-12",
     }
 }
 
 #[test]
 fn the_serial_is_upper_case_hex() {
-    assert_eq!(sample().serial(), "9E11A10");
+    assert_eq!(sample().serial(), "9E11A10C");
     assert!(sample().serial().chars().all(|c| c.is_ascii_hexdigit()));
-}
-
-#[test]
-fn the_boxed_digit_says_whether_the_tree_was_dirty() {
-    let dirty = Build {
-        dirty: true,
-        ..sample()
-    };
-    assert_eq!(sample().dirty_digit(), '0');
-    assert_eq!(dirty.dirty_digit(), '1');
 }
 
 #[test]
@@ -33,7 +22,7 @@ fn a_build_with_no_git_still_has_a_serial() {
         ..sample()
     };
     assert!(!unknown.serial().is_empty());
-    let payload = format!("*SLOT-{}-{}*", unknown.serial(), unknown.dirty_digit());
+    let payload = format!("*SLOT-{}*", unknown.serial());
     assert!(slot_ui::code39(&payload).is_some());
 }
 

@@ -10,6 +10,7 @@ setup() {
 	rm -rf "$TMP/card" "$TMP/run"
 	mkdir -p "$TMP/card/System" "$TMP/run"
 	: > "$TMP/card/System/led.sh"
+	: > "$TMP/card/System/lid.sh"
 }
 
 launch() {

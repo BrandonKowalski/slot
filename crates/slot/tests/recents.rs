@@ -67,8 +67,7 @@ fn eject(a: &mut App) {
 }
 
 fn press(a: &mut App, btn: Btn) {
-    a.apply(Action::GbaDown(btn));
-    a.apply(Action::GbaUp(btn));
+    common::through(a, btn);
 }
 
 fn flip_recents(a: &mut App) {
@@ -77,7 +76,7 @@ fn flip_recents(a: &mut App) {
         press(a, Btn::Down);
     }
     press(a, Btn::A);
-    for _ in 0..QuickRow::Recents.position(a.hidden_rows()) {
+    for _ in 0..QuickRow::Recents.position(&a.hidden_rows()) {
         press(a, Btn::Down);
     }
     assert_eq!(a.quick_menu(), Some(QuickRow::Recents));

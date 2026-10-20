@@ -114,6 +114,13 @@ pub fn write_retail_header(d: &TempDir, stem: &str, title: &str, code: &str) {
     std::fs::write(rom_path(d, stem), rom).expect("write rom");
 }
 
+pub fn write_hack_header(d: &TempDir, stem: &str, title: &str, code: &str) {
+    write_retail_header(d, stem, title, code);
+    let mut rom = std::fs::read(rom_path(d, stem)).expect("read rom");
+    rom[0xb2] = 0;
+    std::fs::write(rom_path(d, stem), rom).expect("write rom");
+}
+
 pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -606,4 +613,29 @@ fn seated(root: &Path, snapshot: Box<dyn Snapshot>, state: SlotState) -> App {
         a.update(1.0 / 60.0);
     }
     a
+}
+
+pub fn through(a: &mut App, btn: slot_input::Btn) {
+    let now = a.now();
+    feed_through(a, btn, now, |a, action| a.apply(action));
+}
+
+pub fn through_at(a: &mut App, btn: slot_input::Btn, at: slot_input::Millis) {
+    feed_through(a, btn, at, |a, action| a.apply_at(action, at));
+}
+
+fn feed_through(
+    a: &mut App,
+    btn: slot_input::Btn,
+    now: slot_input::Millis,
+    apply: impl Fn(&mut App, slot_input::Action),
+) {
+    let mut g = slot_input::Gestures::new();
+    g.set_entries(a.binding_table().entries());
+    for ev in [slot_input::RawEvent::Down(btn), slot_input::RawEvent::Up(btn)] {
+        g.set_context(a.input_context());
+        for action in g.feed(ev, now) {
+            apply(a, action);
+        }
+    }
 }

@@ -31,7 +31,7 @@ pub fn opened_sink() -> Box<dyn AudioSink> {
 
 #[cfg(feature = "host")]
 pub fn open_sink() -> Box<dyn AudioSink> {
-    if std::env::var_os("SLOT_SILENT").is_some() {
+    if std::env::var("SLOT_SILENT").as_deref() == Ok("1") {
         return Box::new(StubSink::draining());
     }
     Box::new(HostAudio::new())

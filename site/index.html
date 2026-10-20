@@ -493,10 +493,11 @@
               <tbody>
                 <tr><td>Anbernic RG&nbsp;SP</td><td class="yes">Yes</td><td>Always</td></tr>
                 <tr><td>Anbernic RG34XX</td><td>Yes</td><td>1.4.0</td></tr>
-                <tr><td>Anbernic RG34XXSP</td><td>Yes (No Stick Support Yet)</td><td>1.4.0</td></tr>
+                <tr><td>Anbernic RG34XXSP</td><td>Yes (Needs Left Stick as D-Pad Verification)</td><td>1.4.0</td></tr>
                 <tr><td>Anbernic RG35XXSP</td><td class="yes">Yes</td><td>1.5.0</td></tr>
                 <tr><td>Anbernic 35XX Plus</td><td class="yes">Yes</td><td>1.5.0</td></tr>
                 <tr><td>Anbernic RG28XX</td><td class="yes">Yes</td><td>1.6.0</td></tr>
+                <tr><td>Anbernic RG35XX-H</td><td class="yes">Yes</td><td>1.7.0</td></tr>
               </tbody>
             </table>
             <p>If you have one of the untested devices, or have tried slot on a device not listed, please <a href="https://github.com/BrandonKowalski/slot/issues">open an issue on GitHub</a> and let me know how it went.</p>
@@ -541,6 +542,19 @@
               <code>Games/GBA/Metroid Fusion.gba</code>.</dd>
         </div>
         <div class="qa">
+          <dt>What size should a label be?</dt>
+          <dd>
+            <p>The image is scaled to fill the label and trimmed evenly from the edges, so match its shape.
+               Bigger is fine.</p>
+            <ul>
+              <li>GBA: 1.94:1, such as 1280&times;661</li>
+              <li>Game Boy and Game Boy Color: 1.13:1, such as 1024&times;901</li>
+            </ul>
+            <p>The <code>README.txt</code> in <code>Labels/</code> has the exact label boxes and the
+               <code>cart_shell.txt</code> format for shell colours.</p>
+          </dd>
+        </div>
+        <div class="qa">
           <dt>Do I have to craft them by hand?</dt>
           <dd>Nah! You can use the <a href="https://studio.slot-cfw.fyi">slot Cart Studio</a>.</dd>
         </div>
@@ -552,6 +566,18 @@
           <dt>Can I use my own wallpaper?</dt>
           <dd>
             <p>Drop a <code>.png</code> into <code>Wallpapers/</code> and pick it under Wallpaper in the General settings.</p>
+            <p>Make it your screen size: 720&times;480 on the RG&nbsp;SP, RG34XX and RG34XXSP, 640&times;480 on the
+               RG35XXSP, RG35XX Plus, RG35XX-H and RG28XX. Other sizes are scaled to fill the screen and cropped from the centre.</p>
+          </dd>
+        </div>
+        <div class="qa">
+          <dt>Can I make my own bezels?</dt>
+          <dd>
+            <p>For Game Boy and Game Boy Color, yes. Drop a <code>.png</code> into <code>Bezels/GB/</code>
+               or <code>Bezels/GBC/</code> and pick it under Bezel in that system's Screen settings.</p>
+            <p>Make it 720&times;480 on the RG&nbsp;SP, RG34XX and RG34XXSP, and 640&times;480 on the RG35XXSP,
+               RG35XX Plus, RG35XX-H and RG28XX. The bezel is drawn over the game, so leave the game transparent:
+               480&times;432 at 120,&nbsp;24 on the RG&nbsp;SP size, 427&times;384 at 107,&nbsp;48 on the 640&times;480 size.</p>
           </dd>
         </div>
       </dl>

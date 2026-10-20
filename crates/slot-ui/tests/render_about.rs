@@ -8,17 +8,16 @@ fn render_about() {
     };
     let paper = std::env::var("SCRATCH_WALL")
         .ok()
-        .and_then(|p| wallpaper_face(std::path::Path::new(&p)));
+        .and_then(|p| wallpaper_face(std::path::Path::new(&p), OUT_W, OUT_H));
     let label = sticker_face(&StickerFields {
         battery: Some(87),
-        serial: "0473885",
-        dirty_digit: '0',
+        serial: "04738857",
     });
 
     let mut list = Vec::new();
     draw_backdrop(
         Canvas::FRAMED,
-        paper.as_ref().map(|_| TexId::from_raw(0)),
+        paper.as_ref().map(|_| (TexId::from_raw(0), OUT_W)),
         &mut list,
     );
     draw_sticker(Canvas::FRAMED, Some(TexId::from_raw(1)), &mut list);

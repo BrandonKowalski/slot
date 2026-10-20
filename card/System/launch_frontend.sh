@@ -26,6 +26,12 @@ if [ -z "$pid" ] || [ ! -d "/proc/$pid" ]; then
 	echo $! > "$RUN/slot-led.pid"
 fi
 
+pid="$(cat "$RUN/slot-lid.pid" 2>/dev/null)"
+if [ -z "$pid" ] || [ ! -d "/proc/$pid" ]; then
+	sh "$SYS/lid.sh" loop > /dev/null 2>&1 &
+	echo $! > "$RUN/slot-lid.pid"
+fi
+
 echo "|/bin/sh $SYS/coresave.sh %p %s %e %t" > /proc/sys/kernel/core_pattern 2>/dev/null
 
 [ -f "$LOGS/slot.log" ] && mv -f "$LOGS/slot.log" "$LOGS/slot.log.1"
