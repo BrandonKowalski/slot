@@ -8,15 +8,15 @@ use slot_power::{Platform, Power};
 use slot_store::{format_stamp, BezelPick, Platform as Console};
 use slot_ui::{
     badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
-    date_time_text, default_game_bezel_face, footer_ink, game_bezel_face, gb_cart_shadow, hhmm,
-    hint_face, icon_face, link_button_legends, menu_detail_face, menu_face, photo_face,
-    prompt_legends, quick_caret_face, quick_description_face, quick_label_face, quick_legend_faces,
-    quick_pointer_face, quick_value_face, quick_warning_value_face, rebuild_count_face,
-    rebuild_title_face, repair_legends, set_clock_hint_face, slot_back, slot_back_light,
-    slot_front, slot_front_light, socket_face, sticker_face, title_face, toast_face,
-    wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces,
-    QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
-    HUD_ICON_PX, HUD_INK, LEGEND,
+    date_time_text, default_game_bezel_face, delete_legends, footer_ink, game_bezel_face,
+    gb_cart_shadow, hhmm, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
+    photo_face, prompt_legends, quick_caret_face, quick_description_face, quick_label_face,
+    quick_legend_faces, quick_pointer_face, quick_value_face, quick_warning_value_face,
+    rebuild_count_face, rebuild_title_face, repair_legends, set_clock_hint_face, slot_back,
+    slot_back_light, slot_front, slot_front_light, socket_face, sticker_face, title_face,
+    toast_face, wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice,
+    QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX,
+    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -383,6 +383,7 @@ impl Frontend {
         let lines = faces.shutdown.into_iter().map(&mut up).collect();
         let repair = faces.repair.into_iter().map(&mut up).collect();
         let reset = faces.reset.into_iter().map(&mut up).collect();
+        let delete = faces.delete.into_iter().map(&mut up).collect();
         let labels = faces
             .quick_labels
             .into_iter()
@@ -436,6 +437,7 @@ impl Frontend {
         app.set_shutdown_faces(lines);
         app.set_repair_faces(repair);
         app.set_reset_faces(reset);
+        app.set_delete_faces(delete);
         app.set_quick_menu_faces(QuickMenuFaces {
             labels,
             pointer,
@@ -798,6 +800,7 @@ struct UiFaces {
     toasts: Vec<CartFace>,
     repair: Vec<UndoFace>,
     reset: Vec<UndoFace>,
+    delete: Vec<UndoFace>,
 }
 
 impl UiFaces {
@@ -867,6 +870,15 @@ impl UiFaces {
                     menu_detail_face("slot restarts when it is done."),
                     not_now,
                     repair,
+                ]
+            },
+            delete: {
+                let [keep, delete] = delete_legends(footer_ink(false));
+                vec![
+                    menu_face("Delete this save state?"),
+                    menu_detail_face("It cannot be brought back."),
+                    keep,
+                    delete,
                 ]
             },
             reset: {

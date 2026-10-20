@@ -369,6 +369,8 @@ pub struct App {
     repair_prompt: bool,
     reset_prompt: Option<QuickRow>,
     reset_faces: Vec<(TexId, u32, u32)>,
+    delete_prompt: bool,
+    delete_faces: Vec<(TexId, u32, u32)>,
     act_at: Millis,
     root: Option<PathBuf>,
     state: SlotState,
@@ -548,6 +550,8 @@ impl App {
             repair_prompt: false,
             reset_prompt: None,
             reset_faces: Vec::new(),
+            delete_prompt: false,
+            delete_faces: Vec::new(),
             act_at: 0,
             root: None,
             state: SlotState::default(),
@@ -2328,6 +2332,17 @@ impl App {
             }
             return;
         }
+        if self.delete_prompt {
+            match action {
+                Action::GbaDown(Btn::X) => {
+                    self.delete_prompt = false;
+                    self.delete_selected();
+                }
+                Action::GbaDown(Btn::B) => self.delete_prompt = false,
+                _ => {}
+            }
+            return;
+        }
         if action == Action::RepairCard {
             self.repair_prompt = self.repair_offered();
             return;
@@ -2402,7 +2417,10 @@ impl App {
                 Action::GbaDown(Btn::A) => self.load_selected(),
                 Action::GbaDown(Btn::B) | Action::Polaroids => self.close_polaroids(),
                 Action::GbaDown(Btn::X) => self.undo(self.now()),
-                Action::GbaDown(Btn::Y) => self.delete_selected(),
+                Action::GbaDown(Btn::Y) => {
+                    self.delete_prompt =
+                        self.polaroids.as_ref().and_then(|p| p.selected()).is_some()
+                }
                 _ => {}
             },
             Phase::About if action == Action::GbaDown(Btn::B) || action == Action::QuickMenu => {
@@ -3669,6 +3687,9 @@ impl App {
         if let Some(row) = self.reset_prompt {
             return self.draw_prompt(&self.reset_prompt_faces(row), out);
         }
+        if self.delete_prompt {
+            return self.draw_prompt(&self.delete_faces, out);
+        }
         match &self.phase {
             Phase::SetClock {
                 picker, from_menu, ..
@@ -4124,6 +4145,14 @@ impl App {
 
     pub fn set_repair_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
         self.repair_faces = faces;
+    }
+
+    pub fn set_delete_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.delete_faces = faces;
+    }
+
+    pub fn delete_prompt(&self) -> bool {
+        self.delete_prompt
     }
 
     pub fn set_reset_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
@@ -5176,6 +5205,7 @@ impl App {
         };
         let cart = std::mem::take(cart);
         self.polaroids = None;
+        self.delete_prompt = false;
         self.phase = Phase::Playing { cart };
         if std::mem::take(&mut self.states_from_menu) {
             self.in_game_menu = Some(QuickRow::States);

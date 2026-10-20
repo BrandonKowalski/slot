@@ -197,6 +197,57 @@ fn the_brightness_rows_render_on_the_screen_page() {
 }
 
 #[test]
+fn deleting_a_state_asks_with_b_to_keep_and_x_to_delete() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::A);
+    run_for(&mut f, &mut input, 4.0);
+    for ev in [
+        RawEvent::Down(Btn::Select),
+        RawEvent::Down(Btn::R1),
+        RawEvent::Up(Btn::R1),
+        RawEvent::Up(Btn::Select),
+    ] {
+        input.0.push_back(vec![ev]);
+        f.advance(&mut input);
+    }
+    run_for(&mut f, &mut input, 0.5);
+    tap(&mut f, &mut input, Btn::Menu);
+    tap(&mut f, &mut input, Btn::Menu);
+    run_for(&mut f, &mut input, 0.5);
+    tap(&mut f, &mut input, Btn::Y);
+    assert!(f.app().delete_prompt(), "Y did not ask before deleting");
+    let px = composed(&mut f, &mut c, "delete-prompt");
+    let lit = |ys: std::ops::Range<usize>, xs: std::ops::Range<usize>| {
+        ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
+            .filter(|&(x, y)| bright(at(&px, x, y)) > 600)
+            .count()
+    };
+    assert!(
+        lit(180..300, 100..620) > 300,
+        "no question in the middle of the screen"
+    );
+    assert!(
+        lit(0..150, 0..OUT_W as usize) == 0,
+        "the game shows through the prompt"
+    );
+    assert!(lit(420..480, 0..240) > 50, "no Keep legend on the left");
+    assert!(
+        lit(420..480, 480..720) > 50,
+        "no Delete legend on the right"
+    );
+}
+
+#[test]
 fn the_controls_page_renders() {
     let Ok(surface) = HeadlessSurface::new() else {
         return;

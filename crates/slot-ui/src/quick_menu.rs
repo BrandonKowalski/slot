@@ -1017,6 +1017,14 @@ pub fn repair_legends(ink: [u8; 3]) -> [UndoFace; 2] {
     prompt_legends(ink, "Not now", "Repair")
 }
 
+pub fn delete_legends(ink: [u8; 3]) -> [UndoFace; 2] {
+    let hint = Some(ink);
+    [
+        with_hint(button_face(ButtonLegend::B), "Keep", hint, true),
+        with_hint(button_face(ButtonLegend::X), "Delete", hint, false),
+    ]
+}
+
 pub fn prompt_legends(ink: [u8; 3], no: &str, yes: &str) -> [UndoFace; 2] {
     let hint = Some(ink);
     [
