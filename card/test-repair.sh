@@ -96,10 +96,15 @@ repair
 [ "$(result)" = repaired ] || fail "a card that took two passes to fix did not read as repaired: $(result)"
 
 setup
-codes 1 1 1
+codes 1 1 1 0
+repair
+[ "$(result)" = repaired ] || fail "a FAT card that took a pass per layer of damage did not read as repaired: $(result)"
+
+setup
+codes 1 1 1 1 1 1
 repair
 [ "$(result)" = failed ] || fail "a card still damaged after repair did not read as failed: $(result)"
-[ "$(grep -c '^fsck.fat -a /dev/mmcblk0p7$' "$TMP/calls")" = 3 ] || fail "gave up before three passes"
+[ "$(grep -c '^fsck.fat -a /dev/mmcblk0p7$' "$TMP/calls")" = 6 ] || fail "gave up before six passes"
 called "splash --important -1 REPAIR FAILED: USE A COMPUTER" || fail "a failed repair did not say so"
 called "splash --important -1 REBOOTING" || fail "a failed repair did not say it was rebooting"
 
