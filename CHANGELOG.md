@@ -6,6 +6,7 @@
 - Load State on Insert, a new row on the Gameplay page, decides whether putting a cart in, or booting with one in the slot, loads its state. Auto Save on Eject is renamed Save State on Eject and only decides whether ejecting saves one.
 - Holding Up or Down to jump through the shelf a letter at a time no longer empties the shelf.
 - The BaseOS startup sound plays again. slot no longer takes the speaker while it boots, only once it has something to play. (#135)
+- Save states and rewind are smaller: slot no longer keeps the extra space mGBA sets aside before a game finds its save chip. Metroid Fusion's states drop from 528 KB to 430 KB. (#126)
 
 ## [1.8.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.0)
 
