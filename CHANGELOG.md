@@ -5,6 +5,7 @@
 - Game Boy games on an MBC2 cartridge, such as Kirby's Pinball Land, no longer freeze after the boot screen. mGBA crashed on the first read of their save RAM; slot now builds it with upstream's fix. (#137)
 - Load State on Insert, a new row on the Gameplay page, decides whether putting a cart in, or booting with one in the slot, loads its state. Auto Save on Eject is renamed Save State on Eject and only decides whether ejecting saves one.
 - Holding Up or Down to jump through the shelf a letter at a time no longer empties the shelf.
+- The BaseOS startup sound plays again. slot no longer takes the speaker while it boots, only once it has something to play. (#135)
 
 ## [1.8.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.0)
 

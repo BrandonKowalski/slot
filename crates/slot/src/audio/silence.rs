@@ -13,6 +13,13 @@ impl Silence {
         }
     }
 
+    pub fn quiet(after: Duration) -> Self {
+        Silence {
+            heard: after,
+            after,
+        }
+    }
+
     pub fn hear(&mut self, samples: &[i16], span: Duration) -> bool {
         match samples.iter().all(|&s| s == 0) {
             true => self.heard = self.heard.saturating_add(span),

@@ -309,6 +309,23 @@ fn silence_releases_the_device_only_after_three_quiet_seconds() {
 }
 
 #[test]
+fn a_quiet_start_holds_no_device_until_the_first_sound() {
+    let mut s = slot::audio::Silence::quiet(Duration::from_secs(3));
+    let period = Duration::from_millis(500);
+    let quiet = [0i16; 64];
+    for _ in 0..10 {
+        assert!(
+            !s.hear(&quiet, period),
+            "silence claimed the device at boot"
+        );
+    }
+    assert!(
+        s.hear(&[0, 0, 3, 0], period),
+        "the first sound did not claim the device"
+    );
+}
+
+#[test]
 fn a_released_device_drains_at_the_audio_clock_despite_late_wakeups() {
     let span = Duration::from_secs_f64(512.0 / OUTPUT_HZ as f64);
     let mut pace = slot::audio::Pacer::new(span);
