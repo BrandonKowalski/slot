@@ -1903,7 +1903,7 @@ impl App {
     }
 
     pub fn may_fast_forward(&self) -> bool {
-        !self.link_active()
+        self.state.ff_speed != 0 && !self.link_active()
     }
 
     pub fn end_link(&mut self) {

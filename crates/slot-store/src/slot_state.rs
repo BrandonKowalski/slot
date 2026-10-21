@@ -11,7 +11,7 @@ pub const VOLUME_MAX: u8 = 100;
 pub const UTC_OFFSET_MIN: i16 = -720;
 pub const UTC_OFFSET_MAX: i16 = 840;
 
-pub const FF_SPEEDS: [u8; 4] = [2, 3, 4, 6];
+pub const FF_SPEEDS: [u8; 5] = [0, 2, 3, 4, 6];
 
 pub const LID_OFF_MIN: [u8; 6] = [1, 3, 5, 10, 15, 30];
 

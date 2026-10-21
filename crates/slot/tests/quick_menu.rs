@@ -249,12 +249,14 @@ fn fast_forward_steps_through_its_speeds_wraps_at_both_ends_and_saves_each_one()
         (Btn::Left, 4),
         (Btn::Left, 3),
         (Btn::Left, 2),
+        (Btn::Left, 0),
         (Btn::Left, 6),
+        (Btn::Right, 0),
         (Btn::Right, 2),
         (Btn::Right, 3),
         (Btn::Right, 4),
         (Btn::Right, 6),
-        (Btn::Right, 2),
+        (Btn::Right, 0),
     ] {
         press(&mut a, btn);
         assert_eq!(a.ff_speed(), want, "{btn:?}");

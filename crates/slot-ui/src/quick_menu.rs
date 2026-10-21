@@ -745,6 +745,7 @@ impl QuickValue {
 
     pub fn speed(frames: u8) -> Option<QuickValue> {
         match frames {
+            0 => Some(QuickValue::Off),
             2 => Some(QuickValue::Speed2),
             3 => Some(QuickValue::Speed3),
             4 => Some(QuickValue::Speed4),
