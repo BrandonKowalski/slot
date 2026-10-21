@@ -74,3 +74,11 @@ I understand if my use of AI is a dealbreaker for you. Just know it's the least 
 what's here.
 
 Figured I should share the end result of all the wasted water. ✌🏻
+
+---
+
+# Spread Joy!
+
+I've spent a lot of time building slot.
+
+If you enjoy using it and feel inclined to pay it forward, go do something nice for someone! ❤️
