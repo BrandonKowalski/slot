@@ -295,6 +295,8 @@ impl Shelf {
         };
         self.index = target;
         self.ride += delta as f32;
+        let to = self.scroll_target();
+        self.scroll = to - (to - self.scroll).clamp(-1.0, 1.0);
     }
 
     pub fn hold_left(&mut self, now: Millis) {
