@@ -29,6 +29,7 @@ pub struct GamePass {
     effect: ScreenEffect,
     power: f32,
     fills: bool,
+    fit: Option<(u32, u32)>,
     /// Pixels kept for the carousel footer. The picture scales in the space above them.
     bottom: f32,
     src: [f32; 4],
@@ -89,6 +90,7 @@ impl GamePass {
             effect: ScreenEffect::Lcd3x,
             power: 1.0,
             fills: false,
+            fit: None,
             bottom: 0.0,
             src: WHOLE_TEXTURE,
         })
@@ -107,11 +109,23 @@ impl GamePass {
     }
 
     fn placed(&self) -> (f32, f32, f32, f32) {
+        if let Some(panel) = self.fit {
+            return fitted_rect(
+                panel,
+                (self.src[2] * SRC_W as f32, self.src[3] * SRC_H as f32),
+                if self.fills { 1.0 } else { self.power },
+                self.bottom,
+            );
+        }
         let foot = self.bottom;
         match self.fills {
             true => (0.0, 0.0, OUT_W as f32, OUT_H as f32 - foot),
             false => screen_rect_above(self.power, foot),
         }
+    }
+
+    pub fn set_fit(&mut self, panel: Option<(u32, u32)>) {
+        self.fit = panel;
     }
 
     pub fn set_fills_frame(&mut self, on: bool) {
@@ -175,14 +189,24 @@ impl GamePass {
 
     pub fn draw(&self, quad: &Quad) {
         let src = match self.effect {
-            ScreenEffect::Grid => whole_scale_source(self.src, self.fbo_scale),
+            ScreenEffect::Grid if self.fit.is_none() => {
+                whole_scale_source(self.src, self.fbo_scale)
+            }
             _ => self.src,
         };
         self.draw_source(self.game, quad, src);
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {
-        self.draw_source(tex, quad, WHOLE_TEXTURE);
+        self.draw_source(
+            tex,
+            quad,
+            if self.fit.is_some() {
+                self.src
+            } else {
+                WHOLE_TEXTURE
+            },
+        );
     }
 
     fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad, src: [f32; 4]) {
@@ -195,7 +219,7 @@ impl GamePass {
         // The footer covers the bottom of a full-frame picture. Keep the part that sat above
         // it, so opening the scale does not squash the picture into the shorter rect.
         let mut src = src;
-        if self.bottom > 0.0 {
+        if self.bottom > 0.0 && self.fit.is_none() {
             src[3] *= (OUT_H as f32 - self.bottom) / OUT_H as f32;
         }
         unsafe {
@@ -223,6 +247,25 @@ impl GamePass {
     }
 }
 
+fn fitted_rect(
+    panel: (u32, u32),
+    picture: (f32, f32),
+    power: f32,
+    footer: f32,
+) -> (f32, f32, f32, f32) {
+    let (pw, ph) = (panel.0.max(1) as f32, panel.1.max(1) as f32);
+    let view = (ph * (1.0 - footer.clamp(0.0, OUT_H as f32) / OUT_H as f32)).floor();
+    let scale = (pw / picture.0).min(view / picture.1);
+    let (w, h) = ((picture.0 * scale).round(), (picture.1 * scale).round());
+    let (x, y, sw, sh) = screen_rect_above(power, 0.0);
+    (
+        (((pw - w) / 2.0).floor() + x / OUT_W as f32 * w) * OUT_W as f32 / pw,
+        (((view - h) / 2.0).floor() + y / OUT_H as f32 * h) * OUT_H as f32 / ph,
+        w * sw / pw,
+        h * sh / ph,
+    )
+}
+
 fn whole_scale_source(src: [f32; 4], fbo: [f32; 2]) -> [f32; 4] {
     let (x, w) = whole_scale(src[0], src[2], SRC_W as f32, OUT_W as f32 * fbo[0]);
     let (y, h) = whole_scale(src[1], src[3], SRC_H as f32, OUT_H as f32 * fbo[1]);
@@ -246,6 +289,76 @@ impl Drop for GamePass {
             gl::DeleteTextures(1, &self.game);
             gl::DeleteTextures(1, &self.paper);
             gl::DeleteProgram(self.prog);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fit_power_curves_stay_centred_inside_the_fitted_picture() {
+        for panel in [(640, 480), (720, 720), (1280, 720), (320, 480)] {
+            for footer in [0.0, 58.0] {
+                let (x, y, w, h) = fitted_rect(panel, (160.0, 144.0), 1.0, footer);
+                for power in [0.0, 0.06, 0.12, 0.5, 1.0] {
+                    let (ax, ay, aw, ah) = fitted_rect(panel, (160.0, 144.0), power, footer);
+                    assert!((ax + aw / 2.0 - x - w / 2.0).abs() < 0.001);
+                    assert!((ay + ah / 2.0 - y - h / 2.0).abs() < 0.001);
+                    assert!((aw / w - crate::power::screen_width(power)).abs() < 0.0001);
+                    assert!((ah / h - crate::power::screen_scale(power)).abs() < 0.0001);
+                    assert!(ay + ah <= OUT_H as f32 - footer + 0.001);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fit_reserves_logical_footer_pixels_without_squashing_the_picture() {
+        for panel in [(640, 480), (720, 720), (1280, 720), (320, 480)] {
+            for picture in [(160.0, 144.0), (240.0, 160.0)] {
+                for footer in [0.0, 29.5, 58.0, OUT_H as f32, OUT_H as f32 + 1.0] {
+                    let (x, y, w, h) = fitted_rect(panel, picture, 1.0, footer);
+                    let pw = w * panel.0 as f32 / OUT_W as f32;
+                    let ph = h * panel.1 as f32 / OUT_H as f32;
+                    assert!(x >= 0.0 && y >= 0.0 && w >= 0.0 && h >= 0.0);
+                    assert!(y + h <= OUT_H as f32 - footer.min(OUT_H as f32) + 0.001);
+                    assert!((pw - ph * picture.0 / picture.1).abs() <= 1.0);
+                    if footer >= OUT_H as f32 {
+                        assert_eq!((w, h), (0.0, 0.0));
+                    }
+                }
+            }
+        }
+        // The footer consumes existing letterboxing before it shrinks a width-limited picture.
+        let full = fitted_rect((320, 480), (160.0, 144.0), 1.0, 0.0);
+        let above = fitted_rect((320, 480), (160.0, 144.0), 1.0, 58.0);
+        assert_eq!((full.2, full.3), (above.2, above.3));
+        assert!(above.1 < full.1);
+    }
+
+    #[test]
+    fn fit_maximizes_and_centres_the_full_picture() {
+        for (panel, expected) in [
+            ((640, 480), (53, 0, 533, 480)),
+            ((720, 480), (93, 0, 533, 480)),
+            ((720, 720), (0, 36, 720, 648)),
+            ((1280, 720), (240, 0, 800, 720)),
+            ((320, 480), (0, 96, 320, 288)),
+        ] {
+            let (x, y, w, h) = fitted_rect(panel, (160.0, 144.0), 1.0, 0.0);
+            let actual = (
+                (x * panel.0 as f32 / OUT_W as f32).round() as i32,
+                (y * panel.1 as f32 / OUT_H as f32).round() as i32,
+                (w * panel.0 as f32 / OUT_W as f32).round() as i32,
+                (h * panel.1 as f32 / OUT_H as f32).round() as i32,
+            );
+            assert_eq!(actual, expected, "{panel:?}");
+            assert!(actual.0 >= 0 && actual.1 >= 0);
+            assert!(actual.0 + actual.2 <= panel.0 as i32);
+            assert!(actual.1 + actual.3 <= panel.1 as i32);
+            assert!((actual.2 as f32 - actual.3 as f32 * 160.0 / 144.0).abs() <= 0.5);
         }
     }
 }

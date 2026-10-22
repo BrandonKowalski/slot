@@ -491,7 +491,7 @@ fn shift_down(draws: &mut [Draw], dy: f32) {
             | Draw::Tex { y, .. }
             | Draw::Part { y, .. }
             | Draw::Turned { y, .. } => *y += dy,
-            Draw::Game | Draw::Shot { .. } => {}
+            Draw::Game | Draw::Shot { .. } | Draw::Backdrop { .. } => {}
         }
     }
 }
@@ -1136,7 +1136,8 @@ impl App {
     }
 
     pub fn sp_frame(&self) -> bool {
-        self.resolved_bezel(self.playing_platform()) == BezelPick::Ags102
+        !(self.platform != Platform::Gba && self.video_mode == VideoMode::Fit)
+            && self.resolved_bezel(self.playing_platform()) == BezelPick::Ags102
     }
 
     pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
@@ -1144,7 +1145,7 @@ impl App {
     }
 
     pub fn shown_game_bezel(&self) -> Option<TexId> {
-        if self.video_mode == VideoMode::Stretch {
+        if self.platform != Platform::Gba && self.video_mode != VideoMode::Actual {
             return None;
         }
         self.game_bezel
@@ -1541,6 +1542,17 @@ impl App {
 
     pub fn set_video_mode(&mut self, mode: VideoMode) {
         self.video_mode = mode;
+    }
+
+    pub fn game_fits_panel(&self) -> bool {
+        self.platform != Platform::Gba
+            && self.video_mode == VideoMode::Fit
+            && !self.shutting_down()
+            && match self.phase {
+                Phase::Playing { .. } | Phase::Polaroids { .. } => true,
+                Phase::Inserting { .. } | Phase::Ejecting { .. } => self.game_visible(),
+                _ => false,
+            }
     }
 
     pub fn source_rect(&self) -> [f32; 4] {
@@ -2392,15 +2404,18 @@ impl App {
             },
             Phase::Inserting { .. } if action == Action::Eject => self.eject(),
             Phase::Playing { .. } => match action {
-                Action::GbaDown(Btn::L1)
-                    if self.slot_owns_the_shoulders() && !self.bound_to_game(Btn::L1) =>
+                Action::GbaDown(btn @ (Btn::L1 | Btn::R1))
+                    if self.slot_owns_the_shoulders() && !self.bound_to_game(btn) =>
                 {
-                    self.set_picture(VideoMode::Stretch)
-                }
-                Action::GbaDown(Btn::R1)
-                    if self.slot_owns_the_shoulders() && !self.bound_to_game(Btn::R1) =>
-                {
-                    self.set_picture(VideoMode::Actual)
+                    self.set_picture(match (self.video_mode, btn) {
+                        (VideoMode::Actual, Btn::R1) | (VideoMode::Fit, Btn::L1) => {
+                            VideoMode::Stretch
+                        }
+                        (VideoMode::Stretch, Btn::R1) | (VideoMode::Actual, Btn::L1) => {
+                            VideoMode::Fit
+                        }
+                        _ => VideoMode::Actual,
+                    })
                 }
                 Action::Eject => self.eject(),
                 Action::GameMenu => self.game_menu_shortcut(),
@@ -4390,22 +4405,19 @@ impl App {
     fn draw_game_menu(&self, menu: GameMenu, out: &mut Vec<Draw>) {
         let canvas = self.canvas();
         if let Some(tex) = self.link_shot {
-            out.push(Draw::Tex {
+            out.push(Draw::Backdrop {
+                tex,
+                dim: LINK_SCRIM[3],
+            });
+        } else {
+            out.push(Draw::Rect {
                 x: 0.0,
                 y: 0.0,
                 w: canvas.w,
-                h: OUT_H as f32,
-                tex,
-                alpha: 1.0,
+                h: canvas.h,
+                colour: LINK_SCRIM,
             });
         }
-        out.push(Draw::Rect {
-            x: 0.0,
-            y: 0.0,
-            w: canvas.w,
-            h: OUT_H as f32,
-            colour: LINK_SCRIM,
-        });
         if let Some(sprites) = &self.link_sprites {
             crate::link_screen::draw_link_art(
                 self.canvas(),
