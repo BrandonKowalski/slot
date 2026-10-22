@@ -236,3 +236,11 @@ fn mgba_states_repeat_and_load_with_trailing_padding() {
     c.run_frame(ButtonMask::default());
     assert_eq!(c.video_xrgb8888(), expected);
 }
+
+#[test]
+fn an_empty_state_is_refused_instead_of_crashing_mgba() {
+    let _g = lock();
+    let Some(mut c) = test_core() else { return };
+    c.load(&test_rom()).unwrap();
+    assert!(c.unserialize(&[]).is_err());
+}

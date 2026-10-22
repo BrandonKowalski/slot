@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.9.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.9.0)
+
+- mGBA no longer crashes on an empty resume state, which a card repair can leave behind. Booting with that cart in the slot crashed slot every time.
+
 ## [1.8.1](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.1)
 
 - Game Boy games on an MBC2 cartridge, such as Kirby's Pinball Land, no longer freeze after the boot screen. mGBA crashed on the first read of their save RAM; slot now builds it with upstream's fix. (#137)
