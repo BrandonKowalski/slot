@@ -5,6 +5,7 @@ fn fields() -> StickerFields<'static> {
         battery: Some(87),
         serial: "04738857",
         version: "0.1.0",
+        model: "RG SP",
     }
 }
 
@@ -99,4 +100,55 @@ fn the_version_rides_above_the_readme_line() {
     let lines = sticker_lines(&fields());
     let home = lines.iter().position(|l| l == "SEE README.").unwrap();
     assert_eq!(lines[home - 1], "VERSION 0.1.0");
+}
+
+fn wordmark_left_edge(model: &str) -> u32 {
+    let face = slot_ui::sticker_face(&StickerFields { model, ..fields() });
+    let lit = |x: u32, y: u32| {
+        let i = ((y * face.w + x) * 4) as usize;
+        face.rgba[i..i + 3].iter().all(|&c| c > 200)
+    };
+    (200..face.w)
+        .find(|&x| (136..164).any(|y| lit(x, y)))
+        .unwrap()
+}
+
+#[test]
+fn a_longer_model_name_reaches_further_left_from_the_same_right_edge() {
+    assert!(wordmark_left_edge("RG35XX SP") + 60 < wordmark_left_edge("RG SP"));
+}
+
+#[test]
+fn a_model_the_face_cannot_set_falls_back_to_rg_sp() {
+    let rg_sp = slot_ui::sticker_face(&fields()).rgba;
+    for model in ["", "RG#SP"] {
+        let face = slot_ui::sticker_face(&StickerFields { model, ..fields() });
+        assert!(face.rgba == rg_sp, "{model:?} did not draw RG SP");
+    }
+}
+
+#[test]
+fn the_model_is_set_in_capitals_whatever_baseos_wrote() {
+    let upper = slot_ui::sticker_face(&StickerFields {
+        model: "RG35XX SP",
+        ..fields()
+    });
+    let lower = slot_ui::sticker_face(&StickerFields {
+        model: "rg35xx sp",
+        ..fields()
+    });
+    assert!(upper.rgba == lower.rgba);
+}
+
+#[test]
+fn a_model_baseos_gives_two_names_shows_the_first() {
+    let both = slot_ui::sticker_face(&StickerFields {
+        model: "RG35XX Plus / RG35XX 2024",
+        ..fields()
+    });
+    let plus = slot_ui::sticker_face(&StickerFields {
+        model: "RG35XX Plus",
+        ..fields()
+    });
+    assert!(both.rgba == plus.rgba);
 }

@@ -13,10 +13,12 @@ fn render_sticker() {
     let Ok(out) = std::env::var("SCRATCH_PNG") else {
         return;
     };
+    let model = std::env::var("SCRATCH_MODEL").unwrap_or_default();
     let face = sticker_face(&StickerFields {
         battery: Some(87),
         serial: "04738857",
         version: "0.1.0",
+        model: &model,
     });
     let (w, h) = (STICKER_W as usize, STICKER_H as usize);
     write(&out, &face.rgba, w, h);

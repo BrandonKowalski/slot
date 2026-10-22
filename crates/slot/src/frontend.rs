@@ -1187,6 +1187,7 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
         battery,
         serial: &build.serial(),
         version: build.version,
+        model: &crate::baseos::var("BASEOS_MODEL").unwrap_or_default(),
     });
     let id = upload(compositor, &mut state.tex, face);
     app.set_sticker_face(id);
