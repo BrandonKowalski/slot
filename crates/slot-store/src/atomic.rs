@@ -22,6 +22,10 @@ pub(crate) fn sync_dir(path: &Path) {
     if let Some(dir) = path.parent() {
         if let Ok(d) = File::open(dir) {
             let _ = d.sync_all();
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::syncfs(std::os::fd::AsRawFd::as_raw_fd(&d));
+            }
         }
     }
 }

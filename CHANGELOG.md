@@ -3,6 +3,7 @@
 ## [1.9.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.9.0)
 
 - mGBA no longer crashes on an empty resume state, which a card repair can leave behind. Booting with that cart in the slot crashed slot every time.
+- Saves, states, settings and slot's log reach the card as soon as they are written, not up to 30 seconds later. That shrinks the window in which pressing reset or the battery dying can leave the card read-only. (#72, #144)
 
 ## [1.8.1](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.1)
 
