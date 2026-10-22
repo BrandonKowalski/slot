@@ -759,6 +759,7 @@ impl Frontend {
     pub fn stop(&mut self) {
         self.session.app_mut().flush_resume();
         self.session.app_mut().settle_saves();
+        self.session.app_mut().clear_loading_mark();
     }
 }
 

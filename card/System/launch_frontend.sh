@@ -5,6 +5,7 @@ RUN="${AGS_RUN:-/run}"
 LOGS="$SD/Logs"
 SESSION_MAX=65536
 export SLOT_ROOT="$SD"
+export SLOT_RUN="$RUN"
 
 mkdir -p "$LOGS" 2>/dev/null
 for f in slot.log slot.log.1 slot-session.log slot-session.log.1 slot-card.log ags-shutdown-trace.log input-trace.log; do

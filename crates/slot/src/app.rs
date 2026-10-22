@@ -26,6 +26,7 @@ use crate::link_kind::{link_carried, link_dual, link_kind, serial_option, LinkKi
 use crate::link_radio::{radio_jobs, LinkRole, RadioJob, RadioJobs};
 use crate::link_screen::LinkSprites;
 use crate::link_start::{link_port, LinkFail, LinkProgress, LinkStarter, LinkStep};
+use crate::loading_mark::LoadingMark;
 use crate::persist::{self, Snapshot};
 use crate::video_mode::{self, VideoMode};
 use slot_store::{
@@ -65,6 +66,7 @@ const VOLUME_STEP: u8 = 5;
 
 const AUTOSAVE_MS: Millis = 60_000;
 const RESUME_MS: Millis = 300_000;
+const SETTLED_MS: Millis = 10_000;
 const CARD_CHECK_MS: Millis = 2_000;
 
 const BATTERY_CRITICAL: u8 = 5;
@@ -441,6 +443,9 @@ pub struct App {
     woke_on_press: bool,
     autosave_at: Millis,
     resume_at: Millis,
+    loading: Option<LoadingMark>,
+    marked: bool,
+    playing_since: Option<Millis>,
     pending_save: Option<std::thread::JoinHandle<()>>,
     card_writes: Arc<crate::card_log::CardWrites>,
     resume_unread: bool,
@@ -622,6 +627,9 @@ impl App {
             woke_on_press: false,
             autosave_at: AUTOSAVE_MS,
             resume_at: RESUME_MS,
+            loading: None,
+            marked: false,
+            playing_since: None,
             pending_save: None,
             card_writes,
             resume_unread: false,
@@ -638,12 +646,17 @@ impl App {
     }
 
     pub fn boot(root: &Path) -> Self {
+        Self::boot_marked(root, LoadingMark::from_env())
+    }
+
+    pub fn boot_marked(root: &Path, loading: Option<LoadingMark>) -> Self {
         crate::root::ensure(root);
         crate::boot_time::mark("root");
         let carts = scan(root).unwrap_or_default();
         crate::boot_time::mark("scan");
         let mut app = App::new(carts);
         app.root = Some(root.to_path_buf());
+        app.loading = loading;
         app.state = read_slot_state(root);
         app.carousel = read_carousel(root);
         app.shortcuts = read_shortcuts(root);
@@ -665,6 +678,9 @@ impl App {
     }
 
     fn start(&mut self) {
+        if let Some(stem) = self.loading.as_ref().and_then(LoadingMark::left) {
+            return self.start_after_a_crash(&stem);
+        }
         let seated = if self.single_cart() {
             Some((self.shelf_at, 0))
         } else {
@@ -696,6 +712,57 @@ impl App {
                 self.name_pending = true;
             }
         }
+    }
+
+    fn start_after_a_crash(&mut self, stem: &str) {
+        eprintln!("slot: {stem} took slot down while it was loading, starting on the shelf");
+        if let Some(mark) = &self.loading {
+            mark.clear();
+        }
+        self.phase = Phase::Shelf;
+        let platform = self
+            .state
+            .cart_platform
+            .or_else(|| self.carts().find(|c| c.stem == stem).map(|c| c.platform));
+        self.state.cart = None;
+        self.state.cart_platform = None;
+        self.name_pending = true;
+        self.persist_soon();
+        let (Some(root), Some(platform)) = (&self.root, platform) else {
+            return;
+        };
+        let core = slot_store::core_for_platform(root, stem, platform);
+        let ring = StateRing::new(root, platform, core, stem);
+        match ring.retire_resume(&format_stamp(self.wall_secs())) {
+            Ok(Some(to)) => eprintln!("slot: resume: moved {stem}'s state to {}", to.display()),
+            Ok(None) => {}
+            Err(e) => eprintln!("slot: resume: could not move {stem}'s state aside: {e}"),
+        }
+    }
+
+    fn settle_loading_mark(&mut self) {
+        if !self.marked {
+            return;
+        }
+        let settled = match self.phase {
+            Phase::Playing { .. } => {
+                let since = *self.playing_since.get_or_insert(self.now());
+                self.now().saturating_sub(since) >= SETTLED_MS
+            }
+            Phase::Shelf => true,
+            _ => false,
+        };
+        if settled {
+            self.clear_loading_mark();
+        }
+    }
+
+    pub fn clear_loading_mark(&mut self) {
+        if let Some(mark) = &self.loading {
+            mark.clear();
+        }
+        self.marked = false;
+        self.playing_since = None;
     }
 
     fn shelf(&self) -> &Shelf {
@@ -3372,6 +3439,7 @@ impl App {
         if self.doze_expired() {
             self.on_doze_timeout();
         }
+        self.settle_loading_mark();
         if self.now() >= self.autosave_at.min(self.resume_at) {
             self.autosave();
         }
@@ -4544,6 +4612,11 @@ impl App {
         self.play_held = None;
         self.refusal = None;
         self.refused_from = None;
+        if let Some(mark) = &self.loading {
+            mark.set(&cart);
+            self.marked = true;
+            self.playing_since = None;
+        }
         self.phase = Phase::Inserting {
             cart,
             t: 0.0,
