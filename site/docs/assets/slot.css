@@ -520,11 +520,13 @@ kbd{
 .md-typeset .hero .btn{text-decoration:none}
 .md-typeset .hero .btn:not(.ghost){color:var(--opening)}
 .md-typeset .tagline{color:var(--ink)}
-.hero{min-height:calc(100dvh - var(--mast-h) - 120px)}
+.hero{min-height:calc(100dvh - var(--mast-h) - 152px)}
+@media (max-width:520px){
+  .hero{min-height:calc(100dvh - var(--mast-h) - 164px)}
+}
 .md-typeset .guide-steps h3{margin:0 0 10px;font-size:clamp(21px,2.4vw,27px);letter-spacing:-.01em;color:var(--ink)}
 .md-typeset .guide-steps p{margin:0;line-height:1.6;font-size:18px;color:var(--ink)}
 .md-typeset .guide-steps p + p{margin-top:14px}
-.md-footer-meta{background:var(--page);border-top:1px solid var(--rule)}
 .md-nav__link--active,.md-nav__link:hover{color:var(--ink)}
 .md-typeset .credits h2{
   font-size:16px;
@@ -547,9 +549,7 @@ kbd{
 .md-grid{max-width:1080px}
 .md-header__inner.md-grid{max-width:none}
 .md-main__inner:has(> .md-sidebar--secondary:not([hidden])){max-width:960px}
-body:has(.md-sidebar--secondary:not([hidden])) .md-footer .md-grid{max-width:960px}
 .md-main__inner:has(> .md-sidebar--primary:not([hidden])){max-width:1280px}
-body:has(.md-sidebar--primary:not([hidden])) .md-footer .md-grid{max-width:1280px}
 .md-main__inner:has(> .md-sidebar--primary[hidden]):has(> .md-sidebar--secondary[hidden]):not(:has(.hero, .guide)) > .md-content{max-width:760px;margin-inline:auto}
 .md-typeset details.way{
   margin:0 0 16px;
@@ -595,9 +595,77 @@ body:has(.md-sidebar--primary:not([hidden])) .md-footer .md-grid{max-width:1280p
 .md-typeset details.way > summary:hover::after{border-color:var(--ink)}
 .md-typeset details.way > summary:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .md-typeset details.way[open] > summary{border-bottom:1px solid var(--rule);border-radius:12px 12px 0 0}
-body:has(.md-sidebar--primary[hidden]):has(.md-sidebar--secondary[hidden]):not(:has(.hero, .guide)) .md-footer .md-grid{max-width:760px}
 .md-typeset details.way > :not(summary){margin-left:22px;margin-right:22px}
 .md-typeset details.way > summary + *{margin-top:22px}
 .md-typeset details.way > :last-child{margin-bottom:24px}
 .md-typeset details.way h3{margin-top:28px}
 .md-typeset details.way > summary + h3{margin-top:22px}
+.md-footer{background:var(--page);color:var(--muted)}
+.md-footer-meta{background:var(--recess);border-top:1px solid var(--rule)}
+.md-footer a{color:var(--muted);text-decoration:none;transition:color .15s}
+.md-footer a:hover,.md-footer a:focus-visible{color:var(--ink)}
+.foot-pager{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:40px 24px 48px}
+.foot-pager__link{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:16px 20px;
+  border:1px solid var(--rule);
+  border-radius:12px;
+  background:var(--housing);
+  transition:border-color .15s,color .15s;
+}
+.md-footer .foot-pager__link:hover{border-color:var(--edge)}
+.foot-pager__link--next{grid-column:2;text-align:right}
+.foot-pager__dir{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.foot-pager__title{font-size:18px;font-weight:700;color:var(--ink)}
+.foot{
+  display:grid;
+  grid-template-columns:minmax(0,1.3fr) minmax(0,2fr);
+  gap:48px;
+  padding:56px 24px 40px;
+}
+.md-footer .foot-mark{
+  display:inline-block;
+  font-size:28px;
+  font-weight:700;
+  letter-spacing:-.045em;
+  color:var(--ink);
+}
+.foot-brand p{margin:10px 0 18px;max-width:30ch;font-size:15px;line-height:1.55}
+.foot-gh{display:inline-flex;align-items:center;gap:8px;font-size:14px}
+.foot-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px}
+.foot-col h2{
+  margin:6px 0 14px;
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--ink);
+}
+.foot-col ul{margin:0;padding:0;list-style:none}
+.foot-col li{margin:0 0 10px;font-size:15px}
+.foot-base{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:8px 24px;
+  padding:20px 24px 28px;
+  border-top:1px solid var(--rule);
+  font-size:13px;
+}
+.foot-base a{text-decoration:underline;text-underline-offset:2px}
+@media (max-width:880px){
+  .foot{grid-template-columns:1fr;gap:36px;padding:44px 16px 32px}
+  .foot-pager{padding:32px 16px 40px;gap:12px}
+  .foot-base{padding:18px 16px 24px}
+}
+@media (max-width:520px){
+  .foot-cols{grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 16px}
+  .foot-pager__link{padding:12px 14px}
+  .foot-pager__title{font-size:16px}
+}
+@media (min-width:76.25em){
+  .foot-pager{display:none}
+}
+.md-footer.foot-min{background:var(--page)}

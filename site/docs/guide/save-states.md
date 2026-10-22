@@ -54,4 +54,4 @@ Two rows in Settings → Gameplay control it:
 
 States are tied to the emulator that made them. Switch a GBA game from mGBA to gpSP and the switcher starts empty. Switch back and they're all still there.
 
-States live in `States/`. See [Your SD Card](sd-card.md).
+States live in `States/`. See [Your SD Card](storage.md).

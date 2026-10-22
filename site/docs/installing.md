@@ -6,8 +6,8 @@ hide:
 
 # Installing slot.
 
-<details class="way" id="single-sd-card" open markdown>
-<summary>Single SD Card</summary>
+<details class="way" id="one-sd-card" open markdown>
+<summary>One SD Card</summary>
 
 <div class="install-steps" markdown>
 
@@ -56,8 +56,8 @@ hide:
 
 </details>
 
-<details class="way" id="dual-sd-cards" markdown>
-<summary>Dual SD Cards</summary>
+<details class="way" id="two-sd-cards" markdown>
+<summary>Two SD Cards</summary>
 
 <div class="install-steps" markdown>
 

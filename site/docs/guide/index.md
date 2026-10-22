@@ -14,7 +14,7 @@ Go take the [Tour](../tour.md) which will get you going in a jiffy!
 - [Controls](controls.md): remapping buttons, shortcuts and volume.
 - [Linking Up](linking.md): playing with a friend on a second device.
 - [Lid, Sleep and Power](power.md): what happens when you close it.
+- [Customization](customizing.md): labels, cart shells, wallpapers, bezels, boot logos and BIOS files.
 - [Settings Reference](settings.md): everything should be straight forward but just in case.
-- [Your SD Card](sd-card.md): mise en place for your retro doo-dad.
-- [Making It Yours](customizing.md): labels, cart shells, wallpapers, bezels, boot logos and BIOS files.
+- [Storage Reference](storage.md): mise en place for your retro doo-dad.
 - [When Things Go Wrong](troubleshooting.md): the red alarm, card repair and sending me logs.

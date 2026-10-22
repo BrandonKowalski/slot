@@ -1,4 +1,4 @@
-# Playing a Game
+# Playing Games
 
 ## Inserting a cart
 

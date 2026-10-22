@@ -67,11 +67,11 @@
 
   var MOVED = {
     install: "installing/", "install-single": "installing/",
-    "install-dual": "installing/#dual-sd-cards", "install-update": "updating/",
+    "install-dual": "installing/#two-sd-cards", "install-update": "updating/",
     guide: "tour/", buttons: "guide/controls/#defaults", controls: "guide/controls/#everywhere",
     "controls-carousel": "guide/controls/#carousel", "controls-in-game": "guide/controls/#in-game",
     "controls-switcher": "guide/controls/#save-state-switcher",
-    questions: "questions/", faq: "questions/", "faq-games": "guide/sd-card/",
+    questions: "questions/", faq: "questions/", "faq-games": "guide/storage/",
     "faq-shelf": "guide/customizing/", "faq-linking": "guide/linking/",
     "faq-requests": "questions/",
     credits: "credits/", disclosure: "ai/"

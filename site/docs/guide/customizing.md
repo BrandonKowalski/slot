@@ -1,14 +1,8 @@
-# Making It Yours
-
-Everything here is optional. slot looks fine out of the box. But it's your shelf.
-
-Most of this is read when slot boots, so restart from Settings → About after adding things.
+# Customization
 
 ## Cart labels
 
-Drop a `.png` into the `Labels/` folder for that system, named after the game. `Labels/GBA/Metroid Fusion.png` goes with `Games/GBA/Metroid Fusion.gba`. Capitals don't matter.
-
-Labels are scaled to fill the cart and trimmed evenly from the edges, so match the shape. Bigger is fine.
+Drop a `.png` into the `Labels/` folder for that system, named after the game. `Labels/GBA/Metroid Fusion.png` goes with `Games/GBA/Metroid Fusion.gba`.
 
 | Cart | Shape | For example |
 | --- | --- | --- |
