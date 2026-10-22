@@ -47,9 +47,9 @@ fn a_refused_autosave_logs_the_error_it_got() {
     let log = off_card.path().join(CARD_LOG_NAME);
     let (mut a, _) = app_playing_with_card_log(d.path(), "Emerald", Some(log.clone()));
     lock_the_card(d.path());
-    a.tick_ms(60_000);
+    a.tick_ms(300_000);
     a.settle_saves();
-    a.tick_ms(60_010);
+    a.tick_ms(300_010);
     assert!(a.card_alarm());
     let text = std::fs::read_to_string(&log).unwrap();
     assert!(text.contains("alarm on read-only false"), "{text}");
@@ -89,14 +89,14 @@ fn a_settings_write_that_lands_does_not_hide_a_save_that_failed() {
     let log = off_card.path().join(CARD_LOG_NAME);
     let (mut a, _) = app_playing_with_card_log(d.path(), "Emerald", Some(log));
     lock_the_card(d.path());
-    a.tick_ms(60_000);
+    a.tick_ms(300_000);
     a.settle_saves();
-    a.tick_ms(60_010);
+    a.tick_ms(300_010);
     assert!(a.card_alarm());
     a.apply(slot_input::Action::BrightnessDown);
-    a.tick_ms(70_000);
+    a.tick_ms(310_000);
     a.flush_state();
-    a.tick_ms(72_100);
+    a.tick_ms(312_100);
     assert!(
         a.card_alarm(),
         "slot.state writing fine cleared the alarm for a save that still is not"

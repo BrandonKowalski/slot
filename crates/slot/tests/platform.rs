@@ -28,7 +28,7 @@ fn seat_and_autosave(root: &Path) {
         std::thread::sleep(Duration::from_millis(1));
     }
 
-    s.app_mut().tick_ms(60_000);
+    s.app_mut().tick_ms(300_000);
     s.app_mut().settle_saves();
 }
 

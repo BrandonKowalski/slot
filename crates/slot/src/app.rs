@@ -64,6 +64,7 @@ const BLANK_DIM: f32 = 0.1;
 const VOLUME_STEP: u8 = 5;
 
 const AUTOSAVE_MS: Millis = 60_000;
+const RESUME_MS: Millis = 300_000;
 const CARD_CHECK_MS: Millis = 2_000;
 
 const BATTERY_CRITICAL: u8 = 5;
@@ -439,6 +440,7 @@ pub struct App {
     dozed_at: Millis,
     woke_on_press: bool,
     autosave_at: Millis,
+    resume_at: Millis,
     pending_save: Option<std::thread::JoinHandle<()>>,
     card_writes: Arc<crate::card_log::CardWrites>,
     resume_unread: bool,
@@ -619,6 +621,7 @@ impl App {
             dozed_at: 0,
             woke_on_press: false,
             autosave_at: AUTOSAVE_MS,
+            resume_at: RESUME_MS,
             pending_save: None,
             card_writes,
             resume_unread: false,
@@ -3369,7 +3372,7 @@ impl App {
         if self.doze_expired() {
             self.on_doze_timeout();
         }
-        if self.now() >= self.autosave_at {
+        if self.now() >= self.autosave_at.min(self.resume_at) {
             self.autosave();
         }
         if self.now() >= self.card_check_at {
@@ -5104,15 +5107,27 @@ impl App {
     fn autosave(&mut self) {
         self.autosave_at = self.now() + AUTOSAVE_MS;
         self.settle_saves();
+        let resume = self.now() >= self.resume_at;
+        if resume {
+            self.resume_at = self.now() + RESUME_MS;
+        }
         let (Some(root), Some(snapshot), Some(cart)) = (&self.root, &self.snapshot, self.seated())
         else {
             return;
         };
-        let Some(state) = snapshot.state() else {
-            eprintln!("slot: autosave: the core gave up no state");
-            return;
+        let (state, sav, what) = if resume {
+            let Some(state) = snapshot.state() else {
+                eprintln!("slot: autosave: the core gave up no state");
+                return;
+            };
+            let (state, sav) = trusted_write(snapshot.as_ref(), state, "autosave");
+            (state, sav, "autosave")
+        } else {
+            match trusted_sav(snapshot.as_ref(), "autosave") {
+                Some(sav) => (None, Some(sav), "in-game save"),
+                None => return,
+            }
         };
-        let (state, sav) = trusted_write(snapshot.as_ref(), state, "autosave");
         let (root, platform, core, cart) =
             (root.clone(), self.platform, self.core, cart.to_owned());
         let failing = self.card_writes.clone();
@@ -5126,9 +5141,9 @@ impl App {
                 sav.as_deref(),
             );
             if let Err(e) = &written {
-                eprintln!("slot: autosave: {e}");
+                eprintln!("slot: {what}: {e}");
             }
-            failing.wrote("autosave", &written);
+            failing.wrote(what, &written);
         };
         match std::thread::Builder::new()
             .name("slot-autosave".into())
@@ -5142,6 +5157,7 @@ impl App {
     pub fn flush_resume(&mut self) {
         self.settle_saves();
         self.autosave_at = self.now() + AUTOSAVE_MS;
+        self.resume_at = self.now() + RESUME_MS;
         let (Some(root), Some(snapshot), Some(cart)) = (&self.root, &self.snapshot, self.seated())
         else {
             return;
@@ -5454,18 +5470,20 @@ fn trusted_write(
         );
         None
     };
+    (state, trusted_sav(snapshot, verb))
+}
+
+fn trusted_sav(snapshot: &dyn Snapshot, verb: &str) -> Option<Vec<u8>> {
     let sav = snapshot.save_ram();
-    let sav = if snapshot.save_ram_trusted() {
-        sav
-    } else {
-        if sav.is_some() {
-            eprintln!(
-                "slot: {verb}: the core refused the save ram it was given, not overwriting the saved one"
-            );
-        }
-        None
-    };
-    (state, sav)
+    if snapshot.save_ram_trusted() {
+        return sav;
+    }
+    if sav.is_some() {
+        eprintln!(
+            "slot: {verb}: the core refused the save ram it was given, not overwriting the saved one"
+        );
+    }
+    None
 }
 
 fn up(level: u8, step: u8, max: u8) -> u8 {

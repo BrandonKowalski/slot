@@ -111,7 +111,7 @@ fn counter_after(root: &Path, hold: bool) -> u64 {
         s.update(1.0 / 60.0);
         std::thread::sleep(Duration::from_millis(1));
     }
-    s.app_mut().tick_ms(60_000);
+    s.app_mut().tick_ms(300_000);
     s.app_mut().settle_saves();
     let state = persist::read_resume(root, Platform::Gba, Core::Mgba, "Emerald")
         .unwrap()
