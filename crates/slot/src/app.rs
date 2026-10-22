@@ -4673,11 +4673,13 @@ impl App {
         let (Some(root), Some(snapshot)) = (&self.root, &self.snapshot) else {
             return;
         };
-        let Some(state) = snapshot.state() else {
-            eprintln!("slot: eject: the core gave up no state");
-            return;
+        let (state, sav) = match snapshot.state() {
+            Some(state) => trusted_write(snapshot.as_ref(), state, "eject"),
+            None => {
+                eprintln!("slot: eject: the core gave up no state");
+                (None, None)
+            }
         };
-        let (state, sav) = trusted_write(snapshot.as_ref(), state, "eject");
         let state = state.filter(|_| self.state.eject_save);
         self.state_writer.flush();
         match persist::eject(

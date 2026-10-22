@@ -6,6 +6,7 @@
 - Saves, states, settings and slot's log reach the card as soon as they are written, not up to 30 seconds later. That shrinks the window in which pressing reset or the battery dying can leave the card read-only. (#72, #144)
 - A game's own save is written to the card every minute while it plays. The resume state is written every 5 minutes instead of every minute.
 - If a game takes slot down while it loads, slot starts on the shelf next time instead of loading it again, and sets that game's resume state aside.
+- A core that stops answering no longer freezes slot. Saving waits at most 2 seconds for it, and ejecting at most 10 before slot restarts.
 
 ## [1.8.1](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.1)
 
