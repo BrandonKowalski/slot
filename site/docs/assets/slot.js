@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  fetch("device.svg")
+  fetch(new URL("device.svg", document.currentScript.src))
     .then(function(r){ return r.text(); })
     .then(function(txt){
       var holder = document.createElement("div");
@@ -32,7 +32,7 @@
 (function(){
   "use strict";
 
-
+  var MEDIA = new URL("../media/", document.currentScript.src).href;
 
   var SHELLS = [
     { name:"silver",     light:"#e2e5e9", base:"#b8bcc2", shade:"#7e838b", btn:"#c2c6cc", btnHi:"#e9ecf0", etch:"rgba(0,0,0,.46)" },
@@ -65,6 +65,33 @@
   }
 
 
+  var MOVED = {
+    install: "installing/", "install-single": "installing/",
+    "install-dual": "installing/#dual-sd-cards", "install-update": "updating/",
+    guide: "tour/", buttons: "guide/controls/#defaults", controls: "guide/controls/#everywhere",
+    "controls-carousel": "guide/controls/#carousel", "controls-in-game": "guide/controls/#in-game",
+    "controls-switcher": "guide/controls/#save-state-switcher",
+    questions: "questions/", faq: "questions/", "faq-games": "guide/sd-card/",
+    "faq-shelf": "guide/customizing/", "faq-linking": "guide/linking/",
+    "faq-requests": "questions/",
+    credits: "credits/", disclosure: "ai/"
+  };
+  ["browse", "favorites", "core-picker", "insert", "eject", "save-states", "switcher", "fast-forward",
+   "expand", "shaders", "palettes", "link", "settings", "brightness", "lid-detection"].forEach(function(id){
+    MOVED[id] = "tour/#" + id;
+  });
+  var moved = document.querySelector(".hero") && MOVED[location.hash.slice(1)];
+  if (moved) { location.replace(new URL("../" + moved, document.currentScript.src).href); return; }
+
+  function openWay(){
+    var way = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (!way) return;
+    for (var d = way.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
+    way.scrollIntoView();
+  }
+  window.addEventListener("hashchange", openWay);
+  openWay();
+
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var heroVid = document.querySelector(".hero-screen");
@@ -77,11 +104,33 @@
         var p = heroVid.play();
         if (p && p.catch) p.catch(function(){});
       }, 1900);
-      heroVid.src = "media/main.mp4";
+      heroVid.src = MEDIA + "main.mp4";
       heroVid.load();
     }
   }
 
+
+  var source = document.querySelector(".guide-steps");
+  if (source) {
+    var heads = Array.prototype.slice.call(source.querySelectorAll("h3[id]"));
+    heads.forEach(function(h){
+      var step = document.createElement("div");
+      step.className = "step";
+      step.id = h.id;
+      h.removeAttribute("id");
+      ["data-clip", "data-still", "data-pair", "data-lid"].forEach(function(a){
+        if (h.hasAttribute(a)) { step.setAttribute(a, h.getAttribute(a)); h.removeAttribute(a); }
+      });
+      var link = h.querySelector(".headerlink");
+      if (link) h.removeChild(link);
+      h.parentNode.insertBefore(step, h);
+      for (var node = h; node && !(node.tagName === "H3" && node !== h);) {
+        var next = node.nextSibling;
+        step.appendChild(node);
+        node = next;
+      }
+    });
+  }
 
   var vid   = document.querySelector(".guide-screen");
   var gdev  = document.querySelector(".guide-stage .device");
@@ -158,10 +207,10 @@
     pairOn = !!clip && !reduced;
     vid.loop = !pairOn;
     if (!clip) { pvid.pause(); pvid.removeAttribute("src"); pvid.playbackRate = 1; return; }
-    pvid.poster = "media/" + clip.replace(/\.mp4$/, ".webp");
+    pvid.poster = MEDIA + clip.replace(/\.mp4$/, ".webp");
     if (reduced) { pvid.removeAttribute("src"); return; }
-    if (pvid.getAttribute("src") !== "media/" + clip) {
-      pvid.src = "media/" + clip;
+    if (pvid.getAttribute("src") !== MEDIA + clip) {
+      pvid.src = MEDIA + clip;
       pvid.load();
     }
   }
@@ -218,19 +267,19 @@
     if (only) {
       vid.removeAttribute("src");
       vid.load();
-      vid.poster = "media/" + only;
+      vid.poster = MEDIA + only;
       vid.style.opacity = "1";
       return;
     }
     var clip = step.getAttribute("data-clip");
     if (!clip) { vid.style.opacity = "0"; vid.removeAttribute("src"); return; }
-    var still = "media/" + clip.replace(/\.mp4$/, ".webp");
+    var still = MEDIA + clip.replace(/\.mp4$/, ".webp");
     if (reduced) {
       if (vid.poster !== still) { vid.removeAttribute("src"); vid.poster = still; }
       vid.style.opacity = "1";
       return;
     }
-    var path = "media/" + clip;
+    var path = MEDIA + clip;
     if (vid.getAttribute("src") === path) {
       vid.style.opacity = "1";
       nudgePlayback();
@@ -261,7 +310,7 @@
   if (prevBtn) prevBtn.addEventListener("click", function(){ stepBy(-1); });
   if (nextBtn) nextBtn.addEventListener("click", function(){ stepBy(1); });
 
-  var guidePanel = document.getElementById("guide");
+  var guidePanel = document.querySelector(".guide");
   if (guidePanel) guidePanel.addEventListener("keydown", function(e){
     if (e.target.closest("[role=tablist]")) return;
     if (e.key === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
@@ -269,133 +318,18 @@
   });
 
 
-  function wire(list){
-    var tabs = Array.prototype.slice.call(list.querySelectorAll("[role=tab]"));
-    var group = {
-      tabs: tabs,
-      panels: tabs.map(function(t){ return document.getElementById(t.getAttribute("aria-controls")); }),
-      select: function(tab, focus){
-        var i = tabs.indexOf(tab);
-        if (i < 0) return;
-        for (var k = 0; k < tabs.length; k++) {
-          var on = k === i;
-          tabs[k].setAttribute("aria-selected", on ? "true" : "false");
-          tabs[k].tabIndex = on ? 0 : -1;
-          if (group.panels[k]) group.panels[k].hidden = !on;
-        }
-        if (hero) hero.hidden = true;
-        if (tabs[i].scrollIntoView && list.scrollWidth > list.clientWidth + 1) {
-          try { tabs[i].scrollIntoView({ inline: "center", block: "nearest" }); } catch (e) {}
-        }
-        if (focus) tabs[i].focus();
-      }
-    };
-    for (var i = 0; i < tabs.length; i++) {
-      (function(tab){
-        tab.addEventListener("click", function(){
-          group.select(tab, false);
-          setHash(tab.getAttribute("aria-controls"));
-        });
-      })(tabs[i]);
-    }
-    list.addEventListener("keydown", function(e){
-      var at = tabs.indexOf(document.activeElement);
-      if (at < 0) return;
-      var to = -1;
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") to = (at + 1) % tabs.length;
-      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") to = (at - 1 + tabs.length) % tabs.length;
-      else if (e.key === "Home") to = 0;
-      else if (e.key === "End") to = tabs.length - 1;
-      if (to < 0) return;
-      e.preventDefault();
-      group.select(tabs[to], true);
-      setHash(tabs[to].getAttribute("aria-controls"));
-    });
-    return group;
-  }
-
-  var hero = document.getElementById("hero");
-  var groups = Array.prototype.slice.call(document.querySelectorAll("[role=tablist]")).map(wire);
-
-
-  var menuBtn = document.getElementById("menu-btn");
-  var tabsNav = document.getElementById("section-tabs");
-  function setMenu(open){
-    if (!menuBtn || !tabsNav) return;
-    tabsNav.classList.toggle("is-open", open);
-    menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
-  }
-  if (menuBtn && tabsNav) {
-    menuBtn.addEventListener("click", function(e){
-      e.stopPropagation();
-      setMenu(!tabsNav.classList.contains("is-open"));
-    });
-    tabsNav.addEventListener("click", function(){ setMenu(false); });
-    document.addEventListener("click", function(e){
-      if (e.target !== menuBtn && !menuBtn.contains(e.target) && !tabsNav.contains(e.target)) {
-        setMenu(false);
-      }
-    });
-    document.addEventListener("keydown", function(e){
-      if (e.key !== "Escape" || !tabsNav.classList.contains("is-open")) return;
-      setMenu(false);
-      menuBtn.focus();
-    });
-  }
-
-  function showHero(){
-    var grp = groups[0];
-    if (!grp) return;
-    for (var k = 0; k < grp.tabs.length; k++) {
-      grp.tabs[k].setAttribute("aria-selected", "false");
-      grp.tabs[k].tabIndex = k === 0 ? 0 : -1;
-    }
-    for (var q = 0; q < grp.panels.length; q++) {
-      if (grp.panels[q]) grp.panels[q].hidden = true;
-    }
-    if (hero) hero.hidden = false;
-  }
-
-  var mark = document.querySelector(".mast-mark");
-  if (mark) mark.addEventListener("click", function(e){
-    e.preventDefault();
-    showHero();
-    setHash("hero");
-  });
-
-
-  var routing = false;
   function setHash(id){
-    if (!id) return;
-    routing = true;
-    if (history.replaceState) history.replaceState(null, "", "#" + id);
-    else location.hash = id;
-    routing = false;
+    if (id && history.replaceState) history.replaceState(null, "", "#" + id);
   }
 
-  function reveal(id){
-    var el = id && document.getElementById(id);
-    if (!el) return false;
-    if (el === hero) { showHero(); return true; }
-    var chain = [];
-    for (var node = el; node && node !== document.body; node = node.parentNode) {
-      for (var g = 0; g < groups.length; g++) {
-        var at = groups[g].panels.indexOf(node);
-        if (at >= 0) chain.unshift({ group: groups[g], tab: groups[g].tabs[at] });
-      }
-    }
-    for (var c = 0; c < chain.length; c++) chain[c].group.select(chain[c].tab, false);
-    if (el.classList.contains("step")) show(el);
-    return true;
+  function showHash(){
+    var el = document.getElementById(location.hash.slice(1));
+    if (el && el.classList.contains("step")) show(el);
   }
-
-  window.addEventListener("hashchange", function(){
-    if (routing) return;
-    reveal(location.hash.slice(1));
-  });
+  window.addEventListener("hashchange", showHash);
 
   if (steps.length) show(steps[0]);
-  reveal(location.hash.slice(1));
+  showHash();
 
   var say = document.querySelector(".say");
   var voice = document.getElementById("say-slot");

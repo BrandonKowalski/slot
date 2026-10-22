@@ -18,6 +18,8 @@
 /target-device
 /target-verify
 /dist-device
+/site/public
+/site/.cache
 
 # Parallel implementation worktrees, never content.
 /.worktrees

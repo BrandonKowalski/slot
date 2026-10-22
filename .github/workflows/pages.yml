@@ -29,9 +29,17 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - run: pip install zensical==0.0.71
+
+      - run: zensical build --clean --strict -f site/zensical.toml
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: site/public
 
       - id: deploy
         uses: actions/deploy-pages@v4
