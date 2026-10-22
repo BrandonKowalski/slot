@@ -51,6 +51,7 @@ repair() {
 		AGS_SYNC="$TMP/bin/sync" AGS_REBOOT="$TMP/bin/reboot" AGS_RMMOD="$TMP/bin/rmmod" AGS_SPLASH="$TMP/bin/splash" \
 		AGS_FSCK_FAT="$TMP/bin/fsck.fat" AGS_FSCK_EXFAT="$TMP/bin/fsck.exfat" \
 		AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" AGS_WIFI_WAIT=100000 \
+		AGS_STEP_WAIT="${STEP_WAIT:-100000}" AGS_FSCK_WAIT="${FSCK_WAIT:-100000}" \
 		sh "$SCRIPT" /dev/mmcblk0p7 /mnt/sdcard "${1:-vfat}"
 }
 
@@ -155,11 +156,42 @@ AGS_DATA="$TMP/data" AGS_RUN="$TMP/run" AGS_MOUNTS="$TMP/mounts" \
 	AGS_UMOUNT="$TMP/bin/umount" AGS_MOUNT="$TMP/bin/mount" AGS_FUSER="$TMP/bin/fuser" \
 	AGS_SYNC="$TMP/bin/sync" AGS_REBOOT="$TMP/bin/reboot" AGS_RMMOD="$TMP/bin/rmmod" AGS_SPLASH="$TMP/bin/splash" \
 	AGS_FSCK_FAT="$TMP/bin/fsck.fat" AGS_FSCK_EXFAT="$TMP/bin/fsck.exfat" \
-	AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" AGS_WIFI_WAIT=100000 \
+	AGS_OUT="$TMP/out" AGS_UPTIME="$TMP/uptime" AGS_SLEEP="$TMP/bin/sleep" AGS_WIFI_WAIT=100000 AGS_STEP_WAIT=100000 AGS_FSCK_WAIT=100000 \
 	sh "$SCRIPT" /dev/mmcblk0p7 /mnt/sdcard vfat /dev/mmcblk1p1 /mnt/other exfat
 called "splash --important -1 UNMOUNTING DISKS" || fail "two cards were not called disks"
 called "umount /mnt/other" || fail "the second card was not unmounted"
 called "fsck.exfat -y /dev/mmcblk1p1" || fail "the second card was not checked"
 [ "$(result)" = repaired ] || fail "two cards, one fixed, did not read as repaired: $(result)"
+
+setup
+fake fsck.fat 'exec /bin/sleep 30'
+(FSCK_WAIT=20 repair)
+[ "$(result)" = failed ] || fail "an fsck that never finished did not read as failed: $(result)"
+[ "$(grep -c 'fsck.fat -a /dev/mmcblk0p7 pass' "$TMP/data/slot-repair.log")" = 1 ] || fail "ran another pass after one hung"
+grep -q "still running after 20s" "$TMP/data/slot-repair.log" || fail "the log did not say fsck hung"
+called "splash --important -1 REPAIR FAILED: USE A COMPUTER" || fail "a hung repair did not say so"
+called "reboot -f -n" || fail "a hung repair did not reboot without waiting on the card"
+
+setup rw
+fake umount 'exec /bin/sleep 30'
+fake mount 'exec /bin/sleep 30'
+fake fuser 'exec /bin/sleep 30'
+(STEP_WAIT=20 repair)
+[ "$(result)" = busy ] || fail "a card whose unmount hung did not read as busy: $(result)"
+! grep -q '^fsck' "$TMP/calls" || fail "ran fsck on a card that never unmounted"
+called "reboot -f -n" || fail "a hung unmount did not reboot without waiting on the card"
+
+setup
+fake sync 'exec /bin/sleep 30'
+codes 0 0
+(STEP_WAIT=20 repair)
+[ "$(result)" = clean ] || fail "a sync that hung stopped the repair: $(result)"
+called "reboot -f -n" || fail "a hung sync did not reboot without waiting on the card"
+
+setup
+fake reboot '[ "$1" = -f ] || exit 1'
+codes 0 0
+repair
+called "reboot -f" || fail "a reboot that failed was not forced"
 
 echo "repair: all passed"
