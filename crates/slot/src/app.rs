@@ -990,6 +990,16 @@ impl App {
         if !self.state.turbo {
             hidden.extend([QuickRow::GameTurboA, QuickRow::GameTurboB]);
         }
+        let offer = match self.undo_available(self.now()) {
+            true => self.pending.as_ref().map(|(what, _)| what),
+            false => None,
+        };
+        if !matches!(offer, Some(PendingUndo::Save { .. })) {
+            hidden.push(QuickRow::UndoSave);
+        }
+        if !matches!(offer, Some(PendingUndo::Load { .. })) || !self.may_load_state() {
+            hidden.push(QuickRow::UndoLoad);
+        }
         hidden
     }
 
@@ -1078,6 +1088,8 @@ impl App {
             | QuickRow::Game
             | QuickRow::Wallpaper
             | QuickRow::Resume
+            | QuickRow::UndoSave
+            | QuickRow::UndoLoad
             | QuickRow::States
             | QuickRow::Settings
             | QuickRow::ExitGame
@@ -2573,6 +2585,10 @@ impl App {
     fn open_in_game_row(&mut self, row: QuickRow) {
         match row {
             QuickRow::Resume => self.in_game_menu = None,
+            QuickRow::UndoSave | QuickRow::UndoLoad => {
+                self.in_game_menu = None;
+                self.undo(self.now());
+            }
             QuickRow::States => self.open_states(),
             QuickRow::ExitGame => self.eject(),
             _ => {
@@ -2663,6 +2679,8 @@ impl App {
             | QuickRow::Wallpaper
             | QuickRow::WallpaperTint
             | QuickRow::Resume
+            | QuickRow::UndoSave
+            | QuickRow::UndoLoad
             | QuickRow::States
             | QuickRow::Settings
             | QuickRow::ExitGame
@@ -2844,6 +2862,8 @@ impl App {
             | QuickRow::Screen
             | QuickRow::Game
             | QuickRow::Resume
+            | QuickRow::UndoSave
+            | QuickRow::UndoLoad
             | QuickRow::States
             | QuickRow::Settings
             | QuickRow::ExitGame
@@ -3435,6 +3455,11 @@ impl App {
         let offer = self.undo_label();
         if let Some(p) = &mut self.polaroids {
             p.set_undo(offer);
+        }
+        if let Some(row @ (QuickRow::UndoSave | QuickRow::UndoLoad)) = self.in_game_menu {
+            if self.in_game_hidden().contains(&row) {
+                self.in_game_menu = Some(QuickRow::Resume);
+            }
         }
         if self.doze_expired() {
             self.on_doze_timeout();
@@ -5478,6 +5503,7 @@ impl App {
                 if let Some(snapshot) = &self.snapshot {
                     snapshot.load(prior);
                 }
+                self.states_from_menu = false;
             }
         }
         self.close_polaroids();

@@ -90,12 +90,20 @@ fn b_climbs_the_in_game_pages_and_never_the_shelf_ones() {
 #[test]
 fn screen_shows_the_palette_only_when_palettes_are_live() {
     let (_d, mut a) = playing();
+    let none = [QuickRow::UndoSave, QuickRow::UndoLoad];
     assert_eq!(
         a.in_game_hidden(),
-        &[QuickRow::Palette, QuickRow::Bezel, QuickRow::LeftStick]
+        [
+            &[QuickRow::Palette, QuickRow::Bezel, QuickRow::LeftStick][..],
+            &none
+        ]
+        .concat()
     );
     a.set_palette_live(true);
-    assert_eq!(a.in_game_hidden(), &[QuickRow::Bezel, QuickRow::LeftStick]);
+    assert_eq!(
+        a.in_game_hidden(),
+        [&[QuickRow::Bezel, QuickRow::LeftStick][..], &none].concat()
+    );
 }
 
 #[test]
@@ -202,6 +210,78 @@ fn loading_from_states_lands_in_the_game_with_no_menu() {
     press(&mut a, Btn::A);
     assert!(matches!(a.phase(), Phase::Playing { .. }));
     assert_eq!(a.in_game_menu(), None);
+}
+
+#[test]
+fn undoing_a_load_from_states_lands_in_the_game_with_no_menu() {
+    let (_d, mut a) = playing();
+    a.apply(Action::SaveState);
+    go_to(&mut a, QuickRow::States);
+    press(&mut a, Btn::A);
+    press(&mut a, Btn::A);
+    go_to(&mut a, QuickRow::States);
+    press(&mut a, Btn::A);
+    assert_eq!(a.undo_label(), Some("undo load"));
+    press(&mut a, Btn::X);
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    assert_eq!(a.in_game_menu(), None);
+}
+
+#[test]
+fn undo_save_sits_under_resume_only_after_a_save() {
+    let (_d, mut a) = playing();
+    a.apply(Action::QuickMenu);
+    assert!(a.in_game_hidden().contains(&QuickRow::UndoSave));
+    assert!(a.in_game_hidden().contains(&QuickRow::UndoLoad));
+    a.apply(Action::QuickMenu);
+    a.apply(Action::SaveState);
+    a.apply(Action::QuickMenu);
+    assert!(!a.in_game_hidden().contains(&QuickRow::UndoSave));
+    assert!(a.in_game_hidden().contains(&QuickRow::UndoLoad));
+    press(&mut a, Btn::Down);
+    assert_eq!(a.in_game_menu(), Some(QuickRow::UndoSave));
+}
+
+#[test]
+fn undo_save_from_the_menu_takes_the_save_back_and_resumes() {
+    let (d, mut a) = playing();
+    a.apply(Action::SaveState);
+    go_to(&mut a, QuickRow::UndoSave);
+    press(&mut a, Btn::A);
+    let r = StateRing::new(d.path(), Platform::Gba, a.core(), "Emerald");
+    assert!(r.list().unwrap().is_empty(), "the save was not undone");
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    assert_eq!(a.in_game_menu(), None);
+    assert!(!a.undo_available(a.now()));
+}
+
+#[test]
+fn undo_load_from_the_menu_replaces_undo_save_and_resumes() {
+    let (_d, mut a) = playing();
+    a.apply(Action::SaveState);
+    a.apply(Action::LoadState);
+    a.apply(Action::QuickMenu);
+    assert!(a.in_game_hidden().contains(&QuickRow::UndoSave));
+    assert!(!a.in_game_hidden().contains(&QuickRow::UndoLoad));
+    a.apply(Action::QuickMenu);
+    go_to(&mut a, QuickRow::UndoLoad);
+    press(&mut a, Btn::A);
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    assert_eq!(a.in_game_menu(), None);
+    assert!(!a.undo_available(a.now()));
+}
+
+#[test]
+fn an_undo_row_that_expires_under_the_cursor_hands_it_to_resume() {
+    let (_d, mut a) = playing();
+    a.apply_at(Action::SaveState, 1_000);
+    a.apply_at(Action::QuickMenu, 1_100);
+    a.apply_at(Action::GbaDown(Btn::Down), 1_200);
+    a.apply_at(Action::GbaUp(Btn::Down), 1_250);
+    assert_eq!(a.in_game_menu(), Some(QuickRow::UndoSave));
+    a.tick_ms(40_000);
+    assert!(a.in_game_hidden().contains(&QuickRow::UndoSave));
+    assert_eq!(a.in_game_menu(), Some(QuickRow::Resume));
 }
 
 #[test]

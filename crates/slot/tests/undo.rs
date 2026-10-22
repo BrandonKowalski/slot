@@ -171,3 +171,22 @@ fn the_plate_is_drawn_only_over_the_switcher_and_only_while_the_offer_stands() {
         "the plate outlived the offer"
     );
 }
+
+#[test]
+fn undo_load_in_the_menu_returns_the_emulator_to_the_prior_state() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let core = CoreSnapshot::new();
+    let mut a = app_playing_with(d.path(), "Emerald", core.boxed());
+    core.run_frame();
+    a.apply_at(Action::SaveState, 500);
+    for _ in 0..120 {
+        core.run_frame();
+    }
+    let before = core.bytes();
+    a.apply_at(Action::LoadState, 1_000);
+    a.apply_at(Action::QuickMenu, 1_100);
+    a.apply_at(Action::GbaDown(Btn::Down), 1_200);
+    a.apply_at(Action::GbaUp(Btn::Down), 1_250);
+    a.apply_at(Action::GbaDown(Btn::A), 1_300);
+    assert_eq!(core.bytes(), before);
+}

@@ -91,10 +91,12 @@ pub enum QuickRow {
     PlayBrightness,
     PlayBlueLight,
     AutoLoad,
+    UndoSave,
+    UndoLoad,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 80] = [
+    pub const ALL: [QuickRow; 82] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -175,6 +177,8 @@ impl QuickRow {
         QuickRow::PlayBrightness,
         QuickRow::PlayBlueLight,
         QuickRow::AutoLoad,
+        QuickRow::UndoSave,
+        QuickRow::UndoLoad,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -277,8 +281,10 @@ impl QuickRow {
         QuickRow::EjectSave,
     ];
 
-    pub const PLAY: [QuickRow; 4] = [
+    pub const PLAY: [QuickRow; 6] = [
         QuickRow::Resume,
+        QuickRow::UndoSave,
+        QuickRow::UndoLoad,
         QuickRow::States,
         QuickRow::Settings,
         QuickRow::ExitGame,
@@ -339,9 +345,12 @@ impl QuickRow {
             QuickRow::ControlsShelf | QuickRow::Shortcuts | QuickRow::ControlsInGame => {
                 &QuickRow::CONTROL_PAGES
             }
-            QuickRow::Resume | QuickRow::States | QuickRow::Settings | QuickRow::ExitGame => {
-                &QuickRow::PLAY
-            }
+            QuickRow::Resume
+            | QuickRow::UndoSave
+            | QuickRow::UndoLoad
+            | QuickRow::States
+            | QuickRow::Settings
+            | QuickRow::ExitGame => &QuickRow::PLAY,
             QuickRow::PlayScreen | QuickRow::PlayGameplay | QuickRow::PlayControls => {
                 &QuickRow::SETTINGS
             }
@@ -459,6 +468,8 @@ impl QuickRow {
             QuickRow::ShowTitles => "Game Titles",
             QuickRow::WallpaperTint => "Wallpaper Tint",
             QuickRow::Resume => "Resume",
+            QuickRow::UndoSave => "Undo Save",
+            QuickRow::UndoLoad => "Undo Load",
             QuickRow::States => "States",
             QuickRow::Settings => "Settings",
             QuickRow::ExitGame => "Exit Game",
@@ -520,6 +531,8 @@ impl QuickRow {
                 | QuickRow::Screen
                 | QuickRow::Game
                 | QuickRow::Resume
+                | QuickRow::UndoSave
+                | QuickRow::UndoLoad
                 | QuickRow::States
                 | QuickRow::Settings
                 | QuickRow::ExitGame
