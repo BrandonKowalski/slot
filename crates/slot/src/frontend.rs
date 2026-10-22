@@ -665,9 +665,19 @@ impl Frontend {
     fn draw_rebuild(&mut self, compositor: &mut Compositor) -> bool {
         self.poll_label_check();
         self.poll_ui_faces(compositor);
-        let Some(rebuild) = &self.rebuild else {
+        let Some(rebuild) = &mut self.rebuild else {
             return false;
         };
+        if rebuild.stalled() && !rebuild.finished() {
+            eprintln!(
+                "slot: label cache: no label finished for a while, going on at {} / {}",
+                rebuild.done(),
+                rebuild.total()
+            );
+            self.rebuild = None;
+            self.last = Instant::now();
+            return false;
+        }
         if rebuild.finished() {
             self.rebuild = None;
             self.last = Instant::now();
