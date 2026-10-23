@@ -17,6 +17,7 @@ pub mod ini;
 mod platform;
 mod ring;
 mod scan;
+mod shots;
 mod slot_state;
 mod stamp;
 
@@ -36,6 +37,7 @@ pub use gba::{header_clean, header_code, header_title, header_title_code};
 pub use platform::Platform;
 pub use ring::{StateEntry, StateRing, RING_MAX};
 pub use scan::{initial, is_hidden, listing, scan, sort_key, Cart, StoreError};
+pub use shots::{shot_stamp, ShotDir, ShotEntry, SCREENSHOTS_DIR};
 pub use slot_state::{
     read_slot_state, write_slot_state, Appearance, BezelPick, Recent, Shader, SlotState,
     WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, FF_SPEED_DEFAULT,

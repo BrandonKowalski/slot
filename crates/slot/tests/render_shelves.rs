@@ -221,8 +221,8 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     let mut seen = Vec::new();
     let mut marks = vec![name_pixels(&gba)];
     for (name, banner, _platform) in [
-        ("game-boy", "Game Boy", CartPlatform::Gb),
         ("game-boy-color", "Game Boy Color", CartPlatform::Gbc),
+        ("game-boy", "Game Boy", CartPlatform::Gb),
     ] {
         tap(&mut f, &mut input, Btn::R1);
         let_the_name_in(&mut f, &mut c, &mut input);

@@ -24,6 +24,7 @@ pub enum Action {
     Polaroids,
     SaveState,
     LoadState,
+    Screenshot,
     RewindStart,
     RewindStop,
     FfStart,

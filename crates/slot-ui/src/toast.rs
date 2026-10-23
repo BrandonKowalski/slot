@@ -10,6 +10,8 @@ use crate::{CartFace, QuickRow};
 pub enum Toast {
     StateSaved,
     StateLoaded,
+    ShotCaptured,
+    ShotFailed,
     NeedsGpsp,
     NoLink,
     LinkEnded,
@@ -32,9 +34,11 @@ pub enum Toast {
 }
 
 impl Toast {
-    const FIXED: [Toast; 19] = [
+    const FIXED: [Toast; 21] = [
         Toast::StateSaved,
         Toast::StateLoaded,
+        Toast::ShotCaptured,
+        Toast::ShotFailed,
         Toast::NeedsGpsp,
         Toast::NoLink,
         Toast::LinkEnded,
@@ -76,7 +80,8 @@ impl Toast {
 
     pub fn icon(self) -> Option<Icon> {
         match self {
-            Toast::Duplicate(_) => Some(Icon::Alert),
+            Toast::Duplicate(_) | Toast::ShotFailed => Some(Icon::Alert),
+            Toast::ShotCaptured => Some(Icon::Camera),
             _ => None,
         }
     }
@@ -119,6 +124,8 @@ impl Toast {
         match self {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
+            Toast::ShotCaptured => "Screenshot Captured",
+            Toast::ShotFailed => "Screenshot Failed",
             Toast::NeedsGpsp => "Please switch to gpSP",
             Toast::NoLink => "No link support",
             Toast::LinkEnded => "Link ended",
@@ -233,7 +240,7 @@ pub fn toast_face(toast: Toast) -> CartFace {
         let layout = text::fit(font, detail, s.w as f32, 1, DETAIL_PX, DETAIL_PX);
         cov.extend(text::coverage(s.w, DETAIL_H, &layout));
     }
-    if tinted.is_empty() {
+    if tinted.is_empty() || toast.icon() != Some(Icon::Alert) {
         return haloed(&cov, s.w, s.h + detail_h(toast), HUD_INK);
     }
     haloed_with(&cov, s.w, s.h + detail_h(toast), |x, _| {

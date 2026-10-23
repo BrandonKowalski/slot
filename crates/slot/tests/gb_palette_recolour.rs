@@ -147,7 +147,7 @@ fn a_palette_picked_behind_the_menu_outlasts_the_menu() {
     });
 
     tap(&mut s, &mut now, Btn::Menu);
-    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A, Btn::Down, Btn::Down] {
+    for btn in [Btn::Down, Btn::A, Btn::A, Btn::Down, Btn::Down] {
         tap(&mut s, &mut now, btn);
     }
     assert_eq!(s.app().in_game_menu(), Some(QuickRow::Palette));

@@ -310,6 +310,7 @@ impl GameButton {
 pub enum Shortcut {
     SaveState,
     LoadState,
+    Screenshot,
     BrightnessUp,
     BrightnessDown,
     BlueLightDown,
@@ -324,9 +325,10 @@ pub enum Shortcut {
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 13] = [
+    pub const ALL: [Shortcut; 14] = [
         Shortcut::SaveState,
         Shortcut::LoadState,
+        Shortcut::Screenshot,
         Shortcut::BrightnessUp,
         Shortcut::BrightnessDown,
         Shortcut::BlueLightDown,
@@ -344,6 +346,7 @@ impl Shortcut {
         match self {
             Shortcut::SaveState => "Save State",
             Shortcut::LoadState => "Load State",
+            Shortcut::Screenshot => "Screenshot",
             Shortcut::BrightnessUp => "Brightness Up",
             Shortcut::BrightnessDown => "Brightness Down",
             Shortcut::BlueLightDown => "Blue Light Down",
@@ -362,6 +365,7 @@ impl Shortcut {
         match self {
             Shortcut::SaveState => "save_state",
             Shortcut::LoadState => "load_state",
+            Shortcut::Screenshot => "screenshot",
             Shortcut::BrightnessUp => "brightness_up",
             Shortcut::BrightnessDown => "brightness_down",
             Shortcut::BlueLightDown => "blue_light_down",
@@ -381,6 +385,7 @@ impl Shortcut {
         match self {
             Shortcut::SaveState => select(Device::R1),
             Shortcut::LoadState => select(Device::L1),
+            Shortcut::Screenshot => select(Device::X),
             Shortcut::BrightnessUp => select(Device::Up),
             Shortcut::BrightnessDown => select(Device::Down),
             Shortcut::BlueLightDown => select(Device::Left),
@@ -445,7 +450,7 @@ impl Controls {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct ShortcutKeys {
-    keys: [Option<Binding>; 13],
+    keys: [Option<Binding>; 14],
 }
 
 impl Default for ShortcutKeys {

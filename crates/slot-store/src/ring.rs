@@ -140,7 +140,7 @@ impl StateRing {
     }
 }
 
-fn is_stamp(s: &str) -> bool {
+pub(crate) fn is_stamp(s: &str) -> bool {
     const SHAPE: &[u8] = b"0000-00-00_00-00-00";
     s.len() == SHAPE.len()
         && s.bytes().zip(SHAPE).all(|(c, shape)| match shape {

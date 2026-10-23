@@ -82,7 +82,7 @@ fn the_in_game_menu_darkens_the_game_and_screen_leaves_it_bare() {
     run_for(&mut f, &mut input, 0.4);
     assert_eq!(f.app().in_game_menu(), Some(QuickRow::Resume));
     let top = composed(&mut f, &mut c, "top");
-    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A] {
+    for btn in [Btn::Down, Btn::A, Btn::A] {
         tap(&mut f, &mut input, btn);
     }
     run_for(&mut f, &mut input, 0.3);
@@ -167,7 +167,7 @@ fn the_brightness_rows_render_on_the_screen_page() {
     run_for(&mut f, &mut input, 4.0);
     tap(&mut f, &mut input, Btn::Menu);
     run_for(&mut f, &mut input, 0.5);
-    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::A] {
+    for btn in [Btn::Down, Btn::A, Btn::A] {
         tap(&mut f, &mut input, btn);
     }
     while f.app().in_game_menu() != Some(QuickRow::PlayBrightness) {
@@ -264,7 +264,7 @@ fn the_controls_page_renders() {
     run_for(&mut f, &mut input, 4.0);
     tap(&mut f, &mut input, Btn::Menu);
     run_for(&mut f, &mut input, 0.5);
-    for btn in [Btn::Down, Btn::Down, Btn::A, Btn::Down, Btn::Down, Btn::A] {
+    for btn in [Btn::Down, Btn::A, Btn::Down, Btn::Down, Btn::A] {
         tap(&mut f, &mut input, btn);
     }
     run_for(&mut f, &mut input, 0.3);

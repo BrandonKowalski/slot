@@ -175,6 +175,10 @@ impl Hud {
         self.said = Some((toast, now));
     }
 
+    pub fn hush(&mut self) {
+        self.said = None;
+    }
+
     pub fn set_alarm(&mut self, on: bool, now: Millis) {
         self.alarm = match (on, self.alarm) {
             (true, Some(since)) => Some(since),

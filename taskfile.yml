@@ -12,14 +12,14 @@ vars:
     --test link_ui --test mgba_gb_link --test mgba_link --test render_colour_correction
     --test render_gb_palette --test render_picture_modes --test render
     --test render_in_game_menu --test render_power_wake --test render_quick_menu
-    --test render_shelf --test render_shelves
+    --test render_shelf --test render_shelves --test render_screenshot --test render_gallery_stress
   IN_PROCESS: >-
     (package(slot) & (binary(bios) | binary(core) | binary(core_options) | binary(e2e) | binary(emu)
     | binary(gb_palette_recolour) | binary(gpsp) | binary(link_ui) | binary(mgba_gb_link)
     | binary(mgba_link) | binary(render_colour_correction) | binary(render_gb_palette)
     | binary(render_picture_modes) | binary(render) | binary(render_in_game_menu)
     | binary(render_power_wake) | binary(render_quick_menu) | binary(render_shelf)
-    | binary(render_shelves)))
+    | binary(render_shelves) | binary(render_screenshot) | binary(render_gallery_stress)))
     | (package(slot-gfx) & binary(pipeline)) | (package(slot-ui) & binary(render_row_edges))
     | (package(slot-retro) & (binary(options) | binary(netpacket) | binary(libretro)))
 

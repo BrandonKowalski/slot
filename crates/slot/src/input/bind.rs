@@ -44,6 +44,7 @@ pub(super) fn shortcut_action(s: Shortcut) -> Action {
     match s {
         Shortcut::SaveState => Action::SaveState,
         Shortcut::LoadState => Action::LoadState,
+        Shortcut::Screenshot => Action::Screenshot,
         Shortcut::BrightnessUp => Action::BrightnessUp,
         Shortcut::BrightnessDown => Action::BrightnessDown,
         Shortcut::BlueLightDown => Action::BlueLightDown,

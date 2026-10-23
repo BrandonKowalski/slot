@@ -295,3 +295,32 @@ fn glyph_cap(glyph: char) -> Vec<u8> {
     }
     cap
 }
+
+const PAD_GLYPH: char = '\u{f047}';
+const TICK_GLYPH: char = '\u{f00c}';
+
+pub fn pad_hint_width(label: &str) -> u32 {
+    CAP + CAP_GAP + band_width(label) + EDGE
+}
+
+pub fn pad_hint_face(label: &str) -> UndoFace {
+    let w = pad_hint_width(label);
+    let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
+    blit(&mut rgba, w, &glyph_cap(PAD_GLYPH), CAP, CAP, 0, (HINT_H - CAP) / 2);
+    let text_w = band_width(label);
+    let mut band = vec![0u8; (text_w * HINT_H * 4) as usize];
+    if let Some(font) = text::label_font() {
+        let layout = text::fit(font, label, text_w as f32, 1, LABEL_PX, LABEL_MIN_PX);
+        text::draw_centred(&mut band, text_w, HINT_H, &layout, INK);
+    }
+    blit(&mut rgba, w, &band, text_w, HINT_H, CAP + CAP_GAP, 0);
+    UndoFace { rgba, w, h: HINT_H }
+}
+
+pub fn tick_cap_face() -> UndoFace {
+    UndoFace {
+        rgba: glyph_cap(TICK_GLYPH),
+        w: CAP,
+        h: CAP,
+    }
+}

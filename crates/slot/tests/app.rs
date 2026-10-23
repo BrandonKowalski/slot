@@ -359,11 +359,11 @@ fn a_colour_cart_stands_on_a_shelf_of_its_own() {
         (Platform::Gbc, "Chromatic"),
     ]);
     tap(&mut a, Btn::R1);
-    assert_eq!(a.selected_stem(), Some("Tetris"));
+    assert_eq!(a.selected_stem(), Some("Chromatic"));
     tap(&mut a, Btn::R1);
     assert_eq!(
         a.selected_stem(),
-        Some("Chromatic"),
+        Some("Tetris"),
         "the Colour cart shares the Game Boy shelf"
     );
     tap(&mut a, Btn::R1);
@@ -373,7 +373,7 @@ fn a_colour_cart_stands_on_a_shelf_of_its_own() {
         "three shelves did not ring back round to the first"
     );
     tap(&mut a, Btn::L1);
-    assert_eq!(a.selected_stem(), Some("Chromatic"));
+    assert_eq!(a.selected_stem(), Some("Tetris"));
 }
 
 #[test]
@@ -478,10 +478,10 @@ fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
         "the card did not open on the GBA"
     );
     for (btn, want) in [
-        (Btn::R1, "Game Boy"),
         (Btn::R1, "Game Boy Color"),
+        (Btn::R1, "Game Boy"),
         (Btn::R1, "Game Boy Advance"),
-        (Btn::L1, "Game Boy Color"),
+        (Btn::L1, "Game Boy"),
     ] {
         common::through_at(&mut a, btn, 1_000);
         assert_eq!(
@@ -494,7 +494,7 @@ fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
     a.update(5.0);
     assert_eq!(
         a.shelf_platform_name(),
-        Some("Game Boy Color"),
+        Some("Game Boy"),
         "the name faded"
     );
 }
@@ -591,7 +591,7 @@ fn a_cart_in_flight_is_not_also_left_standing_on_the_shelf() {
                     && w <= CART_W as f32 + 0.01
                     && (w / h - CART_W as f32 / CART_H as f32).abs() < 0.05
             }
-            Draw::Game | Draw::Shot { .. } => false,
+            Draw::Game | Draw::Shot { .. } | Draw::Capture => false,
         })
         .count();
     assert_eq!(

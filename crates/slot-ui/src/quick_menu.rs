@@ -35,6 +35,7 @@ pub enum QuickRow {
     GbcColourCorrection,
     Resume,
     States,
+    Screenshots,
     Settings,
     ExitGame,
     PlayScreen,
@@ -69,6 +70,7 @@ pub enum QuickRow {
     GameTurboB,
     ScSave,
     ScLoad,
+    ScScreenshot,
     ScBrightUp,
     ScBrightDown,
     ScBlueDown,
@@ -96,7 +98,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 82] = [
+    pub const ALL: [QuickRow; 84] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -121,6 +123,7 @@ impl QuickRow {
         QuickRow::GbcColourCorrection,
         QuickRow::Resume,
         QuickRow::States,
+        QuickRow::Screenshots,
         QuickRow::Settings,
         QuickRow::ExitGame,
         QuickRow::PlayScreen,
@@ -155,6 +158,7 @@ impl QuickRow {
         QuickRow::GameTurboB,
         QuickRow::ScSave,
         QuickRow::ScLoad,
+        QuickRow::ScScreenshot,
         QuickRow::ScBrightUp,
         QuickRow::ScBrightDown,
         QuickRow::ScBlueDown,
@@ -226,9 +230,10 @@ impl QuickRow {
         QuickRow::GameTurboB,
     ];
 
-    pub const SHORTCUTS: [QuickRow; 13] = [
+    pub const SHORTCUTS: [QuickRow; 14] = [
         QuickRow::ScSave,
         QuickRow::ScLoad,
+        QuickRow::ScScreenshot,
         QuickRow::ScBrightUp,
         QuickRow::ScBrightDown,
         QuickRow::ScBlueDown,
@@ -281,11 +286,12 @@ impl QuickRow {
         QuickRow::EjectSave,
     ];
 
-    pub const PLAY: [QuickRow; 6] = [
+    pub const PLAY: [QuickRow; 7] = [
         QuickRow::Resume,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
         QuickRow::States,
+        QuickRow::Screenshots,
         QuickRow::Settings,
         QuickRow::ExitGame,
     ];
@@ -349,6 +355,7 @@ impl QuickRow {
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
             | QuickRow::States
+            | QuickRow::Screenshots
             | QuickRow::Settings
             | QuickRow::ExitGame => &QuickRow::PLAY,
             QuickRow::PlayScreen | QuickRow::PlayGameplay | QuickRow::PlayControls => {
@@ -471,6 +478,7 @@ impl QuickRow {
             QuickRow::UndoSave => "Undo Save",
             QuickRow::UndoLoad => "Undo Load",
             QuickRow::States => "States",
+            QuickRow::Screenshots => "Screenshots",
             QuickRow::Settings => "Settings",
             QuickRow::ExitGame => "Exit Game",
             QuickRow::General => "General",
@@ -494,6 +502,7 @@ impl QuickRow {
             | QuickRow::GameTurboB => self.game_button().map_or("", GameButton::label),
             QuickRow::ScSave
             | QuickRow::ScLoad
+            | QuickRow::ScScreenshot
             | QuickRow::ScBrightUp
             | QuickRow::ScBrightDown
             | QuickRow::ScBlueDown
@@ -534,6 +543,7 @@ impl QuickRow {
                 | QuickRow::UndoSave
                 | QuickRow::UndoLoad
                 | QuickRow::States
+                | QuickRow::Screenshots
                 | QuickRow::Settings
                 | QuickRow::ExitGame
                 | QuickRow::PlayScreen
@@ -573,6 +583,7 @@ impl QuickRow {
         Some(match self {
             QuickRow::ScSave => Shortcut::SaveState,
             QuickRow::ScLoad => Shortcut::LoadState,
+            QuickRow::ScScreenshot => Shortcut::Screenshot,
             QuickRow::ScBrightUp => Shortcut::BrightnessUp,
             QuickRow::ScBrightDown => Shortcut::BrightnessDown,
             QuickRow::ScBlueDown => Shortcut::BlueLightDown,

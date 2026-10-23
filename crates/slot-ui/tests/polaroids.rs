@@ -229,3 +229,11 @@ fn nothing_on_the_plate_moves_when_the_charge_state_changes() {
         );
     }
 }
+
+#[test]
+fn a_shot_stamp_with_milliseconds_reads_as_relative_time() {
+    assert_eq!(
+        Polaroids::relative_time("2026-10-22_17-30-05-120", "2026-10-22_17-32-05"),
+        "2 min ago"
+    );
+}

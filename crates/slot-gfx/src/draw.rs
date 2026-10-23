@@ -51,6 +51,7 @@ pub enum Draw {
     Shot {
         tex: TexId,
     },
+    Capture,
 }
 
 pub struct Sprites {
@@ -193,7 +194,7 @@ impl Sprites {
                     Some(t) => (x, y, w, h, *t, [1.0, 1.0, 1.0, alpha], turn, whole),
                     None => continue,
                 },
-                Draw::Game | Draw::Shot { .. } => continue,
+                Draw::Game | Draw::Shot { .. } | Draw::Capture => continue,
             };
             let (cos, sin) = if turn == 0.0 {
                 (1.0, 0.0)

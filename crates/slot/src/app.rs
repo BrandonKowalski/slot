@@ -8,7 +8,7 @@ use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Cart, Core,
-    GbColors, Platform, Recent, Shader, SlotState, StateEntry, StateRing, WallpaperPick,
+    GbColors, Platform, Recent, Shader, ShotDir, ShotEntry, SlotState, StateEntry, StateRing, WallpaperPick,
     WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
@@ -16,7 +16,7 @@ use slot_ui::{
     draw_sticker, ease, footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap,
     shelf_cart_at, ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis,
     Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal,
-    Shelf, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HOP_LIFT,
+    Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HOP_LIFT,
     MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
@@ -460,6 +460,18 @@ pub struct App {
     powering_off: bool,
     radio: Box<dyn RadioJobs>,
     state_writer: crate::state_writer::StateWriter,
+    shot_writer: crate::shot_writer::ShotWriter,
+    shot_wanted: bool,
+    last_shot: Option<i64>,
+    shot_listing: Option<std::sync::mpsc::Receiver<Vec<ShotEntry>>>,
+    has_states: bool,
+    has_shots: bool,
+    shot_viewer: Option<ShotViewer>,
+    delete_shot_faces: Vec<(TexId, u32, u32)>,
+    shot_hint_faces: Vec<TexId>,
+    shot_opens: u64,
+    shot_tick_face: Option<(TexId, u32, u32)>,
+    delete_shot_text: Option<[(TexId, u32, u32); 2]>,
 }
 
 const FACE_AHEAD: i32 = 8;
@@ -498,7 +510,7 @@ fn shift_down(draws: &mut [Draw], dy: f32) {
             | Draw::Tex { y, .. }
             | Draw::Part { y, .. }
             | Draw::Turned { y, .. } => *y += dy,
-            Draw::Game | Draw::Shot { .. } => {}
+            Draw::Game | Draw::Shot { .. } | Draw::Capture => {}
         }
     }
 }
@@ -515,6 +527,18 @@ impl App {
         App {
             radio: radio_jobs(),
             state_writer,
+            shot_writer: crate::shot_writer::ShotWriter::spawn(card_writes.clone()),
+            shot_wanted: false,
+            last_shot: None,
+            shot_listing: None,
+            has_states: false,
+            has_shots: false,
+            shot_viewer: None,
+            delete_shot_faces: Vec::new(),
+            shot_hint_faces: Vec::new(),
+            shot_opens: 0,
+            shot_tick_face: None,
+            delete_shot_text: None,
             phase: Phase::Shelf,
             shelves,
             shelf_at,
@@ -824,7 +848,11 @@ impl App {
             Phase::SetClock { .. } => true,
             Phase::QuickMenu { .. } => vertical,
             Phase::Shelf => vertical && self.core_picker.is_none(),
-            Phase::Polaroids { .. } => !vertical,
+            Phase::Polaroids { .. } => match self.shot_viewer.as_ref().map(ShotViewer::mode) {
+                Some(ShotMode::Grid) => true,
+                Some(ShotMode::Zoomed) => false,
+                _ => !vertical,
+            },
             Phase::Playing { .. } => vertical && self.in_game_menu.is_some(),
             _ => false,
         }
@@ -990,6 +1018,12 @@ impl App {
         if !self.state.turbo {
             hidden.extend([QuickRow::GameTurboA, QuickRow::GameTurboB]);
         }
+        if !self.has_states || self.link_active() {
+            hidden.push(QuickRow::States);
+        }
+        if !self.has_shots || self.link_active() {
+            hidden.push(QuickRow::Screenshots);
+        }
         let offer = match self.undo_available(self.now()) {
             true => self.pending.as_ref().map(|(what, _)| what),
             false => None,
@@ -1001,6 +1035,60 @@ impl App {
             hidden.push(QuickRow::UndoLoad);
         }
         hidden
+    }
+
+    fn refresh_albums(&mut self) {
+        self.has_states = !self.entries().is_empty();
+        let removing = self.shot_writer.removing();
+        self.has_shots = self.shot_dir().is_some_and(|s| s.any(&removing));
+    }
+
+    fn list_shots_later(&mut self) {
+        let (Some(dir), (tx, rx)) = (self.shot_dir(), std::sync::mpsc::channel()) else {
+            return;
+        };
+        let removing = self.shot_writer.removing();
+        let spawned = std::thread::Builder::new()
+            .name("slot-shot-list".into())
+            .spawn(move || {
+                let at = std::time::Instant::now();
+                let mut shots = dir.list().unwrap_or_default();
+                shots.retain(|e| !removing.contains(&e.path));
+                eprintln!("slot: shots: listed {} in {} ms", shots.len(), at.elapsed().as_millis());
+                let _ = tx.send(shots);
+            });
+        match spawned {
+            Ok(_) => self.shot_listing = Some(rx),
+            Err(e) => eprintln!("slot: shots: no list thread: {e}"),
+        }
+    }
+
+    fn take_shot_list(&mut self) {
+        let Some(rx) = &self.shot_listing else {
+            return;
+        };
+        let shots = match rx.try_recv() {
+            Ok(shots) => shots,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Vec::new(),
+        };
+        self.shot_listing = None;
+        let Some(v) = &mut self.shot_viewer else {
+            return;
+        };
+        if shots.is_empty() {
+            self.has_shots = false;
+            return self.close_polaroids();
+        }
+        v.fill(shots);
+        self.push_hint_faces();
+    }
+
+    fn shot_dir(&self) -> Option<ShotDir> {
+        let (Some(root), Some(cart)) = (&self.root, self.seated()) else {
+            return None;
+        };
+        Some(ShotDir::new(root, self.platform, cart))
     }
 
     pub fn gb_colors_label(&self) -> &'static str {
@@ -1091,6 +1179,7 @@ impl App {
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
             | QuickRow::States
+            | QuickRow::Screenshots
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -1124,6 +1213,7 @@ impl App {
             | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
+            | QuickRow::ScScreenshot
             | QuickRow::ScBrightUp
             | QuickRow::ScBrightDown
             | QuickRow::ScBlueDown
@@ -2419,7 +2509,10 @@ impl App {
             match action {
                 Action::GbaDown(Btn::X) => {
                     self.delete_prompt = false;
-                    self.delete_selected();
+                    match self.shot_viewer {
+                        Some(_) => self.delete_shot(),
+                        None => self.delete_selected(),
+                    }
                 }
                 Action::GbaDown(Btn::B) => self.delete_prompt = false,
                 _ => {}
@@ -2489,11 +2582,15 @@ impl App {
                 Action::QuickMenu => self.tap_in_game_menu(Some(QuickRow::PLAY[0])),
                 Action::Polaroids => self.double_tap_states(),
                 Action::SaveState => self.save_state(),
+                Action::Screenshot if self.screen >= 1.0 && self.game_visible() => {
+                    self.shot_wanted = true
+                }
                 Action::LoadState => self.load_newest(),
                 Action::RewindStart if !self.may_rewind() => self.refuse(),
                 Action::FfStart if !self.may_fast_forward() => self.refuse(),
                 _ => {}
             },
+            Phase::Polaroids { .. } if self.shot_viewer.is_some() => self.shot_input(action),
             Phase::Polaroids { .. } => match action {
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.flick(Polaroids::left),
                 Action::ShelfRight | Action::GbaDown(Btn::Right) => self.flick(Polaroids::right),
@@ -2590,6 +2687,7 @@ impl App {
                 self.undo(self.now());
             }
             QuickRow::States => self.open_states(),
+            QuickRow::Screenshots => self.open_shots(),
             QuickRow::ExitGame => self.eject(),
             _ => {
                 if let Some(child) = row.child() {
@@ -2600,6 +2698,10 @@ impl App {
     }
 
     fn tap_in_game_menu(&mut self, to: Option<QuickRow>) {
+        if to.is_some() && self.in_game_menu.is_none() {
+            self.refresh_albums();
+            self.hud.hush();
+        }
         self.menu_tap = Some((self.now(), self.in_game_menu));
         self.in_game_menu = to;
     }
@@ -2624,11 +2726,12 @@ impl App {
     }
 
     fn open_states(&mut self) {
+        let before = self.in_game_menu;
         self.in_game_menu = None;
         self.open_polaroids();
         match self.phase {
             Phase::Polaroids { .. } => self.states_from_menu = true,
-            _ => self.in_game_menu = Some(QuickRow::States),
+            _ => self.in_game_menu = before,
         }
     }
 
@@ -2682,6 +2785,7 @@ impl App {
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
             | QuickRow::States
+            | QuickRow::Screenshots
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -2711,6 +2815,7 @@ impl App {
             | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
+            | QuickRow::ScScreenshot
             | QuickRow::ScBrightUp
             | QuickRow::ScBrightDown
             | QuickRow::ScBlueDown
@@ -2865,6 +2970,7 @@ impl App {
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
             | QuickRow::States
+            | QuickRow::Screenshots
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -2900,6 +3006,7 @@ impl App {
             | QuickRow::GameTurboB
             | QuickRow::ScSave
             | QuickRow::ScLoad
+            | QuickRow::ScScreenshot
             | QuickRow::ScBrightUp
             | QuickRow::ScBrightDown
             | QuickRow::ScBlueDown
@@ -3452,6 +3559,14 @@ impl App {
     fn timers(&mut self) {
         self.play_hold();
         self.repeat_held_dir();
+        self.take_shot_list();
+        if self.shot_writer.take_failures() > 0 {
+            self.hud.toast(Toast::ShotFailed, self.now());
+        }
+        let (now, canvas) = (self.now(), self.canvas());
+        if let Some(v) = &mut self.shot_viewer {
+            v.tick(now, canvas);
+        }
         let offer = self.undo_label();
         if let Some(p) = &mut self.polaroids {
             p.set_undo(offer);
@@ -3787,7 +3902,18 @@ impl App {
             return self.draw_prompt(&self.reset_prompt_faces(row), out);
         }
         if self.delete_prompt {
-            return self.draw_prompt(&self.delete_faces, out);
+            return match self.shot_viewer {
+                Some(_) => {
+                    let mut faces = self.delete_shot_faces.clone();
+                    if let Some(text) = self.delete_shot_text {
+                        for (face, line) in faces.iter_mut().zip(text) {
+                            *face = line;
+                        }
+                    }
+                    self.draw_prompt(&faces, out)
+                }
+                None => self.draw_prompt(&self.delete_faces, out),
+            };
         }
         match &self.phase {
             Phase::SetClock {
@@ -3905,6 +4031,18 @@ impl App {
                 self.chrome(cart, 0.0, out);
             }
             Phase::Playing { .. } => self.push_game(out),
+            Phase::Polaroids { .. } if self.shot_viewer.is_some() => {
+                if let Some(v) = &self.shot_viewer {
+                    v.draw(
+                        self.canvas(),
+                        self.battery,
+                        self.battery_percent,
+                        self.hud_bolt,
+                        self.shelf_clock,
+                        out,
+                    );
+                }
+            }
             Phase::Polaroids { .. } => {
                 self.push_game(out);
                 if let Some(p) = &self.polaroids {
@@ -3934,6 +4072,9 @@ impl App {
         }
         if !matches!(self.phase, Phase::Polaroids { .. }) {
             self.draw_sp_strip(out);
+        }
+        if self.shot_wanted && matches!(self.phase, Phase::Playing { .. }) && self.game_visible() {
+            out.push(Draw::Capture);
         }
         if let (Some(row), Phase::Playing { .. }, true) =
             (self.in_game_menu_shown(), &self.phase, self.screen >= 1.0)
@@ -4672,6 +4813,7 @@ impl App {
         if self.single_cart() {
             return self.refuse();
         }
+        self.shot_wanted = false;
         self.eject_overlay = match self.shows_game() {
             true => self.overlay_slide(),
             false => 0.0,
@@ -4734,6 +4876,7 @@ impl App {
         }
         self.close_game_menu();
         self.core_picker = None;
+        self.shot_wanted = false;
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
         }
@@ -4743,8 +4886,10 @@ impl App {
             Phase::Playing { cart } | Phase::Polaroids { cart } => Some(std::mem::take(cart)),
             _ => None,
         };
+        let row = self.album_row();
+        self.shot_viewer = None;
         if std::mem::take(&mut self.states_from_menu) {
-            self.in_game_menu = Some(QuickRow::States);
+            self.in_game_menu = Some(row);
         }
         self.polaroids = None;
         self.phase = Phase::Doze { cart };
@@ -5199,6 +5344,7 @@ impl App {
 
     pub fn settle_saves(&mut self) {
         self.state_writer.flush();
+        self.shot_writer.flush();
         if let Some(h) = self.pending_save.take() {
             let _ = h.join();
         }
@@ -5206,7 +5352,10 @@ impl App {
 
     fn autosave(&mut self) {
         self.autosave_at = self.now() + AUTOSAVE_MS;
-        self.settle_saves();
+        self.state_writer.flush();
+        if let Some(h) = self.pending_save.take() {
+            let _ = h.join();
+        }
         let resume = self.now() >= self.resume_at;
         if resume {
             self.resume_at = self.now() + RESUME_MS;
@@ -5323,12 +5472,142 @@ impl App {
             return;
         };
         let cart = std::mem::take(cart);
+        let row = self.album_row();
         self.polaroids = None;
+        self.shot_viewer = None;
         self.delete_prompt = false;
         self.phase = Phase::Playing { cart };
         if std::mem::take(&mut self.states_from_menu) {
-            self.in_game_menu = Some(QuickRow::States);
+            let hidden = self.in_game_hidden();
+            self.in_game_menu = Some(match hidden.contains(&row) {
+                true => row.shown(&hidden)[0],
+                false => row,
+            });
         }
+    }
+
+    fn shot_input(&mut self, action: Action) {
+        let canvas = self.canvas();
+        let Some(mode) = self.shot_viewer.as_ref().map(ShotViewer::mode) else {
+            return;
+        };
+        let pressed = match action {
+            Action::Polaroids => return self.close_polaroids(),
+            Action::ShelfLeft if mode != ShotMode::Zoomed => Btn::Left,
+            Action::ShelfRight if mode != ShotMode::Zoomed => Btn::Right,
+            Action::GbaDown(b) => b,
+            Action::GbaUp(b) => {
+                if let (Some((dx, dy)), Some(v)) = (pan_step(b), &mut self.shot_viewer) {
+                    v.pan_hold(dx, dy, false);
+                }
+                return;
+            }
+            _ => return,
+        };
+        let Some(v) = &mut self.shot_viewer else {
+            return;
+        };
+        if mode == ShotMode::Grid && v.selecting() {
+            match (pressed, pan_step(pressed)) {
+                (_, Some((dx, dy))) => v.grid_move(dx, dy, canvas),
+                (Btn::A, _) => v.tick_selected(),
+                (Btn::B | Btn::Select, _) => v.toggle_selecting(),
+                (Btn::Y, _) if v.ticked_count() > 0 => self.delete_prompt = true,
+                (Btn::Y, _) => self.refuse(),
+                _ => {}
+            }
+            return;
+        }
+        match (mode, pressed, pan_step(pressed)) {
+            (ShotMode::Grid, Btn::Select, _) => v.toggle_selecting(),
+            (ShotMode::Grid, _, Some((dx, dy))) => v.grid_move(dx, dy, canvas),
+            (ShotMode::Grid, Btn::A, _) => v.open(),
+            (ShotMode::Grid, Btn::B, _) => self.close_polaroids(),
+            (ShotMode::Grid | ShotMode::Full, Btn::Y, _) => {
+                self.delete_prompt = v.selected().is_some()
+            }
+            (ShotMode::Full, Btn::Left, _) => v.step(-1),
+            (ShotMode::Full, Btn::Right, _) => v.step(1),
+            (ShotMode::Full | ShotMode::Zoomed, Btn::A, _) => v.zoom_in(canvas),
+            (ShotMode::Full, Btn::B, _) => v.to_grid(canvas),
+            (ShotMode::Zoomed, Btn::B, _) => v.zoom_out(canvas),
+            (ShotMode::Zoomed, _, Some((dx, dy))) => {
+                v.pan_tap(dx, dy, canvas);
+                v.pan_hold(dx, dy, true);
+            }
+            _ => {}
+        }
+        if self.shot_viewer.as_ref().map(ShotViewer::mode) != Some(mode) {
+            self.held_dir = None;
+        }
+    }
+
+    fn album_row(&self) -> QuickRow {
+        match self.shot_viewer {
+            Some(_) => QuickRow::Screenshots,
+            None => QuickRow::States,
+        }
+    }
+
+    fn open_shots(&mut self) {
+        if self.link_active() {
+            return self.refuse();
+        }
+        let removing = self.shot_writer.removing();
+        if !self.shot_dir().is_some_and(|s| s.any(&removing)) {
+            self.has_shots = false;
+            let hidden = self.in_game_hidden();
+            if let Some(row) = self.in_game_menu.filter(|r| hidden.contains(r)) {
+                self.in_game_menu = Some(row.shown(&hidden)[0]);
+            }
+            return self.refuse();
+        }
+        self.shot_opens += 1;
+        let Phase::Playing { cart } = &mut self.phase else {
+            return;
+        };
+        let cart = std::mem::take(cart);
+        self.in_game_menu = None;
+        self.shot_viewer = Some(ShotViewer::new(Vec::new()));
+        self.states_from_menu = true;
+        self.phase = Phase::Polaroids { cart };
+        self.list_shots_later();
+        self.push_hint_faces();
+    }
+
+    fn delete_shot(&mut self) {
+        let canvas = self.canvas();
+        let Some(v) = &mut self.shot_viewer else {
+            return;
+        };
+        let gone = match v.selecting() {
+            true => v.remove_ticked(canvas),
+            false => {
+                let one = v.selected().cloned();
+                v.remove_selected(canvas);
+                one.into_iter().collect()
+            }
+        };
+        let empty = v.is_empty();
+        for e in gone {
+            self.shot_writer.remove(e.path);
+        }
+        self.has_shots = !empty;
+        if empty {
+            self.close_polaroids();
+        }
+    }
+
+    pub fn shots_to_delete(&self) -> usize {
+        match &self.shot_viewer {
+            Some(v) if v.selecting() => v.ticked_count(),
+            Some(_) => 1,
+            None => 0,
+        }
+    }
+
+    pub fn shot_opens(&self) -> u64 {
+        self.shot_opens
     }
 
     fn load_selected(&mut self) {
@@ -5360,6 +5639,7 @@ impl App {
         if self.undo_targets(&stamp) {
             self.pending = None;
         }
+        self.refresh_albums();
         let Some(p) = &mut self.polaroids else {
             return;
         };
@@ -5407,6 +5687,34 @@ impl App {
         true
     }
 
+    pub fn shot_requested(&self) -> bool {
+        self.shot_wanted
+    }
+
+    pub fn shot_taken(&mut self, w: u32, h: u32, rgba: Vec<u8>) {
+        self.shot_wanted = false;
+        let Some(shots) = self.shot_dir() else {
+            return;
+        };
+        let mut ms = self.wall_secs() * 1000 + i64::from(system_subsec_ms());
+        if let Some(last) = self.last_shot.filter(|&last| ms <= last) {
+            ms = last + 1;
+        }
+        self.shot_writer.write(crate::shot_writer::Shot {
+            path: shots.path(&slot_store::shot_stamp(ms)),
+            w,
+            h,
+            rgba,
+        });
+        self.last_shot = Some(ms);
+        self.has_shots = true;
+        self.hud.toast(Toast::ShotCaptured, self.now());
+    }
+
+    pub fn flush_shots(&self) {
+        self.shot_writer.flush();
+    }
+
     fn save_state(&mut self) {
         let (Some(ring), Some(snapshot)) = (self.ring(), &self.snapshot) else {
             return;
@@ -5420,7 +5728,7 @@ impl App {
             return;
         };
         let thumb = snapshot.thumb().unwrap_or_default();
-        let stamp = free_stamp(&ring, self.wall_secs());
+        let stamp = free_stamp(&stamps_of(&ring), self.wall_secs());
         let evicted = doomed(&ring);
         let pushed = ring.push(&state, &thumb, &stamp);
         self.card_writes.wrote("save state", &pushed);
@@ -5428,6 +5736,7 @@ impl App {
             eprintln!("slot: save: {e}");
             return;
         }
+        self.has_states = true;
         self.hud.toast(Toast::StateSaved, self.now());
         self.pending = Some((PendingUndo::Save { stamp, evicted }, self.now()));
     }
@@ -5461,9 +5770,71 @@ impl App {
     fn push_hint_faces(&mut self) {
         let mut faces = self.legend_faces.clone();
         faces.extend(self.undo_face);
+        if let Some(v) = &mut self.shot_viewer {
+            v.set_hint_faces(self.shot_hint_faces.clone());
+            v.set_tick_face(self.shot_tick_face);
+        }
         if let Some(p) = &mut self.polaroids {
             p.set_hint_faces(faces);
         }
+    }
+
+    pub fn shot_viewer(&self) -> Option<&ShotViewer> {
+        self.shot_viewer.as_ref()
+    }
+
+    pub fn set_shot_face(&mut self, face: Option<(TexId, u32, u32)>) {
+        if let Some(v) = &mut self.shot_viewer {
+            v.set_face(face);
+        }
+    }
+
+    pub fn set_shot_thumb(&mut self, path: &std::path::Path, face: Option<(TexId, u32, u32)>) {
+        if let Some(v) = &mut self.shot_viewer {
+            v.set_thumb(path, face);
+        }
+    }
+
+    pub fn set_shot_count_face(&mut self, face: Option<(TexId, u32)>) {
+        if let Some(v) = &mut self.shot_viewer {
+            v.set_count_face(face);
+        }
+    }
+
+    pub fn set_shot_tick_face(&mut self, face: (TexId, u32, u32)) {
+        self.shot_tick_face = Some(face);
+        self.push_hint_faces();
+    }
+
+    pub fn set_delete_shot_text(&mut self, title: (TexId, u32, u32), detail: (TexId, u32, u32)) {
+        self.delete_shot_text = Some([title, detail]);
+    }
+
+    pub fn delete_shot_lines(&self) -> Option<(String, &'static str)> {
+        if !self.delete_prompt || self.shot_viewer.is_none() {
+            return None;
+        }
+        Some(match self.shots_to_delete() {
+            1 => ("Delete this screenshot?".to_string(), "It cannot be brought back."),
+            n => (format!("Delete {n} screenshots?"), "They cannot be brought back."),
+        })
+    }
+
+    pub fn set_shot_hint_faces(&mut self, faces: Vec<TexId>) {
+        self.shot_hint_faces = faces;
+        self.push_hint_faces();
+    }
+
+    pub fn shot_wants_full(&self) -> Option<&std::path::Path> {
+        self.shot_viewer
+            .as_ref()
+            .filter(|v| v.mode() != ShotMode::Grid)
+            .and_then(|v| v.selected())
+            .map(|e| e.path.as_path())
+    }
+
+    pub fn set_delete_shot_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.delete_shot_faces = faces;
     }
 
     pub fn set_icon_faces(&mut self, faces: Vec<TexId>) {
@@ -5506,6 +5877,7 @@ impl App {
                 self.states_from_menu = false;
             }
         }
+        self.refresh_albums();
         self.close_polaroids();
     }
 
@@ -5539,6 +5911,9 @@ impl App {
     }
 
     pub fn polaroid_stamp(&self) -> Option<&str> {
+        if let Some(v) = &self.shot_viewer {
+            return v.selected().map(|e| e.stamp.as_str());
+        }
         self.polaroids
             .as_ref()
             .and_then(|p| p.selected())
@@ -5546,15 +5921,37 @@ impl App {
     }
 
     pub fn polaroid_title(&self, now: &str) -> String {
+        if let Some(v) = &self.shot_viewer {
+            return v.title(now);
+        }
         self.polaroids
             .as_ref()
             .map_or_else(String::new, |p| p.title(now))
     }
 
     pub fn set_polaroid_title_face(&mut self, face: TexId) {
+        if let Some(v) = &mut self.shot_viewer {
+            v.set_title_face(Some(face));
+        }
         if let Some(p) = &mut self.polaroids {
             p.set_title_face(Some(face));
         }
+    }
+}
+
+fn system_subsec_ms() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_millis())
+}
+
+fn pan_step(b: Btn) -> Option<(i32, i32)> {
+    match b {
+        Btn::Left => Some((-1, 0)),
+        Btn::Right => Some((1, 0)),
+        Btn::Up => Some((0, -1)),
+        Btn::Down => Some((0, 1)),
+        _ => None,
     }
 }
 
@@ -5642,11 +6039,13 @@ fn doomed(ring: &StateRing) -> Option<(String, Vec<u8>, Vec<u8>)> {
     Some((oldest.stamp.clone(), state, thumb))
 }
 
-fn free_stamp(ring: &StateRing, now: i64) -> String {
-    let taken: Vec<String> = ring
-        .list()
+fn stamps_of(ring: &StateRing) -> Vec<String> {
+    ring.list()
         .map(|l| l.into_iter().map(|e| e.stamp).collect())
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+fn free_stamp(taken: &[String], now: i64) -> String {
     let newest = taken.iter().filter_map(|s| parse_stamp(s)).max();
     let mut secs = newest.map_or(now, |n| now.max(n + 1));
     let mut stamp = format_stamp(secs);

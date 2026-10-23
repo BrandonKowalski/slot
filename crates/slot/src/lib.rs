@@ -46,6 +46,8 @@ pub mod resample;
 pub mod rewind;
 pub mod root;
 pub mod session;
+pub mod shot_loader;
+pub mod shot_writer;
 pub mod state_writer;
 pub mod thumb;
 pub mod video_mode;
