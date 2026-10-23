@@ -4,7 +4,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 card=$(cd "$1" && pwd)
 shift
 [ $# -gt 0 ] || set -- $(cd "$here/clips" && ls *.txt | grep -v '^link-' | sed 's/\.txt$//')
-cd "$here/../.."
+cd "$here/../../.."
 cargo build -q --release --example record -p slot
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

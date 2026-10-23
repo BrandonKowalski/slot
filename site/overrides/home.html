@@ -1,0 +1,60 @@
+{% extends "main.html" %}
+{% block footer %}
+<footer class="md-footer foot-min">
+  <button type="button" class="doc-cart" aria-label="Eject the docs">
+    <img src="{{ 'assets/doc-cart.png' | url }}" alt="" width="240" height="141">
+  </button>
+  {% include "partials/foot-base.html" %}
+</footer>
+{% endblock %}
+{% block content %}
+<section class="hero" aria-label="slot.">
+  <div class="hero-copy">
+    <div class="wordmark-row">
+      <h1 class="wordmark">slot.</h1>
+      <button class="say" type="button" aria-label="Hear how slot is pronounced" title="Pronunciation">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path class="say-body" d="M3 9.5h4.2L12.5 5v14l-5.3-4.5H3z"/>
+          <path class="say-wave say-wave-1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/>
+          <path class="say-wave say-wave-2" d="M18.3 6.4a8 8 0 0 1 0 11.2"/>
+        </svg>
+      </button>
+      <audio id="say-slot" src="{{ 'media/slot.mp3' | url }}" preload="none"></audio>
+    </div>
+    <p class="tagline">A bespoke, Game Boy-centric frontend for the Anbernic RG SP.</p>
+    <div class="actions">
+      <a class="btn" href="https://github.com/BrandonKowalski/slot/releases/latest">Download</a>
+      <a class="btn ghost" href="https://studio.slot-cfw.fyi" target="_blank">Cart Studio</a>
+    </div>
+  </div>
+
+  <div class="hero-device">
+    <div class="device pose-hero">
+      <div class="dv-lid">
+        <div class="dv-front">
+          <svg viewBox="0 0 820 725" role="img" aria-label="An Anbernic RG SP running slot.">
+            <use href="#lidArt"/>
+          </svg>
+          <video class="screen-box hero-screen" width="720" height="480" muted playsinline loop
+                 preload="metadata" poster="{{ 'media/main.webp' | url }}"></video>
+        </div>
+        <div class="dv-back" aria-hidden="true">
+          <svg viewBox="0 0 820 725" preserveAspectRatio="none"><use href="#lidBackArt"/></svg>
+        </div>
+        <span class="dv-edge" aria-hidden="true"></span>
+        <span class="f3d side-l" aria-hidden="true"></span>
+        <span class="f3d side-r" aria-hidden="true"></span>
+      </div>
+      <div class="dv-deck">
+        <svg viewBox="0 725 820 830" aria-hidden="true" focusable="false">
+          <use href="#deckArt"/>
+        </svg>
+        <span class="f3d side-l deck-l" aria-hidden="true"></span>
+        <span class="f3d side-r deck-r" aria-hidden="true"></span>
+        <span class="f3d dv-bottom" aria-hidden="true"></span>
+        <span class="dv-ao" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

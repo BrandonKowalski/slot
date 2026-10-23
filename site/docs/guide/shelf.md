@@ -1,0 +1,48 @@
+# The Shelf
+
+## Getting around
+
+| Button | Does |
+| --- | --- |
+| <kbd>Left</kbd> / <kbd>Right</kbd> | Move along the shelf |
+| <kbd>Up</kbd> / <kbd>Down</kbd> | Jump to the previous or next letter |
+| <kbd>L1</kbd> / <kbd>R1</kbd> | Switch shelves |
+| <kbd>Y</kbd> | Favorite / unfavorite the cart you're on |
+| <kbd>A</kbd> | Insert the cart |
+| <kbd>Hold A</kbd> | Insert the cart and don't auto load the save state |
+| <kbd>START</kbd> | Choose the emulator (GBA only) |
+| <kbd>MENU</kbd> | Open settings |
+
+## The shelves
+
+There's one shelf per system, along with two special shelves, in this order:
+
+1. Recents, if enabled in settings
+2. Favorites, once you've starred something
+3. Game Boy Advance
+4. Game Boy Color
+5. Game Boy
+
+slot does not show empty shelves. If you only have GBA games, you only get the GBA shelf.
+
+Within a shelf, games are sorted by name. Names starting with a number come first.
+
+slot remembers which shelf and cart you were on when it gets powered off and will return there on the next boot. If you powered down while still in game it will resume that game on the next boot.
+
+## Favorites
+
+Press <kbd>Y</kbd> to star a cart. It shows up on the Favorites shelf alongside any other favorites across all three platforms. Press <kbd>Y</kbd> again to take the star off.
+
+## Recents
+
+Turn on Recents in Settings → General to get a shelf of the last 10 games you played.
+
+## Game titles
+
+Turn on Game Titles in Settings → General and they will appear above the slot.
+
+## Adding games
+
+New games, labels and cart shells are picked up when slot boots.
+
+See [Storage Reference](storage.md) for where games go and [Customization](customizing.md) for labels / shells.
