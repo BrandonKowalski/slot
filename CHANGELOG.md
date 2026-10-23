@@ -5,11 +5,12 @@
 - mGBA no longer crashes on an empty resume state, which a card repair can leave behind. Booting with that cart in the slot crashed slot every time.
 - Saves, states, settings and slot's log reach the card as soon as they are written, not up to 30 seconds later. That shrinks the window in which pressing reset or the battery dying can leave the card read-only. (#72, #144)
 - A game's own save is written to the card every minute while it plays. The resume state is written every 5 minutes instead of every minute.
-- If a game takes slot down while it loads, slot starts on the shelf next time instead of loading it again, and sets that game's resume state aside.
+- If a game takes slot down while it loads, slot starts on the shelf next time instead of loading it again.
 - A core that stops answering no longer freezes slot. Saving waits at most 2 seconds for it, and ejecting at most 10 before slot restarts.
 - Caching New Labels no longer stays up forever on a label it cannot read. After 20 seconds without progress the shelf comes up, and a label that crashes its decoder is skipped.
 - GBA can use your own bezels on 640x480 devices. Add .png files to `Bezels/GBA` and pick one in Settings > Screen > Game Boy Advance > Bezel. On 720x480 devices a GBA game fills the screen, so there is no bezel.
 - A card repair no longer hangs on a card too damaged to check. Each step is given up on after a time limit, the repair reports that it failed, and the device restarts.
+- For 30 seconds after a save or a load, the in-game menu now offers Undo Save or Undo Load under Resume. This option is also accessible with X on the state switcher screen.
 
 ## [1.8.1](https://github.com/BrandonKowalski/slot/releases/tag/v1.8.1)
 
