@@ -607,7 +607,7 @@ kbd{
 :root{
   --slot-bar:url(footer-slot.png) center top no-repeat,linear-gradient(to bottom,rgba(255,255,255,.318) 0px,rgba(255,255,255,.283) 1px,rgba(255,255,255,.217) 2px,rgba(255,255,255,.151) 3px,rgba(255,255,255,.101) 4px,rgba(255,255,255,.071) 5px,rgba(255,255,255,.044) 6px,rgba(255,255,255,.036) 7px,rgba(255,255,255,.029) 8px,rgba(255,255,255,.026) 9px,rgba(255,255,255,.02) 10px,rgba(255,255,255,.018) 11px,rgba(255,255,255,.009) 12px,rgba(255,255,255,0) 13px) left top/100% 13px no-repeat;
 }
-.md-footer-meta{position:relative;background:var(--recess) url(footer-plastic.png) repeat}
+.md-footer-meta{position:relative;margin-top:48px;background:var(--recess) url(footer-plastic.png) repeat}
 .md-footer-meta::before{
   content:"";
   display:block;
