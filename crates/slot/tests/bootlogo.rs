@@ -1,5 +1,6 @@
 use slot::bootlogo::{
-    chosen, compose, decode, encode, install, pending, size, Bmp, Outcome, CARD_LOGO, USER_LOGO,
+    chosen, compose, decode, encode, install, pending, size, Bmp, Logo, Outcome, CARD_LOGO,
+    USER_LOGO,
 };
 
 const BG: [u8; 3] = [11, 14, 17];
@@ -11,6 +12,10 @@ fn mark() -> Bmp {
     rgb[width + 1] = INK;
     rgb[width + 3] = [200, 0, 0];
     Bmp { width, height, rgb }
+}
+
+fn word() -> Logo {
+    Logo::Wordmark(encode(&mark()))
 }
 
 fn screen(w: usize, h: usize, fill: u8) -> Vec<u8> {
@@ -59,20 +64,20 @@ fn a_wordmark_bigger_than_the_panel_is_refused() {
 fn only_a_logo_that_differs_asks_for_the_partition_to_be_written() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
-    assert_eq!(pending(&encode(&mark()), d.path()), None);
-    install(&encode(&mark()), d.path()).unwrap();
-    assert_eq!(pending(&encode(&mark()), d.path()), Some(Outcome::Same));
-    assert_eq!(pending(b"not a bmp", d.path()), Some(Outcome::Invalid));
+    assert_eq!(pending(&word(), d.path()), None);
+    install(&word(), d.path()).unwrap();
+    assert_eq!(pending(&word(), d.path()), Some(Outcome::Same));
+    assert_eq!(
+        pending(&Logo::Wordmark(b"not a bmp".to_vec()), d.path()),
+        Some(Outcome::Invalid)
+    );
 }
 
 #[test]
 fn the_logo_takes_the_size_of_the_one_already_on_the_panel() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
-    assert_eq!(
-        install(&encode(&mark()), d.path()).unwrap(),
-        Outcome::Installed
-    );
+    assert_eq!(install(&word(), d.path()).unwrap(), Outcome::Installed);
     let logo = std::fs::read(d.path().join("bootlogo.bmp")).unwrap();
     assert_eq!(size(&logo), Some((64, 48)));
     assert_eq!(logo.len(), screen(64, 48, 1).len());
@@ -81,7 +86,7 @@ fn the_logo_takes_the_size_of_the_one_already_on_the_panel() {
         screen(64, 48, 1)
     );
     assert!(!d.path().join("bootlogo.tmp").exists());
-    assert_eq!(install(&encode(&mark()), d.path()).unwrap(), Outcome::Same);
+    assert_eq!(install(&word(), d.path()).unwrap(), Outcome::Same);
 }
 
 #[test]
@@ -89,10 +94,7 @@ fn a_wrong_sized_logo_is_rebuilt_at_the_size_of_the_original() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("bootlogo.baseos.bmp"), screen(64, 48, 1)).unwrap();
     std::fs::write(d.path().join("bootlogo.bmp"), screen(72, 48, 2)).unwrap();
-    assert_eq!(
-        install(&encode(&mark()), d.path()).unwrap(),
-        Outcome::Installed
-    );
+    assert_eq!(install(&word(), d.path()).unwrap(), Outcome::Installed);
     let logo = std::fs::read(d.path().join("bootlogo.bmp")).unwrap();
     assert_eq!(size(&logo), Some((64, 48)));
     assert_eq!(
@@ -107,7 +109,7 @@ fn a_bad_wordmark_or_no_logo_to_measure_never_touches_the_partition() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
     assert_eq!(
-        install(&encode(&mark())[..20], d.path()).unwrap(),
+        install(&Logo::Wordmark(encode(&mark())[..20].to_vec()), d.path()).unwrap(),
         Outcome::Invalid
     );
     assert_eq!(
@@ -117,10 +119,7 @@ fn a_bad_wordmark_or_no_logo_to_measure_never_touches_the_partition() {
     assert!(!d.path().join("bootlogo.baseos.bmp").exists());
 
     let empty = tempfile::tempdir().unwrap();
-    assert_eq!(
-        install(&encode(&mark()), empty.path()).unwrap(),
-        Outcome::Invalid
-    );
+    assert_eq!(install(&word(), empty.path()).unwrap(), Outcome::Invalid);
     assert!(!empty.path().join("bootlogo.bmp").exists());
 }
 
@@ -151,19 +150,36 @@ fn card_with(logos: &[(&str, &[u8])]) -> tempfile::TempDir {
 fn a_logo_in_config_wins_over_the_shipped_one() {
     let user = screen(640, 480, 9);
     let card = card_with(&[(CARD_LOGO, &encode(&mark())), (USER_LOGO, &user)]);
-    assert_eq!(chosen(card.path()), Some(user));
+    assert_eq!(chosen(card.path()), Some(Logo::Exact(user)));
 }
 
 #[test]
 fn the_shipped_logo_is_used_without_one_in_config() {
     let shipped = encode(&mark());
     let card = card_with(&[(CARD_LOGO, &shipped)]);
-    assert_eq!(chosen(card.path()), Some(shipped));
+    assert_eq!(chosen(card.path()), Some(Logo::Wordmark(shipped)));
 }
 
 #[test]
-fn a_config_logo_that_is_not_a_24_bit_bmp_falls_back_to_the_shipped_one() {
-    let shipped = encode(&mark());
-    let card = card_with(&[(CARD_LOGO, &shipped), (USER_LOGO, b"not a bmp")]);
-    assert_eq!(chosen(card.path()), Some(shipped));
+fn a_config_logo_is_chosen_whatever_it_holds() {
+    let user = b"BM a 32-bit bitmap the bootloader can draw".to_vec();
+    let card = card_with(&[(CARD_LOGO, &encode(&mark())), (USER_LOGO, &user)]);
+    assert_eq!(chosen(card.path()), Some(Logo::Exact(user)));
+}
+
+#[test]
+fn a_config_logo_is_installed_byte_for_byte() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("bootlogo.bmp"), screen(64, 48, 1)).unwrap();
+    let user = b"BM a 32-bit bitmap the bootloader can draw".to_vec();
+    assert_eq!(
+        install(&Logo::Exact(user.clone()), d.path()).unwrap(),
+        Outcome::Installed
+    );
+    assert_eq!(std::fs::read(d.path().join("bootlogo.bmp")).unwrap(), user);
+    assert_eq!(
+        std::fs::read(d.path().join("bootlogo.baseos.bmp")).unwrap(),
+        screen(64, 48, 1)
+    );
+    assert_eq!(pending(&Logo::Exact(user), d.path()), Some(Outcome::Same));
 }
