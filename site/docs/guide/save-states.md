@@ -28,7 +28,7 @@ Deleting a state requires confirmation. If you are sure press <kbd>X</kbd> to de
 
 ## Undo
 
-Saved over a good moment? Loaded the wrong one? Open the switcher and press <kbd>X</kbd> within 30 seconds.
+Saved over a good moment? Loaded the wrong one? Open the menu and select `Undo Load` or `Undo Save` within 30 seconds.
 
 - Undoing a save removes the state you just made, and brings back the one it pushed out if you were already at 10.
 - Undoing a load puts the game back the way it was before you loaded.
