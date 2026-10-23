@@ -1,6 +1,6 @@
 # Save States
 
-A save state is a snapshot of the whole game at one moment. They're separate from the game's own saves, which slot calls battery saves and keeps in `Saves/`.
+A save state is a snapshot of the whole game at one moment. They're separate from the game's own saves, which are called battery saves and are kept in `Saves/`.
 
 ## Making and loading states
 
@@ -14,7 +14,7 @@ Each game keeps up to 10 states. Saving an 11th throws out the oldest.
 
 ## The switcher
 
-Double tap <kbd>MENU</kbd> in game, or pick States from the in-game menu. Your states are laid out like photos, newest first, with when you took each one.
+Double tap <kbd>MENU</kbd> in game, or pick States from the in-game menu. Your states are laid out like a stack of polaroids from newest to oldest.
 
 | Button | Does |
 | --- | --- |
@@ -24,7 +24,7 @@ Double tap <kbd>MENU</kbd> in game, or pick States from the in-game menu. Your s
 | <kbd>X</kbd> | Undo the last save or load |
 | <kbd>B</kbd> | Back to the game |
 
-Deleting asks first. <kbd>X</kbd> deletes it, <kbd>B</kbd> keeps it. Once it's gone, it's gone.
+Deleting a state requires confirmation. If you are sure press <kbd>X</kbd> to delete it. Note: once it's gone, it's gone.
 
 ## Undo
 
@@ -35,23 +35,23 @@ Saved over a good moment? Loaded the wrong one? Open the switcher and press <kbd
 
 ## The resume state
 
-On top of your 10, slot keeps one more that you never see: the resume state. That's what a tap of <kbd>A</kbd> on the shelf loads.
+On top of your 10, slot keeps one more that you never see: the `resume state`. That's what a tap of <kbd>A</kbd> on the shelf loads.
 
 slot writes it:
 
 - every minute while you play
 - when you close the lid or tap <kbd>POWER</kbd>
 - when you power off
-- when you eject, if Save State on Eject is on
+- when you eject, if the Save State on Eject setting is on
 - when the battery hits 5% and slot powers off to protect your saves
 
-Two rows in Settings → Gameplay control it:
+There are two options in Settings → Gameplay that control this:
 
-- **Load State on Insert** decides whether putting a cart in loads it. Off means every cart starts fresh.
+- **Load State on Insert** decides whether putting a cart in loads it. Off means every cart starts fresh including when powering on.
 - **Save State on Eject** decides whether ejecting writes it.
 
 ## States and cores
 
-States are tied to the emulator that made them. Switch a GBA game from mGBA to gpSP and the switcher starts empty. Switch back and they're all still there.
+States are tied to the emulator that made them. Switch a GBA game from mGBA to gpSP and you will have no save states. Switch back and they're all still there.
 
-States live in `States/`. See [Your SD Card](storage.md).
+States live in `States/`. See [Storage Reference](storage.md).

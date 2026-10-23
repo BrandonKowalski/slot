@@ -34,4 +34,6 @@ hide:
 3.  Put the card back and boot!
     { .step-title role="heading" aria-level="3" }
 
+    I hope you continue to enjoy using slot!
+
 </div>

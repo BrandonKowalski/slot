@@ -346,3 +346,194 @@
   }
 
 })();
+
+(function(){
+  "use strict";
+
+  var cart = document.querySelector(".doc-cart");
+  if (!cart) return;
+
+  var root    = document.documentElement;
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var screens = [".md-header", ".md-container"].map(function(s){ return document.querySelector(s); }).filter(Boolean);
+  var img     = cart.querySelector("img");
+
+  var BAR = 58, SEAT_GAP = 0, SEATED_W = 240, SHELF_W = 360;
+  var CATCH_IN = 0.42, CATCH_OUT = 0.62, CREEP = 0.03;
+  var TRAVEL_MS = 450, INSERT_HOLD_MS = 280, EJECT_HOLD_MS = 350, POWER_ON_MS = 220, POWER_OFF_MS = 160, FOOTER_SLIDE_MS = POWER_ON_MS;
+  var LINE_PX = 2, DOT_T = 0.12, OVERSHOOT = 0.6, SCROLL_MS = 300;
+
+  var stage = null, free = null, barTop = 0, busy = false, rects = [];
+
+  function ease(u){ return u * u * u * (u * (u * 6 - 15) + 10); }
+
+  function travel(seat, c){
+    if (seat < CATCH_IN) return c * ease(seat / CATCH_IN);
+    if (seat < CATCH_OUT) return c + CREEP * (seat - CATCH_IN) / (CATCH_OUT - CATCH_IN);
+    var caught = c + CREEP;
+    return caught + (1 - caught) * ease((seat - CATCH_OUT) / (1 - CATCH_OUT));
+  }
+
+  function tall(w){ return w * img.naturalHeight / img.naturalWidth; }
+
+  function cartAt(seat){
+    var w0 = Math.min(SHELF_W, innerWidth * 0.8), h0 = tall(w0);
+    var sh = tall(SEATED_W);
+    var foot0 = Math.min((barTop + BAR) / 2 + h0 / 2, barTop - 8);
+    var seated = barTop + SEAT_GAP + sh;
+    var c = (barTop - foot0) / (seated - foot0);
+    var t = travel(seat, c);
+    var k = Math.min(t / c, 1);
+    var w = w0 + (SEATED_W - w0) * k;
+    var foot = foot0 + (seated - foot0) * t;
+    return { left:innerWidth / 2 - w / 2, top:foot - tall(w), width:w };
+  }
+
+  function place(seat){
+    var p = cartAt(seat);
+    free.style.left = p.left + "px";
+    free.style.top = p.top + "px";
+    free.style.width = p.width + "px";
+    var under = p.top + tall(p.width) - (barTop + BAR);
+    free.style.clipPath = under > 0 ? "inset(0 0 " + under + "px 0)" : "";
+  }
+
+  function run(ms, step){
+    return new Promise(function(done){
+      if (reduced || ms <= 0) { step(1); done(); return; }
+      var t0 = performance.now();
+      (function frame(now){
+        var p = Math.min((now - t0) / ms, 1);
+        step(p);
+        if (p < 1) requestAnimationFrame(frame); else done();
+      })(t0);
+    });
+  }
+
+  function measure(){
+    unpower();
+    rects = screens.map(function(el){
+      var r = el.getBoundingClientRect();
+      return { top:r.top, height:r.height };
+    });
+  }
+
+  function power(t){
+    var view = Math.max(barTop, LINE_PX);
+    var left = 1 - t;
+    var sy = 1 - (1 - LINE_PX / view) * left * left;
+    var sx = 1 - (1 - LINE_PX / innerWidth) * (1 - Math.min(t / DOT_T, 1));
+    var bright = 1 + OVERSHOOT * left * left;
+    screens.forEach(function(el, i){
+      var r = rects[i];
+      el.style.clipPath = "inset(" + Math.max(0, -r.top) + "px 0 " + Math.max(0, r.top + r.height - barTop) + "px 0)";
+      el.style.transformOrigin = "50% " + (barTop / 2 - r.top) + "px";
+      el.style.transform = "scale(" + sx + "," + sy + ")";
+      el.style.filter = "brightness(" + bright + ")";
+    });
+  }
+
+  function unpower(){
+    screens.forEach(function(el){
+      el.style.clipPath = el.style.transformOrigin = el.style.transform = el.style.filter = "";
+    });
+  }
+
+  function scrollBarDown(){
+    var bar = cart.parentNode.getBoundingClientRect().top;
+    var max = root.scrollHeight - innerHeight;
+    var from = scrollY;
+    var to = Math.max(0, Math.min(max, from + bar + BAR - innerHeight));
+    if (Math.abs(to - from) < 1) return Promise.resolve();
+    return run(SCROLL_MS, function(p){ window.scrollTo({ top:from + (to - from) * ease(p), behavior:"instant" }); });
+  }
+
+  function hold(since, ms){
+    var left = ms - (performance.now() - since);
+    return new Promise(function(done){ setTimeout(done, reduced ? 0 : Math.max(0, left)); });
+  }
+
+  function build(){
+    stage = document.createElement("div");
+    stage.className = "doc-stage";
+    var back = document.createElement("div");
+    back.className = "doc-stage-bar";
+    back.style.top = barTop + "px";
+    var front = document.createElement("div");
+    front.className = "doc-stage-front";
+    front.style.top = barTop + "px";
+    free = cart.cloneNode(true);
+    free.classList.add("is-free");
+    free.setAttribute("aria-label", "Insert the docs");
+    free.addEventListener("click", insert);
+    stage.appendChild(back);
+    stage.appendChild(free);
+    stage.appendChild(front);
+    document.body.appendChild(stage);
+  }
+
+  function eject(){
+    if (busy || stage) return;
+    busy = true;
+    scrollBarDown().then(function(){
+      barTop = cart.parentNode.getBoundingClientRect().top;
+      build();
+      place(1);
+      cart.style.visibility = "hidden";
+      root.classList.add("docs-dark");
+      measure();
+      var since = performance.now();
+      return run(POWER_OFF_MS, function(p){ power(1 - p); }).then(function(){
+        root.classList.add("docs-off");
+        screens.forEach(function(el){ el.inert = true; });
+        return hold(since, EJECT_HOLD_MS);
+      });
+    }).then(function(){
+      return run(TRAVEL_MS, function(p){ place(1 - p); });
+    }).then(function(){
+      free.classList.add("is-parked");
+      free.focus({ preventScroll:true });
+      busy = false;
+    });
+  }
+
+  function insert(){
+    if (busy || !stage) return;
+    busy = true;
+    free.classList.remove("is-parked");
+    screens.forEach(function(el){ el.style.opacity = "0"; });
+    root.classList.remove("docs-off");
+    window.scrollTo({ top:0, behavior:"instant" });
+    run(TRAVEL_MS, function(p){ place(p); }).then(function(){
+      return hold(performance.now(), INSERT_HOLD_MS);
+    }).then(function(){
+      measure();
+      power(0);
+      screens.forEach(function(el){ el.style.opacity = ""; el.inert = false; });
+      return run(POWER_ON_MS, power);
+    }).then(function(){
+      unpower();
+      var drop = innerHeight - barTop;
+      return run(FOOTER_SLIDE_MS, function(p){ stage.style.transform = "translateY(" + drop * p + "px)"; });
+    }).then(function(){
+      stage.remove();
+      stage = free = null;
+      root.classList.remove("docs-dark");
+      cart.style.visibility = "";
+      var top = document.querySelector(".mast-mark") || cart;
+      top.focus({ preventScroll:true });
+      busy = false;
+    });
+  }
+
+  window.addEventListener("resize", function(){
+    if (!stage || busy) return;
+    barTop = Math.min(barTop, innerHeight - BAR);
+    stage.querySelectorAll(".doc-stage-bar, .doc-stage-front").forEach(function(el){ el.style.top = barTop + "px"; });
+    place(0);
+  });
+  cart.addEventListener("click", eject);
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && stage) insert();
+  });
+})();

@@ -1,18 +1,18 @@
 # Controls
 
-Every button in slot can be moved. Find it all in Settings → Controls on the shelf.
-
-## The three pages
+Three submenus for adjusting controls can be found in Settings → Controls.
 
 - **Shelf**: the keys for getting around the shelf. Previous Shelf, Next Shelf and Favorite.
 - **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, fast-forward and rewind.
 - **In-Game**: which console button each button on your device presses. This is where you'd swap A and B, or move Turbo A and Turbo B off X and Y.
 
-All three apply to every game. In-Game is also in the in-game menu, so you can fix a layout without ejecting.
+All three apply globally. The In-Game menu is accessible while in-game for on the fly remapping.
 
 ## Changing a button
 
-Pick a row and press <kbd>A</kbd>. It says Recording. Press the button, or buttons, you want.
+Pick a row and press <kbd>A</kbd>. 
+
+It will say `Recording` while it waits for you to press a button or buttons.
 
 | Button | Does |
 | --- | --- |
@@ -24,7 +24,7 @@ Shortcuts and shelf keys take a single button or two held together, like <kbd>L1
 
 <kbd>SELECT</kbd>, <kbd>START</kbd> and <kbd>MENU</kbd> only work as the first button of a chord.
 
-If two rows end up on the same button, both get a warning triangle and slot tells you what it clashes with, like "Same as Fast Forward".
+If two rows end up on the same button, both get a warning triangle and slot shows a toast saying what it clashes with.
 
 ## How chords work in game
 
@@ -32,7 +32,7 @@ If two rows end up on the same button, both get a warning triangle and slot tell
 
 For other chords, the first button goes to the game straight away and the second fires the shortcut.
 
-## Defaults
+## Defaults Controls
 
 ### Everywhere
 
@@ -156,12 +156,12 @@ Hold <kbd>Y</kbd>
 
 ## Volume
 
-<kbd>VOL+</kbd> and <kbd>VOL&minus;</kbd> change the volume. Press both together, or <kbd>SELECT</kbd> + either one, to mute.
+<kbd>VOL+</kbd> and <kbd>VOL&minus;</kbd> change the volume. 
 
-The speaker and headphones each keep their own volume and mute, so plugging in headphones won't blast you.
+Press both together, or <kbd>SELECT</kbd> + <kbd>VOL+</kbd> or <kbd>VOL&minus;</kbd> to mute.
 
-The RG34XX has a volume wheel instead of two buttons, so use <kbd>SELECT</kbd> + <kbd>VOL+</kbd> or <kbd>VOL&minus;</kbd> to mute there.
+The speaker and headphones each keep their own volume level and mute status.
 
 ## The left stick
 
-On devices with a left stick, it works as the D-pad. Turn off Left Stick as D-Pad in Settings → Gameplay if you'd rather it didn't.
+On devices with a left stick, it works as the D-pad. You can turn off Left Stick as D-Pad in Settings → Gameplay.

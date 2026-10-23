@@ -17,7 +17,7 @@ Shaders make the picture look more like a real handheld screen.
 
 ## Color correction
 
-The original screens were dim and washed out, and games were made to look right on them. Color correction pulls the colors back toward what you'd have seen. It's off by default.
+The original screens were dim and washed out, and developers took this into account while making their games. Color correction pulls the colors back toward what you'd have seen on original hardware. It's off by default.
 
 <kbd>SELECT</kbd> + <kbd>Y</kbd> toggles it in game.
 
@@ -31,7 +31,7 @@ Original Game Boy games can be shown in other colors. Pick one under Settings �
 
 <kbd>SELECT</kbd> + <kbd>L2</kbd> / <kbd>R2</kbd> step through the same list while you play.
 
-Palettes only apply to original Game Boy games. Color games already have colors.
+Palettes only apply to original Game Boy games.
 
 ## Stretching
 
@@ -46,7 +46,7 @@ A bezel is a frame drawn around the game.
 - **Game Boy and Game Boy Color**: None, Default, AGS-102 on 640×480 devices, or your own from `Bezels/`.
 - **Game Boy Advance**: only on 640×480 devices, where AGS-102 draws the bottom of a GBA SP under the game.
 
-See [Making It Yours](customizing.md) for making your own.
+See [Customization](customizing.md) for details on how to make your own.
 
 ## Brightness and blue light
 
@@ -57,4 +57,4 @@ See [Making It Yours](customizing.md) for making your own.
 
 These work on the shelf and in game. They're also rows in Settings → Screen → General.
 
-Blue light warms the picture up for playing in the dark. At its lowest, the brightness shortcut can turn the backlight all the way off. Turn it back up the same way.
+Blue light warms the picture up for playing in the dark. At its lowest, the brightness shortcut can turn the backlight all the way off.

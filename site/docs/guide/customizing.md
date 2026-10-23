@@ -2,21 +2,25 @@
 
 ## Cart labels
 
-Drop a `.png` into the `Labels/` folder for that system, named after the game. `Labels/GBA/Metroid Fusion.png` goes with `Games/GBA/Metroid Fusion.gba`.
+Drop a `.png` into the `Labels/{Platform}` folder with the same name as the ROM. 
 
-| Cart | Shape | For example |
+e.g. `Labels/GBA/Metroid Fusion.png` goes with `Games/GBA/Metroid Fusion.gba`.
+
+| Cart | Shape | Suggested size |
 | --- | --- | --- |
 | GBA | 1.94:1 | 1280×661 |
 | Game Boy | 1.13:1 | 1024×901 |
 | Game Boy Color | 1.12:1 | 1024×901 |
 
-The first boot after adding labels shows Caching New Labels while slot gets them ready. That only happens once per label.
+slot will cache labels on the next boot after adding labels.
 
-You don't have to make these by hand. The [slot Cart Studio](https://studio.slot-cfw.fyi) does it for you.
+You don't have to make these by hand and can use the [Cart Studio](https://studio.slot-cfw.fyi) to fetch and apply labels.
 
 ## Cart shells
 
-Carts come in colors, like the real thing. slot knows the right color for a lot of games already. To pick your own, add a line to `Labels/cart_shell.txt`:
+You can also customize the color and appearance of the cart shell.
+
+To pick your own, add a line to `Labels/cart_shell.txt`:
 
 ```
 Metroid Fusion = auto 6a3fa0 solid
@@ -28,26 +32,26 @@ That's the game's file name, then three words:
 2. **Color**: six hex digits, no `#`.
 3. **Finish**: `solid`, `clear` or `glitter`.
 
-Keep it all lowercase. A line slot can't read is skipped.
-
-To put a game back to its built-in color, give it just `auto`.
+Keep all three options lowercase. A line slot can't read is skipped.
 
 ## Wallpapers
 
-Drop a `.png` into `Wallpapers/` and pick it under Wallpaper in Settings → General. Random cycles through all of them.
+Drop a `.png` into `Wallpapers/` and pick it under Wallpaper in Settings → General. 
 
-Make it your screen size:
+Random picks one at boot.
 
-| Device | Size |
+| Device | Suggested Size |
 | --- | --- |
 | RG SP, RG34XX, RG34XXSP | 720×480 |
 | RG35XXSP, RG35XX Plus, RG35XX-H, RG28XX | 640×480 |
 
-Other sizes are scaled to fill the screen and cropped from the centre. Wallpaper Tint darkens it a bit if your carts get lost on it.
+Other sizes are scaled to fill the screen and cropped from the center. 
+
+If your wallpaper is too bright, the Wallpaper Tint setting can darken it a bit to make everything easier to read.
 
 ## Bezels
 
-For Game Boy and Game Boy Color, drop a `.png` into `Bezels/GB/` or `Bezels/GBC/` and pick it under Bezel in that system's Screen settings.
+Drop a `.png` into `Bezels/GBA/`, `Bezels/GBC/` or `Bezels/GB/` and pick it under Bezel in that system's Screen settings.
 
 The bezel is drawn over the game, so leave a transparent hole where the game goes:
 
@@ -56,7 +60,6 @@ The bezel is drawn over the game, so leave a transparent hole where the game goe
 | RG SP, RG34XX, RG34XXSP | 720×480 | 480×432 at 120, 24 |
 | RG35XXSP, RG35XX Plus, RG35XX-H, RG28XX | 640×480 | 427×384 at 107, 48 |
 
-GBA doesn't take your own bezels.
 
 ## Boot logo
 
@@ -64,7 +67,7 @@ Put a `.bmp` at `Config/bootlogo.bmp`. slot hands it to the device when it boots
 
 slot copies the file as it is, without resizing it, so make it the same size and format as the logo your device already shows.
 
-Delete it to go back to the slot logo.
+Delete `Config/bootlogo.bmp` to go back to the slot logo.
 
 ## BIOS
 

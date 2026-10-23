@@ -2,7 +2,11 @@
 
 Two devices running slot can link up like two Game Boys with a cable between them. Trade Pokémon, battle, or race in Mario Kart.
 
-There's no cable. One device puts up its own little WiFi network and the other joins it, and the link happens inside the emulator. You don't need home WiFi or the internet.
+There's no cable. One device runs an ad hoc network and the other joins it. You don't need to be connected to Wi-Fi.
+
+!!! important "Linking is local only"
+    
+    Link play does not work over the internet and adding this feature is not planned.
 
 ## Linking
 
@@ -13,7 +17,7 @@ There's no cable. One device puts up its own little WiFi network and the other j
 
 The host waits 30 seconds for the joiner to show up. The game may reload once while it gets ready for the link.
 
-To unlink, press <kbd>SELECT</kbd> + <kbd>MENU</kbd> again and pick End Link. Closing the lid, powering off or ejecting ends it too.
+To unlink, press <kbd>SELECT</kbd> + <kbd>MENU</kbd> again and pick End Link. Closing the lid, powering off or ejecting also ends a link session.
 
 ## Which games can link
 
@@ -40,7 +44,7 @@ If slot says "Please switch to gpSP", the game needs the wireless adapter. Chang
 ## While you're linked
 
 - The game keeps running behind menus. Pausing one device would freeze the other.
-- Fast-forward, rewind, loading states and the switcher are off.
+- Fast-forward, rewind, loading states and opening the state switcher are all disabled.
 - A badge shows whether you're Hosting or Joined.
 - If the other device goes quiet for 2 seconds, the link ends.
 

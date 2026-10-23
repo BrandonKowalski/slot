@@ -18,6 +18,9 @@
     </nav>
   {% endif %}
   <div class="md-footer-meta">
+    <button type="button" class="doc-cart" aria-label="Eject the docs">
+      <img src="{{ 'assets/doc-cart.png' | url }}" alt="" width="240" height="141">
+    </button>
     <div class="foot md-grid">
       <div class="foot-brand">
         <a class="foot-mark" href="{{ nav.homepage.url | url }}">{{ config.site_name }}</a>
@@ -40,7 +43,7 @@
         <div class="foot-col">
           <h2>Guide</h2>
           <ul>
-            <li><a href="{{ 'guide/' | url }}">User Guide</a></li>
+            <li><a href="{{ 'guide/shelf/' | url }}">User Guide</a></li>
             <li><a href="{{ 'guide/controls/' | url }}">Controls</a></li>
             <li><a href="{{ 'guide/settings/' | url }}">Settings</a></li>
             <li><a href="{{ 'guide/troubleshooting/' | url }}">Troubleshooting</a></li>

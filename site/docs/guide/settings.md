@@ -1,8 +1,8 @@
-# Settings Reference
+# Settings Explained
 
-Tap <kbd>MENU</kbd> on the shelf to open settings. <kbd>Up</kbd> and <kbd>Down</kbd> pick a row, <kbd>Left</kbd> and <kbd>Right</kbd> change it, <kbd>A</kbd> opens a page and <kbd>B</kbd> goes back.
+Tap <kbd>MENU</kbd> on the shelf to open settings. 
 
-Everything saves as soon as you change it.
+All settings save as soon as you change an option.
 
 ## General
 
@@ -16,7 +16,7 @@ Everything saves as soon as you change it.
 | Lid Power Off | 1, 3, 5, 10, 15, 30 min | 3 min | How long slot sleeps before powering off |
 | Date & Time | | | Sets the clock |
 
-Random picks a different wallpaper each boot and won't repeat one until it's shown them all.
+Random picks a different wallpaper each boot.
 
 ## Screen
 
@@ -42,7 +42,7 @@ Each system has its own page.
 
 | Setting | Choices | Default | Does |
 | --- | --- | --- | --- |
-| Fast Forward | Off, 2×, 3×, 4×, 6× | 6× | The top speed when fast-forwarding |
+| Fast Forward | Off, 2x, 3x, 4x, 6x | 6x | The top speed when fast-forwarding |
 | Fast Forward Sound | On, Off | Off | Sound while fast-forwarding |
 | Rewind | On, Off | On | Hold <kbd>L2</kbd> to go back |
 | Turbo Buttons | On, Off | On | Turbo A and Turbo B |
@@ -53,14 +53,14 @@ Each system has its own page.
 
 ## Controls
 
-Three pages: Shelf, Shortcuts and In-Game. See [Controls](controls.md).
+See [Controls](controls.md).
 
 ## About
 
-Your device's sticker, with the version of slot and the battery level. Press <kbd>X</kbd> to restart.
+Your device's sticker, with the version of slot and more. Press <kbd>X</kbd> to restart.
 
 ## The in-game menu
 
-Tap <kbd>MENU</kbd> while playing for Resume, States, Settings and Exit Game.
+Tap <kbd>MENU</kbd> while playing for Resume, States, Screenshots, Settings and Exit Game.
 
-Settings in game has the Screen and Gameplay pages for the system you're playing, and the In-Game controls. Shortcuts and shelf keys are only on the shelf.
+Settings while in-game has the Screen and Gameplay pages for the system you're playing, and the In-Game controls. Shortcuts and shelf keys can only be customized from settings accessed from the shelf.
