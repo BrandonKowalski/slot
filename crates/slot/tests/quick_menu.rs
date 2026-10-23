@@ -1315,6 +1315,28 @@ fn a_four_by_three_panel_keeps_ags_102_until_another_frame_is_picked() {
 }
 
 #[test]
+fn gba_frames_from_the_card_show_only_on_a_four_by_three_panel() {
+    let (d, mut a, _) = on_carousel();
+    std::fs::write(d.path().join("Bezels/GBA/Classic.png"), b"png").unwrap();
+    assert!(a.bezel_files(Platform::Gba).is_empty());
+    a.set_panel((640, 480));
+    assert_eq!(a.bezel_files(Platform::Gba), vec!["Classic.png".to_string()]);
+    open_at(&mut a, QuickRow::GbaBezel);
+    press(&mut a, Btn::Right);
+    assert_eq!(
+        a.resolved_bezel(Platform::Gba),
+        BezelPick::File("Classic.png".into())
+    );
+    assert!(!a.sp_frame());
+    assert_eq!(
+        read_slot_state(d.path()).bezel_gba,
+        BezelPick::File("Classic.png".into())
+    );
+    a.set_panel((720, 480));
+    assert_eq!(a.resolved_bezel(Platform::Gba), BezelPick::None);
+}
+
+#[test]
 fn a_frame_file_that_is_gone_reads_back_as_none() {
     let (_d, a, _) = on_carousel_with(SlotState {
         bezel_gb: BezelPick::File("gone.png".into()),

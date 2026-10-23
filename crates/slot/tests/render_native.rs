@@ -206,14 +206,18 @@ fn a_panel_sized_wallpaper_lands_pixel_for_pixel_on_a_4_by_3_panel() {
     }
 }
 
-fn gb_bezel_on_a_4_by_3_panel(
+fn bezel_on_a_4_by_3_panel(
+    platform: slot_store::Platform,
     name: &str,
     pick: slot_store::BezelPick,
     file: Option<(usize, usize)>,
 ) -> Option<Vec<u8>> {
     let surface = HeadlessSurface::new().ok()?;
     let mut c = Compositor::new(&surface).ok()?;
-    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    let d = match platform {
+        slot_store::Platform::Gba => common::tmp_root_with_carts(&["Emerald"]),
+        _ => common::tmp_root_with_gb_carts(&["Tetris"]),
+    };
     clocked(d.path());
     if let Some((w, h)) = file {
         let mut bezel = vec![0u8; w * h * 4];
@@ -227,7 +231,7 @@ fn gb_bezel_on_a_4_by_3_panel(
             };
             px.copy_from_slice(&colour);
         }
-        let dir = d.path().join("Bezels/GB");
+        let dir = d.path().join("Bezels").join(platform.dir_name());
         let file = std::fs::File::create(dir.join("edges.png")).unwrap();
         let mut e = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
         e.set_color(png::ColorType::Rgba);
@@ -237,9 +241,15 @@ fn gb_bezel_on_a_4_by_3_panel(
     let state = slot_store::read_slot_state(d.path());
     slot_store::write_slot_state(
         d.path(),
-        &slot_store::SlotState {
-            bezel_gb: pick,
-            ..state
+        &match platform {
+            slot_store::Platform::Gba => slot_store::SlotState {
+                bezel_gba: pick,
+                ..state
+            },
+            _ => slot_store::SlotState {
+                bezel_gb: pick,
+                ..state
+            },
         },
     )
     .unwrap();
@@ -269,7 +279,8 @@ fn panel_at(panel: &[u8], x: usize, y: usize) -> [u8; 3] {
 
 #[test]
 fn a_panel_sized_bezel_lands_pixel_for_pixel_on_a_4_by_3_panel() {
-    let Some(panel) = gb_bezel_on_a_4_by_3_panel(
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gb,
         "native-bezel-panel",
         slot_store::BezelPick::File("edges.png".into()),
         Some((640, 480)),
@@ -294,7 +305,8 @@ fn a_panel_sized_bezel_lands_pixel_for_pixel_on_a_4_by_3_panel() {
 
 #[test]
 fn a_bezel_the_size_of_the_game_area_sits_on_it_on_a_4_by_3_panel() {
-    let Some(panel) = gb_bezel_on_a_4_by_3_panel(
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gb,
         "native-bezel-edges",
         slot_store::BezelPick::File("edges.png".into()),
         Some((640, 427)),
@@ -313,9 +325,12 @@ fn a_bezel_the_size_of_the_game_area_sits_on_it_on_a_4_by_3_panel() {
 
 #[test]
 fn the_default_bezel_reaches_the_top_and_bottom_of_a_4_by_3_panel() {
-    let Some(panel) =
-        gb_bezel_on_a_4_by_3_panel("native-bezel-default", slot_store::BezelPick::Default, None)
-    else {
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gb,
+        "native-bezel-default",
+        slot_store::BezelPick::Default,
+        None,
+    ) else {
         return;
     };
     for y in [0, 13, 26, 453, 466, 479] {
@@ -447,4 +462,23 @@ fn the_link_screen_uses_the_whole_4_by_3_panel() {
         "the link legends are not at the bottom of the panel"
     );
     link_screen_on((720, 480));
+}
+
+#[test]
+fn a_gba_bezel_from_the_card_frames_the_game_on_a_4_by_3_panel() {
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gba,
+        "native-bezel-gba",
+        slot_store::BezelPick::File("edges.png".into()),
+        Some((640, 480)),
+    ) else {
+        return;
+    };
+    let at = |x, y| panel_at(&panel, x, y);
+    assert_eq!(at(0, 200), [255, 0, 0], "left edge");
+    assert_eq!(at(639, 200), [0, 0, 255], "right edge");
+    assert_eq!(at(320, 0), [0, 255, 0], "top edge");
+    assert_eq!(at(320, 479), [255, 255, 0], "bottom edge");
+    assert_eq!(at(320, 10), [0, 0, 0], "above the game area");
+    assert_eq!(at(320, 470), [0, 0, 0], "below the game area");
 }

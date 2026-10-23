@@ -1163,9 +1163,9 @@ impl App {
     }
 
     pub fn bezel_files(&self, platform: Platform) -> Vec<String> {
-        match platform {
-            Platform::Gba => Vec::new(),
-            _ => self
+        match platform == Platform::Gba && !self.framed_panel() {
+            true => Vec::new(),
+            false => self
                 .root()
                 .map(|root| crate::bezel::list(root, platform))
                 .unwrap_or_default(),
