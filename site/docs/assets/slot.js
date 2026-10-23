@@ -513,6 +513,10 @@
       return run(POWER_ON_MS, power);
     }).then(function(){
       unpower();
+      if (Math.abs(cart.parentNode.getBoundingClientRect().top - barTop) < 1) {
+        cart.style.visibility = "";
+        return run(POWER_OFF_MS, function(p){ stage.style.opacity = String(1 - p); });
+      }
       var drop = innerHeight - barTop;
       return run(FOOTER_SLIDE_MS, function(p){ stage.style.transform = "translateY(" + drop * p + "px)"; });
     }).then(function(){

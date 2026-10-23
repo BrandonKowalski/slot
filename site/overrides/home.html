@@ -1,6 +1,9 @@
 {% extends "main.html" %}
 {% block footer %}
 <footer class="md-footer foot-min">
+  <button type="button" class="doc-cart" aria-label="Eject the docs">
+    <img src="{{ 'assets/doc-cart.png' | url }}" alt="" width="240" height="141">
+  </button>
   {% include "partials/foot-base.html" %}
 </footer>
 {% endblock %}

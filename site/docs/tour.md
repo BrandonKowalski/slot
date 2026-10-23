@@ -17,7 +17,7 @@ Press <kbd>Y</kbd> to star the cart you're on.<br>Press <kbd>Y</kbd> again to re
 
 ### Pick an Emulator { #core-picker data-clip="core-picker.mp4" }
 
-Press <kbd>START</kbd> to open a cart.<br><kbd>Left</kbd> and <kbd>Right</kbd> swaps the core "chip".<br><kbd>A</kbd> saves your choice.
+Press <kbd>START</kbd> to open a cart.<br><kbd>Left</kbd> and <kbd>Right</kbd> swap the core "chip".<br><kbd>A</kbd> saves your choice.
 
 ### Insert and Play { #insert data-clip="insert.mp4" }
 
@@ -53,7 +53,7 @@ Hold <kbd>R2</kbd> to fast-forward.<br>Double tap <kbd>R2</kbd> to lock FF on.<b
 
 ### Link Up { #link data-clip="link.mp4" data-pair="link-join.mp4" }
 
-<kbd>SELECT</kbd> + <kbd>MENU</kbd> opens the link screen.<br>Host on one SP, Join on the other.<br>The link is hosted over an Ad Hoc network.
+<kbd>SELECT</kbd> + <kbd>MENU</kbd> opens the link screen.<br>Host on one SP, Join on the other.<br>The link is hosted over its own Wi-Fi network.
 
 ### Settings { #settings data-clip="settings.mp4" }
 
@@ -61,7 +61,7 @@ Tap <kbd>MENU</kbd> to open settings.
 
 ### Brightness and Blue Light { #brightness data-clip="brightness.mp4" }
 
-<kbd>SELECT</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd> adjusts brightness.<br><kbd>SELECT</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd> adjusts temperature.<br>You can change both on the carousel or in-game.
+<kbd>SELECT</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd> adjusts brightness.<br><kbd>SELECT</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd> adjusts blue light.<br>You can change both on the carousel or in-game.
 
 ### Lid Detection { #lid-detection data-still="carousel.webp" data-lid="shut" }
 

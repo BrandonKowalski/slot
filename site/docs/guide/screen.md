@@ -1,6 +1,6 @@
 # The Screen
 
-Each system gets its own screen settings, so you can have a grid on your GBA games and a dot matrix on your Game Boy ones. Find them in Settings → Screen, or in the in-game menu while you play.
+Each system gets its own screen settings, so you can have a grid on your GBA games and Simpletex on your Game Boy ones. Find them in Settings → Screen, or in the in-game menu while you play.
 
 ## Shaders
 

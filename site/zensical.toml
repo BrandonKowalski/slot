@@ -16,6 +16,7 @@ nav = [
     { "Playing" = [
       "guide/shelf.md",
       "guide/playing.md",
+      "guide/screenshots.md",
       "guide/save-states.md",
       "guide/fast-forward-rewind-turbo.md",
       "guide/linking.md",
@@ -34,7 +35,7 @@ nav = [
   ] },
   { "Questions" = "questions.md" },
   { "Credits" = "credits.md" },
-  { "Studio" = "https://studio.slot-cfw.fyi" },
+  { "Cart Studio" = "https://studio.slot-cfw.fyi" },
 ]
 
 extra_css = ["assets/slot.css"]

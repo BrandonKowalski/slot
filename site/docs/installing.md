@@ -11,12 +11,12 @@ hide:
 
 <div class="install-steps" markdown>
 
-1.  Flash BaseOS to an SD Card
+1.  Flash BaseOS to an SD card
     { .step-title role="heading" aria-level="3" }
 
     Download the latest release of
     [BaseOS](https://github.com/pvaibhav/BaseOS/releases/latest) and write the `.img` to an SD card with
-    something like [RUFUS](https://rufus.ie) or [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+    something like [Rufus](https://rufus.ie) or [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 
     Insert this card into the SD card slot labeled `SD1`.
 
@@ -32,7 +32,7 @@ hide:
 
     Go fetch the [latest slot release](https://github.com/BrandonKowalski/slot/releases/latest) from GitHub.
 
-4.  Copy it onto your SD Card
+4.  Copy it onto your SD card
     { .step-title role="heading" aria-level="3" }
 
     Eject the SD card from `SD1` and connect it back to your computer. Unzip the release zip you downloaded and copy the contents to the root of the SD card.
@@ -61,12 +61,12 @@ hide:
 
 <div class="install-steps" markdown>
 
-1.  Flash BaseOS to an SD Card
+1.  Flash BaseOS to an SD card
     { .step-title role="heading" aria-level="3" }
 
     Download the latest release of
     [BaseOS](https://github.com/pvaibhav/BaseOS/releases/latest) and write the `.img` to an SD card with
-    something like [RUFUS](https://rufus.ie) or [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+    something like [Rufus](https://rufus.ie) or [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 
     Insert this card into the SD card slot labeled `SD1`.
 

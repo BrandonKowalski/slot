@@ -40,9 +40,9 @@ Dot shader
 :   A port of Dot by Themaister, from the libretro shader collection
 
 Simpletex shader
-:   A port of simpletex_lcd by jdgleaver, from the libretro shader collection
+:   A port of simpletex_lcd by jdgleaver, using the line weighting of zfast_lcd_standard by Greg Hogan, from the libretro shader collection
 
-RG35XXSP bezel
+640x480 bezel
 :   "Perfect GBA SP" by [mugwomp93](https://github.com/mugwomp93/Knulli_Customization), from [knulli-bezels](https://github.com/chrizzo-hb/knulli-bezels), under CC BY-SA 4.0
 
 </div>

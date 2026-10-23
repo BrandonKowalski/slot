@@ -616,7 +616,8 @@ kbd{
   height:58px;
   background:var(--slot-bar);
 }
-.md-footer-meta::after,.doc-stage-front{
+.md-footer.foot-min{position:relative}
+.md-footer-meta::after,.md-footer.foot-min::after,.doc-stage-front{
   content:"";
   position:absolute;
   top:0;

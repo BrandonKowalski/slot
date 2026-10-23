@@ -9,8 +9,8 @@ e.g. `Labels/GBA/Metroid Fusion.png` goes with `Games/GBA/Metroid Fusion.gba`.
 | Cart | Shape | Suggested size |
 | --- | --- | --- |
 | GBA | 1.94:1 | 1280×661 |
-| Game Boy | 1.13:1 | 1024×901 |
-| Game Boy Color | 1.12:1 | 1024×901 |
+| Game Boy | 1.12:1 | 1024×914 |
+| Game Boy Color | 1.12:1 | 1024×914 |
 
 slot will cache labels on the next boot after adding labels.
 
@@ -59,6 +59,8 @@ The bezel is drawn over the game, so leave a transparent hole where the game goe
 | --- | --- | --- |
 | RG SP, RG34XX, RG34XXSP | 720×480 | 480×432 at 120, 24 |
 | RG35XXSP, RG35XX Plus, RG35XX-H, RG28XX | 640×480 | 427×384 at 107, 48 |
+
+GBA bezels only show on the 640×480 devices, where the game is 640×427 at 0, 27. On the 720×480 devices a GBA game fills the screen.
 
 
 ## Boot logo

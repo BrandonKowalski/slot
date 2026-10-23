@@ -5,7 +5,7 @@
 | Button | Does |
 | --- | --- |
 | <kbd>Left</kbd> / <kbd>Right</kbd> | Move along the shelf |
-| <kbd>Up</kbd> / <kbd>Down</kbd> | Jump to the next or previous letter |
+| <kbd>Up</kbd> / <kbd>Down</kbd> | Jump to the previous or next letter |
 | <kbd>L1</kbd> / <kbd>R1</kbd> | Switch shelves |
 | <kbd>Y</kbd> | Favorite / unfavorite the cart you're on |
 | <kbd>A</kbd> | Insert the cart |
@@ -37,7 +37,7 @@ Press <kbd>Y</kbd> to star a cart. It shows up on the Favorites shelf alongside 
 
 Turn on Recents in Settings → General to get a shelf of the last 10 games you played.
 
-## Game Titles
+## Game titles
 
 Turn on Game Titles in Settings → General and they will appear above the slot.
 

@@ -23,7 +23,7 @@ Tap <kbd>MENU</kbd> while playing. The game pauses behind it.
 | Resume | Back to the game |
 | States | Opens the [save state switcher](save-states.md) |
 | Screenshots | Opens the [screenshot gallery](screenshots.md) |
-| Settings | Global Screen, Gameplay and Controls |
+| Settings | Screen and Gameplay for the system you're playing, and Controls |
 | Exit Game | Ejects the cart |
 
 ## Picking an emulator

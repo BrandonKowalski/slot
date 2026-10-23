@@ -12,15 +12,15 @@ If you use two cards, all of this is on the one in `SD2`.
 | `Labels/GBA`, `Labels/GB`, `Labels/GBC` | Cart labels                         |
 | `Saves/`                                | Battery saves, the game's own saves |
 | `States/`                               | Save states                         |
-| `Screenshots/`                          | Your Screenshots                    |
+| `Screenshots/`                          | Your screenshots                    |
 | `BIOS/`                                 | Optional BIOS files                 |
 | `Wallpapers/`                           | Your wallpapers                     |
-| `Bezels/GB`, `Bezels/GBC`               | Your Game Boy bezels                |
+| `Bezels/GBA`, `Bezels/GB`, `Bezels/GBC` | Your bezels                         |
 | `Config/`                               | Your settings                       |
 | `Logs/`                                 | Logs, for when something breaks     |
 | `System/`                               | slot itself                         |
 
-slot makes any of these that are missing when it boots.
+slot makes any of these that are missing when it boots, except `Screenshots/`, which appears with your first screenshot.
 
 ## Games
 
@@ -42,20 +42,20 @@ Put games right in the folder. slot doesn't look inside subdirectories.
 
 Everything about a game hangs off its file name: its battery save, save states, label, cart shell and emulator choice.
 
-If you rename `Metroid Fusion.gba`, rename its save in `Saves/GBA` too, or the slot won't find it.
+If you rename `Metroid Fusion.gba`, rename its save in `Saves/GBA` too, or slot won't find it.
 
 ## Saves and states
 
 - Battery saves are `Saves/<system>/<game>.sav`.
 - Save states are in `States/<system>/<emulator>/<game>/`. Each one has a `.png` next to it for the switcher.
 
-Periodically back up `Saves/` and `States/`. You never know when an SD Card will go bad.
+Periodically back up `Saves/` and `States/`. You never know when an SD card will go bad.
 
 ## Config
 
 Most of what's in `Config/` is written by slot when you change a setting. 
 
-I don't recommend editing these by hand but its your life.
+I don't recommend editing these by hand but it's your life.
 
 | File                                            | What it holds                                      |
 |-------------------------------------------------|----------------------------------------------------|
@@ -64,7 +64,7 @@ I don't recommend editing these by hand but its your life.
 | `favorites.txt`, `recents.txt`                  | Your Favorites and Recents                         |
 | `selected_core.txt`                             | Which emulator each GBA game uses                  |
 | `video_mode.txt`                                | Which Game Boy games you've stretched              |
-| `cart_shell.txt`                                | Cart colors, see [Making It Yours](customizing.md) |
+| `cart_shell.txt`                                | Cart colors, see [Customization](customizing.md). A `Labels/cart_shell.txt` overrides it |
 | `bootlogo.bmp`                                  | Your boot logo, if you've made one                 |
 
 If you ever want slot back to how it came, delete `Config/`. 

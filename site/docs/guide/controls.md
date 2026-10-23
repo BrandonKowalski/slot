@@ -6,7 +6,7 @@ Three submenus for adjusting controls can be found in Settings → Controls.
 - **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, fast-forward and rewind.
 - **In-Game**: which console button each button on your device presses. This is where you'd swap A and B, or move Turbo A and Turbo B off X and Y.
 
-All three apply globally. The In-Game menu is accessible while in-game for on the fly remapping.
+All three apply globally. The In-Game page is also in the in-game menu, for on-the-fly remapping.
 
 ## Changing a button
 
@@ -32,7 +32,7 @@ If two rows end up on the same button, both get a warning triangle and slot show
 
 For other chords, the first button goes to the game straight away and the second fires the shortcut.
 
-## Defaults Controls
+## Default Controls
 
 ### Everywhere
 
@@ -111,7 +111,7 @@ Double tap <kbd>MENU</kbd>
 :   Toggle color correction.
 
 <kbd>SELECT</kbd> + <kbd>L2</kbd> / <kbd>R2</kbd>
-:   Previous / next Game Boy palette, when GB Palettes is on.
+:   Previous / next Game Boy palette, in original Game Boy games.
 
 Hold <kbd>L2</kbd>
 :   Rewind

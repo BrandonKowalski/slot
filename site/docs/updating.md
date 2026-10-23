@@ -8,7 +8,7 @@ hide:
 
 !!! warning "Updating from a version before 1.4.0?"
 
-    Older versions kept settings in `System/`. They now live in `Config/`
+    Older versions kept settings in `System/`. They now live in `Config/`.
 
     For this update only, copy the new `System/` over the old one instead of deleting it. slot will move your settings into a new `Config/` folder, so future updates can delete `System/` as normal.
 

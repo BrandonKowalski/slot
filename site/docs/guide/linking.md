@@ -2,9 +2,9 @@
 
 Two devices running slot can link up like two Game Boys with a cable between them. Trade Pokémon, battle, or race in Mario Kart.
 
-There's no cable. One device runs an ad hoc network and the other joins it. You don't need to be connected to Wi-Fi.
+There's no cable. One device runs its own Wi-Fi network and the other joins it. You don't need to be connected to Wi-Fi.
 
-!!! important "Linking is local only"
+!!! info "Linking is local only"
     
     Link play does not work over the internet and adding this feature is not planned.
 
@@ -33,13 +33,13 @@ Both devices need the same BIOS setup. If one has a `gba_bios.bin` and the other
 
 ### On gpSP
 
-gpSP does the GBA link cable for Pokémon and both Advance Wars, and the Wireless Adapter for FireRed, LeafGreen and Emerald.
+gpSP does the GBA link cable for Pokémon and both Advance Wars, and the wireless adapter for FireRed, LeafGreen and Emerald.
 
 Trading Pokémon? Put the game on gpSP first with <kbd>START</kbd> on the shelf, on both devices.
 
 Pokémon FireRed, LeafGreen and Emerald can switch between cable and wireless with <kbd>SELECT</kbd> on the link screen.
 
-If slot says "Please switch to gpSP", the game needs the wireless adapter. Change the emulator with <kbd>START</kbd> on the shelf. See [Playing a Game](playing.md).
+If slot says "Please switch to gpSP", the game needs the wireless adapter. Change the emulator with <kbd>START</kbd> on the shelf. See [Playing Games](playing.md).
 
 ## While you're linked
 
@@ -52,7 +52,7 @@ If slot says "Please switch to gpSP", the game needs the wireless adapter. Chang
 
 | Message | What happened |
 | --- | --- |
-| The radio did not come up | WiFi didn't start on this device. Try again. |
+| The radio did not come up | Wi-Fi didn't start on this device. Try again. |
 | Nobody arrived | The host waited and nobody joined. |
 | The other player vanished | The two devices found each other, then lost each other. |
 

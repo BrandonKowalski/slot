@@ -32,6 +32,6 @@ Games with a clock on the cart, like Pokémon Gold, Silver, Crystal, Ruby and Sa
 
 ## What about real deep sleep?
 
-In my testing I've found the h700's deep sleep to be both unreliable and an energy hog. 
+In my testing I've found the H700's deep sleep to be both unreliable and an energy hog. 
 
 Given that BaseOS boots in under 5 seconds I feel like this isn't a big loss.

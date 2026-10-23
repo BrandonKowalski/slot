@@ -39,7 +39,7 @@ On top of your 10, slot keeps one more that you never see: the `resume state`. T
 
 slot writes it:
 
-- every minute while you play
+- every 5 minutes while you play
 - when you close the lid or tap <kbd>POWER</kbd>
 - when you power off
 - when you eject, if the Save State on Eject setting is on

@@ -13,10 +13,10 @@ hide:
 | Device | Supported | Since Version |
 | --- | --- | --- |
 | Anbernic RG&nbsp;SP | **Yes** | Always |
-| Anbernic RG34XX | Yes | 1.4.0 |
-| Anbernic RG34XXSP | Yes | 1.4.0 |
+| Anbernic RG34XX | Yes (untested) | 1.4.0 |
+| Anbernic RG34XXSP | Yes (untested) | 1.4.0 |
 | Anbernic RG35XXSP | **Yes** | 1.5.0 |
-| Anbernic 35XX Plus | **Yes** | 1.5.0 |
+| Anbernic RG35XX Plus | **Yes** | 1.5.0 |
 | Anbernic RG28XX | **Yes** | 1.6.0 |
 | Anbernic RG35XX-H | **Yes** | 1.7.0 |
 
