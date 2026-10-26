@@ -6,7 +6,7 @@ pub const BEZELS: &str = "System/bezels";
 pub const GAME_BEZELS: &str = "Bezels";
 
 pub fn list(root: &Path, platform: Platform) -> Vec<String> {
-    let dir = root.join(GAME_BEZELS).join(platform.dir_name());
+    let dir = root.join(GAME_BEZELS).join(platform.hardware().dir_name());
     let mut files: Vec<String> = std::fs::read_dir(dir)
         .ok()
         .into_iter()

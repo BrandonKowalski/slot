@@ -306,32 +306,46 @@ fn an_original_game_boy_game_runs_on_the_plain_model_with_auto() {
 }
 
 #[test]
-fn mgba_always_answers_the_game_boy_player_logo() {
+fn mgba_answers_the_game_boy_player_logo_except_for_gba_video() {
     let _g = common::core_lock();
     let path = dylib_for(Core::Mgba);
     if !path.exists() {
         eprintln!("no mgba dylib on this host, skipping");
         return;
     }
-    for palette in [
-        None,
-        slot_store::GbPalette::parse("SGB 1-A").map(slot_store::GbColors::Palette),
+    let d = tempfile::tempdir().unwrap();
+    for (platform, code, want, why) in [
+        (
+            Platform::Gba,
+            "BPPE",
+            "ON",
+            "Pokemon Pinball Ruby and Sapphire only rumbles on a Game Boy Player",
+        ),
+        (
+            Platform::Gba,
+            "MSSE",
+            "OFF",
+            "a GBA Video cart refuses to play on a Game Boy Player",
+        ),
+        (
+            Platform::Gbav,
+            "BPEE",
+            "OFF",
+            "the GBA Video shelf holds only videos",
+        ),
     ] {
+        let mut bytes = vec![0u8; 0x100];
+        bytes[0xac..0xb0].copy_from_slice(code.as_bytes());
+        let rom = d.path().join(format!("{code}.gba"));
+        std::fs::write(&rom, bytes).unwrap();
         let mut core = LibretroCore::open(&path).expect("open core");
-        slot::core::apply_core_options(
-            &mut core,
-            Core::Mgba,
-            Platform::Gb,
-            "auto",
-            false,
-            false,
-            palette,
-        );
+        slot::core::apply_core_options(&mut core, Core::Mgba, platform, "auto", false, false, None);
+        slot::core::apply_game_boy_player(&mut core, Core::Mgba, platform, &rom);
         let set: std::collections::HashMap<String, String> = core.options().into_iter().collect();
         assert_eq!(
             set.get("mgba_force_gbp").map(String::as_str),
-            Some("ON"),
-            "Pokemon Pinball Ruby and Sapphire only rumbles on a Game Boy Player"
+            Some(want),
+            "{platform:?} {code}: {why}"
         );
     }
 }

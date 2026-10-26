@@ -44,13 +44,13 @@ impl Core {
     pub fn runs(self, platform: Platform) -> bool {
         match self {
             Core::Mgba => true,
-            Core::Gpsp => platform == Platform::Gba,
+            Core::Gpsp => platform.hardware() == Platform::Gba,
         }
     }
 
     pub fn default_for(platform: Platform) -> Core {
         match platform {
-            Platform::Gba | Platform::Gb | Platform::Gbc => Core::Mgba,
+            Platform::Gba | Platform::Gb | Platform::Gbc | Platform::Gbav => Core::Mgba,
         }
     }
 }

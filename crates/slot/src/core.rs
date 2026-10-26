@@ -130,7 +130,7 @@ pub fn palette_for(
     rom: &Path,
     link: Option<u8>,
 ) -> Option<GbColors> {
-    (link.is_none() && platform != Platform::Gba && dmg_only(rom)).then_some(chosen)
+    (link.is_none() && platform.hardware() != Platform::Gba && dmg_only(rom)).then_some(chosen)
 }
 
 pub fn dmg_only(rom: &Path) -> bool {
@@ -176,6 +176,23 @@ pub fn colour_option(
     }
 }
 
+pub fn game_boy_player(platform: Platform, rom: &Path) -> bool {
+    platform == Platform::Gba
+        && !slot_store::header_code(rom).is_some_and(|code| code.starts_with('M'))
+}
+
+pub fn apply_game_boy_player(
+    core: &mut dyn RetroCore,
+    which: Core,
+    platform: Platform,
+    rom: &Path,
+) {
+    if which == Core::Mgba {
+        let on = game_boy_player(platform, rom);
+        core.set_option("mgba_force_gbp", if on { "ON" } else { "OFF" });
+    }
+}
+
 pub fn apply_link_options(core: &mut LibretroCore, which: Core, player: u8) {
     if which != Core::Mgba {
         return;
@@ -197,7 +214,6 @@ pub fn apply_core_options(
     core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     if which == Core::Mgba {
         core.set_option("mgba_sgb_borders", "OFF");
-        core.set_option("mgba_force_gbp", "ON");
         match palette {
             Some(p) => {
                 core.set_option("mgba_gb_model", "Game Boy");

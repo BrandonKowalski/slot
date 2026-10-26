@@ -41,7 +41,7 @@ fn both() -> [(&'static str, Cart); 2] {
 
 fn label_band(c: &Cart) -> (f32, f32) {
     let (y, h) = match c.platform {
-        Platform::Gba => (LABEL_Y as f32, LABEL_H as f32),
+        Platform::Gba | Platform::Gbav => (LABEL_Y as f32, LABEL_H as f32),
         Platform::Gb | Platform::Gbc => (GB_LABEL_Y as f32, GB_LABEL_H as f32),
     };
     let k = seated_box(c.platform).1 as f32 / cart_box(c.platform).1 as f32;

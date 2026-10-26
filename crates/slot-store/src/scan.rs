@@ -18,7 +18,7 @@ pub struct Cart {
 
 impl Cart {
     pub fn read_header(&mut self) {
-        match self.platform {
+        match self.platform.hardware() {
             Platform::Gba => {
                 if let Some((title, code)) = header_title_code(&self.rom) {
                     self.title = title;

@@ -998,7 +998,7 @@ impl App {
     }
 
     pub fn in_game_hidden(&self) -> Vec<QuickRow> {
-        let no_bezel = self.playing_platform() == Platform::Gba && !self.framed_panel();
+        let no_bezel = self.playing_platform().hardware() == Platform::Gba && !self.framed_panel();
         let mut hidden = Vec::new();
         if !self.palette_live {
             hidden.push(QuickRow::Palette);
@@ -1009,7 +1009,7 @@ impl App {
         if self.single_cart() {
             hidden.push(QuickRow::ExitGame);
         }
-        if self.playing_platform() != Platform::Gba {
+        if self.playing_platform().hardware() != Platform::Gba {
             hidden.extend([QuickRow::GameL, QuickRow::GameR]);
         }
         if !self.left_stick {
@@ -1100,7 +1100,7 @@ impl App {
     }
 
     fn playing_row(&self, row: QuickRow) -> QuickRow {
-        match (row, self.playing_platform()) {
+        match (row, self.playing_platform().hardware()) {
             (QuickRow::Shader, Platform::Gba) => QuickRow::GbaShader,
             (QuickRow::Shader, Platform::Gb) => QuickRow::GbShader,
             (QuickRow::Shader, Platform::Gbc) => QuickRow::GbcShader,
@@ -1253,7 +1253,7 @@ impl App {
     }
 
     pub fn bezel_files(&self, platform: Platform) -> Vec<String> {
-        match platform == Platform::Gba && !self.framed_panel() {
+        match platform.hardware() == Platform::Gba && !self.framed_panel() {
             true => Vec::new(),
             false => self
                 .root()
@@ -1264,7 +1264,7 @@ impl App {
 
     fn bezel_choices(&self, platform: Platform) -> Vec<BezelPick> {
         let mut choices = vec![BezelPick::None];
-        if platform != Platform::Gba {
+        if platform.hardware() != Platform::Gba {
             choices.push(BezelPick::Default);
         }
         if self.framed_panel() {
@@ -1276,7 +1276,7 @@ impl App {
 
     fn bezel_pick(&mut self, platform: Platform) -> &mut BezelPick {
         match platform {
-            Platform::Gba => &mut self.state.bezel_gba,
+            Platform::Gba | Platform::Gbav => &mut self.state.bezel_gba,
             Platform::Gb => &mut self.state.bezel_gb,
             Platform::Gbc => &mut self.state.bezel_gbc,
         }
@@ -1284,7 +1284,7 @@ impl App {
 
     pub fn resolved_bezel(&self, platform: Platform) -> BezelPick {
         let pick = match platform {
-            Platform::Gba => &self.state.bezel_gba,
+            Platform::Gba | Platform::Gbav => &self.state.bezel_gba,
             Platform::Gb => &self.state.bezel_gb,
             Platform::Gbc => &self.state.bezel_gbc,
         };
@@ -1724,7 +1724,7 @@ impl App {
     }
 
     fn slot_owns_the_shoulders(&self) -> bool {
-        matches!(self.phase, Phase::Playing { .. }) && self.platform != Platform::Gba
+        matches!(self.phase, Phase::Playing { .. }) && self.platform.hardware() != Platform::Gba
     }
 
     pub fn taken_buttons(&self) -> Vec<Btn> {
@@ -2235,7 +2235,7 @@ impl App {
 
     pub fn screen_shader(&self) -> Shader {
         match self.playing_platform() {
-            Platform::Gba => self.state.shader_gba,
+            Platform::Gba | Platform::Gbav => self.state.shader_gba,
             Platform::Gb => self.state.shader_gb,
             Platform::Gbc => self.state.shader_gbc,
         }
@@ -2251,7 +2251,7 @@ impl App {
 
     pub fn colour_correction_for(&self, platform: Platform) -> bool {
         match platform {
-            Platform::Gba => self.state.colour_correction_gba,
+            Platform::Gba | Platform::Gbav => self.state.colour_correction_gba,
             Platform::Gb => self.state.colour_correction_gb,
             Platform::Gbc => self.state.colour_correction_gbc,
         }
@@ -3040,7 +3040,7 @@ impl App {
             return;
         }
         let (shader, choices) = match self.playing_platform() {
-            Platform::Gba => (&mut self.state.shader_gba, &Shader::GBA[..]),
+            Platform::Gba | Platform::Gbav => (&mut self.state.shader_gba, &Shader::GBA[..]),
             Platform::Gb => (&mut self.state.shader_gb, &Shader::GB[..]),
             Platform::Gbc => (&mut self.state.shader_gbc, &Shader::GB[..]),
         };
@@ -3092,7 +3092,7 @@ impl App {
         }
         if action == Action::ColourCorrectionToggle {
             let row = match self.playing_platform() {
-                Platform::Gba => QuickRow::GbaColourCorrection,
+                Platform::Gba | Platform::Gbav => QuickRow::GbaColourCorrection,
                 Platform::Gb => QuickRow::GbColourCorrection,
                 Platform::Gbc => QuickRow::GbcColourCorrection,
             };
@@ -4974,7 +4974,7 @@ impl App {
         let Some(cart) = self.shelf().carts.get(self.shelf().index) else {
             return;
         };
-        if cart.platform != Platform::Gba {
+        if cart.platform.hardware() != Platform::Gba {
             return;
         }
         let seat = slot_store::core_for(&root, &cart.stem);
@@ -6070,7 +6070,7 @@ fn free_stamp(taken: &[String], now: i64) -> String {
 
 fn bezel_slot(platform: Platform) -> usize {
     match platform {
-        Platform::Gba => 0,
+        Platform::Gba | Platform::Gbav => 0,
         Platform::Gb => 1,
         Platform::Gbc => 2,
     }
