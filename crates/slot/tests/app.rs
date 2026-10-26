@@ -2215,6 +2215,31 @@ fn a_letter_jump_shows_the_letter_in_the_slot_and_fades_like_the_shelf_name() {
 }
 
 #[test]
+fn a_jumped_to_letter_is_set_at_the_titles_size_on_its_baseline() {
+    let mut a = app_with_carts(&["Alpha", "Bravo"]);
+    let face = slot_ui::TexId::from_raw(77);
+    a.apply(Action::GbaDown(Btn::Down));
+    a.apply(Action::GbaUp(Btn::Down));
+    a.set_shelf_platform_face(face, 20);
+    a.update(1.0 / 60.0);
+    a.update(0.5);
+    let mut out = Vec::new();
+    a.draw(&mut out);
+    let Some((y, h)) = out.iter().find_map(|d| match *d {
+        Draw::Tex { tex, y, h, .. } if tex == face => Some((y, h)),
+        _ => None,
+    }) else {
+        panic!("the letter never showed");
+    };
+    assert_eq!(h, slot_ui::TITLE_LINE_H as f32);
+    assert_eq!(
+        y + h,
+        slot_ui::slot_name_y() + slot_ui::HINT_H as f32,
+        "the letter left the title's baseline"
+    );
+}
+
+#[test]
 fn the_shader_shortcut_steps_the_seated_carts_shader_both_ways_and_names_it() {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut s, _motor) = common::session_with_platform(d.path());

@@ -1551,6 +1551,10 @@ impl App {
         }
     }
 
+    pub fn slot_text_is_letter(&self) -> bool {
+        self.slot_letter.is_some()
+    }
+
     pub fn title_text(&self) -> Option<String> {
         if !self.state.show_titles {
             return None;
@@ -3967,12 +3971,20 @@ impl App {
                     _ => {
                         self.shelf()
                             .draw(self.canvas(), self.shelf_shake(), self.slot_faces, out);
-                        draw_slot_name(
-                            self.canvas(),
-                            self.shelf_platform,
-                            self.slot_name_alpha(),
-                            out,
-                        );
+                        match self.slot_letter {
+                            Some(_) => slot_ui::draw_slot_title(
+                                self.canvas(),
+                                self.shelf_platform,
+                                self.slot_name_alpha(),
+                                out,
+                            ),
+                            None => draw_slot_name(
+                                self.canvas(),
+                                self.shelf_platform,
+                                self.slot_name_alpha(),
+                                out,
+                            ),
+                        }
                         slot_ui::draw_slot_title(
                             self.canvas(),
                             self.shelf_title,
