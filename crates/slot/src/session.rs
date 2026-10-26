@@ -92,6 +92,10 @@ impl Session {
         self.sink.ring()
     }
 
+    pub fn close_audio(&mut self) {
+        self.sink.close();
+    }
+
     pub fn rumble(&mut self, strength: u16) {
         if strength == self.motor {
             return;

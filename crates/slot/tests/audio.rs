@@ -370,3 +370,96 @@ fn reopening_the_device_forgets_the_released_schedule() {
     pace.reset();
     assert_eq!(pace.wait(start + span * 3), span);
 }
+
+struct ClosingSink {
+    ring: std::sync::Arc<Ring>,
+    closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl AudioSink for ClosingSink {
+    fn open(&mut self, sample_rate: u32) -> Result<(), slot::audio::AudioError> {
+        self.ring.reopen(sample_rate);
+        Ok(())
+    }
+
+    fn ring(&self) -> std::sync::Arc<Ring> {
+        self.ring.clone()
+    }
+
+    fn close(&mut self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+struct PowerCut(slot_power::SimPlatform);
+
+impl slot_power::Platform for PowerCut {
+    fn set_backlight(&mut self, step: u8) {
+        self.0.set_backlight(step);
+    }
+
+    fn battery(&self) -> Option<slot_power::Battery> {
+        self.0.battery()
+    }
+
+    fn charge(&self) -> slot_power::Charge {
+        self.0.charge()
+    }
+
+    fn set_led(&mut self, state: slot_power::LedState) {
+        self.0.set_led(state);
+    }
+
+    fn poweroff(&mut self) -> ! {
+        panic!("power cut")
+    }
+
+    fn restart(&mut self) -> ! {
+        panic!("restarted")
+    }
+
+    fn root(&self) -> &std::path::Path {
+        self.0.root()
+    }
+
+    fn now(&self) -> i64 {
+        self.0.now()
+    }
+
+    fn set_clock(&mut self, secs: i64) {
+        self.0.set_clock(secs);
+    }
+
+    fn set_rumble(&mut self, strength: u16) {
+        self.0.set_rumble(strength);
+    }
+}
+
+#[test]
+fn the_speaker_is_let_go_before_the_power_is_cut() {
+    let cuts: [(&str, fn(&mut slot::frontend::Frontend)); 2] = [
+        ("power off", |f| f.poweroff()),
+        ("restart", |f| f.restart()),
+    ];
+    for (what, cut) in cuts {
+        let d = tempfile::tempdir().unwrap();
+        let closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let sink = ClosingSink {
+            ring: std::sync::Arc::new(Ring::new(ring_capacity(OUTPUT_HZ))),
+            closed: closed.clone(),
+        };
+        let mut f = slot::frontend::Frontend::boot_with(
+            Box::new(PowerCut(slot_power::SimPlatform::at(
+                d.path().to_path_buf(),
+            ))),
+            Box::new(sink),
+        );
+        let reached = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cut(&mut f)));
+        assert!(reached.is_err(), "{what} never reached the platform");
+        assert!(
+            closed.load(std::sync::atomic::Ordering::Relaxed),
+            "{what}: the audio device was still open when the power was cut, which pops the RG SP's speaker (#142)"
+        );
+    }
+}
