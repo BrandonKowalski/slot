@@ -1360,7 +1360,10 @@ impl App {
             (Sizing::Band, _) => Some(BezelArt::Default),
             _ if gba => None,
             (Sizing::Integer, false) => Some(BezelArt::Default),
-            _ => None,
+            (Sizing::Integer, true) => Some(BezelArt::Integer4x3),
+            (Sizing::Fit, false) => Some(BezelArt::Fit3x2),
+            (Sizing::Fit, true) => Some(BezelArt::Fit4x3),
+            (Sizing::Panel, _) => None,
         }
     }
 

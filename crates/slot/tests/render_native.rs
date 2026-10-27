@@ -545,3 +545,96 @@ fn the_game_boy_page_lists_scale_and_stretch_on_both_panels() {
         }
     }
 }
+
+fn gb_game_on(name: &str, panel: (u32, u32), scale: slot_store::Scale) -> Option<Vec<u8>> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    clocked(d.path());
+    let state = slot_store::read_slot_state(d.path());
+    slot_store::write_slot_state(
+        d.path(),
+        &slot_store::SlotState {
+            bezel_gb: slot_store::BezelPick::Default,
+            scale_gb: scale,
+            ..state
+        },
+    )
+    .unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, panel);
+    c.fit(panel);
+    let mut input = Script(VecDeque::new());
+    input.0.push_back(vec![RawEvent::Down(Btn::A)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::A)]);
+    run_for(&mut f, &mut input, 4000);
+    f.render(&mut c, panel);
+    f.render(&mut c, panel);
+    let px = c.read_window(panel);
+    write_png(name, panel.0, panel.1, &px);
+    Some(px)
+}
+
+fn rgb(px: &[u8], w: u32, x: usize, y: usize) -> [u8; 3] {
+    let o = (y * w as usize + x) * 4;
+    [px[o], px[o + 1], px[o + 2]]
+}
+
+fn plastic(p: [u8; 3]) -> bool {
+    p.iter().all(|c| (0x14..0x80).contains(c))
+}
+
+#[test]
+fn the_fit_bezel_frames_the_fit_picture_on_both_panels() {
+    for (panel, left, right) in [((720, 480), 92, 626), ((640, 480), 52, 586)] {
+        let name = format!("fit_bezel_{}x{}", panel.0, panel.1);
+        let Some(px) = gb_game_on(&name, panel, slot_store::Scale::Fit) else {
+            return;
+        };
+        for y in [10, 240, 470] {
+            assert!(
+                plastic(rgb(&px, panel.0, left, y)),
+                "{panel:?} left of the picture at y {y}: {:?}",
+                rgb(&px, panel.0, left, y)
+            );
+            assert!(
+                plastic(rgb(&px, panel.0, right, y)),
+                "{panel:?} right of the picture at y {y}: {:?}",
+                rgb(&px, panel.0, right, y)
+            );
+        }
+        let red = (0..left).any(|x| {
+            (140..200).any(|y| {
+                let [r, g, _] = rgb(&px, panel.0, x, y);
+                r > 0xc0 && g < 0x60
+            })
+        });
+        assert!(red, "{panel:?} lost its light");
+    }
+}
+
+#[test]
+fn the_integer_bezel_frames_the_integer_picture_on_4_by_3() {
+    let Some(px) = gb_game_on(
+        "integer_bezel_640x480",
+        (640, 480),
+        slot_store::Scale::Integer,
+    ) else {
+        return;
+    };
+    for x in [72, 76] {
+        assert!(
+            rgb(&px, 640, x, 240).iter().all(|c| *c < 0x20),
+            "no black frame at x {x}: {:?}",
+            rgb(&px, 640, x, 240)
+        );
+    }
+    for (x, y) in [(30, 400), (320, 6), (320, 470), (620, 240)] {
+        assert!(
+            plastic(rgb(&px, 640, x, y)),
+            "no plastic at {x}, {y}: {:?}",
+            rgb(&px, 640, x, y)
+        );
+    }
+}

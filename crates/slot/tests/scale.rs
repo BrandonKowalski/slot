@@ -176,9 +176,9 @@ fn bezel_art_follows_the_layout() {
     for (panel, scale, want) in [
         ((720, 480), Scale::SpFrame, Some(BezelArt::Default)),
         ((640, 480), Scale::SpFrame, Some(BezelArt::Default)),
-        ((720, 480), Scale::Fit, None),
-        ((640, 480), Scale::Fit, None),
-        ((640, 480), Scale::Integer, None),
+        ((720, 480), Scale::Fit, Some(BezelArt::Fit3x2)),
+        ((640, 480), Scale::Fit, Some(BezelArt::Fit4x3)),
+        ((640, 480), Scale::Integer, Some(BezelArt::Integer4x3)),
         ((720, 480), Scale::Integer, Some(BezelArt::Default)),
     ] {
         let (_d, a) = playing(

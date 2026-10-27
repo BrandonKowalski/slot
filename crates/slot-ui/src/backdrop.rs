@@ -8,6 +8,13 @@ use crate::art;
 const DEFAULT_PNG: &[u8] = include_bytes!("../../../assets/background_default.png");
 const BEZEL_GB_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb.png");
 const BEZEL_GBC_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc.png");
+const BEZEL_GB_FIT_3X2_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_3x2.png");
+const BEZEL_GBC_FIT_3X2_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc_fit_3x2.png");
+const BEZEL_GB_INTEGER_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_integer_4x3.png");
+const BEZEL_GBC_INTEGER_4X3_PNG: &[u8] =
+    include_bytes!("../../../assets/bezel_gbc_integer_4x3.png");
+const BEZEL_GB_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_4x3.png");
+const BEZEL_GBC_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc_fit_4x3.png");
 const BLUR_PNG: &[u8] = include_bytes!("../../../assets/background_default_blur.png");
 
 const SCRIM: f32 = 0.62;
@@ -28,16 +35,26 @@ pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BezelArt {
     Default,
+    Fit3x2,
+    Integer4x3,
+    Fit4x3,
 }
 
 pub fn default_game_bezel_face(colour: bool, kind: BezelArt, w: u32, h: u32) -> Option<Vec<u8>> {
     let png = match (kind, colour) {
         (BezelArt::Default, false) => BEZEL_GB_PNG,
         (BezelArt::Default, true) => BEZEL_GBC_PNG,
+        (BezelArt::Fit3x2, false) => BEZEL_GB_FIT_3X2_PNG,
+        (BezelArt::Fit3x2, true) => BEZEL_GBC_FIT_3X2_PNG,
+        (BezelArt::Integer4x3, false) => BEZEL_GB_INTEGER_4X3_PNG,
+        (BezelArt::Integer4x3, true) => BEZEL_GBC_INTEGER_4X3_PNG,
+        (BezelArt::Fit4x3, false) => BEZEL_GB_FIT_4X3_PNG,
+        (BezelArt::Fit4x3, true) => BEZEL_GBC_FIT_4X3_PNG,
     };
     let (src, sw, sh) = art::decode_png_bytes(png)?;
     match kind {
         BezelArt::Default => panel_bezel(&src, (sw, sh), (w, h), true),
+        _ => art::cover_rgba(&src, sw, sh, w, h),
     }
 }
 

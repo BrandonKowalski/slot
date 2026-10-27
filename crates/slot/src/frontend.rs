@@ -1500,5 +1500,13 @@ mod tests {
             bezel_key(&BezelPick::Default, None, Some(BezelArt::Default)),
             Some(BezelArt::Default)
         );
+        assert_eq!(
+            bezel_key(
+                &BezelPick::Default,
+                Some(BezelArt::Fit3x2),
+                Some(BezelArt::Default)
+            ),
+            Some(BezelArt::Fit3x2)
+        );
     }
 }
