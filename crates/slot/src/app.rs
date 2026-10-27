@@ -13,13 +13,13 @@ use slot_store::{
     RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_slot_name,
-    draw_sticker, ease, footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap,
-    shelf_cart_at, BezelArt, ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge,
-    Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue,
-    Refusal, Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V,
-    CHIP_W, HINT_EDGE, HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U,
-    SOCKET_V, SOCKET_W, TURN_PAD,
+    board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_sticker, ease,
+    footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap, shelf_cart_at, BezelArt,
+    ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids,
+    PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, ShotMode,
+    ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE,
+    HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
+    TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -1611,10 +1611,6 @@ impl App {
             Some(letter) => Some(letter.to_string()),
             None => self.shelf_platform_name().map(str::to_string),
         }
-    }
-
-    pub fn slot_text_is_letter(&self) -> bool {
-        self.slot_letter.is_some()
     }
 
     pub fn title_text(&self) -> Option<String> {
@@ -4248,20 +4244,12 @@ impl App {
                     _ => {
                         self.shelf()
                             .draw(self.canvas(), self.shelf_shake(), self.slot_faces, out);
-                        match self.slot_letter {
-                            Some(_) => slot_ui::draw_slot_title(
-                                self.canvas(),
-                                self.shelf_platform,
-                                self.slot_name_alpha(),
-                                out,
-                            ),
-                            None => draw_slot_name(
-                                self.canvas(),
-                                self.shelf_platform,
-                                self.slot_name_alpha(),
-                                out,
-                            ),
-                        }
+                        slot_ui::draw_slot_title(
+                            self.canvas(),
+                            self.shelf_platform,
+                            self.slot_name_alpha(),
+                            out,
+                        );
                         slot_ui::draw_slot_title(
                             self.canvas(),
                             self.shelf_title,

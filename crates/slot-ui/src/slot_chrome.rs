@@ -300,21 +300,6 @@ pub fn slot_name_y() -> f32 {
     OUT_H as f32 - MOUTH_H - HINT_H as f32 - SLOT_NAME_GAP
 }
 
-pub fn draw_slot_name(canvas: Canvas, name: Printed, alpha: f32, out: &mut Vec<Draw>) {
-    let (Some(tex), true) = (name.face, alpha > 0.0) else {
-        return;
-    };
-    let (w, h) = (name.w as f32, HINT_H as f32);
-    out.push(Draw::Tex {
-        x: canvas.centred(w),
-        y: slot_name_y(),
-        w,
-        h,
-        tex,
-        alpha,
-    });
-}
-
 pub fn draw_slot_title(canvas: Canvas, title: Printed, alpha: f32, out: &mut Vec<Draw>) {
     let (Some(tex), true) = (title.face, alpha > 0.0) else {
         return;

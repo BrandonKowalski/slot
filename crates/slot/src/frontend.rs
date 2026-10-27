@@ -1196,10 +1196,7 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
         if platform_shown.is_empty() {
             app.clear_shelf_platform();
         } else {
-            let face = match app.slot_text_is_letter() {
-                true => slot_ui::title_line_face(&platform_shown),
-                false => word_ink(&platform_shown, [0xff, 0xff, 0xff]),
-            };
+            let face = slot_ui::title_line_face(&platform_shown);
             let w = face.w;
             let id = upload(compositor, &mut clocks.platform_tex, face);
             app.set_shelf_platform_face(id, w);
