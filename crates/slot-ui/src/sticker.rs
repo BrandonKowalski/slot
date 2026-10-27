@@ -298,13 +298,7 @@ pub fn sticker_face(f: &StickerFields) -> UndoFace {
     c.print(sx, sy, body, SERIAL_PX, BLACK);
     let bx = sx + hash_w + 10.0;
     c.outline(bx, sy + 1.0, box_w, SERIAL_PX * 1.25, 2.0, BLACK);
-    c.print(
-        bx + box_w * 0.28,
-        sy + 2.0,
-        check,
-        SERIAL_PX * 0.85,
-        BLACK,
-    );
+    c.print(bx + box_w * 0.28, sy + 2.0, check, SERIAL_PX * 0.85, BLACK);
 
     let mut ry = panel_y as f32 + panel_h as f32 + 10.0;
     let right_edge = (panel_x + panel_w) as f32;

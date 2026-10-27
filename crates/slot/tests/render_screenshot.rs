@@ -45,7 +45,13 @@ fn select_with(f: &mut Frontend, input: &mut Script, btn: Btn) {
     );
 }
 
-fn run_for(f: &mut Frontend, c: &mut Compositor, input: &mut Script, window: (u32, u32), secs: f32) {
+fn run_for(
+    f: &mut Frontend,
+    c: &mut Compositor,
+    input: &mut Script,
+    window: (u32, u32),
+    secs: f32,
+) {
     let until = Instant::now() + Duration::from_secs_f32(secs);
     while Instant::now() < until {
         f.advance(input);
@@ -126,27 +132,53 @@ fn a_shot_is_the_screen_without_the_toast_or_the_tint(window: (u32, u32), name: 
     assert_eq!(f.app().toast(), Some(Toast::ShotCaptured));
     let (w, h, shot) = newest_shot(d.path());
     assert_eq!((w, h), window, "the shot is not the size of the panel");
-    let shot_rgba: Vec<u8> = shot.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+    let shot_rgba: Vec<u8> = shot
+        .chunks(3)
+        .flat_map(|p| [p[0], p[1], p[2], 255])
+        .collect();
     scratch(&format!("shot-{name}-shot"), w, h, &shot_rgba);
     scratch(&format!("shot-{name}-screen"), w, h, &screen);
 
     let (w, h) = (w as usize, h as usize);
     let band = PLATE_H as usize;
     let below = worst_gap(&shot, &screen, band..h, w);
-    assert!(below <= 2, "below the toast the shot differs from the screen by {below}");
+    assert!(
+        below <= 2,
+        "below the toast the shot differs from the screen by {below}"
+    );
     let toast = worst_gap(&shot, &screen, 0..band, w);
-    assert!(toast > 60, "the screen shows no toast the shot left out: {toast}");
+    assert!(
+        toast > 60,
+        "the screen shows no toast the shot left out: {toast}"
+    );
     let tint = worst_gap(&shot, &panel, band..h, w);
-    assert!(tint > 10, "the blue light did not tint the panel, so this proves nothing: {tint}");
+    assert!(
+        tint > 10,
+        "the blue light did not tint the panel, so this proves nothing: {tint}"
+    );
 
     run_for(&mut f, &mut c, &mut input, window, 0.5);
     select_with(&mut f, &mut input, Btn::X);
     f.render(&mut c, window);
     f.app().flush_shots();
     let (_, _, newer) = newest_shot(d.path());
-    let apart = worst_gap(&shot, &newer.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect::<Vec<_>>(), band..h, w);
-    assert!(apart > 10, "the two shots are the same, so the late decode proves nothing");
-    let newer_rgba: Vec<u8> = newer.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+    let apart = worst_gap(
+        &shot,
+        &newer
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect::<Vec<_>>(),
+        band..h,
+        w,
+    );
+    assert!(
+        apart > 10,
+        "the two shots are the same, so the late decode proves nothing"
+    );
+    let newer_rgba: Vec<u8> = newer
+        .chunks(3)
+        .flat_map(|p| [p[0], p[1], p[2], 255])
+        .collect();
 
     tap(&mut f, &mut input, Btn::Menu);
     run_for(&mut f, &mut c, &mut input, window, 0.5);
@@ -165,16 +197,28 @@ fn a_shot_is_the_screen_without_the_toast_or_the_tint(window: (u32, u32), name: 
     });
     let grid = c.read_frame();
     scratch(&format!("shot-{name}-grid"), w as u32, h as u32, &grid);
-    let canvas = slot_ui::Canvas { w: w as f32, h: h as f32 };
+    let canvas = slot_ui::Canvas {
+        w: w as f32,
+        h: h as f32,
+    };
     let (cw, ch) = slot_ui::grid_cell(canvas);
     let (thumb, tw, th) = slot_ui::thumbnail(&newer_rgba, w as u32, h as u32, cw as u32, ch as u32);
     let (cx, cy) = (16.0 + cw / 2.0, 56.0 + ch / 2.0);
     let screen = ((cy as usize) * w + cx as usize) * 4;
     let t = (((th / 2) * tw + tw / 2) * 4) as usize;
-    let gap = (0..3).map(|i| grid[screen + i].abs_diff(thumb[t + i])).max().unwrap();
-    assert!(gap <= 24, "the first cell does not show its shot: off by {gap}");
+    let gap = (0..3)
+        .map(|i| grid[screen + i].abs_diff(thumb[t + i]))
+        .max()
+        .unwrap();
+    assert!(
+        gap <= 24,
+        "the first cell does not show its shot: off by {gap}"
+    );
     let edge = ((cy as usize) * w + 12) * 4;
-    assert!(grid[edge..edge + 3].iter().all(|&v| v >= 240), "no white box round the newest shot");
+    assert!(
+        grid[edge..edge + 3].iter().all(|&v| v >= 240),
+        "no white box round the newest shot"
+    );
 
     tap(&mut f, &mut input, Btn::A);
     f.render(&mut c, window);
@@ -185,7 +229,10 @@ fn a_shot_is_the_screen_without_the_toast_or_the_tint(window: (u32, u32), name: 
     let viewed = c.read_frame();
     scratch(&format!("shot-{name}-full"), w as u32, h as u32, &viewed);
     let middle = worst_gap(&shot, &viewed, band..h - band, w);
-    assert!(middle <= 2, "the viewer does not show the shot as taken: off by {middle}");
+    assert!(
+        middle <= 2,
+        "the viewer does not show the shot as taken: off by {middle}"
+    );
 
     tap(&mut f, &mut input, Btn::Left);
     tap(&mut f, &mut input, Btn::Right);
@@ -207,7 +254,10 @@ fn a_shot_is_the_screen_without_the_toast_or_the_tint(window: (u32, u32), name: 
         .map(|(s, z)| shot[s].abs_diff(zoomed[z]))
         .max()
         .unwrap_or(0);
-    assert!(worst <= 2, "the 2x zoom is not the shot's middle, nearest: off by {worst}");
+    assert!(
+        worst <= 2,
+        "the 2x zoom is not the shot's middle, nearest: off by {worst}"
+    );
 }
 
 fn run_until(

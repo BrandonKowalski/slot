@@ -35,7 +35,10 @@ fn select_x_before_the_game_shows_is_ignored() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     a.apply(Action::Screenshot);
-    assert!(!a.shot_requested(), "a shot asked for while loading waits for any game");
+    assert!(
+        !a.shot_requested(),
+        "a shot asked for while loading waits for any game"
+    );
 }
 
 #[test]
@@ -57,11 +60,17 @@ fn the_capture_mark_sits_after_the_game_and_before_the_toast() {
     assert_eq!(marks.len(), 1, "{with:?}");
     let at = marks[0];
     let game = with.iter().position(|d| matches!(d, Draw::Game));
-    assert!(game.is_some_and(|g| g < at), "the mark is ahead of the game: {with:?}");
+    assert!(
+        game.is_some_and(|g| g < at),
+        "the mark is ahead of the game: {with:?}"
+    );
     let mut unmarked = with.clone();
     unmarked.remove(at);
     assert_eq!(unmarked, without, "asking for a shot changed what is drawn");
-    assert!(at < without.len(), "nothing, not even the toast, is drawn after the mark");
+    assert!(
+        at < without.len(),
+        "nothing, not even the toast, is drawn after the mark"
+    );
 }
 
 #[test]
@@ -120,13 +129,19 @@ fn a_gallery_whose_shots_vanished_closes_and_hides_the_row() {
         press(&mut a, slot_input::Btn::Down);
     }
     assert_eq!(a.in_game_menu(), Some(slot_ui::QuickRow::Screenshots));
-    for e in ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap() {
+    for e in ShotDir::new(d.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap()
+    {
         std::fs::remove_file(e.path).unwrap();
     }
     press(&mut a, slot_input::Btn::A);
     let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while a.shot_viewer().is_some() {
-        assert!(std::time::Instant::now() < until, "the empty gallery stayed open");
+        assert!(
+            std::time::Instant::now() < until,
+            "the empty gallery stayed open"
+        );
         std::thread::sleep(std::time::Duration::from_millis(2));
         a.tick_ms(a.now() + 1);
     }
@@ -177,12 +192,16 @@ fn wait_listed(a: &mut App) {
 #[test]
 fn screenshots_opens_newest_first_and_b_returns_to_the_row() {
     let (d, mut a) = two_shots();
-    let newest = ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap()[0]
+    let newest = ShotDir::new(d.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap()[0]
         .stamp
         .clone();
     open_viewer(&mut a);
     assert_eq!(
-        a.shot_viewer().and_then(|v| v.selected()).map(|e| e.stamp.clone()),
+        a.shot_viewer()
+            .and_then(|v| v.selected())
+            .map(|e| e.stamp.clone()),
         Some(newest)
     );
     press(&mut a, slot_input::Btn::B);
@@ -282,7 +301,9 @@ fn a_held_direction_repeats_in_the_grid() {
 #[test]
 fn deleting_in_full_shows_the_next_older() {
     let (d, mut a) = shots(3);
-    let oldest = ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap()[2]
+    let oldest = ShotDir::new(d.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap()[2]
         .stamp
         .clone();
     open_viewer(&mut a);
@@ -293,7 +314,9 @@ fn deleting_in_full_shows_the_next_older() {
     assert_eq!(mode(&a), Some(slot_ui::ShotMode::Full));
     assert_eq!(index(&a), Some(1));
     assert_eq!(
-        a.shot_viewer().and_then(|v| v.selected()).map(|e| e.stamp.clone()),
+        a.shot_viewer()
+            .and_then(|v| v.selected())
+            .map(|e| e.stamp.clone()),
         Some(oldest)
     );
 }
@@ -301,7 +324,9 @@ fn deleting_in_full_shows_the_next_older() {
 #[test]
 fn the_viewer_asks_for_the_selected_shot_only_outside_the_grid() {
     let (d, mut a) = shots(2);
-    let list = ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap();
+    let list = ShotDir::new(d.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap();
     open_viewer(&mut a);
     assert_eq!(a.shot_wants_full(), None);
     press(&mut a, slot_input::Btn::A);
@@ -340,7 +365,10 @@ fn y_then_b_keeps_the_shot() {
     press(&mut a, slot_input::Btn::B);
     assert!(!a.delete_prompt());
     assert_eq!(
-        ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap().len(),
+        ShotDir::new(d.path(), Platform::Gba, "Emerald")
+            .list()
+            .unwrap()
+            .len(),
         2
     );
 }
@@ -376,7 +404,10 @@ fn a_direction_held_into_full_screen_does_not_keep_stepping() {
 }
 
 fn listed(d: &tempfile::TempDir) -> usize {
-    ShotDir::new(d.path(), Platform::Gba, "Emerald").list().unwrap().len()
+    ShotDir::new(d.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap()
+        .len()
 }
 
 fn tick_at(a: &mut App, at: &[usize]) {
@@ -489,7 +520,10 @@ fn the_prompt_words_one_shot_and_many() {
     press(&mut a, slot_input::Btn::Y);
     assert_eq!(
         a.delete_shot_lines(),
-        Some(("Delete this screenshot?".to_string(), "It cannot be brought back."))
+        Some((
+            "Delete this screenshot?".to_string(),
+            "It cannot be brought back."
+        ))
     );
     press(&mut a, slot_input::Btn::B);
     press(&mut a, slot_input::Btn::Select);
@@ -497,7 +531,10 @@ fn the_prompt_words_one_shot_and_many() {
     press(&mut a, slot_input::Btn::Y);
     assert_eq!(
         a.delete_shot_lines(),
-        Some(("Delete 3 screenshots?".to_string(), "They cannot be brought back."))
+        Some((
+            "Delete 3 screenshots?".to_string(),
+            "They cannot be brought back."
+        ))
     );
 }
 
@@ -516,7 +553,11 @@ fn a_shot_the_card_refused_says_it_failed() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let mut a = app_playing_in(d.path(), "Emerald");
     std::fs::create_dir_all(d.path().join("Screenshots/GBA")).unwrap();
-    std::fs::write(d.path().join("Screenshots/GBA/Emerald"), b"a file, not a folder").unwrap();
+    std::fs::write(
+        d.path().join("Screenshots/GBA/Emerald"),
+        b"a file, not a folder",
+    )
+    .unwrap();
     a.shot_taken(4, 2, vec![0x80; 32]);
     a.flush_shots();
     a.tick_ms(a.now() + 1);

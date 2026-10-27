@@ -24,9 +24,14 @@ fn shots_list_newest_first_and_skip_strangers() {
     ] {
         std::fs::write(dir.join(name), b"png").unwrap();
     }
-    let l = ShotDir::new(d.path(), Platform::Gb, "Tetris").list().unwrap();
+    let l = ShotDir::new(d.path(), Platform::Gb, "Tetris")
+        .list()
+        .unwrap();
     let stamps: Vec<&str> = l.iter().map(|e| e.stamp.as_str()).collect();
-    assert_eq!(stamps, ["2026-10-22_17-30-05-981", "2026-10-22_17-30-05-120"]);
+    assert_eq!(
+        stamps,
+        ["2026-10-22_17-30-05-981", "2026-10-22_17-30-05-120"]
+    );
     for e in &l {
         assert_eq!(e.path, dir.join(format!("{}.png", e.stamp)));
     }
@@ -49,7 +54,8 @@ fn the_path_has_no_core_directory() {
     let d = tempdir().unwrap();
     assert_eq!(
         ShotDir::new(d.path(), Platform::Gbc, "Zelda").path("2026-10-22_17-30-05"),
-        d.path().join("Screenshots/GBC/Zelda/2026-10-22_17-30-05.png")
+        d.path()
+            .join("Screenshots/GBC/Zelda/2026-10-22_17-30-05.png")
     );
 }
 

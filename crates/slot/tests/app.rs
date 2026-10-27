@@ -492,11 +492,7 @@ fn the_switch_changes_the_name_on_the_band_and_says_nothing() {
         assert_eq!(a.toast(), None, "{btn:?} put a banner up over the carts");
     }
     a.update(5.0);
-    assert_eq!(
-        a.shelf_platform_name(),
-        Some("Game Boy"),
-        "the name faded"
-    );
+    assert_eq!(a.shelf_platform_name(), Some("Game Boy"), "the name faded");
 }
 
 #[test]

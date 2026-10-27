@@ -167,6 +167,9 @@ fn holding_a_letter_jump_never_empties_the_shelf() {
             }
             _ => false,
         });
-        assert!(covered, "frame {frame}: nothing drawn at the middle of the shelf");
+        assert!(
+            covered,
+            "frame {frame}: nothing drawn at the middle of the shelf"
+        );
     }
 }

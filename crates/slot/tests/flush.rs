@@ -172,7 +172,11 @@ fn the_autosave_repeats_rather_than_firing_once() {
     a.tick_ms(300_000);
     assert_eq!(flushes.load(Ordering::Relaxed), 1);
     a.tick_ms(599_999);
-    assert_eq!(flushes.load(Ordering::Relaxed), 1, "one resume per five minutes");
+    assert_eq!(
+        flushes.load(Ordering::Relaxed),
+        1,
+        "one resume per five minutes"
+    );
     a.tick_ms(600_000);
     assert_eq!(flushes.load(Ordering::Relaxed), 2);
 }

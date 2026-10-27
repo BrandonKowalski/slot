@@ -23,14 +23,25 @@ fn seated_in(root: &std::path::Path, stem: &str) {
 fn a_cart_that_took_slot_down_while_loading_comes_back_on_the_shelf() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     seated_in(d.path(), "Emerald");
-    persist::flush(d.path(), Platform::Gba, Core::Mgba, "Emerald", Some(&[5u8; 64]), None).unwrap();
+    persist::flush(
+        d.path(),
+        Platform::Gba,
+        Core::Mgba,
+        "Emerald",
+        Some(&[5u8; 64]),
+        None,
+    )
+    .unwrap();
     let run = tempfile::tempdir().unwrap();
     let mark = LoadingMark::in_dir(run.path());
     mark.set("Emerald");
 
     let a = App::boot_marked(d.path(), Some(mark.clone()));
 
-    assert!(matches!(a.phase(), Phase::Shelf), "the crashing cart was seated again");
+    assert!(
+        matches!(a.phase(), Phase::Shelf),
+        "the crashing cart was seated again"
+    );
     assert_eq!(mark.left(), None, "the mark outlived the boot it guarded");
     assert!(
         StateRing::new(d.path(), Platform::Gba, Core::Mgba, "Emerald")

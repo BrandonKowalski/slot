@@ -123,5 +123,8 @@ fn turning_the_volume_up_saves_the_unmute_with_the_level() {
     a.flush_state();
     let saved = read_slot_state(d.path());
     assert_eq!(saved.volume, 75);
-    assert!(!saved.muted, "the card still says muted after the sound came back");
+    assert!(
+        !saved.muted,
+        "the card still says muted after the sound came back"
+    );
 }

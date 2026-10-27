@@ -78,13 +78,24 @@ impl ShotWriter {
     }
 
     pub fn take_failures(&self) -> usize {
-        std::mem::take(&mut self.shared.0.lock().unwrap_or_else(|e| e.into_inner()).failures)
+        std::mem::take(
+            &mut self
+                .shared
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .failures,
+        )
     }
 
     fn queue(&self, job: Job) {
         if !self.threaded {
             if !run(&job, &self.card_writes) {
-                self.shared.0.lock().unwrap_or_else(|e| e.into_inner()).failures += 1;
+                self.shared
+                    .0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .failures += 1;
             }
             return;
         }

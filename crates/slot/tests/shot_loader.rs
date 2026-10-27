@@ -59,12 +59,18 @@ fn a_full_shot_jumps_the_thumb_queue() {
     loader.queue_thumbs(paths.clone(), 218, 145);
     loader.full(paths[29].clone());
     let got = collect(&loader, 31, Duration::from_secs(10));
-    let full = got.iter().position(|l| l.want == Want::Full).expect("no full shot");
+    let full = got
+        .iter()
+        .position(|l| l.want == Want::Full)
+        .expect("no full shot");
     let last_thumb = got
         .iter()
         .position(|l| l.want == Want::Thumb && l.path == paths[29])
         .expect("no thumb for the last shot");
-    assert!(full < last_thumb, "full at {full}, last thumb at {last_thumb}");
+    assert!(
+        full < last_thumb,
+        "full at {full}, last thumb at {last_thumb}"
+    );
 }
 
 #[test]
@@ -76,7 +82,10 @@ fn a_full_shot_is_full_size() {
     loader.full(p.clone());
     let got = collect(&loader, 1, Duration::from_secs(2));
     let l = got.first().expect("no full shot");
-    assert_eq!((l.want, l.w, l.h, l.rgba.len()), (Want::Full, 720, 480, 720 * 480 * 4));
+    assert_eq!(
+        (l.want, l.w, l.h, l.rgba.len()),
+        (Want::Full, 720, 480, 720 * 480 * 4)
+    );
     assert_eq!(&l.rgba[..4], &[0x12, 0x34, 0x56, 0xff]);
 }
 
@@ -101,7 +110,10 @@ fn an_unreadable_file_is_skipped() {
     let mut loader = ShotLoader::spawn();
     loader.queue_thumbs(vec![d.path().join("missing.png"), good.clone()], 218, 145);
     let got = collect(&loader, 2, Duration::from_millis(800));
-    assert_eq!(got.iter().map(|l| l.path.clone()).collect::<Vec<_>>(), [good]);
+    assert_eq!(
+        got.iter().map(|l| l.path.clone()).collect::<Vec<_>>(),
+        [good]
+    );
 }
 
 #[test]
@@ -115,7 +127,11 @@ fn queueing_thumbs_replaces_the_queue_but_keeps_the_generation() {
     let got = collect(&loader, 7, Duration::from_secs(5));
     assert!(got.iter().all(|l| l.generation == g));
     for p in &paths[25..] {
-        assert!(got.iter().any(|l| &l.path == p), "{} never loaded", p.display());
+        assert!(
+            got.iter().any(|l| &l.path == p),
+            "{} never loaded",
+            p.display()
+        );
     }
     let early = got.iter().filter(|l| paths[..20].contains(&l.path)).count();
     assert!(early <= 2, "{early} replaced thumbs still loaded");
@@ -135,6 +151,11 @@ fn a_thumb_already_decoding_is_not_queued_again() {
     let got = collect(&loader, 4, Duration::from_secs(5));
     std::thread::sleep(Duration::from_millis(300));
     let more = loader.poll();
-    assert_eq!(got.len() + more.len(), 4, "decoded {} for 4 shots", got.len() + more.len());
+    assert_eq!(
+        got.len() + more.len(),
+        4,
+        "decoded {} for 4 shots",
+        got.len() + more.len()
+    );
     assert_eq!(loader.decoded(), 4);
 }

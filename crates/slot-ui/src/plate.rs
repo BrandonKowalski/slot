@@ -306,7 +306,15 @@ pub fn pad_hint_width(label: &str) -> u32 {
 pub fn pad_hint_face(label: &str) -> UndoFace {
     let w = pad_hint_width(label);
     let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
-    blit(&mut rgba, w, &glyph_cap(PAD_GLYPH), CAP, CAP, 0, (HINT_H - CAP) / 2);
+    blit(
+        &mut rgba,
+        w,
+        &glyph_cap(PAD_GLYPH),
+        CAP,
+        CAP,
+        0,
+        (HINT_H - CAP) / 2,
+    );
     let text_w = band_width(label);
     let mut band = vec![0u8; (text_w * HINT_H * 4) as usize];
     if let Some(font) = text::label_font() {

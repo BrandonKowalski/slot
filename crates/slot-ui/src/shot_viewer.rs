@@ -310,7 +310,11 @@ impl ShotViewer {
         }
         if let Some(at) = self.pan_at {
             let secs = now_ms.saturating_sub(at) as f32 / 1000.0;
-            self.pan_by(dx as f32 * canvas.w * secs, dy as f32 * canvas.h * secs, canvas);
+            self.pan_by(
+                dx as f32 * canvas.w * secs,
+                dy as f32 * canvas.h * secs,
+                canvas,
+            );
         }
         self.pan_at = Some(now_ms);
     }
@@ -510,7 +514,12 @@ impl ShotViewer {
 
     fn draw_grid(&self, canvas: Canvas, out: &mut Vec<Draw>) {
         let (cw, ch) = grid_cell(canvas);
-        for (i, thumb) in self.thumbs.iter().enumerate().skip(self.top_row * GRID_COLS) {
+        for (i, thumb) in self
+            .thumbs
+            .iter()
+            .enumerate()
+            .skip(self.top_row * GRID_COLS)
+        {
             let (row, col) = (i / GRID_COLS - self.top_row, i % GRID_COLS);
             let x = GRID_GAP + col as f32 * (cw + GRID_GAP);
             let y = PLATE_H + GRID_GAP + row as f32 * (ch + GRID_GAP);
@@ -590,7 +599,11 @@ impl ShotViewer {
     }
 }
 
-fn fit_into((tex, w, h): (TexId, u32, u32), (x, y, cw, ch): (f32, f32, f32, f32), out: &mut Vec<Draw>) {
+fn fit_into(
+    (tex, w, h): (TexId, u32, u32),
+    (x, y, cw, ch): (f32, f32, f32, f32),
+    out: &mut Vec<Draw>,
+) {
     let s = (cw / w as f32).min(ch / h as f32);
     let (sw, sh) = (w as f32 * s, h as f32 * s);
     out.push(Draw::Tex {
@@ -616,12 +629,19 @@ fn outline(x: f32, y: f32, w: f32, h: f32, out: &mut Vec<Draw>) {
         rect(x - o, y - o, w + 2.0 * o, OUTLINE),
         rect(x - o, y + h + OUTLINE_GAP, w + 2.0 * o, OUTLINE),
         rect(x - o, y - OUTLINE_GAP, OUTLINE, h + 2.0 * OUTLINE_GAP),
-        rect(x + w + OUTLINE_GAP, y - OUTLINE_GAP, OUTLINE, h + 2.0 * OUTLINE_GAP),
+        rect(
+            x + w + OUTLINE_GAP,
+            y - OUTLINE_GAP,
+            OUTLINE,
+            h + 2.0 * OUTLINE_GAP,
+        ),
     ]);
 }
 
 pub fn thumbnail(rgba: &[u8], w: u32, h: u32, max_w: u32, max_h: u32) -> (Vec<u8>, u32, u32) {
-    let scale = (max_w as f64 / w as f64).min(max_h as f64 / h as f64).min(1.0);
+    let scale = (max_w as f64 / w as f64)
+        .min(max_h as f64 / h as f64)
+        .min(1.0);
     let tw = ((w as f64 * scale + 1e-6).floor() as u32).max(1);
     let th = ((h as f64 * scale + 1e-6).floor() as u32).max(1);
     let span = |o: u32, t: u32, n: u32| {

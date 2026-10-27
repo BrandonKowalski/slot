@@ -133,7 +133,10 @@ fn each_mode_has_its_legend() {
 #[test]
 fn the_grid_cell_matches_the_mockup() {
     let (w, h) = grid_cell(C720);
-    assert!((w - 218.67).abs() < 0.01 && (h - 145.78).abs() < 0.01, "{w} {h}");
+    assert!(
+        (w - 218.67).abs() < 0.01 && (h - 145.78).abs() < 0.01,
+        "{w} {h}"
+    );
     let c640 = Canvas { w: 640.0, h: 480.0 };
     assert_eq!(grid_cell(c640), (192.0, 128.0));
     assert_eq!(grid_rows_shown(C720), 2);
@@ -246,19 +249,31 @@ use slot_ui::{thumbnail, Draw, Printed, TexId};
 
 fn drawn(v: &ShotViewer, canvas: Canvas) -> Vec<Draw> {
     let mut out = Vec::new();
-    v.draw(canvas, None, Printed::default(), None, Printed::default(), &mut out);
+    v.draw(
+        canvas,
+        None,
+        Printed::default(),
+        None,
+        Printed::default(),
+        &mut out,
+    );
     out
 }
 
 fn tex_at(out: &[Draw], tex: TexId) -> Option<(f32, f32, f32, f32)> {
     out.iter().find_map(|d| match *d {
-        Draw::Tex { x, y, w, h, tex: t, .. } if t == tex => Some((x, y, w, h)),
+        Draw::Tex {
+            x, y, w, h, tex: t, ..
+        } if t == tex => Some((x, y, w, h)),
         _ => None,
     })
 }
 
 fn near(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
-    (a.0 - b.0).abs() < 0.5 && (a.1 - b.1).abs() < 0.5 && (a.2 - b.2).abs() < 0.5 && (a.3 - b.3).abs() < 0.5
+    (a.0 - b.0).abs() < 0.5
+        && (a.1 - b.1).abs() < 0.5
+        && (a.2 - b.2).abs() < 0.5
+        && (a.3 - b.3).abs() < 0.5
 }
 
 fn thumbed(n: usize) -> ShotViewer {
@@ -273,7 +288,9 @@ fn thumbed(n: usize) -> ShotViewer {
 fn white_rects(out: &[Draw]) -> Vec<(f32, f32, f32, f32)> {
     out.iter()
         .filter_map(|d| match *d {
-            Draw::Rect { x, y, w, h, colour } if colour == [1.0, 1.0, 1.0, 1.0] => Some((x, y, w, h)),
+            Draw::Rect { x, y, w, h, colour } if colour == [1.0, 1.0, 1.0, 1.0] => {
+                Some((x, y, w, h))
+            }
             _ => None,
         })
         .collect()
@@ -292,7 +309,10 @@ fn grid_cells_sit_where_the_mockup_has_them() {
     assert!((x + w / 2.0 - (32.0 + cw * 1.5)).abs() < 0.5, "{x}");
     assert!((y + h / 2.0 - (72.0 + ch * 1.5)).abs() < 0.5, "{y}");
     let (.., w, h) = at(0);
-    assert!(w <= cw + 0.01 && h <= ch + 0.01 && (w - 218.0).abs() < 1.0, "{w} {h}");
+    assert!(
+        w <= cw + 0.01 && h <= ch + 0.01 && (w - 218.0).abs() < 1.0,
+        "{w} {h}"
+    );
 }
 
 #[test]
@@ -308,7 +328,10 @@ fn the_selected_cell_has_a_white_outline() {
     let right = rects.iter().map(|r| r.0 + r.2).fold(f32::MIN, f32::max);
     let top = rects.iter().map(|r| r.1).fold(f32::MAX, f32::min);
     let bottom = rects.iter().map(|r| r.1 + r.3).fold(f32::MIN, f32::max);
-    assert!(near((left, top, right, bottom), (cell_x - 5.0, 51.0, cell_x + cw + 5.0, 56.0 + ch + 5.0)));
+    assert!(near(
+        (left, top, right, bottom),
+        (cell_x - 5.0, 51.0, cell_x + cw + 5.0, 56.0 + ch + 5.0)
+    ));
 }
 
 #[test]
@@ -320,7 +343,10 @@ fn the_scrolled_grid_starts_at_top_row() {
     let (_, ch) = grid_cell(C720);
     let (_, y, _, h) = tex_at(&out, TexId::from_raw(103)).expect("row 1 not drawn");
     assert!((y + h / 2.0 - (56.0 + ch / 2.0)).abs() < 0.5, "{y}");
-    assert!(tex_at(&out, TexId::from_raw(100)).is_none(), "row 0 still drawn");
+    assert!(
+        tex_at(&out, TexId::from_raw(100)).is_none(),
+        "row 0 still drawn"
+    );
 }
 
 #[test]
@@ -330,9 +356,15 @@ fn a_wider_shot_is_fitted_with_bars() {
     let mut v = viewer(1);
     v.open();
     v.set_face(Some((tex, 720, 480)));
-    assert!(near(tex_at(&drawn(&v, c640), tex).unwrap(), (0.0, 26.67, 640.0, 426.67)));
+    assert!(near(
+        tex_at(&drawn(&v, c640), tex).unwrap(),
+        (0.0, 26.67, 640.0, 426.67)
+    ));
     v.set_face(Some((tex, 640, 480)));
-    assert!(near(tex_at(&drawn(&v, c640), tex).unwrap(), (0.0, 0.0, 640.0, 480.0)));
+    assert!(near(
+        tex_at(&drawn(&v, c640), tex).unwrap(),
+        (0.0, 0.0, 640.0, 480.0)
+    ));
 }
 
 #[test]
@@ -341,7 +373,10 @@ fn before_the_shot_decodes_full_screen_shows_its_thumb() {
     let path = v.entries[0].path.clone();
     v.set_thumb(&path, Some((TexId::from_raw(9), 216, 144)));
     v.open();
-    assert!(near(tex_at(&drawn(&v, C720), TexId::from_raw(9)).unwrap(), (0.0, 0.0, 720.0, 480.0)));
+    assert!(near(
+        tex_at(&drawn(&v, C720), TexId::from_raw(9)).unwrap(),
+        (0.0, 0.0, 720.0, 480.0)
+    ));
 }
 
 #[test]
@@ -455,7 +490,10 @@ fn leaving_multi_select_clears_the_ticks() {
 #[test]
 fn removing_the_ticked_keeps_the_rest_and_leaves_multi_select() {
     let mut v = viewer(7);
-    let keep: Vec<String> = [0, 2, 3, 6].iter().map(|&i| v.entries[i].stamp.clone()).collect();
+    let keep: Vec<String> = [0, 2, 3, 6]
+        .iter()
+        .map(|&i| v.entries[i].stamp.clone())
+        .collect();
     v.toggle_selecting();
     for i in [1, 4, 5] {
         v.index = i;
@@ -463,7 +501,13 @@ fn removing_the_ticked_keeps_the_rest_and_leaves_multi_select() {
     }
     let gone = v.remove_ticked(C720);
     assert_eq!(gone.len(), 3);
-    assert_eq!(v.entries.iter().map(|e| e.stamp.clone()).collect::<Vec<_>>(), keep);
+    assert_eq!(
+        v.entries
+            .iter()
+            .map(|e| e.stamp.clone())
+            .collect::<Vec<_>>(),
+        keep
+    );
     assert!(!v.selecting());
     assert_eq!(v.index, 1);
     assert_eq!(v.ticked_count(), 0);
@@ -492,7 +536,10 @@ fn ticked_cells_wear_the_tick_badge() {
     assert_eq!(badges.len(), 1);
     let (x, y, ..) = tex_at(&out, TexId::from_raw(77)).unwrap();
     let (cw, _) = grid_cell(C720);
-    assert!(x > 32.0 + cw && x < 32.0 + 2.0 * cw && y >= 56.0 && y < 90.0, "{x} {y}");
+    assert!(
+        x > 32.0 + cw && x < 32.0 + 2.0 * cw && y >= 56.0 && y < 90.0,
+        "{x} {y}"
+    );
 }
 
 #[test]

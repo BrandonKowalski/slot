@@ -209,7 +209,10 @@ fn screenshot_defaults_to_select_x() {
         with(Modifier::Select, Device::X)
     );
     assert_eq!(Shortcut::Screenshot.label(), "Screenshot");
-    for other in Shortcut::ALL.into_iter().filter(|s| *s != Shortcut::Screenshot) {
+    for other in Shortcut::ALL
+        .into_iter()
+        .filter(|s| *s != Shortcut::Screenshot)
+    {
         assert_ne!(
             c.get(other),
             c.get(Shortcut::Screenshot),

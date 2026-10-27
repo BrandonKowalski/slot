@@ -168,8 +168,13 @@ fn open_gallery(r: &mut Rig) {
     }
     assert_eq!(r.f.app().in_game_menu(), Some(QuickRow::Screenshots));
     r.tap(Btn::A);
-    assert!(r.f.app().shot_viewer().is_some(), "the gallery did not open");
-    r.run_until("the list", |f| f.app().shot_viewer().is_some_and(|v| !v.is_empty()));
+    assert!(
+        r.f.app().shot_viewer().is_some(),
+        "the gallery did not open"
+    );
+    r.run_until("the list", |f| {
+        f.app().shot_viewer().is_some_and(|v| !v.is_empty())
+    });
 }
 
 fn shown_thumbs_loaded(f: &Frontend) -> bool {
@@ -204,10 +209,16 @@ fn a_thousand_shots_never_stall_the_gallery() {
     open_gallery(&mut r);
     r.run_until("the first thumbnails", shown_thumbs_loaded);
     let open = r.reset_slowest();
-    assert!(open < Duration::from_millis(150), "opening took a {open:?} frame");
+    assert!(
+        open < Duration::from_millis(150),
+        "opening took a {open:?} frame"
+    );
     r.run_for(0.5);
     let decoded = r.f.gallery_decodes();
-    assert!(decoded <= 15, "opening decoded {decoded} shots, not just the window");
+    assert!(
+        decoded <= 15,
+        "opening decoded {decoded} shots, not just the window"
+    );
 
     r.hold(Btn::Down, 3.0);
     let scroll = r.reset_slowest();
@@ -231,7 +242,9 @@ fn a_thousand_shots_never_stall_the_gallery() {
     r.tap(Btn::A);
     assert_eq!(mode(&r), Some(ShotMode::Full));
     r.hold(Btn::Right, 2.0);
-    r.run_until("the full shot", |f| f.app().shot_viewer().is_some_and(|v| v.has_face()));
+    r.run_until("the full shot", |f| {
+        f.app().shot_viewer().is_some_and(|v| v.has_face())
+    });
     r.tap(Btn::A);
     r.tap(Btn::A);
     r.tap(Btn::A);
@@ -240,14 +253,20 @@ fn a_thousand_shots_never_stall_the_gallery() {
     let zoomed = r.c.read_frame();
     scratch("gallery-zoomed", &zoomed);
     let (light, dark) = ink(&zoomed, (16, 450, 20, 20));
-    assert!(light > 40 && dark > 10, "the Pan cap has no arrows: {light} light, {dark} dark");
+    assert!(
+        light > 40 && dark > 10,
+        "the Pan cap has no arrows: {light} light, {dark} dark"
+    );
     r.send(RawEvent::Down(Btn::Up));
     r.send(RawEvent::Down(Btn::Left));
     r.run_for(1.0);
     r.send(RawEvent::Up(Btn::Up));
     r.send(RawEvent::Up(Btn::Left));
     let viewing = r.reset_slowest();
-    assert!(viewing < SLOW_FRAME, "a {viewing:?} frame stepping and panning");
+    assert!(
+        viewing < SLOW_FRAME,
+        "a {viewing:?} frame stepping and panning"
+    );
     for _ in 0..4 {
         r.tap(Btn::B);
     }
@@ -295,22 +314,34 @@ fn deleting_hundreds_at_once_does_not_freeze() {
     r.run_until("the ticked rows' thumbnails", shown_thumbs_loaded);
     let ticked = r.c.read_frame();
     scratch("gallery-ticked", &ticked);
-    let (cw, _) = slot_ui::grid_cell(slot_ui::Canvas { w: WINDOW.0 as f32, h: WINDOW.1 as f32 });
+    let (cw, _) = slot_ui::grid_cell(slot_ui::Canvas {
+        w: WINDOW.0 as f32,
+        h: WINDOW.1 as f32,
+    });
     let badge = ((16.0 + cw - 26.0) as usize, 62, 20, 20);
     let (light, dark) = ink(&ticked, badge);
-    assert!(light > 40 && dark > 10, "no tick badge: {light} light, {dark} dark");
+    assert!(
+        light > 40 && dark > 10,
+        "no tick badge: {light} light, {dark} dark"
+    );
     r.tap(Btn::Y);
     assert!(r.f.app().delete_prompt());
     r.frame();
     let many = r.c.read_frame();
     scratch("gallery-delete-prompt", &many);
     let title = |f: &[u8]| ink(f, (0, 180, WINDOW.0 as usize, 60)).0;
-    assert!(title(&many) > title(&one), "the prompt does not say how many");
+    assert!(
+        title(&many) > title(&one),
+        "the prompt does not say how many"
+    );
     r.reset_slowest();
     r.tap(Btn::X);
     let delete = r.reset_slowest();
     assert!(delete < SLOW_FRAME, "a {delete:?} frame deleting 300");
-    assert_eq!(r.f.app().shot_viewer().map(|v| v.entries.len()), Some(SHOTS - 300));
+    assert_eq!(
+        r.f.app().shot_viewer().map(|v| v.entries.len()),
+        Some(SHOTS - 300)
+    );
     r.run_until("thumbnails after the delete", shown_thumbs_loaded);
     r.reset_slowest();
     r.tap(Btn::B);
@@ -319,11 +350,20 @@ fn deleting_hundreds_at_once_does_not_freeze() {
     r.run_until("the list after the delete", |f| {
         f.app().shot_viewer().is_some_and(|v| !v.is_empty())
     });
-    assert_eq!(r.f.app().shot_viewer().map(|v| v.entries.len()), Some(SHOTS - 300));
+    assert_eq!(
+        r.f.app().shot_viewer().map(|v| v.entries.len()),
+        Some(SHOTS - 300)
+    );
     let after = r.reset_slowest();
-    assert!(after < SLOW_FRAME, "a {after:?} frame reopening after the delete");
+    assert!(
+        after < SLOW_FRAME,
+        "a {after:?} frame reopening after the delete"
+    );
     r.f.app().flush_shots();
-    let left = ShotDir::new(r._root.path(), Platform::Gba, "Emerald").list().unwrap().len();
+    let left = ShotDir::new(r._root.path(), Platform::Gba, "Emerald")
+        .list()
+        .unwrap()
+        .len();
     assert_eq!(left, SHOTS - 300);
 }
 
@@ -333,4 +373,3 @@ fn the_gallery_holds_up_under_a_thousand_shots() {
     opening_and_closing_fast_leaves_the_gallery_whole();
     deleting_hundreds_at_once_does_not_freeze();
 }
-

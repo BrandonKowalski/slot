@@ -1062,7 +1062,11 @@ impl App {
                 let at = std::time::Instant::now();
                 let mut shots = dir.list().unwrap_or_default();
                 shots.retain(|e| !removing.contains(&e.path));
-                eprintln!("slot: shots: listed {} in {} ms", shots.len(), at.elapsed().as_millis());
+                eprintln!(
+                    "slot: shots: listed {} in {} ms",
+                    shots.len(),
+                    at.elapsed().as_millis()
+                );
                 let _ = tx.send(shots);
             });
         match spawned {
@@ -6092,8 +6096,14 @@ impl App {
             return None;
         }
         Some(match self.shots_to_delete() {
-            1 => ("Delete this screenshot?".to_string(), "It cannot be brought back."),
-            n => (format!("Delete {n} screenshots?"), "They cannot be brought back."),
+            1 => (
+                "Delete this screenshot?".to_string(),
+                "It cannot be brought back.",
+            ),
+            n => (
+                format!("Delete {n} screenshots?"),
+                "They cannot be brought back.",
+            ),
         })
     }
 
