@@ -1217,7 +1217,7 @@ fn a_switch_is_refused_over_a_resume_the_core_would_not_take() {
 }
 
 #[test]
-fn pick_names_mode_and_link_across_the_strip() {
+fn pick_names_cancel_and_mode_across_the_strip() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     let width = |k: LinkLegend| match k {
         LinkLegend::Cancel => hint_face("B", "Cancel").w,
@@ -1249,7 +1249,7 @@ fn pick_names_mode_and_link_across_the_strip() {
     keys.sort_by(|a, b| a.0.total_cmp(&b.0));
     assert_eq!(
         keys.iter().map(|k| k.3).collect::<Vec<_>>(),
-        [LinkLegend::Mode, LinkLegend::Link],
+        [LinkLegend::Cancel, LinkLegend::Mode],
     );
     assert!(
         keys.iter().all(|k| k.1 == OUT_H as f32 - MOUTH_H),
@@ -1260,17 +1260,17 @@ fn pick_names_mode_and_link_across_the_strip() {
     let right = x + w - HINT_EDGE as f32;
     assert!(
         left.abs() < 1.0,
-        "Mode is not on the left of the strip: {left}"
+        "Cancel is not on the left of the strip: {left}"
     );
     assert!(
         (right - OUT_W as f32).abs() < 1.0,
-        "Link is not on the right of the strip: {right}"
+        "Mode is not on the right of the strip: {right}"
     );
-    let mode_end = keys[0].0 + keys[0].2 - HINT_EDGE as f32;
-    let link_start = keys[1].0;
+    let cancel_end = keys[0].0 + keys[0].2 - HINT_EDGE as f32;
+    let mode_start = keys[1].0;
     assert!(
-        link_start - mode_end > 80.0,
-        "no gap between Mode and Link for the socket: {mode_end}..{link_start}"
+        mode_start - cancel_end > 80.0,
+        "no gap between Cancel and Mode for the socket: {cancel_end}..{mode_start}"
     );
 }
 
@@ -1584,6 +1584,8 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
         .map(|k| (TexId::from_raw(900 + k.index()), 40))
         .collect();
     let mode = faces[LinkLegend::Mode.index()].0;
+    let link = faces[LinkLegend::Link.index()].0;
+    let cancel = faces[LinkLegend::Cancel.index()].0;
     let drawn = |app: &App| {
         let mut out = Vec::new();
         app.draw(&mut out);
@@ -1593,11 +1595,21 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
     let (mut app, _d) = playing_on(Core::Gpsp);
     app.set_link_legend_faces(faces.clone());
     app.apply(Action::GameMenu);
+    let out = drawn(&app);
     assert!(
-        drawn(&app)
-            .iter()
+        out.iter()
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == mode)),
         "a cart whose hardware can be switched did not offer SELECT"
+    );
+    assert!(
+        !out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == link)),
+        "Link stayed on the legend beside Mode"
+    );
+    assert!(
+        out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == cancel)),
+        "a switchable cart's pick screen did not offer Cancel"
     );
 
     let d = common::tmp_root_with_carts(&["Zzz"]);
@@ -1611,20 +1623,22 @@ fn the_pick_legend_names_mode_only_where_the_hardware_can_be_switched() {
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == mode)),
         "the screen offered SELECT over a game gpSP links the same either way"
     );
-    let link = faces[LinkLegend::Link.index()].0;
     assert!(
         out.iter()
             .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == link)),
         "Link left the legend along with Mode"
     );
-    for k in [LinkLegend::Cancel, LinkLegend::Swap] {
-        let gone = faces[k.index()].0;
-        assert!(
-            !out.iter()
-                .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == gone)),
-            "{k:?} is still on the pick screen"
-        );
-    }
+    assert!(
+        out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == cancel)),
+        "the pick screen did not offer Cancel"
+    );
+    let swap = faces[LinkLegend::Swap.index()].0;
+    assert!(
+        !out.iter()
+            .any(|d| matches!(*d, Draw::Tex { tex, .. } if tex == swap)),
+        "Swap is still on the pick screen"
+    );
 }
 
 #[test]
