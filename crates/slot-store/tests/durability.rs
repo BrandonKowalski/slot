@@ -3,7 +3,8 @@ mod common;
 use common::tmp_root;
 use slot_store::{
     atomic_write, read_slot_state, sweep_temps, write_slot_state, Appearance, BezelPick, GbPalette,
-    Platform, Recent, Shader, SlotState, WallpaperPick, WallpaperTint, FF_SPEEDS, FF_SPEED_DEFAULT,
+    Platform, Recent, Scale, Shader, SlotState, Stretch, WallpaperPick, WallpaperTint, FF_SPEEDS,
+    FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -249,6 +250,11 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             bezel_gba: BezelPick::Ags102,
             bezel_gb: BezelPick::Ags102,
             bezel_gbc: BezelPick::Ags102,
+            scale_gba: Scale::Fit,
+            scale_gb: Scale::SpFrame,
+            scale_gbc: Scale::SpFrame,
+            stretch_gb: Stretch::Classic,
+            stretch_gbc: Stretch::Classic,
             recents: Vec::new(),
             favorites: Vec::new(),
             shelf: None,
@@ -604,4 +610,42 @@ fn lid_power_off_minutes_round_trip_and_drop_a_value_the_menu_does_not_offer() {
         .replace("lid_off_min=30", "lid_off_min=7");
     std::fs::write(&path, text).unwrap();
     assert_eq!(read_slot_state(d.path()).lid_off_min, None);
+}
+
+#[test]
+fn scale_and_stretch_round_trip_and_fall_back() {
+    let d = tmp_root();
+    let s = SlotState {
+        scale_gba: Scale::FullScreen,
+        scale_gb: Scale::Integer,
+        scale_gbc: Scale::Fit,
+        stretch_gb: Stretch::FullScreen,
+        stretch_gbc: Stretch::Classic,
+        ..SlotState::default()
+    };
+    write_slot_state(d.path(), &s).unwrap();
+    assert_eq!(read_slot_state(d.path()), s);
+    let path = d.path().join("Config/slot.state");
+    let text = std::fs::read_to_string(&path).unwrap();
+    for line in [
+        "scale_gba=full-screen",
+        "scale_gb=integer",
+        "scale_gbc=fit",
+        "stretch_gb=full-screen",
+        "stretch_gbc=classic",
+    ] {
+        assert!(text.lines().any(|l| l == line), "{line} missing");
+    }
+    let broken = text
+        .replace("scale_gb=integer", "scale_gb=huge")
+        .replace("stretch_gb=full-screen", "stretch_gb=");
+    std::fs::write(&path, broken).unwrap();
+    let back = read_slot_state(d.path());
+    assert_eq!(
+        (back.scale_gb, back.stretch_gb, back.scale_gba),
+        (Scale::SpFrame, Stretch::Classic, Scale::FullScreen)
+    );
+    assert_eq!(Scale::SpFrame.name(), "sp-frame");
+    assert_eq!(Scale::parse("sp-frame"), Some(Scale::SpFrame));
+    assert_eq!(Scale::parse("default"), None);
 }

@@ -192,6 +192,60 @@ impl BezelPick {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Scale {
+    #[default]
+    SpFrame,
+    Integer,
+    Fit,
+    FullScreen,
+}
+
+impl Scale {
+    pub fn name(self) -> &'static str {
+        match self {
+            Scale::SpFrame => "sp-frame",
+            Scale::Integer => "integer",
+            Scale::Fit => "fit",
+            Scale::FullScreen => "full-screen",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Scale> {
+        match name {
+            "sp-frame" => Some(Scale::SpFrame),
+            "integer" => Some(Scale::Integer),
+            "fit" => Some(Scale::Fit),
+            "full-screen" => Some(Scale::FullScreen),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Stretch {
+    #[default]
+    Classic,
+    FullScreen,
+}
+
+impl Stretch {
+    pub fn name(self) -> &'static str {
+        match self {
+            Stretch::Classic => "classic",
+            Stretch::FullScreen => "full-screen",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Stretch> {
+        match name {
+            "classic" => Some(Stretch::Classic),
+            "full-screen" => Some(Stretch::FullScreen),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
     pub cart: Option<String>,
@@ -229,6 +283,11 @@ pub struct SlotState {
     pub bezel_gba: BezelPick,
     pub bezel_gb: BezelPick,
     pub bezel_gbc: BezelPick,
+    pub scale_gba: Scale,
+    pub scale_gb: Scale,
+    pub scale_gbc: Scale,
+    pub stretch_gb: Stretch,
+    pub stretch_gbc: Stretch,
     pub recents: Vec<Recent>,
     pub favorites: Vec<Recent>,
     pub shelf: Option<String>,
@@ -370,6 +429,11 @@ impl Default for SlotState {
             bezel_gba: BezelPick::Ags102,
             bezel_gb: BezelPick::Ags102,
             bezel_gbc: BezelPick::Ags102,
+            scale_gba: Scale::Fit,
+            scale_gb: Scale::SpFrame,
+            scale_gbc: Scale::SpFrame,
+            stretch_gb: Stretch::Classic,
+            stretch_gbc: Stretch::Classic,
             recents: Vec::new(),
             favorites: Vec::new(),
             shelf: None,
@@ -468,6 +532,11 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     text.push_str(&format!("bezel_gba={}\n", s.bezel_gba.key()));
     text.push_str(&format!("bezel_gb={}\n", s.bezel_gb.key()));
     text.push_str(&format!("bezel_gbc={}\n", s.bezel_gbc.key()));
+    text.push_str(&format!("scale_gba={}\n", s.scale_gba.name()));
+    text.push_str(&format!("scale_gb={}\n", s.scale_gb.name()));
+    text.push_str(&format!("scale_gbc={}\n", s.scale_gbc.name()));
+    text.push_str(&format!("stretch_gb={}\n", s.stretch_gb.name()));
+    text.push_str(&format!("stretch_gbc={}\n", s.stretch_gbc.name()));
     text.push_str(&format!("shelf={}\n", s.shelf.as_deref().unwrap_or("")));
     text.push_str(&format!(
         "shelf_cart={}\n",
@@ -519,6 +588,11 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut bezel_gba = None;
     let mut bezel_gb = None;
     let mut bezel_gbc = None;
+    let mut scale_gba = None;
+    let mut scale_gb = None;
+    let mut scale_gbc = None;
+    let mut stretch_gb = None;
+    let mut stretch_gbc = None;
     let mut shelf = None;
     let mut shelf_cart = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
@@ -560,6 +634,11 @@ fn parse(text: &str) -> Option<SlotState> {
             "bezel_gba" => bezel_gba = Some(BezelPick::parse(value)),
             "bezel_gb" => bezel_gb = Some(BezelPick::parse(value)),
             "bezel_gbc" => bezel_gbc = Some(BezelPick::parse(value)),
+            "scale_gba" => scale_gba = Scale::parse(value),
+            "scale_gb" => scale_gb = Scale::parse(value),
+            "scale_gbc" => scale_gbc = Scale::parse(value),
+            "stretch_gb" => stretch_gb = Stretch::parse(value),
+            "stretch_gbc" => stretch_gbc = Stretch::parse(value),
             "shelf" => shelf = Some(value.to_string()).filter(|v| !v.is_empty()),
             "shelf_cart" => shelf_cart = recent_value(value),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
@@ -612,6 +691,11 @@ fn parse(text: &str) -> Option<SlotState> {
         bezel_gba: bezel_gba.unwrap_or(fallback.bezel_gba),
         bezel_gb: bezel_gb.unwrap_or(fallback.bezel_gb),
         bezel_gbc: bezel_gbc.unwrap_or(fallback.bezel_gbc),
+        scale_gba: scale_gba.unwrap_or(fallback.scale_gba),
+        scale_gb: scale_gb.unwrap_or(fallback.scale_gb),
+        scale_gbc: scale_gbc.unwrap_or(fallback.scale_gbc),
+        stretch_gb: stretch_gb.unwrap_or(fallback.stretch_gb),
+        stretch_gbc: stretch_gbc.unwrap_or(fallback.stretch_gbc),
         recents: Vec::new(),
         favorites: Vec::new(),
         shelf,

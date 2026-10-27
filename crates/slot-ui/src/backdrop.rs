@@ -25,10 +25,20 @@ pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
     panel_bezel(&src, (sw, sh), (w, h), false)
 }
 
-pub fn default_game_bezel_face(colour: bool, w: u32, h: u32) -> Option<Vec<u8>> {
-    let png = if colour { BEZEL_GBC_PNG } else { BEZEL_GB_PNG };
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BezelArt {
+    Default,
+}
+
+pub fn default_game_bezel_face(colour: bool, kind: BezelArt, w: u32, h: u32) -> Option<Vec<u8>> {
+    let png = match (kind, colour) {
+        (BezelArt::Default, false) => BEZEL_GB_PNG,
+        (BezelArt::Default, true) => BEZEL_GBC_PNG,
+    };
     let (src, sw, sh) = art::decode_png_bytes(png)?;
-    panel_bezel(&src, (sw, sh), (w, h), true)
+    match kind {
+        BezelArt::Default => panel_bezel(&src, (sw, sh), (w, h), true),
+    }
 }
 
 const BEZEL_GRAIN_ROWS: usize = 10;

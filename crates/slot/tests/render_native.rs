@@ -482,3 +482,66 @@ fn a_gba_bezel_from_the_card_frames_the_game_on_a_4_by_3_panel() {
     assert_eq!(at(320, 10), [0, 0, 0], "above the game area");
     assert_eq!(at(320, 470), [0, 0, 0], "below the game area");
 }
+
+fn game_boy_page_on(panel: (u32, u32)) -> Option<(Vec<u8>, Vec<QuickRow>)> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, panel);
+    c.fit(panel);
+    let mut input = Script(VecDeque::new());
+    let mut tap = |f: &mut Frontend, b: Btn| {
+        input.0.push_back(vec![RawEvent::Down(b)]);
+        input.0.push_back(vec![RawEvent::Up(b)]);
+        f.advance(&mut input);
+        f.advance(&mut input);
+    };
+    f.compose(&mut c);
+    tap(&mut f, Btn::Menu);
+    for _ in 0..QuickRow::Screen.position(&f.app().hidden_rows()) {
+        tap(&mut f, Btn::Down);
+    }
+    tap(&mut f, Btn::A);
+    for _ in 0..QuickRow::ScreenGb.position(&f.app().hidden_rows()) {
+        tap(&mut f, Btn::Down);
+    }
+    tap(&mut f, Btn::A);
+    let hidden = f.app().hidden_rows();
+    let last = *QuickRow::ScreenGb.child()?.shown(&hidden).last()?;
+    while f.app().quick_menu() != Some(last) {
+        tap(&mut f, Btn::Down);
+    }
+    f.compose(&mut c);
+    f.compose(&mut c);
+    let px = c.read_window(panel);
+    write_png(
+        &format!("gb_page_{}x{}", panel.0, panel.1),
+        panel.0,
+        panel.1,
+        &px,
+    );
+    Some((px, hidden))
+}
+
+#[test]
+fn the_game_boy_page_lists_scale_and_stretch_on_both_panels() {
+    for (panel, rows) in [
+        ((720, 480), &[QuickRow::GbStretch][..]),
+        ((640, 480), &[QuickRow::GbScale, QuickRow::GbStretch][..]),
+    ] {
+        let Some((px, hidden)) = game_boy_page_on(panel) else {
+            return;
+        };
+        for &row in rows {
+            assert!(!hidden.contains(&row), "{row:?} hidden on {panel:?}");
+            let top = quick_row_top(row, &hidden) as usize;
+            let w = panel.0 as usize;
+            let lit = (top + 8..top + 40)
+                .any(|y| (0..w).any(|x| px[(y * w + x) * 4..][..3].iter().all(|c| *c > 0x80)));
+            assert!(lit, "{row:?} drew nothing on {panel:?}");
+        }
+    }
+}

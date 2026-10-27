@@ -95,10 +95,17 @@ pub enum QuickRow {
     AutoLoad,
     UndoSave,
     UndoLoad,
+    GbaScale,
+    GbScale,
+    GbStretch,
+    GbcScale,
+    GbcStretch,
+    Scale,
+    Stretch,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 84] = [
+    pub const ALL: [QuickRow; 91] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -183,6 +190,13 @@ impl QuickRow {
         QuickRow::AutoLoad,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
+        QuickRow::GbaScale,
+        QuickRow::GbScale,
+        QuickRow::GbStretch,
+        QuickRow::GbcScale,
+        QuickRow::GbcStretch,
+        QuickRow::Scale,
+        QuickRow::Stretch,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -256,23 +270,28 @@ impl QuickRow {
 
     pub const SCREEN_GENERAL: [QuickRow; 2] = [QuickRow::Brightness, QuickRow::BlueLight];
 
-    pub const SCREEN_GBA: [QuickRow; 3] = [
+    pub const SCREEN_GBA: [QuickRow; 4] = [
         QuickRow::GbaShader,
         QuickRow::GbaColourCorrection,
         QuickRow::GbaBezel,
+        QuickRow::GbaScale,
     ];
 
-    pub const SCREEN_GBC: [QuickRow; 3] = [
+    pub const SCREEN_GBC: [QuickRow; 5] = [
         QuickRow::GbcShader,
         QuickRow::GbcColourCorrection,
         QuickRow::GbcBezel,
+        QuickRow::GbcScale,
+        QuickRow::GbcStretch,
     ];
 
-    pub const SCREEN_GB: [QuickRow; 4] = [
+    pub const SCREEN_GB: [QuickRow; 6] = [
         QuickRow::GbShader,
         QuickRow::GbColourCorrection,
         QuickRow::GbPalette,
         QuickRow::GbBezel,
+        QuickRow::GbScale,
+        QuickRow::GbStretch,
     ];
 
     pub const GAME: [QuickRow; 8] = [
@@ -302,9 +321,11 @@ impl QuickRow {
         QuickRow::PlayControls,
     ];
 
-    pub const PLAY_SCREEN: [QuickRow; 6] = [
+    pub const PLAY_SCREEN: [QuickRow; 8] = [
         QuickRow::Shader,
         QuickRow::Bezel,
+        QuickRow::Scale,
+        QuickRow::Stretch,
         QuickRow::Palette,
         QuickRow::ColourCorrection,
         QuickRow::PlayBrightness,
@@ -323,16 +344,21 @@ impl QuickRow {
             | QuickRow::ScreenGb => &QuickRow::SCREEN,
             QuickRow::Brightness | QuickRow::BlueLight => &QuickRow::SCREEN_GENERAL,
             QuickRow::PlayBrightness | QuickRow::PlayBlueLight => &QuickRow::PLAY_SCREEN,
-            QuickRow::GbaShader | QuickRow::GbaColourCorrection | QuickRow::GbaBezel => {
-                &QuickRow::SCREEN_GBA
-            }
-            QuickRow::GbcShader | QuickRow::GbcColourCorrection | QuickRow::GbcBezel => {
-                &QuickRow::SCREEN_GBC
-            }
+            QuickRow::GbaShader
+            | QuickRow::GbaColourCorrection
+            | QuickRow::GbaBezel
+            | QuickRow::GbaScale => &QuickRow::SCREEN_GBA,
+            QuickRow::GbcShader
+            | QuickRow::GbcColourCorrection
+            | QuickRow::GbcBezel
+            | QuickRow::GbcScale
+            | QuickRow::GbcStretch => &QuickRow::SCREEN_GBC,
             QuickRow::GbShader
             | QuickRow::GbColourCorrection
             | QuickRow::GbPalette
-            | QuickRow::GbBezel => &QuickRow::SCREEN_GB,
+            | QuickRow::GbBezel
+            | QuickRow::GbScale
+            | QuickRow::GbStretch => &QuickRow::SCREEN_GB,
             QuickRow::FastForward
             | QuickRow::FastForwardSound
             | QuickRow::Rewind
@@ -364,9 +390,12 @@ impl QuickRow {
             r if r.game_button().is_some() => &QuickRow::CONTROLS,
             r if r.shortcut().is_some() => &QuickRow::SHORTCUTS,
             r if r.carousel_action().is_some() => &QuickRow::SHELF_KEYS,
-            QuickRow::Shader | QuickRow::ColourCorrection | QuickRow::Palette | QuickRow::Bezel => {
-                &QuickRow::PLAY_SCREEN
-            }
+            QuickRow::Shader
+            | QuickRow::ColourCorrection
+            | QuickRow::Palette
+            | QuickRow::Bezel
+            | QuickRow::Scale
+            | QuickRow::Stretch => &QuickRow::PLAY_SCREEN,
             _ => &QuickRow::MAIN,
         }
     }
@@ -527,6 +556,10 @@ impl QuickRow {
             QuickRow::ScreenGb => "Game Boy",
             QuickRow::GbBezel => "Bezel",
             QuickRow::GbcBezel => "Bezel",
+            QuickRow::GbaScale | QuickRow::GbScale | QuickRow::GbcScale | QuickRow::Scale => {
+                "Scale"
+            }
+            QuickRow::GbStretch | QuickRow::GbcStretch | QuickRow::Stretch => "Stretch",
             QuickRow::GbaBezel => "Bezel",
             QuickRow::Bezel => "Bezel",
         }
@@ -660,10 +693,15 @@ pub enum QuickValue {
     Level7,
     Level8,
     Level9,
+    SpFrame,
+    Integer,
+    Fit,
+    Classic,
+    FullScreen,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 33] = [
+    pub const ALL: [QuickValue; 38] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -697,6 +735,11 @@ impl QuickValue {
         QuickValue::Level7,
         QuickValue::Level8,
         QuickValue::Level9,
+        QuickValue::SpFrame,
+        QuickValue::Integer,
+        QuickValue::Fit,
+        QuickValue::Classic,
+        QuickValue::FullScreen,
     ];
 
     pub const LEVELS: [QuickValue; 10] = [
@@ -760,6 +803,11 @@ impl QuickValue {
             QuickValue::Level7 => "7",
             QuickValue::Level8 => "8",
             QuickValue::Level9 => "9",
+            QuickValue::SpFrame => "SP Frame",
+            QuickValue::Integer => "Integer",
+            QuickValue::Fit => "Fit",
+            QuickValue::Classic => "Classic",
+            QuickValue::FullScreen => "Full Screen",
         }
     }
 

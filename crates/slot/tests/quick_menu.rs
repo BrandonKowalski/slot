@@ -7,8 +7,8 @@ use common::{
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{
-    read_slot_state, write_slot_state, Appearance, BezelPick, GbColors, GbPalette, Platform,
-    Shader, SlotState, WallpaperPick,
+    read_slot_state, write_slot_state, Appearance, BezelPick, GbColors, GbPalette, Platform, Scale,
+    Shader, SlotState, Stretch, WallpaperPick,
 };
 use slot_ui::{
     Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, OUT_H,
@@ -1005,6 +1005,8 @@ fn the_game_boy_page_steps_the_palette_from_auto() {
             QuickRow::GbColourCorrection,
             QuickRow::GbPalette,
             QuickRow::GbBezel,
+            QuickRow::GbScale,
+            QuickRow::GbStretch,
         ]
     );
     open_at(&mut a, QuickRow::GbPalette);
@@ -1360,4 +1362,67 @@ fn lid_power_off_steps_through_its_minutes_wraps_and_saves() {
     }
     press(&mut a, Btn::Left);
     assert_eq!(a.lid_off_min(), 1);
+}
+
+#[test]
+fn scale_rows_offer_only_choices_that_differ() {
+    let (_d, mut a, _) = on_carousel();
+    a.set_panel((720, 480));
+    assert_eq!(a.scale_choices(Platform::Gba), [Scale::Fit]);
+    assert_eq!(a.scale_choices(Platform::Gb), [Scale::Integer]);
+    assert_eq!(
+        a.stretch_choices(Platform::Gb),
+        [Stretch::Classic, Stretch::FullScreen]
+    );
+    let hidden = a.hidden_rows();
+    assert!(hidden.contains(&QuickRow::GbaScale));
+    assert!(hidden.contains(&QuickRow::GbScale));
+    assert!(!hidden.contains(&QuickRow::GbStretch));
+    a.set_panel((640, 480));
+    assert_eq!(
+        a.scale_choices(Platform::Gba),
+        [Scale::Fit, Scale::Integer, Scale::FullScreen]
+    );
+    assert_eq!(
+        a.scale_choices(Platform::Gb),
+        [Scale::SpFrame, Scale::Integer]
+    );
+    assert!(!a.hidden_rows().contains(&QuickRow::GbaScale));
+}
+
+#[test]
+fn a_saved_scale_this_panel_lacks_shows_as_its_equal_and_is_kept() {
+    let (d, mut a, _) = on_carousel();
+    a.set_panel((720, 480));
+    assert_eq!(a.resolved_scale(Platform::Gb), Scale::Integer);
+    assert_eq!(a.quick_value(QuickRow::GbScale), Some(QuickValue::Integer));
+    open_at(&mut a, QuickRow::GbStretch);
+    press(&mut a, Btn::Right);
+    assert_eq!(read_slot_state(d.path()).scale_gb, Scale::SpFrame);
+    a.set_panel((640, 480));
+    assert_eq!(a.resolved_scale(Platform::Gb), Scale::SpFrame);
+    assert_eq!(a.quick_value(QuickRow::GbScale), Some(QuickValue::SpFrame));
+}
+
+#[test]
+fn cycling_stretch_saves_and_applies() {
+    let (d, mut a, _) = on_carousel();
+    a.set_panel((640, 480));
+    open_at(&mut a, QuickRow::GbStretch);
+    assert_eq!(a.quick_menu(), Some(QuickRow::GbStretch));
+    assert_eq!(
+        a.quick_value(QuickRow::GbStretch),
+        Some(QuickValue::Classic)
+    );
+    press(&mut a, Btn::Right);
+    assert_eq!(read_slot_state(d.path()).stretch_gb, Stretch::FullScreen);
+    assert_eq!(
+        a.quick_value(QuickRow::GbStretch),
+        Some(QuickValue::FullScreen)
+    );
+    a.set_platform(Platform::Gb);
+    a.set_video_mode(slot::video_mode::VideoMode::Stretch);
+    assert!(a.game_layout().panel);
+    press(&mut a, Btn::Right);
+    assert_eq!(read_slot_state(d.path()).stretch_gb, Stretch::Classic);
 }

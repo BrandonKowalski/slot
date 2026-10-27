@@ -2,22 +2,24 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use slot_gfx::{Canvas, OUT_H, OUT_W};
+use slot_gfx::{Canvas, GameLayout, Sizing, OUT_H, OUT_W, WHOLE_TEXTURE};
 use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Cart, Core,
-    GbColors, Platform, Recent, Shader, ShotDir, ShotEntry, SlotState, StateEntry, StateRing, WallpaperPick,
-    WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
+    GbColors, Platform, Recent, Scale, Shader, ShotDir, ShotEntry, SlotState, StateEntry,
+    StateRing, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,
+    RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_slot_name,
     draw_sticker, ease, footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap,
-    shelf_cart_at, ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis,
-    Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal,
-    Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HOP_LIFT,
-    MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    shelf_cart_at, BezelArt, ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge,
+    Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue,
+    Refusal, Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V,
+    CHIP_W, HINT_EDGE, HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U,
+    SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -1006,6 +1008,12 @@ impl App {
         if no_bezel {
             hidden.push(QuickRow::Bezel);
         }
+        if self.scale_choices(self.playing_platform()).len() < 2 {
+            hidden.push(QuickRow::Scale);
+        }
+        if self.stretch_choices(self.playing_platform()).len() < 2 {
+            hidden.push(QuickRow::Stretch);
+        }
         if self.single_cart() {
             hidden.push(QuickRow::ExitGame);
         }
@@ -1110,6 +1118,11 @@ impl App {
             (QuickRow::Bezel, Platform::Gba) => QuickRow::GbaBezel,
             (QuickRow::Bezel, Platform::Gb) => QuickRow::GbBezel,
             (QuickRow::Bezel, Platform::Gbc) => QuickRow::GbcBezel,
+            (QuickRow::Scale, Platform::Gba) => QuickRow::GbaScale,
+            (QuickRow::Scale, Platform::Gb) => QuickRow::GbScale,
+            (QuickRow::Scale, Platform::Gbc) => QuickRow::GbcScale,
+            (QuickRow::Stretch, Platform::Gb) => QuickRow::GbStretch,
+            (QuickRow::Stretch, Platform::Gbc) => QuickRow::GbcStretch,
             (QuickRow::PlayBrightness, _) => QuickRow::Brightness,
             (QuickRow::PlayBlueLight, _) => QuickRow::BlueLight,
             (row, _) => row,
@@ -1121,7 +1134,17 @@ impl App {
             QuickRow::Shader
             | QuickRow::ColourCorrection
             | QuickRow::PlayBrightness
-            | QuickRow::PlayBlueLight => self.quick_value(self.playing_row(row)),
+            | QuickRow::PlayBlueLight
+            | QuickRow::Scale => self.quick_value(self.playing_row(row)),
+            QuickRow::Stretch => match self.playing_row(row) {
+                QuickRow::Stretch => None,
+                row => self.quick_value(row),
+            },
+            QuickRow::GbaScale => Some(scale_value(self.resolved_scale(Platform::Gba))),
+            QuickRow::GbScale => Some(scale_value(self.resolved_scale(Platform::Gb))),
+            QuickRow::GbcScale => Some(scale_value(self.resolved_scale(Platform::Gbc))),
+            QuickRow::GbStretch => Some(stretch_value(self.resolved_stretch(Platform::Gb))),
+            QuickRow::GbcStretch => Some(stretch_value(self.resolved_stretch(Platform::Gbc))),
             QuickRow::Brightness => Some(QuickValue::level(self.state.brightness)),
             QuickRow::BlueLight => Some(match self.state.blue_light {
                 0 => QuickValue::Off,
@@ -1309,6 +1332,7 @@ impl App {
 
     pub fn sp_frame(&self) -> bool {
         self.resolved_bezel(self.playing_platform()) == BezelPick::Ags102
+            && !self.game_layout().panel
     }
 
     pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
@@ -1316,10 +1340,28 @@ impl App {
     }
 
     pub fn shown_game_bezel(&self) -> Option<TexId> {
-        if self.video_mode == VideoMode::Stretch {
+        if self.picture_fills() {
+            return None;
+        }
+        if self.resolved_bezel(self.playing_platform()) == BezelPick::Default
+            && self.bezel_art().is_none()
+        {
             return None;
         }
         self.game_bezel
+    }
+
+    pub fn bezel_art(&self) -> Option<BezelArt> {
+        if self.picture_fills() {
+            return None;
+        }
+        let gba = self.playing_platform().hardware() == Platform::Gba;
+        match (self.picture().0, self.framed_panel()) {
+            (Sizing::Band, _) => Some(BezelArt::Default),
+            _ if gba => None,
+            (Sizing::Integer, false) => Some(BezelArt::Default),
+            _ => None,
+        }
     }
 
     pub fn wallpaper_files(&self) -> Vec<String> {
@@ -1439,6 +1481,23 @@ impl App {
         }
         if !self.framed_panel() {
             hidden.push(QuickRow::GbaBezel);
+        }
+        for (row, platform) in [
+            (QuickRow::GbaScale, Platform::Gba),
+            (QuickRow::GbScale, Platform::Gb),
+            (QuickRow::GbcScale, Platform::Gbc),
+        ] {
+            if self.scale_choices(platform).len() < 2 {
+                hidden.push(row);
+            }
+        }
+        for (row, platform) in [
+            (QuickRow::GbStretch, Platform::Gb),
+            (QuickRow::GbcStretch, Platform::Gbc),
+        ] {
+            if self.stretch_choices(platform).len() < 2 {
+                hidden.push(row);
+            }
         }
         if !self.left_stick {
             hidden.push(QuickRow::LeftStick);
@@ -1720,7 +1779,193 @@ impl App {
     }
 
     pub fn source_rect(&self) -> [f32; 4] {
-        video_mode::source_rect(self.platform, self.video_mode)
+        self.picture().1
+    }
+
+    fn picture(&self) -> (Sizing, [f32; 4]) {
+        let platform = self.playing_platform();
+        video_mode::picture_for(
+            platform,
+            self.video_mode,
+            self.drawn_scale(platform),
+            self.resolved_stretch(platform),
+        )
+    }
+
+    fn scale_of(&self, platform: Platform) -> Scale {
+        match platform {
+            Platform::Gba | Platform::Gbav => self.state.scale_gba,
+            Platform::Gb => self.state.scale_gb,
+            Platform::Gbc => self.state.scale_gbc,
+        }
+    }
+
+    fn stretch_of(&self, platform: Platform) -> Stretch {
+        match platform {
+            Platform::Gb => self.state.stretch_gb,
+            Platform::Gbc => self.state.stretch_gbc,
+            Platform::Gba | Platform::Gbav => Stretch::Classic,
+        }
+    }
+
+    pub fn game_layout(&self) -> GameLayout {
+        let (sizing, source) = self.picture();
+        self.layout_of(self.playing_platform(), sizing, source)
+    }
+
+    fn layout_of(&self, platform: Platform, sizing: Sizing, source: [f32; 4]) -> GameLayout {
+        let picture = match source == WHOLE_TEXTURE {
+            true => (slot_gfx::SRC_W, slot_gfx::SRC_H),
+            false => platform.picture(),
+        };
+        slot_gfx::game_layout(self.panel, picture, sizing)
+    }
+
+    fn shown_as(
+        &self,
+        platform: Platform,
+        mode: VideoMode,
+        scale: Scale,
+        stretch: Stretch,
+    ) -> (bool, [i32; 4]) {
+        let (sizing, source) = video_mode::picture_for(platform, mode, scale, stretch);
+        let layout = self.layout_of(platform, sizing, source);
+        let (_, crop) =
+            video_mode::picture_for(platform, VideoMode::Actual, Scale::Integer, stretch);
+        let [rx, ry, rw, rh] = layout.rect;
+        let at = |from: f32, len: f32, off: f32, src: f32, size: f32| {
+            ((from + (off - src) / len * size) * 100.0).round() as i32
+        };
+        (
+            layout.panel,
+            [
+                at(rx, source[2], crop[0], source[0], rw),
+                at(ry, source[3], crop[1], source[1], rh),
+                (crop[2] / source[2] * rw * 100.0).round() as i32,
+                (crop[3] / source[3] * rh * 100.0).round() as i32,
+            ],
+        )
+    }
+
+    fn scale_candidates(platform: Platform) -> &'static [Scale] {
+        match platform.hardware() {
+            Platform::Gba => &[Scale::Fit, Scale::Integer, Scale::FullScreen],
+            _ => &[Scale::SpFrame, Scale::Integer],
+        }
+    }
+
+    pub fn scale_choices(&self, platform: Platform) -> Vec<Scale> {
+        let mut seen = Vec::new();
+        let mut choices = Vec::new();
+        for &scale in Self::scale_candidates(platform) {
+            let shown = self.shown_as(platform, VideoMode::Actual, scale, Stretch::Classic);
+            match seen.iter().position(|s| *s == shown) {
+                Some(at) if choices[at] == Scale::SpFrame => choices[at] = scale,
+                Some(_) => {}
+                None => {
+                    seen.push(shown);
+                    choices.push(scale);
+                }
+            }
+        }
+        choices
+    }
+
+    pub fn stretch_choices(&self, platform: Platform) -> Vec<Stretch> {
+        if platform.hardware() == Platform::Gba {
+            return Vec::new();
+        }
+        let mut seen = Vec::new();
+        let mut choices = Vec::new();
+        for stretch in [Stretch::Classic, Stretch::FullScreen] {
+            let shown = self.shown_as(platform, VideoMode::Stretch, Scale::SpFrame, stretch);
+            if !seen.contains(&shown) {
+                seen.push(shown);
+                choices.push(stretch);
+            }
+        }
+        choices
+    }
+
+    pub fn resolved_scale(&self, platform: Platform) -> Scale {
+        let stored = self.scale_of(platform);
+        let shown = self.shown_as(platform, VideoMode::Actual, stored, Stretch::Classic);
+        self.scale_choices(platform)
+            .into_iter()
+            .find(|&c| {
+                c == stored
+                    || self.shown_as(platform, VideoMode::Actual, c, Stretch::Classic) == shown
+            })
+            .or_else(|| self.scale_choices(platform).first().copied())
+            .unwrap_or_default()
+    }
+
+    fn drawn_scale(&self, platform: Platform) -> Scale {
+        let stored = self.scale_of(platform);
+        let shown = self.shown_as(platform, VideoMode::Actual, stored, Stretch::Classic);
+        Self::scale_candidates(platform)
+            .iter()
+            .copied()
+            .find(|&c| self.shown_as(platform, VideoMode::Actual, c, Stretch::Classic) == shown)
+            .unwrap_or(stored)
+    }
+
+    pub fn resolved_stretch(&self, platform: Platform) -> Stretch {
+        let stored = self.stretch_of(platform);
+        let shown = self.shown_as(platform, VideoMode::Stretch, Scale::SpFrame, stored);
+        self.stretch_choices(platform)
+            .into_iter()
+            .find(|&c| {
+                c == stored
+                    || self.shown_as(platform, VideoMode::Stretch, Scale::SpFrame, c) == shown
+            })
+            .unwrap_or_default()
+    }
+
+    fn cycle_scale(&mut self, platform: Platform, right: bool) {
+        let choices = self.scale_choices(platform);
+        let at = choices
+            .iter()
+            .position(|&c| c == self.resolved_scale(platform))
+            .unwrap_or(0);
+        let n = choices.len();
+        let to = choices[if right {
+            (at + 1) % n
+        } else {
+            (at + n - 1) % n
+        }];
+        match platform {
+            Platform::Gba | Platform::Gbav => self.state.scale_gba = to,
+            Platform::Gb => self.state.scale_gb = to,
+            Platform::Gbc => self.state.scale_gbc = to,
+        }
+    }
+
+    fn cycle_stretch(&mut self, platform: Platform, right: bool) {
+        let choices = self.stretch_choices(platform);
+        let Some(at) = choices
+            .iter()
+            .position(|&c| c == self.resolved_stretch(platform))
+        else {
+            return;
+        };
+        let n = choices.len();
+        let to = choices[if right {
+            (at + 1) % n
+        } else {
+            (at + n - 1) % n
+        }];
+        match platform {
+            Platform::Gbc => self.state.stretch_gbc = to,
+            _ => self.state.stretch_gb = to,
+        }
+    }
+
+    pub fn picture_fills(&self) -> bool {
+        match self.playing_platform().hardware() {
+            Platform::Gba => self.picture().0 == Sizing::Panel && self.game_layout().panel,
+            _ => self.video_mode == VideoMode::Stretch,
+        }
     }
 
     fn slot_owns_the_shoulders(&self) -> bool {
@@ -2800,6 +3045,13 @@ impl App {
             | QuickRow::GbBezel
             | QuickRow::GbcBezel
             | QuickRow::GbaBezel
+            | QuickRow::GbaScale
+            | QuickRow::GbScale
+            | QuickRow::GbcScale
+            | QuickRow::GbStretch
+            | QuickRow::GbcStretch
+            | QuickRow::Scale
+            | QuickRow::Stretch
             | QuickRow::Bezel
             | QuickRow::ShelfPrev
             | QuickRow::ShelfNext
@@ -2862,6 +3114,25 @@ impl App {
             };
             self.state.set_gb_colors(to);
             self.palette_pending = Some(to);
+            self.persist();
+            return;
+        }
+        if let QuickRow::GbaScale | QuickRow::GbScale | QuickRow::GbcScale = row {
+            let platform = match row {
+                QuickRow::GbaScale => Platform::Gba,
+                QuickRow::GbScale => Platform::Gb,
+                _ => Platform::Gbc,
+            };
+            self.cycle_scale(platform, right);
+            self.persist();
+            return;
+        }
+        if let QuickRow::GbStretch | QuickRow::GbcStretch = row {
+            let platform = match row {
+                QuickRow::GbStretch => Platform::Gb,
+                _ => Platform::Gbc,
+            };
+            self.cycle_stretch(platform, right);
             self.persist();
             return;
         }
@@ -2989,6 +3260,13 @@ impl App {
             | QuickRow::GbBezel
             | QuickRow::GbcBezel
             | QuickRow::GbaBezel
+            | QuickRow::GbaScale
+            | QuickRow::GbScale
+            | QuickRow::GbcScale
+            | QuickRow::GbStretch
+            | QuickRow::GbcStretch
+            | QuickRow::Scale
+            | QuickRow::Stretch
             | QuickRow::Bezel
             | QuickRow::General
             | QuickRow::ShelfPrev
@@ -5998,6 +6276,22 @@ fn trusted_sav(snapshot: &dyn Snapshot, verb: &str) -> Option<Vec<u8>> {
 
 fn up(level: u8, step: u8, max: u8) -> u8 {
     level.saturating_add(step).min(max)
+}
+
+fn scale_value(scale: Scale) -> QuickValue {
+    match scale {
+        Scale::SpFrame => QuickValue::SpFrame,
+        Scale::Integer => QuickValue::Integer,
+        Scale::Fit => QuickValue::Fit,
+        Scale::FullScreen => QuickValue::FullScreen,
+    }
+}
+
+fn stretch_value(stretch: Stretch) -> QuickValue {
+    match stretch {
+        Stretch::Classic => QuickValue::Classic,
+        Stretch::FullScreen => QuickValue::FullScreen,
+    }
 }
 
 fn shader_value(shader: Shader) -> QuickValue {

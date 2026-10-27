@@ -15,9 +15,9 @@ use slot_ui::{
     quick_legend_faces, quick_pointer_face, quick_value_face, quick_warning_value_face,
     rebuild_count_face, rebuild_title_face, repair_legends, set_clock_hint_face, slot_back,
     slot_back_light, slot_front, slot_front_light, socket_face, sticker_face, title_face,
-    toast_face, wallpaper_face, word_ink, CartFace, GbShell, Icon, LinkBadge, PowerChoice,
-    QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX,
-    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    toast_face, wallpaper_face, word_ink, BezelArt, CartFace, GbShell, Icon, LinkBadge,
+    PowerChoice, QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast,
+    UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -91,7 +91,7 @@ struct QuickPalette {
 #[derive(Default)]
 struct BezelSync {
     tex: Option<TexId>,
-    image: Option<(Console, BezelPick, (u32, u32))>,
+    image: Option<(Console, BezelPick, Option<BezelArt>, (u32, u32))>,
     labels: [String; 3],
     faces: [(Option<TexId>, Option<TexId>); 3],
 }
@@ -566,6 +566,7 @@ impl Frontend {
         compositor.set_screen_power(self.session.app().screen_power());
         compositor.set_screen_footer(self.session.app().screen_footer());
         compositor.set_game_source_rect(self.session.app().source_rect());
+        compositor.set_game_layout(self.session.app().game_layout());
         self.grab_link_shot(compositor);
         compositor.begin_frame();
         if self.draw_rebuild(compositor) {
@@ -1235,15 +1236,26 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
     }
 }
 
+fn bezel_key(pick: &BezelPick, art: Option<BezelArt>, last: Option<BezelArt>) -> Option<BezelArt> {
+    match pick {
+        BezelPick::Default => art.or(last),
+        _ => None,
+    }
+}
+
 fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut BezelSync) {
     let platform = app.playing_platform();
     let pick = app.resolved_bezel(platform);
     let (w, h) = app.game_bezel_size();
-    let shown = (platform, pick, (w, h));
+    let last = state.image.as_ref().and_then(|image| image.2);
+    let art = bezel_key(&pick, app.bezel_art(), last);
+    let shown = (platform, pick, art, (w, h));
     if state.image.as_ref() != Some(&shown) {
         let rgba = match &shown.1 {
             BezelPick::None | BezelPick::Ags102 => None,
-            BezelPick::Default => default_game_bezel_face(platform == Console::Gbc, w, h),
+            BezelPick::Default => shown
+                .2
+                .and_then(|kind| default_game_bezel_face(platform == Console::Gbc, kind, w, h)),
             BezelPick::File(name) => app
                 .root()
                 .map(|root| {
@@ -1472,5 +1484,21 @@ fn upload_rgba(
             *slot = Some(id);
             id
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggling_stretch_does_not_change_the_bezel_key() {
+        let card = BezelPick::File("Pocket.png".into());
+        assert_eq!(bezel_key(&card, Some(BezelArt::Default), None), None);
+        assert_eq!(bezel_key(&card, None, None), None);
+        assert_eq!(
+            bezel_key(&BezelPick::Default, None, Some(BezelArt::Default)),
+            Some(BezelArt::Default)
+        );
     }
 }

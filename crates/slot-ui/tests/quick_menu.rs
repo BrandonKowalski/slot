@@ -112,15 +112,22 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::SCREEN_GBA.map(QuickRow::label),
-        ["Shader", "Color Correction", "Bezel"]
+        ["Shader", "Color Correction", "Bezel", "Scale"]
     );
     assert_eq!(
         QuickRow::SCREEN_GBC.map(QuickRow::label),
-        ["Shader", "Color Correction", "Bezel"]
+        ["Shader", "Color Correction", "Bezel", "Scale", "Stretch"]
     );
     assert_eq!(
         QuickRow::SCREEN_GB.map(QuickRow::label),
-        ["Shader", "Color Correction", "Palette", "Bezel"]
+        [
+            "Shader",
+            "Color Correction",
+            "Palette",
+            "Bezel",
+            "Scale",
+            "Stretch"
+        ]
     );
     assert_eq!(
         QuickRow::GAME.map(QuickRow::label),
@@ -237,6 +244,11 @@ fn the_values_read_as_the_menu_prints_them() {
             "7",
             "8",
             "9",
+            "SP Frame",
+            "Integer",
+            "Fit",
+            "Classic",
+            "Full Screen",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
@@ -358,6 +370,8 @@ fn the_in_game_pages_hold_their_rows_in_order() {
         [
             QuickRow::Shader,
             QuickRow::Bezel,
+            QuickRow::Scale,
+            QuickRow::Stretch,
             QuickRow::Palette,
             QuickRow::ColourCorrection,
             QuickRow::PlayBrightness,

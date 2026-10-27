@@ -54,7 +54,7 @@ tasks:
   test:one:
     desc: Run tests matching FILTER, eg task test:one FILTER=gesture
     requires:
-      vars: [FILTER]
+      vars: [ FILTER ]
     env:
       SLOT_SILENT: '1'
     cmds:
@@ -162,20 +162,19 @@ tasks:
 
   sdcard:
     desc: Create an empty content root, ROOT defaults to ./sdcard
-    deps: [build]
+    deps: [ build ]
     vars:
       ROOT: '{{.ROOT | default "./sdcard"}}'
     cmds:
       - ./target/debug/slot --init-root {{.ROOT}}
-      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, battery saves in the matching Saves/GBA, Saves/GB or Saves/GBC, save states under the matching States/GBA, States/GB or States/GBC, gba_bios.bin in BIOS, pngs in Wallpapers, palette in Config/theme.txt"'
-      - 'echo "nothing is moved for you: a file loose at the top of Games/, Saves/, Labels/ or States/ is left where it is and never reaches the shelf"'
+      - 'echo "content root ready at {{.ROOT}}: roms in Games/GBA, Games/GB or Games/GBC, labels in the matching Labels/GBA, Labels/GB or Labels/GBC, battery saves in the matching Saves/GBA, Saves/GB or Saves/GBC, save states under the matching States/GBA, States/GB or States/GBC, gba_bios.bin in BIOS, pngs in Wallpapers"'
 
   run:
     desc: >-
       Run slot. against SLOT_ROOT, defaults to ./sdcard. SLOT_LINK_PORT moves the link
       session off 7211, which is what lets two copies on one machine link to each other -
       off-device both are on loopback, so the port is all that separates them
-    deps: [core]
+    deps: [ core ]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
@@ -184,7 +183,7 @@ tasks:
 
   run:bare:
     desc: Run with no title bar or border, for screenshots and screen capture
-    deps: [core]
+    deps: [ core ]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
@@ -194,7 +193,7 @@ tasks:
 
   run:4x3:
     desc: Run in a 4:3 window, as on the RG35XXSP, with the bezel around the screen
-    deps: [core]
+    deps: [ core ]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
@@ -204,7 +203,7 @@ tasks:
 
   run:debug:
     desc: Run an unoptimised build, for a debugger. Will not hold 60 fps.
-    deps: [core]
+    deps: [ core ]
     env:
       SLOT_ROOT: '{{.SLOT_ROOT | default "./sdcard"}}'
       SLOT_SILENT: '0'
@@ -213,7 +212,7 @@ tasks:
 
   dist:
     desc: Build the copy-to-SD2 tree, OUT defaults to ./dist
-    deps: [core, release]
+    deps: [ core, release ]
     vars:
       OUT: '{{.OUT | default "dist"}}'
     cmds:
@@ -274,7 +273,7 @@ tasks:
 
   core:gpsp:test:
     desc: Prove gpSP's Advance Wars session-flip patch still fixes what it was written for
-    deps: [core:gpsp]
+    deps: [ core:gpsp ]
     cmds:
       - sh cores/gpsp/test/run.sh vendor/gpsp-src.tar.gz
 
@@ -308,7 +307,7 @@ tasks:
     desc: Run CMD on the box the device build wants, fetching one if this is not it
     internal: true
     requires:
-      vars: [CMD]
+      vars: [ CMD ]
     cmds:
       - |
         set -eu
@@ -342,7 +341,7 @@ tasks:
 
   dist:device:
     desc: Build the SD2 tree for an H700 device, OUT defaults to ./dist-device
-    deps: [core:device, core:gpsp, fsck:exfat, build:device]
+    deps: [ core:device, core:gpsp, fsck:exfat, build:device ]
     vars:
       OUT: '{{.OUT | default "dist-device"}}'
     cmds:
@@ -379,14 +378,14 @@ tasks:
 
   deploy:device:
     desc: Build and push onto a device over adb, then restart it. SD defaults to /mnt/sdcard
-    deps: [core:device, core:gpsp, fsck:exfat, build:device]
+    deps: [ core:device, core:gpsp, fsck:exfat, build:device ]
     cmds:
       - task: deploy:push
-        vars: {SD: '{{.SD}}'}
+        vars: { SD: '{{.SD}}' }
 
   deploy:all:
     desc: Build and push onto every attached adb device, then restart each. SD defaults to /mnt/sdcard
-    deps: [core:device, core:gpsp, fsck:exfat, build:device]
+    deps: [ core:device, core:gpsp, fsck:exfat, build:device ]
     vars:
       SERIALS:
         sh: adb devices | awk 'NR > 1 && $2 == "device" {print $1}'
@@ -394,9 +393,9 @@ tasks:
       - sh: test -n "{{.SERIALS}}"
         msg: no adb devices attached
     cmds:
-      - for: {var: SERIALS}
+      - for: { var: SERIALS }
         task: deploy:push
-        vars: {SD: '{{.SD}}', SERIAL: '{{.ITEM}}'}
+        vars: { SD: '{{.SD}}', SERIAL: '{{.ITEM}}' }
 
   deploy:push:
     internal: true
