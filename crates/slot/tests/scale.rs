@@ -166,7 +166,7 @@ fn in_game_rows_follow_the_playing_platform() {
     assert_eq!(a.quick_value(QuickRow::Scale), Some(QuickValue::Fit));
     let (_d, a) = playing(Platform::Gb, (720, 480), SlotState::default());
     let hidden = a.in_game_hidden();
-    assert!(hidden.contains(&QuickRow::Scale));
+    assert!(!hidden.contains(&QuickRow::Scale));
     assert!(!hidden.contains(&QuickRow::Stretch));
     assert_eq!(a.quick_value(QuickRow::Stretch), Some(QuickValue::Classic));
 }
@@ -176,6 +176,8 @@ fn bezel_art_follows_the_layout() {
     for (panel, scale, want) in [
         ((720, 480), Scale::SpFrame, Some(BezelArt::Default)),
         ((640, 480), Scale::SpFrame, Some(BezelArt::Default)),
+        ((720, 480), Scale::Fit, None),
+        ((640, 480), Scale::Fit, None),
         ((640, 480), Scale::Integer, None),
         ((720, 480), Scale::Integer, Some(BezelArt::Default)),
     ] {

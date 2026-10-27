@@ -1850,7 +1850,7 @@ impl App {
     fn scale_candidates(platform: Platform) -> &'static [Scale] {
         match platform.hardware() {
             Platform::Gba => &[Scale::Fit, Scale::Integer, Scale::FullScreen],
-            _ => &[Scale::SpFrame, Scale::Integer],
+            _ => &[Scale::SpFrame, Scale::Integer, Scale::Fit],
         }
     }
 

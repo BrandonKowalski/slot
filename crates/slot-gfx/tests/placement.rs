@@ -48,3 +48,17 @@ fn band_and_panel_fill_their_area() {
         }
     );
 }
+
+#[test]
+fn fit_is_the_largest_uncropped_picture() {
+    let wide = game_layout((720, 480), (160, 144), Sizing::Fit);
+    assert!(!wide.panel);
+    assert_eq!(px((720, 480), wide), (93, 0, 533, 480));
+    let square = game_layout((640, 480), (160, 144), Sizing::Fit);
+    assert!(square.panel);
+    assert_eq!(px((640, 480), square), (53, 0, 533, 480));
+    for (window, l) in [((720, 480), wide), ((640, 480), square)] {
+        let (_, _, w, h) = px(window, l);
+        assert!((w as f32 - h as f32 * 160.0 / 144.0).abs() <= 1.0);
+    }
+}

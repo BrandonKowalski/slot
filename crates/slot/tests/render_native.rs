@@ -529,7 +529,7 @@ fn game_boy_page_on(panel: (u32, u32)) -> Option<(Vec<u8>, Vec<QuickRow>)> {
 #[test]
 fn the_game_boy_page_lists_scale_and_stretch_on_both_panels() {
     for (panel, rows) in [
-        ((720, 480), &[QuickRow::GbStretch][..]),
+        ((720, 480), &[QuickRow::GbScale, QuickRow::GbStretch][..]),
         ((640, 480), &[QuickRow::GbScale, QuickRow::GbStretch][..]),
     ] {
         let Some((px, hidden)) = game_boy_page_on(panel) else {

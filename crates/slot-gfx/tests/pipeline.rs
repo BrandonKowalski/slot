@@ -914,11 +914,71 @@ fn the_band_layout_draws_exactly_as_before() {
 }
 
 #[test]
+fn fit_draws_the_whole_game_boy_picture_and_stays_put() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    for (panel, (x, y, w, h)) in [
+        ((720, 480), (93, 0, 533, 480)),
+        ((640, 480), (53, 0, 533, 480)),
+    ] {
+        let layout = game_layout(panel, (160, 144), Sizing::Fit);
+        let frame = laid_out(&mut c, panel, layout, 1.0);
+        assert_eq!(c.frame_size(), panel);
+        assert_eq!(at(&frame, panel.0, x, y), [1, 1, 200], "{panel:?}");
+        assert_eq!(
+            at(&frame, panel.0, x + w - 1, y + h - 1),
+            [160, 144, 200],
+            "{panel:?}"
+        );
+        assert_eq!(lit_box(&frame, panel.0), (x, y, x + w - 1, y + h - 1));
+        c.begin_frame();
+        c.draw_list(&[Draw::Game]);
+        assert!(c.read_frame() == frame, "a second frame moved the game");
+    }
+}
+
+#[test]
+fn fractional_fit_grid_lines_every_original_game_boy_pixel_evenly() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    for (panel, left) in [((640, 480), 53), ((720, 480), 93)] {
+        c.set_game_layout(game_layout(panel, (160, 144), Sizing::Fit));
+        c.fit(panel);
+        c.set_game_source_rect(GB_RECT);
+        c.set_screen_effect(ScreenEffect::Grid);
+        c.set_screen_power(1.0);
+        c.begin_frame();
+        c.upload_game(&gb_shaped(|_, _| [0xc0; 3], [0, 0, 0]));
+        c.draw_game();
+        assert_eq!(c.frame_size(), panel);
+        let frame = c.read_frame();
+        let game: Vec<u8> = frame
+            .chunks_exact(panel.0 as usize * 4)
+            .flat_map(|row| row[left * 4..(left + 533) * 4].iter().copied())
+            .collect();
+        assert_even(
+            &grid_profile(&game, 533, 480, true),
+            GB_W,
+            0.18,
+            "Fit columns",
+        );
+        assert_even(
+            &grid_profile(&game, 533, 480, false),
+            GB_H,
+            0.18,
+            "Fit rows",
+        );
+    }
+}
+
+#[test]
 fn a_still_over_a_panel_layout_leaves_no_live_game_around_it() {
     let Some((_g, _s, mut c)) = compositor() else {
         return;
     };
-    for sizing in [Sizing::Integer, Sizing::Panel] {
+    for sizing in [Sizing::Fit, Sizing::Integer, Sizing::Panel] {
         let layout = game_layout((640, 480), (160, 144), sizing);
         laid_out(&mut c, (640, 480), layout, 1.0);
         let still = c.create_texture_nearest(SRC_W, SRC_H, &flat_shot([10, 20, 30]));

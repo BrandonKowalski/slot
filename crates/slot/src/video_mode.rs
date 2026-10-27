@@ -62,6 +62,7 @@ pub fn picture_for(
     }
     match (mode, scale, stretch) {
         (VideoMode::Actual, Scale::Integer, _) => (Sizing::Integer, crop),
+        (VideoMode::Actual, Scale::Fit, _) => (Sizing::Fit, crop),
         (VideoMode::Actual, _, _) => (Sizing::Band, WHOLE_TEXTURE),
         (VideoMode::Stretch, _, Stretch::Classic) => (Sizing::Band, window),
         (VideoMode::Stretch, _, Stretch::FullScreen) => (Sizing::Panel, crop),

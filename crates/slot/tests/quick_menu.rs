@@ -1369,14 +1369,14 @@ fn scale_rows_offer_only_choices_that_differ() {
     let (_d, mut a, _) = on_carousel();
     a.set_panel((720, 480));
     assert_eq!(a.scale_choices(Platform::Gba), [Scale::Fit]);
-    assert_eq!(a.scale_choices(Platform::Gb), [Scale::Integer]);
+    assert_eq!(a.scale_choices(Platform::Gb), [Scale::Integer, Scale::Fit]);
     assert_eq!(
         a.stretch_choices(Platform::Gb),
         [Stretch::Classic, Stretch::FullScreen]
     );
     let hidden = a.hidden_rows();
     assert!(hidden.contains(&QuickRow::GbaScale));
-    assert!(hidden.contains(&QuickRow::GbScale));
+    assert!(!hidden.contains(&QuickRow::GbScale));
     assert!(!hidden.contains(&QuickRow::GbStretch));
     a.set_panel((640, 480));
     assert_eq!(
@@ -1385,7 +1385,7 @@ fn scale_rows_offer_only_choices_that_differ() {
     );
     assert_eq!(
         a.scale_choices(Platform::Gb),
-        [Scale::SpFrame, Scale::Integer]
+        [Scale::SpFrame, Scale::Integer, Scale::Fit]
     );
     assert!(!a.hidden_rows().contains(&QuickRow::GbaScale));
 }
@@ -1425,4 +1425,21 @@ fn cycling_stretch_saves_and_applies() {
     assert!(a.game_layout().panel);
     press(&mut a, Btn::Right);
     assert_eq!(read_slot_state(d.path()).stretch_gb, Stretch::Classic);
+}
+
+#[test]
+fn fit_is_offered_on_both_panels() {
+    let (_d, mut a, _) = on_carousel();
+    a.set_panel((720, 480));
+    assert_eq!(a.scale_choices(Platform::Gb), [Scale::Integer, Scale::Fit]);
+    assert!(!a.hidden_rows().contains(&QuickRow::GbScale));
+    a.set_panel((640, 480));
+    assert_eq!(
+        a.scale_choices(Platform::Gbc),
+        [Scale::SpFrame, Scale::Integer, Scale::Fit]
+    );
+    assert_eq!(
+        a.scale_choices(Platform::Gba),
+        [Scale::Fit, Scale::Integer, Scale::FullScreen]
+    );
 }

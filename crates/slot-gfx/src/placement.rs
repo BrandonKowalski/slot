@@ -5,6 +5,7 @@ use crate::surface::{OUT_H, OUT_W};
 pub enum Sizing {
     Band,
     Integer,
+    Fit,
     Panel,
 }
 
@@ -43,6 +44,13 @@ pub fn game_layout(window: (u32, u32), picture: (u32, u32), sizing: Sizing) -> G
         Sizing::Integer => {
             let k = (panel.0 / pw).min(panel.1 / ph).max(1);
             (pw * k, ph * k)
+        }
+        Sizing::Fit => {
+            let s = (panel.0 as f32 / pw as f32).min(panel.1 as f32 / ph as f32);
+            (
+                (pw as f32 * s).round() as u32,
+                (ph as f32 * s).round() as u32,
+            )
         }
     };
     let area = match size.0 <= band.0 && size.1 <= band.1 {
