@@ -939,7 +939,7 @@ fn only_the_clock_from_the_menu_offers_b_back() {
 }
 
 #[test]
-fn brightness_steps_from_one_to_nine_and_never_to_zero() {
+fn brightness_steps_from_zero_to_nine() {
     let (d, mut a, _) = on_carousel_with(SlotState {
         brightness: 3,
         ..SlotState::default()
@@ -949,7 +949,12 @@ fn brightness_steps_from_one_to_nine_and_never_to_zero() {
         a.quick_value(QuickRow::Brightness),
         Some(QuickValue::Level3)
     );
-    for (btn, want) in [(Btn::Left, 2), (Btn::Left, 1), (Btn::Left, 1)] {
+    for (btn, want) in [
+        (Btn::Left, 2),
+        (Btn::Left, 1),
+        (Btn::Left, 0),
+        (Btn::Left, 0),
+    ] {
         press(&mut a, btn);
         assert_eq!(a.brightness(), want, "{btn:?}");
     }
@@ -959,22 +964,6 @@ fn brightness_steps_from_one_to_nine_and_never_to_zero() {
     assert_eq!(a.brightness(), 9);
     a.flush_state();
     assert_eq!(read_slot_state(d.path()).brightness, 9);
-
-    let (_d, mut a, _) = on_carousel_with(SlotState {
-        brightness: 1,
-        ..SlotState::default()
-    });
-    a.apply(Action::BrightnessDown);
-    assert_eq!(a.brightness(), 0);
-    open_at(&mut a, QuickRow::Brightness);
-    assert_eq!(
-        a.quick_value(QuickRow::Brightness),
-        Some(QuickValue::Level0)
-    );
-    press(&mut a, Btn::Left);
-    assert_eq!(a.brightness(), 0, "Left at 0 moved the backlight");
-    press(&mut a, Btn::Right);
-    assert_eq!(a.brightness(), 1);
 }
 
 #[test]

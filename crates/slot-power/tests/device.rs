@@ -52,11 +52,11 @@ fn platform(d: &TempDir) -> DevicePlatform {
 fn the_backlight_steps_span_whatever_range_the_kernel_reports() {
     let d = sysfs("255", "87");
     let mut p = platform(&d);
-    p.set_backlight(9);
+    p.set_backlight(10);
     assert_eq!(brightness(&d), 255);
-    p.set_backlight(5);
+    p.set_backlight(6);
     let mid = brightness(&d);
-    assert!((40..=90).contains(&mid), "step 5 of 9 wrote {mid} of 255");
+    assert!((40..=110).contains(&mid), "step 6 of 10 wrote {mid} of 255");
 }
 
 #[test]
@@ -71,13 +71,13 @@ fn step_one_is_the_dimmest_value_the_rg34xx_lights() {
 fn the_steps_follow_the_curve_from_the_floor_to_full() {
     let d = sysfs("255", "87");
     let mut p = platform(&d);
-    let wrote: Vec<u32> = (0..=9)
+    let wrote: Vec<u32> = (0..=10)
         .map(|step| {
             p.set_backlight(step);
             brightness(&d)
         })
         .collect();
-    assert_eq!(wrote, [0, 8, 14, 30, 52, 81, 117, 157, 204, 255]);
+    assert_eq!(wrote, [0, 8, 13, 26, 44, 68, 96, 129, 167, 209, 255]);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn every_step_is_brighter_than_the_one_below() {
     let d = sysfs("255", "87");
     let mut p = platform(&d);
     let mut last = 0;
-    for step in 1..=9 {
+    for step in 1..=10 {
         p.set_backlight(step);
         let now = brightness(&d);
         assert!(now > last, "step {step} wrote {now}, not above {last}");
@@ -99,7 +99,7 @@ fn a_small_range_still_lights_step_one() {
     let mut p = platform(&d);
     p.set_backlight(1);
     assert_eq!(brightness(&d), 1);
-    p.set_backlight(9);
+    p.set_backlight(10);
     assert_eq!(brightness(&d), 10);
 }
 
@@ -212,7 +212,7 @@ fn dispdbg(d: &TempDir, file: &str) -> String {
 fn a_tree_with_no_backlight_class_drives_the_panel_through_dispdbg() {
     let d = dispdbg_tree();
     let mut p = DevicePlatform::probe(d.path(), PathBuf::from("/mnt/sdcard"));
-    p.set_backlight(9);
+    p.set_backlight(10);
     assert_eq!(dispdbg(&d, "name"), "lcd0");
     assert_eq!(dispdbg(&d, "command"), "setbl");
     assert_eq!(
@@ -231,7 +231,7 @@ fn a_backlight_class_still_wins_over_dispdbg() {
     let dbg = d.path().join("kernel/debug/dispdbg");
     fs::create_dir_all(&dbg).unwrap();
     fs::write(dbg.join("param"), "").unwrap();
-    platform(&d).set_backlight(9);
+    platform(&d).set_backlight(10);
     assert_eq!(brightness(&d), 255);
     assert_eq!(dispdbg(&d, "param"), "", "dispdbg was written to as well");
 }

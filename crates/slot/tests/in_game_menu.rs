@@ -177,7 +177,7 @@ fn the_in_game_screen_page_ends_with_brightness_and_blue_light() {
     assert_eq!(a.brightness(), before + 1);
     assert_eq!(
         backlight.load(std::sync::atomic::Ordering::Relaxed),
-        before + 1,
+        before + 2,
         "the row moved the number and not the backlight"
     );
     press(&mut a, Btn::Down);

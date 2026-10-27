@@ -2399,7 +2399,7 @@ impl App {
     }
 
     pub fn set_power(&mut self, mut power: Power) {
-        power.set_backlight(self.state.brightness);
+        power.set_backlight(self.state.brightness + 1);
         self.headphones = power.headphones();
         self.hud.set_headphones(self.headphones);
         let secs = power.now();
@@ -3099,13 +3099,9 @@ impl App {
                 }
                 _ => (HudKind::BlueLight, self.state.blue_light, BLUE_LIGHT_MAX),
             };
-            let floor = match kind {
-                HudKind::Brightness => 1,
-                _ => 0,
-            };
             let to = match right {
-                true => up(now, 1, max).max(floor),
-                false => now.saturating_sub(1).max(floor).min(now),
+                true => up(now, 1, max),
+                false => now.saturating_sub(1),
             };
             self.set_level(kind, to);
             return;
@@ -3419,7 +3415,7 @@ impl App {
         let moved = *level != value;
         *level = value;
         if let (HudKind::Brightness, Some(power)) = (kind, &mut self.power) {
-            power.set_backlight(value);
+            power.set_backlight(value + 1);
         }
         if moved {
             self.persist_soon();

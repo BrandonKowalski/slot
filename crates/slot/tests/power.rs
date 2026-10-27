@@ -135,9 +135,18 @@ fn the_backlight_follows_brightness_from_boot() {
     let mut a = boot(d.path());
     let (power, step) = panel(d.path(), Duration::from_secs(60));
     a.set_power(power);
-    assert_eq!(step.load(Ordering::Relaxed), 3);
-    a.apply(Action::BrightnessUp);
     assert_eq!(step.load(Ordering::Relaxed), 4);
+    a.apply(Action::BrightnessUp);
+    assert_eq!(step.load(Ordering::Relaxed), 5);
+    for _ in 0..12 {
+        a.apply(Action::BrightnessDown);
+    }
+    assert_eq!(a.brightness(), 0);
+    assert_eq!(
+        step.load(Ordering::Relaxed),
+        1,
+        "the lowest brightness turned the panel off"
+    );
 }
 
 #[test]
