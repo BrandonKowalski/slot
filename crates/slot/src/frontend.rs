@@ -11,13 +11,13 @@ use slot_ui::{
     badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
     date_time_text, default_game_bezel_face, delete_legends, footer_ink, game_bezel_face,
     gb_cart_shadow, hhmm, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
-    photo_face, prompt_legends, quick_caret_face, quick_description_face, quick_label_face,
-    quick_legend_faces, quick_pointer_face, quick_value_face, quick_warning_value_face,
-    rebuild_count_face, rebuild_title_face, repair_legends, set_clock_hint_face, slot_back,
-    slot_back_light, slot_front, slot_front_light, socket_face, sticker_face, title_face,
-    toast_face, wallpaper_face, word_ink, BezelArt, CartFace, GbShell, Icon, LinkBadge,
-    PowerChoice, QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast,
-    UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    photo_face, prompt_legends, quick_description_face, quick_label_face, quick_legend_faces,
+    quick_pointer_face, quick_value_face, quick_warning_value_face, rebuild_count_face,
+    rebuild_title_face, repair_legends, set_clock_hint_face, slot_back, slot_back_light,
+    slot_front, slot_front_light, socket_face, sticker_face, title_face, toast_face,
+    wallpaper_face, word_ink, BezelArt, CartFace, GbShell, Icon, LinkBadge, PowerChoice,
+    QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX,
+    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -426,7 +426,6 @@ impl Frontend {
             .into_iter()
             .map(|v| v.map(&mut up))
             .collect();
-        let carets = faces.quick_carets.map(&mut up);
         let descriptions = faces.descriptions.map(&mut up);
         let mut pack_legend = |faces: [UndoFace; 8]| {
             faces.map(|f| {
@@ -474,7 +473,6 @@ impl Frontend {
             labels,
             pointer,
             values,
-            carets,
             legend,
             legend_light,
             descriptions,
@@ -839,7 +837,6 @@ struct UiFaces {
     quick_labels: Vec<[UndoFace; 2]>,
     quick_pointer: UndoFace,
     quick_values: Vec<[UndoFace; 2]>,
-    quick_carets: [UndoFace; 2],
     quick_legend: [UndoFace; 8],
     quick_legend_light: [UndoFace; 8],
     descriptions: [UndoFace; 2],
@@ -893,7 +890,6 @@ impl UiFaces {
                 .iter()
                 .map(|v| [false, true].map(|lit| quick_value_face(v.text(), lit)))
                 .collect(),
-            quick_carets: [false, true].map(quick_caret_face),
             quick_legend: quick_legend_faces(footer_ink(false)),
             quick_legend_light: quick_legend_faces(footer_ink(true)),
             descriptions: [

@@ -654,7 +654,6 @@ fn fake_faces(a: &mut App) {
         values: (0..QuickValue::ALL.len())
             .map(|i| [(id(2000 + i), 60, 40), (id(2100 + i), 60, 40)])
             .collect(),
-        carets: [(id(300), 10, 40), (id(301), 10, 40)],
         legend: [
             (id(400), 70),
             (id(401), 110),
@@ -819,15 +818,11 @@ fn the_legend_says_change_on_a_value_row_and_open_on_a_row_that_opens() {
 }
 
 #[test]
-fn the_arrows_stand_only_around_the_selected_rows_value() {
+fn only_the_selected_rows_value_is_lit() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
     open_at(&mut a, QuickRow::FastForward);
     let out = frame(&a);
-    assert!(
-        drawn(&out, 300) && drawn(&out, 301),
-        "no arrows on Fast Forward"
-    );
     assert!(
         drawn(&out, value(QuickValue::Speed6, true)),
         "6× is not lit"
@@ -854,10 +849,6 @@ fn the_arrows_stand_only_around_the_selected_rows_value() {
     press(&mut a, Btn::Down);
     assert_eq!(a.quick_menu(), Some(QuickRow::DateTime));
     let out = frame(&a);
-    assert!(
-        !drawn(&out, 300) && !drawn(&out, 301),
-        "arrows on a row that opens"
-    );
     assert!(drawn(&out, 501), "the date and time in hand is not lit");
 }
 
@@ -906,8 +897,8 @@ fn labels_leave_room_for_the_pointer_and_values_end_thirty_two_pixels_in() {
     }
     let [x, _, w, _] = placed(&out, value(QuickValue::On, false)).expect("rumble's value");
     assert_eq!(x + w - MENU_PAD as f32, right, "an unselected value");
-    let [x, _, w, _] = placed(&out, 301).expect("the right arrow");
-    assert_eq!(x + w, right, "the arrow around the selected value");
+    let [x, _, w, _] = placed(&out, value(QuickValue::Speed6, true)).expect("the selected value");
+    assert_eq!(x + w - MENU_PAD as f32, right, "the selected value");
 }
 
 #[test]
@@ -1019,7 +1010,7 @@ fn the_game_boy_page_steps_the_palette_from_auto() {
 }
 
 #[test]
-fn no_row_in_hand_runs_its_arrows_into_its_label() {
+fn no_row_in_hand_runs_its_value_into_its_label() {
     let (_d, mut a) = on_own_wallpaper(slot_store::WallpaperTint::Off);
     let id = TexId::from_raw;
     a.set_quick_menu_faces(QuickMenuFaces {
@@ -1040,10 +1031,6 @@ fn no_row_in_hand_runs_its_arrows_into_its_label() {
                 [(id(2000 + i), w, 40), (id(2100 + i), w, 40)]
             })
             .collect(),
-        carets: [false, true].map(|right| {
-            let f = slot_ui::quick_caret_face(right);
-            (id(300 + right as usize), f.w, f.h)
-        }),
         legend: [
             (id(400), 70),
             (id(401), 110),
@@ -1081,11 +1068,15 @@ fn no_row_in_hand_runs_its_arrows_into_its_label() {
             let out = frame(&a);
             let [lx, _, lw, _] = placed(&out, 1100 + row.index()).expect("the lit label");
             let label_ends = lx + lw - MENU_PAD as f32;
-            if let Some([cx, ..]) = placed(&out, 300) {
+            let lit_value = QuickValue::ALL
+                .iter()
+                .enumerate()
+                .find_map(|(i, _)| placed(&out, 2100 + i));
+            if let Some([vx, ..]) = lit_value {
                 assert!(
-                    cx - label_ends >= 16.0,
-                    "{row:?} in hand puts its arrow {} px from its label",
-                    cx - label_ends
+                    vx + MENU_PAD as f32 - label_ends >= 16.0,
+                    "{row:?} in hand puts its value {} px from its label",
+                    vx + MENU_PAD as f32 - label_ends
                 );
             }
             while a.quick_menu().is_some() {

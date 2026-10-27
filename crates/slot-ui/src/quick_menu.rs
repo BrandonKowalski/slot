@@ -849,18 +849,16 @@ impl QuickValue {
 
 pub const QUICK_PITCH: f32 = 52.0;
 pub const QUICK_EDGE: f32 = 32.0;
-pub const QUICK_LABEL_X: f32 = 64.0;
-const POINTER_GAP: f32 = 14.0;
-const POINTER_SCALE: usize = 4;
+pub const QUICK_LABEL_X: f32 = 53.0;
+const POINTER_GAP: f32 = 17.0;
+const POINTER_SCALE: usize = 3;
 const POINTER: [&str; 11] = [
-    "X.......", "XX......", "XoX.....", "XooX....", "XoooX...", "XooooX..", "XoooX...", "XooX....",
-    "XoX.....", "XX......", "X.......",
+    "X.....", "XX....", "XoX...", "XooX..", "XoooX.", "XooooX", "XoooX.", "XooX..", "XoX...",
+    "XX....", "X.....",
 ];
 const POINTER_BLEED: u32 = 4;
 const GROUND_SCRIM: f32 = 0.65;
 const TYPE_DROP: f32 = 4.0;
-const CARET_GAP: f32 = 14.0;
-const CARET_PX: f32 = 24.0;
 const LEGEND_Y: f32 = 427.0;
 const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
 const DESCRIPTION_PX: f32 = 16.0;
@@ -971,34 +969,6 @@ fn quick_text_face(label: &str, colour: [u8; 3]) -> UndoFace {
     let mut rgba = vec![0u8; (w * MENU_H * 4) as usize];
     text::draw_centred(&mut rgba, w, MENU_H, &layout, colour);
     UndoFace { rgba, w, h: MENU_H }
-}
-
-pub fn quick_caret_face(right: bool) -> UndoFace {
-    let glyph = if right { '\u{f0da}' } else { '\u{f0d9}' };
-    let (Some(symbols), Some(label)) = (crate::icon::symbols_font(), text::label_font()) else {
-        return UndoFace {
-            rgba: Vec::new(),
-            w: 0,
-            h: 0,
-        };
-    };
-    let (m, cov) = symbols.rasterize(glyph, CARET_PX);
-    let (w, h) = (m.width as u32, MENU_H);
-    let centre = cap_centre(label, h);
-    let top = (centre - m.height as f32 / 2.0).round() as i32;
-    let mut rgba = vec![0u8; (w * h * 4) as usize];
-    for gy in 0..m.height {
-        let y = top + gy as i32;
-        if y < 0 || y >= h as i32 {
-            continue;
-        }
-        for gx in 0..m.width {
-            let at = ((y as u32 * w + gx as u32) * 4) as usize;
-            let a = cov[gy * m.width + gx];
-            rgba[at..at + 4].copy_from_slice(&[MENU_INK[0], MENU_INK[1], MENU_INK[2], a]);
-        }
-    }
-    UndoFace { rgba, w, h }
 }
 
 pub fn quick_legend_faces(ink: [u8; 3]) -> [UndoFace; 8] {
@@ -1142,10 +1112,29 @@ fn button_face(which: ButtonLegend) -> UndoFace {
 fn button_pair(left: ButtonLegend, right: ButtonLegend) -> UndoFace {
     let (a, aw, ah) = button_legend(left);
     let (b, bw, bh) = button_legend(right);
-    let (w, h) = (aw + bw, ah.max(bh));
+    let opaque =
+        |px: &[u8], w: u32, h: u32, x: u32| px[(((h / 2) * w + x) * 4 + 3) as usize] == 255;
+    let keep_a = (0..aw)
+        .rev()
+        .find(|&x| opaque(a, aw, ah, x))
+        .map_or(aw, |x| x + 1);
+    let skip_b = (0..bw).find(|&x| opaque(b, bw, bh, x)).unwrap_or(0);
+    let (w, h) = (keep_a + bw - skip_b, ah.max(bh));
     let mut rgba = vec![0u8; (w * h * 4) as usize];
-    blit(&mut rgba, w, a, aw, ah, 0, 0);
-    blit(&mut rgba, w, b, bw, bh, aw, 0);
+    for y in 0..h {
+        let row = (y * w * 4) as usize;
+        if y < ah {
+            let from = (y * aw * 4) as usize;
+            rgba[row..row + (keep_a * 4) as usize]
+                .copy_from_slice(&a[from..from + (keep_a * 4) as usize]);
+        }
+        if y < bh {
+            let from = ((y * bw + skip_b) * 4) as usize;
+            let to = row + (keep_a * 4) as usize;
+            let n = ((bw - skip_b) * 4) as usize;
+            rgba[to..to + n].copy_from_slice(&b[from..from + n]);
+        }
+    }
     UndoFace { rgba, w, h }
 }
 
@@ -1155,7 +1144,6 @@ pub struct QuickMenuFaces {
     pub labels: Vec<[(TexId, u32, u32); 2]>,
     pub pointer: (TexId, u32, u32),
     pub values: Vec<[(TexId, u32, u32); 2]>,
-    pub carets: [(TexId, u32, u32); 2],
     pub legend: [(TexId, u32); 8],
     pub legend_light: [(TexId, u32); 8],
     pub descriptions: [(TexId, u32, u32); 2],
@@ -1251,16 +1239,7 @@ impl QuickMenu<'_> {
             let Some((tex, w, h)) = value else {
                 continue;
             };
-            if !lit || row.opens() || row.binds() {
-                push(out, tex, right + pad - w as f32, y, w, h);
-                continue;
-            }
-            let [(left_tex, lw, lh), (right_tex, rw, rh)] = faces.carets;
-            let rx = right - rw as f32;
-            push(out, right_tex, rx, y, rw, rh);
-            let vx = rx - CARET_GAP + pad - w as f32;
-            push(out, tex, vx, y, w, h);
-            push(out, left_tex, vx + pad - CARET_GAP - lw as f32, y, lw, lh);
+            push(out, tex, right + pad - w as f32, y, w, h);
         }
         if let Some(bar) = quick_scroll(self.row, self.hidden) {
             let x = self.canvas.w - SCROLL_INSET - SCROLL_W;

@@ -377,7 +377,7 @@ fn every_shortcut_row_keeps_its_label_clear_of_its_binding_on_a_4_by_3_panel() {
         f.compose(&mut c);
         let px = c.read_frame();
         let top = quick_row_top(row, &[]) as usize;
-        let ink: Vec<usize> = (56..640)
+        let ink: Vec<usize> = (40..640)
             .filter(|&x| {
                 (top + 8..top + 44).any(|y| {
                     let o = (y * 640 + x) * 4;
@@ -637,4 +637,49 @@ fn the_integer_bezel_frames_the_integer_picture_on_4_by_3() {
             rgb(&px, 640, x, y)
         );
     }
+}
+
+#[test]
+fn the_change_legend_clears_the_cart_slot_on_a_4_by_3_panel() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    c.fit((640, 480));
+    let mut input = Script(VecDeque::new());
+    let mut tap = |f: &mut Frontend, b: Btn| {
+        input.0.push_back(vec![RawEvent::Down(b)]);
+        input.0.push_back(vec![RawEvent::Up(b)]);
+        f.advance(&mut input);
+        f.advance(&mut input);
+    };
+    tap(&mut f, Btn::Menu);
+    for _ in 0..QuickRow::General.position(&[]) {
+        tap(&mut f, Btn::Down);
+    }
+    tap(&mut f, Btn::A);
+    assert_eq!(f.app().quick_menu(), Some(QuickRow::Theme));
+    f.compose(&mut c);
+    let px = c.read_frame();
+    write_png("native-general", 640, 480, &px);
+    let bay_right = 320 + (slot_ui::MOUTH_W as usize + 18) / 2;
+    let word = (320..640)
+        .find(|&x| {
+            (436..466).any(|y| {
+                let o = (y * 640 + x) * 4;
+                px[o..o + 3].iter().all(|c| *c > 0xc0)
+            })
+        })
+        .expect("no legend ink right of centre");
+    assert!(
+        word >= bay_right + 12,
+        "Change starts at {word}, the slot ends at {bay_right}"
+    );
 }

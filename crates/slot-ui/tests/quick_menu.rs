@@ -1,7 +1,7 @@
 use slot_store::{parse_stamp, FF_SPEEDS};
 use slot_ui::{
-    date_time_text, quick_caret_face, quick_label_face, quick_value_face, ClockPicker, QuickRow,
-    QuickValue, UndoFace, MENU_PAD,
+    date_time_text, quick_label_face, quick_value_face, ClockPicker, QuickRow, QuickValue,
+    UndoFace, MENU_PAD,
 };
 
 fn inked(f: &UndoFace, x: u32, y: u32) -> bool {
@@ -290,30 +290,9 @@ fn a_value_is_grey_until_its_row_is_in_hand() {
 }
 
 #[test]
-fn the_arrows_are_faces_the_height_of_a_value() {
-    for right in [false, true] {
-        let caret = quick_caret_face(right);
-        assert!(
-            caret.w > 0 && caret.rgba.chunks(4).any(|p| p[3] > 0),
-            "an empty arrow"
-        );
-        assert_eq!(caret.h, quick_value_face("On", true).h);
-    }
-}
-
-#[test]
-fn the_two_carets_point_different_ways() {
-    assert_ne!(
-        slot_ui::quick_caret_face(false).rgba,
-        slot_ui::quick_caret_face(true).rgba,
-        "a caret glyph is missing from the symbols font"
-    );
-}
-
-#[test]
 fn the_pointer_is_a_crisp_pixel_arrow_in_the_menus_ink() {
     let p = slot_ui::quick_pointer_face();
-    assert_eq!(p.w, 32);
+    assert_eq!(p.w, 18);
     let opaque: Vec<&[u8]> = p.rgba.chunks(4).filter(|c| c[3] > 0).collect();
     assert!(!opaque.is_empty(), "an empty pointer");
     assert!(
