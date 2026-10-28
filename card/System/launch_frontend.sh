@@ -35,10 +35,6 @@ fi
 
 echo "|/bin/sh $SYS/coresave.sh %p %s %e %t" > /proc/sys/kernel/core_pattern 2>/dev/null
 
-for gov in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
-	echo schedutil > "$gov" 2>/dev/null || log "governor: schedutil refused by $gov"
-done
-
 [ -f "$RUN/slotlink.session" ] && sh "$SYS/slotlink.sh" link down > /dev/null 2>&1
 
 [ -f "$LOGS/slot.log" ] && mv -f "$LOGS/slot.log" "$LOGS/slot.log.1"

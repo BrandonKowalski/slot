@@ -150,7 +150,7 @@ pub fn run() {
     let mut drawn = false;
     frontend.drive_emulator();
     let mut pacer = Pacer::new();
-    let (mut frames, mut missed, mut early) = (0u32, 0u32, 0u32);
+    let (mut frames, mut missed, mut early, mut stale) = (0u32, 0u32, 0u32, 0u32);
     loop {
         pacer.wait();
         let began = Instant::now();
@@ -171,7 +171,7 @@ pub fn run() {
             frontend.stop();
             return;
         }
-        frontend.step_emulator(pacer.period, STEP_TIMEOUT);
+        let fresh = frontend.step_emulator(pacer.period, STEP_TIMEOUT);
         frontend.render(&mut compositor, window);
         let swap = Instant::now();
         let work = swap - began;
@@ -187,13 +187,14 @@ pub fn run() {
             frames += 1;
             missed += u32::from(dropped);
             early += u32::from(swap_took > pacer.period / 2);
+            stale += u32::from(!fresh);
             if frames == 600 {
                 eprintln!(
-                    "slot: pace: 600 frames, {missed} missed a latch, {early} drawn early, work {:.1} ms, period {:.2} ms",
+                    "slot: pace: 600 frames, {missed} missed a latch, {early} drawn early, {stale} stale, work {:.1} ms, period {:.2} ms",
                     pacer.work.as_secs_f64() * 1e3,
                     pacer.period.as_secs_f64() * 1e3
                 );
-                (frames, missed, early) = (0, 0, 0);
+                (frames, missed, early, stale) = (0, 0, 0, 0);
             }
         }
         if !drawn {
