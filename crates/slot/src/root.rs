@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub const DIRS: [&str; 25] = [
+pub const DIRS: [&str; 29] = [
     "BIOS",
     "Bezels",
     "Bezels/GBA",
@@ -9,19 +9,23 @@ pub const DIRS: [&str; 25] = [
     "Config",
     "Games",
     "Games/GBA",
+    "Games/GBAV",
     "Games/GB",
     "Games/GBC",
     "Labels",
     "Labels/GBA",
+    "Labels/GBAV",
     "Labels/GB",
     "Labels/GBC",
     "Logs",
     "Saves",
     "Saves/GBA",
+    "Saves/GBAV",
     "Saves/GB",
     "Saves/GBC",
     "States",
     "States/GBA",
+    "States/GBAV",
     "States/GB",
     "States/GBC",
     "System",
