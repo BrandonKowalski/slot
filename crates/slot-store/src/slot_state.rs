@@ -299,6 +299,7 @@ impl Blending {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
+    pub language: slot_i18n::Language,
     pub cart: Option<String>,
     pub cart_platform: Option<Platform>,
     pub brightness: u8,
@@ -477,6 +478,7 @@ impl Default for SlotState {
             gb_palette: GbPalette::DEFAULT,
             appearance: Appearance::Dark,
             wallpaper: WallpaperPick::Default,
+            language: slot_i18n::Language::default(),
             wallpaper_tint: WallpaperTint::Off,
             show_recents: false,
             show_titles: false,
@@ -581,6 +583,7 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.colour_correction_gbc as u8
     ));
     text.push_str(&format!("shader_gbc={}\n", s.shader_gbc.name()));
+    text.push_str(&format!("language={}\n", s.language.code()));
     text.push_str(&format!("wallpaper_tint={}\n", s.wallpaper_tint.key()));
     text.push_str(&format!("show_recents={}\n", s.show_recents as u8));
     text.push_str(&format!("show_titles={}\n", s.show_titles as u8));
@@ -645,6 +648,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut gb_palette = None;
     let mut appearance = None;
     let mut wallpaper = None;
+    let mut language = slot_i18n::Language::default();
     let mut wallpaper_tint = None;
     let mut show_recents = None;
     let mut show_titles = None;
@@ -696,6 +700,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "gb_palette" => gb_palette = GbPalette::parse(value),
             "appearance" => appearance = Appearance::parse(value),
             "wallpaper" => wallpaper = Some(WallpaperPick::parse(value)),
+            "language" => language = slot_i18n::Language::parse(value),
             "wallpaper_tint" => wallpaper_tint = WallpaperTint::parse(value),
             "show_recents" => show_recents = flag(value),
             "show_titles" => show_titles = flag(value),
@@ -757,6 +762,7 @@ fn parse(text: &str) -> Option<SlotState> {
         gb_palette: gb_palette.unwrap_or(fallback.gb_palette),
         appearance: appearance.unwrap_or(fallback.appearance),
         wallpaper: wallpaper.unwrap_or(fallback.wallpaper),
+        language,
         wallpaper_tint: wallpaper_tint.unwrap_or(fallback.wallpaper_tint),
         show_recents: show_recents.unwrap_or(fallback.show_recents),
         show_titles: show_titles.unwrap_or(fallback.show_titles),

@@ -1,0 +1,296 @@
+# English source<TAB>Japanese translation. Empty or absent values fall back to English.
+1 min	1分
+10 min	10分
+12-Hour	12時間制
+15 min	15分
+24-Hour	24時間制
+3 min	3分
+30 min	30分
+5 min	5分
+A Button	Aボタン
+AM	午前
+AND GPSP. UNDERLYING OS IS	およびGPSP。ベースOSは
+APR	4月
+ARTWORK MADE BY MARKUS.	アートワーク：MARKUS。
+AUG	8月
+About	このソフトについて
+Adelaide	アデレード
+Anchorage	アンカレッジ
+Athens	アテネ
+Auckland	オークランド
+Auto	自動
+Azores	アゾレス諸島
+B Button	Bボタン
+BASEOS BY PVAIBHAV. TYPE IS	PVAIBHAVのBASEOS。書体は
+BATTERY : LI-ION	電池：リチウムイオン
+BATTERY : LI-ION ({percent}%)	電池：リチウムイオン（{percent}%）
+BIOS does not match	BIOSが一致しません
+Back	戻る
+Bangkok	バンコク
+Beijing	北京
+Berlin	ベルリン
+Bezel	フレーム
+Blue Light	ブルーライト
+Blue Light Down	ブルーライトを減らす
+Blue Light Up	ブルーライトを増やす
+Bogota	ボゴタ
+Brightness	明るさ
+Brightness Down	暗くする
+Brightness Up	明るくする
+Bringing the radio up	無線を起動中
+Brisbane	ブリスベン
+Buenos Aires	ブエノスアイレス
+CART SOUNDS ARE MY CHILDHOOD	カートリッジの音は幼少期の
+Cable	ケーブル
+Caching New Labels	新しいラベルを保存中
+Can't write to SD card	SDカードに書き込めません
+Cancel	キャンセル
+Cancelled	キャンセルしました
+Caracas	カラカス
+Card repair failed	SDカードの修復に失敗
+Change	変更
+Charge the battery to repair	修復するには充電してください
+Chicago	シカゴ
+Choose	選択
+City	都市
+Classic	クラシック
+Clear	解除
+Clock	時刻表示
+Color Correction	色補正
+Controls	操作設定
+Correction Off	色補正オフ
+Correction On	色補正オン
+DEC	12月
+DEFAULT BLUR	標準（ぼかし）
+DMG Green	初代GBグリーン
+Dark	ダーク
+Darwin	ダーウィン
+Date	日付
+Date & Time	日付と時刻
+Default	標準
+Delete	削除
+Delete this save state?	このセーブステートを削除しますか？
+Delete this screenshot?	このスクリーンショットを削除しますか？
+Delete {count} screenshots?	スクリーンショットを{count}枚削除しますか？
+Delhi	デリー
+Denver	デンバー
+Dhaka	ダッカ
+Done	完了
+Dot	ドット
+Down	下
+Dubai	ドバイ
+EMULATION POWERED BY MGBA	エミュレーション：MGBA
+End Link	通信を終了
+Every button goes back to its default.	すべてのボタンを初期設定に戻します。
+Every shelf key goes back to its default.	棚の操作ボタンを初期設定に戻します。
+Every shortcut goes back to its default.	すべてのショートカットを初期設定に戻します。
+Exit Game	ゲームを終了
+FEB	2月
+FROM GIGAHERZ'S LCD3X. THE	GIGAHERZのLCD3Xが原型。
+Fast Forward	早送り
+Fast Forward Sound	早送り中の音声
+Favorite	お気に入り
+Favorites	お気に入り
+Fit	画面に合わせる
+Frame Blending	フレームブレンド
+Full Screen	全画面
+GAMEBOY.	ゲームボーイのもの。
+GB Light	ゲームボーイライト
+GB Pocket	ゲームボーイポケット
+GBC Blue	GBCブルー
+GBC Brown	GBCブラウン
+GBC Dark Blue	GBCダークブルー
+GBC Dark Brown	GBCダークブラウン
+GBC Dark Green	GBCダークグリーン
+GBC Gray	GBCグレー
+GBC Green	GBCグリーン
+GBC Orange	GBCオレンジ
+GBC Pale Yellow	GBCペールイエロー
+GBC Red	GBCレッド
+GBC Reverse	GBC反転
+GBC Yellow	GBCイエロー
+Game Boy	ゲームボーイ
+Game Boy Advance	ゲームボーイアドバンス
+Game Boy Advance Video	ゲームボーイアドバンスビデオ
+Game Boy Color	ゲームボーイカラー
+Game Titles	ゲーム名
+Gameplay	ゲームプレイ
+General	一般
+Grayscale	グレースケール
+Grid	グリッド
+Halifax	ハリファックス
+Hide	非表示
+Hong Kong	香港
+Honolulu	ホノルル
+Host	募集
+INPUT : 5V{dc}1.5A	入力：5V{dc}1.5A
+In-Game	ゲーム中
+Integer	整数倍
+Istanbul	イスタンブール
+It cannot be brought back.	元には戻せません。
+JAN	1月
+JUL	7月
+JUN	6月
+Jakarta	ジャカルタ
+Johannesburg	ヨハネスブルク
+Join	参加
+Kabul	カブール
+Karachi	カラチ
+Kathmandu	カトマンズ
+Keep	残す
+Kiritimati	キリスィマスィ島
+L Button	Lボタン
+LCD Ghosting	液晶の残像
+Lagos	ラゴス
+Language	言語
+Left	左
+Left Stick as D-Pad	左スティックで十字キー
+Lid Power Off	ふたを閉じて電源オフ
+Light	ライト
+Link	通信
+Link ended	通信を終了しました
+Link was ended	相手が通信を終了しました
+Linked	通信中
+Load	ロード
+Load State	ステートをロード
+Load State on Insert	挿入時にステートをロード
+London	ロンドン
+Looking for the other player	通信相手を探しています
+Los Angeles	ロサンゼルス
+MADE IN ITHACA	イサカ製
+MAR	3月
+MAY	5月
+MODEL NO. AGS-102	型番 AGS-102
+Mexico City	メキシコシティ
+Mix	混合
+Mode	モード
+Moscow	モスクワ
+Multi	複数選択
+NONE	未設定
+NOV	11月
+Nairobi	ナイロビ
+New York	ニューヨーク
+Next Shelf	次の棚
+No link support	通信に対応していません
+Nobody arrived	通信相手が見つかりません
+None	なし
+Not now	後で
+OCT	10月
+OK	確認
+OPEN SANS AND NERD FONTS	OPEN SANSとNERD FONTS、
+Off	オフ
+On	オン
+Open	開く
+PM	午後
+Page	ページ
+Pago Pago	パゴパゴ
+Palette	パレット
+Palette Back	前のパレット
+Palette Next	次のパレット
+Pan	移動
+Paris	パリ
+Perth	パース
+Phoenix	フェニックス
+Please switch to gpSP	gpSPに切り替えてください
+Powering Down	電源を切っています
+Press SELECT + START to repair	SELECT＋STARTで修復
+Previous Shelf	前の棚
+Progress is not being saved	プレイ状況は保存されていません
+R Button	Rボタン
+Random	ランダム
+Recents	最近遊んだゲーム
+Recording	入力待ち
+Repair	修復
+Repair the SD card?	SDカードを修復しますか？
+Repairing SD Card	SDカードを修復中
+Reset	リセット
+Reset All	すべてリセット
+Reset all controls?	操作設定をすべてリセットしますか？
+Reset all shelf keys?	棚の操作をリセットしますか？
+Reset all shortcuts?	ショートカットをリセットしますか？
+Restart	再起動
+Restarting	再起動中
+Resume	再開
+Rewind	巻き戻し
+Reykjavik	レイキャビク
+Right	右
+Rumble	振動
+SD card repaired	SDカードを修復しました
+SEE README.	READMEをご覧ください。
+SEP	9月
+SP Frame	SPフレーム
+SYMBOLS BY RYAN L MCINTYRE.	記号：RYAN L MCINTYRE。
+Same as Console {button}	本体の{button}と重複
+Same as {button}	{button}と重複
+Sao Paulo	サンパウロ
+Save	保存
+Save State	ステートを保存
+Save State on Eject	取り出し時にステートを保存
+Scale	表示サイズ
+Screen	画面
+Screenshot	スクリーンショット
+Screenshot Captured	スクリーンショットを保存しました
+Screenshot Failed	スクリーンショットの保存に失敗
+Screenshots	スクリーンショット
+Select	選択
+Seoul	ソウル
+Set	設定
+Set the clock	日時を設定
+Settings	設定
+Shader	シェーダー
+Shader Back	前のシェーダー
+Shader Next	次のシェーダー
+Shader: Dot	シェーダー：ドット
+Shader: Grid	シェーダー：グリッド
+Shader: LCD3x	シェーダー：LCD3x
+Shader: Off	シェーダー：オフ
+Shader: Simpletex	シェーダー：Simpletex
+Shelf	棚
+Shortcuts	ショートカット
+Show	表示
+Singapore	シンガポール
+St. John's	セントジョンズ
+Start	スタート
+State Loaded	ステートをロードしました
+State Saved	ステートを保存しました
+States	セーブステート
+Stretch	引き伸ばし
+Supports single button and MENU+button.	単独ボタンとMENU＋ボタンに対応。
+Supports single button and two button chords.	単独ボタンと2ボタン同時押しに対応。
+Swap	切り替え
+Sydney	シドニー
+THE EXQUISITE SKEUOMORPHIC	精巧なスキューモーフィック
+THE PANEL MASK IS DERIVED	液晶マスクは
+Tehran	テヘラン
+The other player vanished	通信相手との接続が切れました
+The radio did not come up	無線を起動できませんでした
+Theme	テーマ
+They cannot be brought back.	元には戻せません。
+Tick	選択
+Time	時刻
+Tokyo	東京
+Tonga	トンガ
+Turbo A	A連射
+Turbo B	B連射
+Turbo Buttons	連射ボタン
+Undo Load	ロードを取り消す
+Undo Save	保存を取り消す
+Up	上
+VERSION {version}	バージョン {version}
+View	表示
+Wallpaper	壁紙
+Wallpaper Tint	壁紙の濃さ
+Wireless	ワイヤレス
+Yangon	ヤンゴン
+Zoom	拡大
+Zoom Out	縮小
+just now	たった今
+slot restarts when it is done.	完了するとslotが再起動します。
+undo load	ロードを取り消す
+undo save	保存を取り消す
+{count} hr ago	{count}時間前
+{count} min ago	{count}分前
+{count} selected	{count}枚選択中
+{hour}:{minute} {period}	{period}{hour}:{minute}
+{index} of {total}	{total}枚中{index}枚目
+{month} {day} {time}	{month}{day}日 {time}

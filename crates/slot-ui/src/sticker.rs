@@ -64,11 +64,14 @@ pub const HOME: &str = "SEE README.";
 
 pub fn head_rows(f: &StickerFields) -> [String; 3] {
     [
-        "MODEL NO. AGS-102".into(),
-        format!("INPUT : 5V{DC}1.5A"),
+        slot_i18n::tr("MODEL NO. AGS-102").into(),
+        slot_i18n::format("INPUT : 5V{dc}1.5A", &[("dc", &DC.to_string())]),
         match f.battery {
-            Some(p) => format!("BATTERY : LI-ION ({p}%)"),
-            None => "BATTERY : LI-ION".to_string(),
+            Some(p) => slot_i18n::format(
+                "BATTERY : LI-ION ({percent}%)",
+                &[("percent", &p.to_string())],
+            ),
+            None => slot_i18n::tr("BATTERY : LI-ION").to_string(),
         },
     ]
 }
@@ -79,7 +82,7 @@ fn split_check(serial: &str) -> (&str, &str) {
 }
 
 fn version_line(f: &StickerFields) -> String {
-    format!("VERSION {}", f.version)
+    slot_i18n::format("VERSION {version}", &[("version", f.version)])
 }
 
 pub fn sticker_lines(f: &StickerFields) -> Vec<String> {
@@ -130,7 +133,7 @@ impl Canvas {
         let Some(font) = text::label_font() else {
             return 0.0;
         };
-        let layout = text::fit(font, s, f32::MAX, 1, px, px);
+        let layout = text::fit(font, slot_i18n::tr(s), f32::MAX, 1, px, px);
         layout
             .lines
             .first()
@@ -192,7 +195,7 @@ impl Canvas {
         let Some(font) = text::label_font() else {
             return y;
         };
-        let layout = text::fit(font, s, f32::MAX, 1, px, px);
+        let layout = text::fit(font, slot_i18n::tr(s), f32::MAX, 1, px, px);
         let measured = layout
             .lines
             .first()

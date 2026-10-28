@@ -22,6 +22,7 @@ pub fn rebuild_count_face(text: &str) -> UndoFace {
 }
 
 fn line_face(label: &str, px: f32, h: u32) -> UndoFace {
+    let label = slot_i18n::tr(label);
     let Some(font) = text::label_font() else {
         return UndoFace {
             rgba: Vec::new(),

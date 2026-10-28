@@ -65,6 +65,7 @@ pub fn cap_width(key: &str) -> u32 {
 }
 
 pub fn hint_width(key: &str, label: &str) -> u32 {
+    let label = slot_i18n::tr(label);
     cap_width(key) + CAP_GAP + band_width(label) + EDGE
 }
 
@@ -73,6 +74,7 @@ pub fn hint_face(key: &str, label: &str) -> UndoFace {
 }
 
 pub fn hint_coloured(key: &str, label: &str, ink: [u8; 3]) -> UndoFace {
+    let label = slot_i18n::tr(label);
     let w = hint_width(key, label);
     let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
 
@@ -99,6 +101,7 @@ pub fn hint_coloured(key: &str, label: &str, ink: [u8; 3]) -> UndoFace {
 }
 
 pub fn word_width(text: &str) -> u32 {
+    let text = slot_i18n::tr(text);
     capped_width(text, WORD_MAX_W)
 }
 
@@ -107,6 +110,7 @@ pub fn word_face(text: &str) -> UndoFace {
 }
 
 pub fn word_ink(text: &str, ink: [u8; 3]) -> UndoFace {
+    let text = slot_i18n::tr(text);
     let w = word_width(text);
     let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
     if let Some(font) = text::label_font() {
@@ -300,10 +304,12 @@ const PAD_GLYPH: char = '\u{f047}';
 const TICK_GLYPH: char = '\u{f00c}';
 
 pub fn pad_hint_width(label: &str) -> u32 {
+    let label = slot_i18n::tr(label);
     CAP + CAP_GAP + band_width(label) + EDGE
 }
 
 pub fn pad_hint_face(label: &str) -> UndoFace {
+    let label = slot_i18n::tr(label);
     let w = pad_hint_width(label);
     let mut rgba = vec![0u8; (w * HINT_H * 4) as usize];
     blit(

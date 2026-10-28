@@ -1,8 +1,29 @@
 use std::sync::OnceLock;
 
 use fontdue::{Font, FontSettings};
+use unicode_normalization::UnicodeNormalization;
 
 const LABEL_TTF: &[u8] = include_bytes!("../assets/label.ttf");
+
+/// Prefer the original face, falling back per glyph independently of UI language.
+pub fn glyph_font(font: &Font, ch: char) -> &Font {
+    if font.lookup_glyph_index(ch) != 0 {
+        return font;
+    }
+    static JAPANESE: OnceLock<Font> = OnceLock::new();
+    let fallback = JAPANESE.get_or_init(|| {
+        Font::from_bytes(
+            include_bytes!("../assets/NotoSansJP.ttf") as &[u8],
+            FontSettings::default(),
+        )
+        .expect("bundled Japanese font")
+    });
+    if fallback.lookup_glyph_index(ch) != 0 {
+        fallback
+    } else {
+        font
+    }
+}
 
 pub struct Layout {
     pub lines: Vec<String>,
@@ -37,7 +58,7 @@ pub fn fit_box(
     max_px: f32,
     min_px: f32,
 ) -> Layout {
-    let upper = text.to_uppercase();
+    let upper: String = text.to_uppercase().nfc().collect();
     let mut px = max_px;
     while px > min_px {
         let tracking = tracking_for(px);
@@ -88,7 +109,7 @@ pub fn coverage(dst_w: u32, dst_h: u32, layout: &Layout) -> Vec<u8> {
     for line in &layout.lines {
         let mut pen = (dst_w as f32 - line_width(font, line, layout.px, layout.tracking)) / 2.0;
         for ch in line.chars() {
-            let (m, cov) = font.rasterize(ch, layout.px);
+            let (m, cov) = glyph_font(font, ch).rasterize(ch, layout.px);
             stamp(
                 &mut out,
                 dst_w,
@@ -117,7 +138,7 @@ pub fn line_width(font: &Font, line: &str, px: f32, tracking: f32) -> f32 {
     let mut w = 0.0;
     let mut n = 0;
     for ch in line.chars() {
-        w += font.metrics(ch, px).advance_width;
+        w += glyph_font(font, ch).metrics(ch, px).advance_width;
         n += 1;
     }
     w + tracking * (n as f32 - 1.0).max(0.0)
@@ -138,7 +159,7 @@ fn wrap(
     let mut lines: Vec<String> = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
-        let parts = if break_words {
+        let parts = if break_words || word.chars().any(is_cjk) {
             break_word(font, word, px, tracking, max_w)
         } else {
             vec![word.to_string()]
@@ -208,4 +229,8 @@ fn blend(px: &mut [u8], a: u32, colour: [u8; 3]) {
         px[c] = ((colour[c] as u32 * a + px[c] as u32 * under + out / 2) / out) as u8;
     }
     px[3] = out as u8;
+}
+
+fn is_cjk(ch: char) -> bool {
+    matches!(ch as u32, 0x3000..=0x30ff | 0x3400..=0x9fff | 0xf900..=0xfaff | 0xff00..=0xffef | 0x20000..=0x2ffff)
 }

@@ -86,6 +86,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
         QuickRow::GENERAL.map(QuickRow::label),
         [
             "Theme",
+            "Language",
             "Wallpaper",
             "Wallpaper Tint",
             "Recents",
@@ -210,9 +211,9 @@ fn a_hidden_row_is_stepped_over_and_takes_no_place() {
     assert_eq!(QuickRow::Wallpaper.down(&hidden), QuickRow::Recents);
     assert_eq!(QuickRow::Recents.up(&hidden), QuickRow::Wallpaper);
     assert_eq!(QuickRow::Theme.up(&hidden), QuickRow::DateTime);
-    assert_eq!(QuickRow::Recents.position(&hidden), 2);
+    assert_eq!(QuickRow::Recents.position(&hidden), 3);
     assert_eq!(QuickRow::Wallpaper.down(&[]), QuickRow::WallpaperTint);
-    assert_eq!(QuickRow::Recents.position(&[]), 3);
+    assert_eq!(QuickRow::Recents.position(&[]), 4);
     assert_eq!(
         slot_ui::quick_row_top(QuickRow::Recents, &hidden)
             - slot_ui::quick_row_top(QuickRow::Wallpaper, &hidden),
@@ -265,6 +266,7 @@ fn the_values_read_as_the_menu_prints_them() {
             "Full Screen",
             "Mix",
             "LCD Ghosting",
+            "English",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
