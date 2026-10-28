@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.11.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.11.0)
+
+- Headphones no longer buzz a few seconds after the sound stops. slot keeps the audio device open while headphones are in. ([#163](https://github.com/BrandonKowalski/slot/issues/163))
+
 ## [1.10.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.10.0)
 
 - Screenshots: Press SELECT + X while you play. Once you take one, you can pick Screenshots in the in-game menu to view them. They're saved as `.png` in `Screenshots/`. ([#94](https://github.com/BrandonKowalski/slot/issues/94))

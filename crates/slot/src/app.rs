@@ -3566,6 +3566,10 @@ impl App {
         }
     }
 
+    pub fn headphones(&self) -> bool {
+        self.headphones
+    }
+
     pub fn muted(&self) -> bool {
         if self.headphones {
             self.state.muted_hp
