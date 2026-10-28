@@ -1,6 +1,6 @@
 # Labels
 
-Add a .png to GBA, GB or GBC, named after the ROM. Labels are the same on
+Add a .png to GBA, GBAV, GB or GBC, named after the ROM. Labels are the same on
 every device.
 
   Games/GBA/Metroid Fusion.gba  ->  Labels/GBA/Metroid Fusion.png

@@ -72,6 +72,7 @@ def_list = {}
 md_in_html = {}
 toc.permalink = true
 pymdownx.details = {}
+pymdownx.snippets = { base_path = ["."], check_paths = true }
 pymdownx.superfences = {}
 pymdownx.tabbed.alternate_style = true
 pymdownx.tabbed.combine_header_slug = true

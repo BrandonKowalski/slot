@@ -3,7 +3,7 @@
 Three submenus for adjusting controls can be found in Settings → Controls.
 
 - **Shelf**: the keys for getting around the shelf. Previous Shelf, Next Shelf and Favorite.
-- **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, fast-forward and rewind.
+- **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, screenshots, fast-forward and rewind.
 - **In-Game**: which console button each button on your device presses. This is where you'd swap A and B, or move Turbo A and Turbo B off X and Y.
 
 All three apply globally. The In-Game page is also in the in-game menu, for on-the-fly remapping.
@@ -110,6 +110,9 @@ Double tap <kbd>MENU</kbd>
 <kbd>SELECT</kbd> + <kbd>Y</kbd>
 :   Toggle color correction.
 
+<kbd>SELECT</kbd> + <kbd>X</kbd>
+:   Take a screenshot.
+
 <kbd>SELECT</kbd> + <kbd>L2</kbd> / <kbd>R2</kbd>
 :   Previous / next Game Boy palette, in original Game Boy games.
 
@@ -129,7 +132,7 @@ Hold <kbd>Y</kbd>
 :   Turbo <kbd>B</kbd>
 
 <kbd>L1</kbd> / <kbd>R1</kbd>
-:   Stretch to fill the screen / original size.<br>Game Boy and Game Boy Color only.
+:   Stretch / back to the Scale setting.<br>Game Boy and Game Boy Color only.
 
 </div>
 

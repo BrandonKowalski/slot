@@ -20,10 +20,13 @@ There's one shelf per system, along with two special shelves, in this order:
 1. Recents, if enabled in settings
 2. Favorites, once you've starred something
 3. Game Boy Advance
-4. Game Boy Color
-5. Game Boy
+4. Game Boy Advance Video
+5. Game Boy Color
+6. Game Boy
 
 slot does not show empty shelves. If you only have GBA games, you only get the GBA shelf.
+
+Game Boy Advance Video carts can be optionally placed in `Games/GBAV`. Here they get their own shelf and Game Boy Player support is disabled when using mGBA.
 
 Within a shelf, games are sorted by name. Names starting with a number come first.
 

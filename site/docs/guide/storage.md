@@ -8,8 +8,8 @@ If you use two cards, all of this is on the one in `SD2`.
 
 | Folder                                  | What's in it                        |
 |-----------------------------------------|-------------------------------------|
-| `Games/GBA`, `Games/GB`, `Games/GBC`    | Your games                          |
-| `Labels/GBA`, `Labels/GB`, `Labels/GBC` | Cart labels                         |
+| `Games/GBA`, `Games/GBAV`, `Games/GB`, `Games/GBC`     | Your games                          |
+| `Labels/GBA`, `Labels/GBAV`, `Labels/GB`, `Labels/GBC` | Cart labels                         |
 | `Saves/`                                | Battery saves, the game's own saves |
 | `States/`                               | Save states                         |
 | `Screenshots/`                          | Your screenshots                    |
@@ -27,6 +27,7 @@ slot makes any of these that are missing when it boots, except `Screenshots/`, w
 | Folder      | Takes         |
 |-------------|---------------|
 | `Games/GBA` | `.gba`        |
+| `Games/GBAV` | `.gba`       |
 | `Games/GB`  | `.gb`, `.gbc` |
 | `Games/GBC` | `.gb`, `.gbc` |
 
@@ -48,6 +49,7 @@ If you rename `Metroid Fusion.gba`, rename its save in `Saves/GBA` too, or slot 
 
 - Battery saves are `Saves/<system>/<game>.sav`.
 - Save states are in `States/<system>/<emulator>/<game>/`. Each one has a `.png` next to it for the switcher.
+- Screenshots are `Screenshots/<system>/<game>/<date and time>.png`.
 
 Periodically back up `Saves/` and `States/`. You never know when an SD card will go bad.
 
@@ -63,7 +65,7 @@ I don't recommend editing these by hand but it's your life.
 | `controls.txt`, `shortcuts.txt`, `carousel.txt` | Your button layout                                 |
 | `favorites.txt`, `recents.txt`                  | Your Favorites and Recents                         |
 | `selected_core.txt`                             | Which emulator each GBA game uses                  |
-| `video_mode.txt`                                | Which Game Boy games you've stretched              |
+| `video_mode.txt`                                | Which Game Boy games you've stretched with L1      |
 | `cart_shell.txt`                                | Cart colors, see [Customization](customizing.md). A `Labels/cart_shell.txt` overrides it |
 | `bootlogo.bmp`                                  | Your boot logo, if you've made one                 |
 
@@ -73,6 +75,6 @@ You'll have to set the clock again on the next boot.
 
 ## Updating
 
-Updates only replace `System/`. Everything else on this list is yours and stays put. 
+To update, download the latest release and replace the `System/` folder.
 
-See [Updating](../updating.md) for more.
+See [Updating](../updating.md) for detailed instructions.

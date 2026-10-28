@@ -14,7 +14,7 @@ All settings save as soon as you change an option.
 | Recents | Show, Hide | Hide | A shelf of your last 10 games |
 | Game Titles | Show, Hide | Hide | Shows the name of the cart you're on |
 | Lid Power Off | 1, 3, 5, 10, 15, 30 min | 3 min | How long slot sleeps before powering off |
-| Date & Time | | | Sets the clock |
+| Date & Time | | | Sets the clock, your city and 12 or 24-hour time |
 
 Random picks a different wallpaper each boot.
 
@@ -24,7 +24,7 @@ Random picks a different wallpaper each boot.
 
 | Setting | Choices | Default |
 | --- | --- | --- |
-| Brightness | 1 to 9 | 5 |
+| Brightness | 0 to 9 | 5 |
 | Blue Light | Off, 1 to 9 | Off |
 
 ### Game Boy Advance, Game Boy Color and Game Boy
@@ -36,7 +36,12 @@ Each system has its own page.
 | Shader | GBA: Off, LCD3x, Grid, Dot. GB and GBC: Off, LCD3x, Grid, Simpletex | Grid on GBA, Simpletex on GB and GBC |
 | Color Correction | On, Off | Off |
 | Palette | Game Boy only. Auto, then 48 palettes | Auto |
+| Scale | GBA: Fit, Integer, Full Screen. GB and GBC: SP Frame, Integer, Fit | Fit on GBA, SP Frame on GB and GBC |
+| Stretch | GB and GBC only. Classic, Full Screen | Classic |
+| Frame Blending | Off, Mix, LCD Ghosting | Off |
 | Bezel | None, Default, AGS-102, your own | AGS-102 on 640×480 devices, None elsewhere |
+
+See [The Screen](screen.md) for what Scale, Stretch and Frame Blending do.
 
 ## Gameplay
 

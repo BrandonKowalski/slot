@@ -12,12 +12,13 @@ There's no cable. One device runs its own Wi-Fi network and the other joins it. 
 
 1. Both players open the same game.
 2. Press <kbd>SELECT</kbd> + <kbd>MENU</kbd>.
-3. One player picks Host, the other picks Join. <kbd>Left</kbd> and <kbd>Right</kbd> swap between them, <kbd>A</kbd> links.
-4. Wait for Linked.
+3. One player picks Host, the other picks Join.
 
 The host waits 30 seconds for the joiner to show up. The game may reload once while it gets ready for the link.
 
-To unlink, press <kbd>SELECT</kbd> + <kbd>MENU</kbd> again and pick End Link. Closing the lid, powering off or ejecting also ends a link session.
+To unlink, press <kbd>SELECT</kbd> + <kbd>MENU</kbd> again and pick End Link. 
+
+Closing the lid, powering off or ejecting also ends a link session.
 
 ## Which games can link
 
