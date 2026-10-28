@@ -147,8 +147,11 @@ fn a_palette_picked_behind_the_menu_outlasts_the_menu() {
     });
 
     tap(&mut s, &mut now, Btn::Menu);
-    for btn in [Btn::Down, Btn::A, Btn::A, Btn::Down, Btn::Down] {
+    for btn in [Btn::Down, Btn::A, Btn::A] {
         tap(&mut s, &mut now, btn);
+    }
+    for _ in 0..QuickRow::Palette.position(&s.app().hidden_rows()) {
+        tap(&mut s, &mut now, Btn::Down);
     }
     assert_eq!(s.app().in_game_menu(), Some(QuickRow::Palette));
     tap(&mut s, &mut now, Btn::Right);
