@@ -1,6 +1,6 @@
 mod common;
 
-use slot_store::{Core, Platform};
+use slot_store::{Blending, Core, Platform};
 
 fn dylib_for(core: Core) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -665,6 +665,7 @@ fn open_core_reaches_a_gpsp_named_dylib_under_the_content_roots_system_directory
         Platform::Gba,
         "auto",
         false,
+        Blending::Off,
         None,
         None,
     )

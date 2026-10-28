@@ -2,9 +2,9 @@ mod common;
 
 use common::tmp_root;
 use slot_store::{
-    atomic_write, read_slot_state, sweep_temps, write_slot_state, Appearance, BezelPick, GbPalette,
-    Platform, Recent, Scale, Shader, SlotState, Stretch, WallpaperPick, WallpaperTint, FF_SPEEDS,
-    FF_SPEED_DEFAULT,
+    atomic_write, read_slot_state, sweep_temps, write_slot_state, Appearance, BezelPick, Blending,
+    GbPalette, Platform, Recent, Scale, Shader, SlotState, Stretch, WallpaperPick, WallpaperTint,
+    FF_SPEEDS, FF_SPEED_DEFAULT,
 };
 use tempfile::tempdir;
 
@@ -255,6 +255,9 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             scale_gbc: Scale::SpFrame,
             stretch_gb: Stretch::Classic,
             stretch_gbc: Stretch::Classic,
+            blending_gba: Blending::Off,
+            blending_gb: Blending::Off,
+            blending_gbc: Blending::Off,
             recents: Vec::new(),
             favorites: Vec::new(),
             shelf: None,
@@ -287,6 +290,8 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         bezel_gba: BezelPick::None,
         bezel_gb: BezelPick::Default,
         bezel_gbc: BezelPick::File("Pocket.png".into()),
+        blending_gba: Blending::Ghosting,
+        blending_gb: Blending::Mix,
         shelf: Some("gba".into()),
         shelf_cart: Some(Recent {
             platform: Platform::Gba,
@@ -318,6 +323,9 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "bezel_gbc=Pocket.png",
         "colour_correction_gbc=1",
         "shader_gbc=grid",
+        "blending_gba=ghosting",
+        "blending_gb=mix",
+        "blending_gbc=off",
         "shelf=gba",
         "shelf_cart=gba/Drill Dozer",
     ] {
@@ -648,4 +656,37 @@ fn scale_and_stretch_round_trip_and_fall_back() {
     assert_eq!(Scale::SpFrame.name(), "sp-frame");
     assert_eq!(Scale::parse("sp-frame"), Some(Scale::SpFrame));
     assert_eq!(Scale::parse("default"), None);
+}
+
+#[test]
+fn a_frame_blending_the_rows_do_not_offer_reads_as_off() {
+    let d = tmp_root();
+    let s = SlotState {
+        clock_set: true,
+        blending_gba: Blending::Mix,
+        blending_gb: Blending::Mix,
+        blending_gbc: Blending::Ghosting,
+        ..SlotState::default()
+    };
+    write_slot_state(d.path(), &s).unwrap();
+    let path = d.path().join("Config/slot.state");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        text.replace("blending_gba=mix", "blending_gba=lcd_ghosting_fast")
+            .replace("blending_gb=mix", "blending_gb=9"),
+    )
+    .unwrap();
+    let read = read_slot_state(d.path());
+    assert_eq!(read.blending_gba, Blending::Off);
+    assert_eq!(read.blending_gb, Blending::Off);
+    assert_eq!(
+        read.blending_gbc,
+        Blending::Ghosting,
+        "a good line was thrown away with the bad ones"
+    );
+    assert!(
+        read.clock_set,
+        "the rest of the card was thrown away with it"
+    );
 }

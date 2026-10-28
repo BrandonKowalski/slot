@@ -7,8 +7,8 @@ use common::{
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{
-    read_slot_state, write_slot_state, Appearance, BezelPick, GbColors, GbPalette, Platform, Scale,
-    Shader, SlotState, Stretch, WallpaperPick,
+    read_slot_state, write_slot_state, Appearance, BezelPick, Blending, GbColors, GbPalette,
+    Platform, Scale, Shader, SlotState, Stretch, WallpaperPick,
 };
 use slot_ui::{
     Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, OUT_H,
@@ -389,6 +389,7 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     assert_eq!(a.quick_menu(), Some(QuickRow::GbShader));
     for want in [
         QuickRow::GbColourCorrection,
+        QuickRow::GbBlending,
         QuickRow::GbPalette,
         QuickRow::GbBezel,
         QuickRow::GbShader,
@@ -406,6 +407,44 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
     press(&mut a, Btn::B);
     assert_eq!(a.quick_menu(), None);
+}
+
+#[test]
+fn each_systems_frame_blending_steps_off_mix_lcd_ghosting_wraps_and_saves_alone() {
+    let saved = |d: &TempDir| {
+        let s = read_slot_state(d.path());
+        (s.blending_gba, s.blending_gb, s.blending_gbc)
+    };
+    for row in [
+        QuickRow::GbaBlending,
+        QuickRow::GbBlending,
+        QuickRow::GbcBlending,
+    ] {
+        let (d, mut a, _) = on_carousel();
+        open_at(&mut a, row);
+        assert_eq!(
+            a.quick_value(row),
+            Some(QuickValue::Off),
+            "{row:?} did not open on the default, which is off"
+        );
+        for (btn, want, shown) in [
+            (Btn::Right, Blending::Mix, QuickValue::Mix),
+            (Btn::Right, Blending::Ghosting, QuickValue::Ghosting),
+            (Btn::Right, Blending::Off, QuickValue::Off),
+            (Btn::Left, Blending::Ghosting, QuickValue::Ghosting),
+            (Btn::Left, Blending::Mix, QuickValue::Mix),
+        ] {
+            press(&mut a, btn);
+            let off = Blending::Off;
+            let alone = match row {
+                QuickRow::GbaBlending => (want, off, off),
+                QuickRow::GbBlending => (off, want, off),
+                _ => (off, off, want),
+            };
+            assert_eq!(saved(&d), alone, "{row:?} {btn:?}");
+            assert_eq!(a.quick_value(row), Some(shown), "{row:?} {btn:?}");
+        }
+    }
 }
 
 #[test]
@@ -983,6 +1022,7 @@ fn the_game_boy_page_steps_the_palette_from_auto() {
         [
             QuickRow::GbShader,
             QuickRow::GbColourCorrection,
+            QuickRow::GbBlending,
             QuickRow::GbPalette,
             QuickRow::GbBezel,
             QuickRow::GbScale,

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::atomic::atomic_write;
+use crate::core::Core;
 use crate::gb_palette::{GbColors, GbPalette};
 use crate::platform::Platform;
 
@@ -246,6 +247,55 @@ impl Stretch {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Blending {
+    #[default]
+    Off,
+    Mix,
+    Ghosting,
+}
+
+impl Blending {
+    pub const MGBA: [Blending; 3] = [Blending::Off, Blending::Mix, Blending::Ghosting];
+    pub const GPSP: [Blending; 2] = [Blending::Off, Blending::Mix];
+
+    pub fn choices(core: Core) -> &'static [Blending] {
+        match core {
+            Core::Mgba => &Blending::MGBA,
+            Core::Gpsp => &Blending::GPSP,
+        }
+    }
+
+    pub fn on(self, core: Core) -> Blending {
+        match (core, self) {
+            (Core::Gpsp, Blending::Ghosting) => Blending::Mix,
+            (_, blending) => blending,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Blending::Off => "off",
+            Blending::Mix => "mix",
+            Blending::Ghosting => "ghosting",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Blending> {
+        Blending::MGBA.into_iter().find(|b| b.key() == value)
+    }
+
+    pub fn step(self, choices: &[Blending], right: bool) -> Blending {
+        let n = choices.len();
+        let at = choices.iter().position(|&b| b == self).unwrap_or(0);
+        choices[if right {
+            (at + 1) % n
+        } else {
+            (at + n - 1) % n
+        }]
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SlotState {
     pub cart: Option<String>,
@@ -288,6 +338,9 @@ pub struct SlotState {
     pub scale_gbc: Scale,
     pub stretch_gb: Stretch,
     pub stretch_gbc: Stretch,
+    pub blending_gba: Blending,
+    pub blending_gb: Blending,
+    pub blending_gbc: Blending,
     pub recents: Vec<Recent>,
     pub favorites: Vec<Recent>,
     pub shelf: Option<String>,
@@ -434,6 +487,9 @@ impl Default for SlotState {
             scale_gbc: Scale::SpFrame,
             stretch_gb: Stretch::Classic,
             stretch_gbc: Stretch::Classic,
+            blending_gba: Blending::Off,
+            blending_gb: Blending::Off,
+            blending_gbc: Blending::Off,
             recents: Vec::new(),
             favorites: Vec::new(),
             shelf: None,
@@ -537,6 +593,9 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     text.push_str(&format!("scale_gbc={}\n", s.scale_gbc.name()));
     text.push_str(&format!("stretch_gb={}\n", s.stretch_gb.name()));
     text.push_str(&format!("stretch_gbc={}\n", s.stretch_gbc.name()));
+    text.push_str(&format!("blending_gba={}\n", s.blending_gba.key()));
+    text.push_str(&format!("blending_gb={}\n", s.blending_gb.key()));
+    text.push_str(&format!("blending_gbc={}\n", s.blending_gbc.key()));
     text.push_str(&format!("shelf={}\n", s.shelf.as_deref().unwrap_or("")));
     text.push_str(&format!(
         "shelf_cart={}\n",
@@ -593,6 +652,9 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut scale_gbc = None;
     let mut stretch_gb = None;
     let mut stretch_gbc = None;
+    let mut blending_gba = None;
+    let mut blending_gb = None;
+    let mut blending_gbc = None;
     let mut shelf = None;
     let mut shelf_cart = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
@@ -639,6 +701,9 @@ fn parse(text: &str) -> Option<SlotState> {
             "scale_gbc" => scale_gbc = Scale::parse(value),
             "stretch_gb" => stretch_gb = Stretch::parse(value),
             "stretch_gbc" => stretch_gbc = Stretch::parse(value),
+            "blending_gba" => blending_gba = Blending::parse(value),
+            "blending_gb" => blending_gb = Blending::parse(value),
+            "blending_gbc" => blending_gbc = Blending::parse(value),
             "shelf" => shelf = Some(value.to_string()).filter(|v| !v.is_empty()),
             "shelf_cart" => shelf_cart = recent_value(value),
             "shader_gb" => shader_gb = Shader::parse(value).filter(|s| Shader::GB.contains(s)),
@@ -696,6 +761,9 @@ fn parse(text: &str) -> Option<SlotState> {
         scale_gbc: scale_gbc.unwrap_or(fallback.scale_gbc),
         stretch_gb: stretch_gb.unwrap_or(fallback.stretch_gb),
         stretch_gbc: stretch_gbc.unwrap_or(fallback.stretch_gbc),
+        blending_gba: blending_gba.unwrap_or(fallback.blending_gba),
+        blending_gb: blending_gb.unwrap_or(fallback.blending_gb),
+        blending_gbc: blending_gbc.unwrap_or(fallback.blending_gbc),
         recents: Vec::new(),
         favorites: Vec::new(),
         shelf,

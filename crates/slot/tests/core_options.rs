@@ -2,7 +2,7 @@ mod common;
 
 use slot::link_kind::{serial_option, LinkKind};
 use slot_retro::LibretroCore;
-use slot_store::{Core, Platform};
+use slot_store::{Blending, Core, Platform};
 
 fn dylib_for(core: Core) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -347,5 +347,166 @@ fn mgba_answers_the_game_boy_player_logo_except_for_gba_video() {
             Some(want),
             "{platform:?} {code}: {why}"
         );
+    }
+}
+
+#[test]
+fn every_frame_blending_slot_sets_is_one_the_core_declares() {
+    let _g = common::core_lock();
+    for which in Core::ALL {
+        let path = dylib_for(which);
+        if !path.exists() {
+            eprintln!("no {} dylib on this host, skipping", which.as_str());
+            continue;
+        }
+        for blending in Blending::MGBA {
+            let mut core = LibretroCore::open(&path).expect("open core");
+            slot::core::apply_core_options(
+                &mut core,
+                which,
+                Platform::Gba,
+                "auto",
+                false,
+                false,
+                None,
+            );
+            slot::core::apply_blending(&mut core, which, blending);
+            every_option_is_one_the_core_has(
+                &core,
+                &format!("{} blending={blending:?}", which.as_str()),
+            );
+            let (key, value) = slot::core::blend_option(which, blending);
+            assert!(
+                core.options().iter().any(|(k, v)| k == key && v == value),
+                "{} was never told {key}={value} for {blending:?}",
+                which.as_str()
+            );
+        }
+    }
+}
+
+#[test]
+fn both_cores_declare_a_frame_blending_option() {
+    let _g = common::core_lock();
+    for (which, key) in [
+        (Core::Mgba, "mgba_interframe_blending"),
+        (Core::Gpsp, "gpsp_frame_mixing"),
+    ] {
+        let path = dylib_for(which);
+        if !path.exists() {
+            eprintln!("no {} dylib on this host, skipping", which.as_str());
+            continue;
+        }
+        let core = LibretroCore::open(&path).expect("open core");
+        assert!(
+            core.declared_options().contains_key(key),
+            "{} declares no {key}",
+            which.as_str()
+        );
+    }
+}
+
+const PANEL: std::time::Duration = std::time::Duration::from_micros(16_742);
+const PRESENTS: usize = 40;
+const CHANGED_AT: usize = 30;
+
+fn flicker_rom() -> Vec<u8> {
+    const MVN_R3_R3: u32 = 0xe1e0_3003;
+    let mut rom = common::gba_rom();
+    rom[0xc0 + 9 * 4..0xc0 + 10 * 4].copy_from_slice(&MVN_R3_R3.to_le_bytes());
+    rom
+}
+
+fn frames_with_mix_set_at(which: Core, at: Option<usize>) -> Vec<Vec<u8>> {
+    use slot::audio::Ring;
+    use slot::emu::{CoreState, EmuHandle, Speed};
+    use std::time::{Duration, Instant};
+
+    let d = tempfile::tempdir().expect("a temporary directory");
+    let rom = d.path().join("blend.gba");
+    std::fs::write(&rom, flicker_rom()).expect("write the test rom");
+    let mut core = LibretroCore::open(&dylib_for(which)).expect("open core");
+    slot::core::apply_core_options(
+        &mut core,
+        which,
+        Platform::Gba,
+        "auto",
+        false,
+        false,
+        None,
+    );
+    let ring = std::sync::Arc::new(Ring::new(1 << 16));
+    let emu = EmuHandle::spawn(Box::new(core), rom, ring, None, None);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while emu.state() == CoreState::Loading {
+        assert!(Instant::now() < deadline, "the core never loaded");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(emu.state(), CoreState::Ready);
+    emu.set_driven(true);
+    emu.set_speed(Speed::Normal);
+    while !emu.locked() {
+        assert!(Instant::now() < deadline, "the worker never locked");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let start = emu.published_count();
+    let mut frames = Vec::new();
+    for i in 0..PRESENTS {
+        if at == Some(i) {
+            let (key, value) = slot::core::blend_option(which, Blending::Mix);
+            emu.set_option(key, value);
+        }
+        emu.tick(PANEL);
+        assert!(
+            emu.wait_frame(Duration::from_secs(2)),
+            "a tick's frame never arrived"
+        );
+        frames.push(emu.latest_frame().expect("nothing published").to_vec());
+    }
+    assert_eq!(
+        emu.published_count() - start,
+        PRESENTS as u64,
+        "a tick came late and the worker ran a frame of its own, so the runs are not comparable"
+    );
+    frames
+}
+
+#[test]
+fn a_frame_blending_change_reaches_a_running_core_without_a_reload() {
+    let _g = common::core_lock();
+    for which in Core::ALL {
+        if !dylib_for(which).exists() {
+            eprintln!("no {} dylib on this host, skipping", which.as_str());
+            continue;
+        }
+        let plain = frames_with_mix_set_at(which, None);
+        let mixed = frames_with_mix_set_at(which, Some(CHANGED_AT));
+        assert!(
+            plain[..CHANGED_AT] == mixed[..CHANGED_AT],
+            "{}: the two runs differ before anything was changed, so they cannot be compared",
+            which.as_str()
+        );
+        assert!(
+            plain[CHANGED_AT..]
+                .windows(2)
+                .all(|w| w[0][..3] != w[1][..3]),
+            "{}: the test rom stopped flickering, so blending would have nothing to show",
+            which.as_str()
+        );
+        let px0 = |frame: &[u8]| [frame[0], frame[1], frame[2]];
+        for i in CHANGED_AT + 3..PRESENTS {
+            assert_eq!(
+                px0(&mixed[i]),
+                px0(&mixed[i - 1]),
+                "{}: frame {i} still flickers after mixing was set mid-game",
+                which.as_str()
+            );
+            assert!(
+                px0(&mixed[i]).iter().all(|c| (0x40..0xc0).contains(c)),
+                "{}: frame {i} shows {:02x?}, not a mix of the black and white it flickers between",
+                which.as_str(),
+                px0(&mixed[i])
+            );
+        }
     }
 }

@@ -112,17 +112,31 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::SCREEN_GBA.map(QuickRow::label),
-        ["Shader", "Color Correction", "Bezel", "Scale"]
+        [
+            "Shader",
+            "Color Correction",
+            "Frame Blending",
+            "Bezel",
+            "Scale"
+        ]
     );
     assert_eq!(
         QuickRow::SCREEN_GBC.map(QuickRow::label),
-        ["Shader", "Color Correction", "Bezel", "Scale", "Stretch"]
+        [
+            "Shader",
+            "Color Correction",
+            "Frame Blending",
+            "Bezel",
+            "Scale",
+            "Stretch"
+        ]
     );
     assert_eq!(
         QuickRow::SCREEN_GB.map(QuickRow::label),
         [
             "Shader",
             "Color Correction",
+            "Frame Blending",
             "Palette",
             "Bezel",
             "Scale",
@@ -249,6 +263,8 @@ fn the_values_read_as_the_menu_prints_them() {
             "Fit",
             "Classic",
             "Full Screen",
+            "Mix",
+            "LCD Ghosting",
         ]
     );
     assert_eq!(QuickValue::flag(true), QuickValue::On);
@@ -353,6 +369,7 @@ fn the_in_game_pages_hold_their_rows_in_order() {
             QuickRow::Stretch,
             QuickRow::Palette,
             QuickRow::ColourCorrection,
+            QuickRow::Blending,
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight
         ]
@@ -416,13 +433,14 @@ fn in_game_rows_read_as_the_menu_shows_them() {
 }
 
 #[test]
-fn a_hidden_palette_and_bezel_leave_four_screen_rows() {
+fn a_hidden_palette_and_bezel_leave_five_screen_rows() {
     let hidden = [QuickRow::Palette, QuickRow::Bezel];
     assert_eq!(
         QuickRow::Shader.shown(&hidden),
         vec![
             QuickRow::Shader,
             QuickRow::ColourCorrection,
+            QuickRow::Blending,
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight
         ]

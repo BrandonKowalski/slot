@@ -7,8 +7,8 @@ use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
 use slot_retro::LinkChannel;
 use slot_store::{
-    format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Cart, Core,
-    GbColors, Platform, Recent, Scale, Shader, ShotDir, ShotEntry, SlotState, StateEntry,
+    format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Blending, Cart,
+    Core, GbColors, Platform, Recent, Scale, Shader, ShotDir, ShotEntry, SlotState, StateEntry,
     StateRing, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,
     RING_MAX, VOLUME_MAX,
 };
@@ -390,6 +390,7 @@ pub struct App {
     snapshot: Option<Box<dyn Snapshot>>,
     core: Core,
     colour_pending: Option<bool>,
+    blending_pending: Option<Blending>,
     palette_live: bool,
     palette_pending: Option<GbColors>,
     link_player: Option<u8>,
@@ -599,6 +600,7 @@ impl App {
             snapshot: None,
             core: Core::default(),
             colour_pending: None,
+            blending_pending: None,
             palette_live: false,
             palette_pending: None,
             link_player: None,
@@ -1149,6 +1151,10 @@ impl App {
             QuickRow::GbcScale => Some(scale_value(self.resolved_scale(Platform::Gbc))),
             QuickRow::GbStretch => Some(stretch_value(self.resolved_stretch(Platform::Gb))),
             QuickRow::GbcStretch => Some(stretch_value(self.resolved_stretch(Platform::Gbc))),
+            QuickRow::GbaBlending => Some(blending_value(self.state.blending_gba)),
+            QuickRow::GbcBlending => Some(blending_value(self.state.blending_gbc)),
+            QuickRow::GbBlending => Some(blending_value(self.state.blending_gb)),
+            QuickRow::Blending => Some(blending_value(self.blending_in_play())),
             QuickRow::Brightness => Some(QuickValue::level(self.state.brightness)),
             QuickRow::BlueLight => Some(match self.state.blue_light {
                 0 => QuickValue::Off,
@@ -2505,6 +2511,18 @@ impl App {
         }
     }
 
+    pub fn blending_for(&self, platform: Platform) -> Blending {
+        match platform {
+            Platform::Gba | Platform::Gbav => self.state.blending_gba,
+            Platform::Gb => self.state.blending_gb,
+            Platform::Gbc => self.state.blending_gbc,
+        }
+    }
+
+    pub fn blending_in_play(&self) -> Blending {
+        self.blending_for(self.playing_platform()).on(self.core)
+    }
+
     pub fn light(&self) -> bool {
         self.state.appearance.light()
     }
@@ -2605,6 +2623,10 @@ impl App {
 
     pub fn take_colour_correction(&mut self) -> Option<bool> {
         self.colour_pending.take()
+    }
+
+    pub fn take_blending(&mut self) -> Option<Blending> {
+        self.blending_pending.take()
     }
 
     pub fn gb_colors(&self) -> GbColors {
@@ -3053,6 +3075,10 @@ impl App {
             | QuickRow::GbcScale
             | QuickRow::GbStretch
             | QuickRow::GbcStretch
+            | QuickRow::GbaBlending
+            | QuickRow::GbcBlending
+            | QuickRow::GbBlending
+            | QuickRow::Blending
             | QuickRow::Scale
             | QuickRow::Stretch
             | QuickRow::Bezel
@@ -3091,6 +3117,19 @@ impl App {
     }
 
     fn change_setting(&mut self, row: QuickRow, right: bool) {
+        if row == QuickRow::Blending {
+            let to = self
+                .blending_in_play()
+                .step(Blending::choices(self.core), right);
+            match self.playing_platform().hardware() {
+                Platform::Gb => self.state.blending_gb = to,
+                Platform::Gbc => self.state.blending_gbc = to,
+                _ => self.state.blending_gba = to,
+            }
+            self.blending_pending = Some(self.blending_in_play());
+            self.persist();
+            return;
+        }
         let row = self.playing_row(row);
         if let QuickRow::Brightness | QuickRow::BlueLight = row {
             let (kind, now, max) = match row {
@@ -3226,6 +3265,18 @@ impl App {
             QuickRow::EjectSave => s.eject_save = !s.eject_save,
             QuickRow::Turbo => s.turbo = !s.turbo,
             QuickRow::Rewind => s.rewind = !s.rewind,
+            QuickRow::GbaBlending => {
+                s.blending_gba = s.blending_gba.step(&Blending::MGBA, right);
+                self.blending_pending = Some(self.blending_in_play());
+            }
+            QuickRow::GbcBlending => {
+                s.blending_gbc = s.blending_gbc.step(&Blending::MGBA, right);
+                self.blending_pending = Some(self.blending_in_play());
+            }
+            QuickRow::GbBlending => {
+                s.blending_gb = s.blending_gb.step(&Blending::MGBA, right);
+                self.blending_pending = Some(self.blending_in_play());
+            }
             QuickRow::Theme => s.appearance = s.appearance.toggle(),
             QuickRow::WallpaperTint => s.wallpaper_tint = s.wallpaper_tint.step(right),
             QuickRow::ScreenGeneral
@@ -3264,6 +3315,7 @@ impl App {
             | QuickRow::GbcScale
             | QuickRow::GbStretch
             | QuickRow::GbcStretch
+            | QuickRow::Blending
             | QuickRow::Scale
             | QuickRow::Stretch
             | QuickRow::Bezel
@@ -6271,6 +6323,14 @@ fn trusted_sav(snapshot: &dyn Snapshot, verb: &str) -> Option<Vec<u8>> {
 
 fn up(level: u8, step: u8, max: u8) -> u8 {
     level.saturating_add(step).min(max)
+}
+
+fn blending_value(blending: Blending) -> QuickValue {
+    match blending {
+        Blending::Off => QuickValue::Off,
+        Blending::Mix => QuickValue::Mix,
+        Blending::Ghosting => QuickValue::Ghosting,
+    }
 }
 
 fn scale_value(scale: Scale) -> QuickValue {

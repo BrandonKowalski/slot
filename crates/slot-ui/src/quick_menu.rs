@@ -102,10 +102,14 @@ pub enum QuickRow {
     GbcStretch,
     Scale,
     Stretch,
+    GbaBlending,
+    GbcBlending,
+    GbBlending,
+    Blending,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 91] = [
+    pub const ALL: [QuickRow; 95] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -197,6 +201,10 @@ impl QuickRow {
         QuickRow::GbcStretch,
         QuickRow::Scale,
         QuickRow::Stretch,
+        QuickRow::GbaBlending,
+        QuickRow::GbcBlending,
+        QuickRow::GbBlending,
+        QuickRow::Blending,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -270,24 +278,27 @@ impl QuickRow {
 
     pub const SCREEN_GENERAL: [QuickRow; 2] = [QuickRow::Brightness, QuickRow::BlueLight];
 
-    pub const SCREEN_GBA: [QuickRow; 4] = [
+    pub const SCREEN_GBA: [QuickRow; 5] = [
         QuickRow::GbaShader,
         QuickRow::GbaColourCorrection,
+        QuickRow::GbaBlending,
         QuickRow::GbaBezel,
         QuickRow::GbaScale,
     ];
 
-    pub const SCREEN_GBC: [QuickRow; 5] = [
+    pub const SCREEN_GBC: [QuickRow; 6] = [
         QuickRow::GbcShader,
         QuickRow::GbcColourCorrection,
+        QuickRow::GbcBlending,
         QuickRow::GbcBezel,
         QuickRow::GbcScale,
         QuickRow::GbcStretch,
     ];
 
-    pub const SCREEN_GB: [QuickRow; 6] = [
+    pub const SCREEN_GB: [QuickRow; 7] = [
         QuickRow::GbShader,
         QuickRow::GbColourCorrection,
+        QuickRow::GbBlending,
         QuickRow::GbPalette,
         QuickRow::GbBezel,
         QuickRow::GbScale,
@@ -321,13 +332,14 @@ impl QuickRow {
         QuickRow::PlayControls,
     ];
 
-    pub const PLAY_SCREEN: [QuickRow; 8] = [
+    pub const PLAY_SCREEN: [QuickRow; 9] = [
         QuickRow::Shader,
         QuickRow::Bezel,
         QuickRow::Scale,
         QuickRow::Stretch,
         QuickRow::Palette,
         QuickRow::ColourCorrection,
+        QuickRow::Blending,
         QuickRow::PlayBrightness,
         QuickRow::PlayBlueLight,
     ];
@@ -346,15 +358,18 @@ impl QuickRow {
             QuickRow::PlayBrightness | QuickRow::PlayBlueLight => &QuickRow::PLAY_SCREEN,
             QuickRow::GbaShader
             | QuickRow::GbaColourCorrection
+            | QuickRow::GbaBlending
             | QuickRow::GbaBezel
             | QuickRow::GbaScale => &QuickRow::SCREEN_GBA,
             QuickRow::GbcShader
             | QuickRow::GbcColourCorrection
+            | QuickRow::GbcBlending
             | QuickRow::GbcBezel
             | QuickRow::GbcScale
             | QuickRow::GbcStretch => &QuickRow::SCREEN_GBC,
             QuickRow::GbShader
             | QuickRow::GbColourCorrection
+            | QuickRow::GbBlending
             | QuickRow::GbPalette
             | QuickRow::GbBezel
             | QuickRow::GbScale
@@ -395,7 +410,8 @@ impl QuickRow {
             | QuickRow::Palette
             | QuickRow::Bezel
             | QuickRow::Scale
-            | QuickRow::Stretch => &QuickRow::PLAY_SCREEN,
+            | QuickRow::Stretch
+            | QuickRow::Blending => &QuickRow::PLAY_SCREEN,
             _ => &QuickRow::MAIN,
         }
     }
@@ -560,6 +576,10 @@ impl QuickRow {
                 "Scale"
             }
             QuickRow::GbStretch | QuickRow::GbcStretch | QuickRow::Stretch => "Stretch",
+            QuickRow::GbaBlending
+            | QuickRow::GbcBlending
+            | QuickRow::GbBlending
+            | QuickRow::Blending => "Frame Blending",
             QuickRow::GbaBezel => "Bezel",
             QuickRow::Bezel => "Bezel",
         }
@@ -698,10 +718,12 @@ pub enum QuickValue {
     Fit,
     Classic,
     FullScreen,
+    Mix,
+    Ghosting,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 38] = [
+    pub const ALL: [QuickValue; 40] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -740,6 +762,8 @@ impl QuickValue {
         QuickValue::Fit,
         QuickValue::Classic,
         QuickValue::FullScreen,
+        QuickValue::Mix,
+        QuickValue::Ghosting,
     ];
 
     pub const LEVELS: [QuickValue; 10] = [
@@ -808,6 +832,8 @@ impl QuickValue {
             QuickValue::Fit => "Fit",
             QuickValue::Classic => "Classic",
             QuickValue::FullScreen => "Full Screen",
+            QuickValue::Mix => "Mix",
+            QuickValue::Ghosting => "LCD Ghosting",
         }
     }
 
