@@ -280,6 +280,11 @@ impl Frontend {
                 .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
         });
         self.session.app_mut().set_clock_legend_faces(clock_legends);
+        let title = menu_face("Set the clock");
+        let tex = compositor.create_texture(title.w, title.h, &title.rgba);
+        self.session
+            .app_mut()
+            .set_clock_title_face((tex, title.w, title.h));
         let star = slot_ui::star_face(slot_ui::STAR_SCALE, slot_ui::STAR_INK);
         let id = compositor.create_texture_nearest(star.w, star.h, &star.rgba);
         self.session.app_mut().set_star_face(id, star.w, star.h);

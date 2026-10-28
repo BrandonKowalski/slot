@@ -16,6 +16,7 @@ const YEAR_MAX: i64 = 2099;
 
 const CARET_H: f32 = 3.0;
 const CITY_PAGE: usize = QUICK_VISIBLE;
+const TITLE_GAP: f32 = 24.0;
 const SCROLL_INSET: f32 = 12.0;
 const SCROLL_W: f32 = 4.0;
 
@@ -399,6 +400,7 @@ pub struct ClockFaces {
 pub struct ClockScreen<'a> {
     pub picker: &'a ClockPicker,
     pub faces: Option<&'a ClockFaces>,
+    pub title: Option<Face>,
     pub pointer: Option<Face>,
     pub ground: Option<(TexId, u32)>,
     pub canvas: Canvas,
@@ -410,6 +412,10 @@ impl ClockScreen<'_> {
         let (right, pad) = (self.canvas.w - QUICK_EDGE, MENU_PAD as f32);
         let (start, len, selected) = self.picker.window();
         let top = (LEGEND_Y - QUICK_PITCH * len as f32) / 2.0;
+        if let (Some((tex, w, h)), None) = (self.title, self.picker.choosing) {
+            let y = top - TITLE_GAP - h as f32;
+            push(out, tex, self.canvas.centred(w as f32), y, w, h);
+        }
         if let Some(faces) = self.faces {
             for (i, [label, value]) in faces.rows.iter().enumerate() {
                 let y = top + QUICK_PITCH * i as f32 + TYPE_DROP;

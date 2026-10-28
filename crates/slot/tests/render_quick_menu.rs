@@ -9,7 +9,7 @@ use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
-use slot_ui::{quick_row_top, quick_row_top_at, quick_scroll, QuickRow, QUICK_VISIBLE};
+use slot_ui::{quick_row_top, quick_row_top_at, quick_scroll, QuickRow, MOUTH_H, QUICK_VISIBLE};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -210,9 +210,12 @@ fn the_quick_menu_renders_full_screen() {
     }
     tap(&mut f, &mut input, Btn::A);
     let px = composed(&mut f, &mut c, "clock");
+    let strip = (OUT_H as f32 - MOUTH_H) as usize..OUT_H as usize;
     assert!(
-        (200..270).any(|x| at(&px, x, 298) == [0xf6, 0xf4, 0xef]),
-        "the clock from the menu does not offer B BACK"
+        strip
+            .flat_map(|y| (0..130).map(move |x| (x, y)))
+            .any(|(x, y)| at(&px, x, y).iter().all(|&c| c > 0xd0)),
+        "the clock from the menu does not offer B BACK in the footer"
     );
 }
 

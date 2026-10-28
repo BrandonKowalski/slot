@@ -1087,7 +1087,7 @@ pub fn link_button_legends(ink: [u8; 3]) -> Vec<UndoFace> {
     ]
 }
 
-pub fn clock_legend_faces(ink: [u8; 3]) -> [UndoFace; 5] {
+pub fn clock_legend_faces(ink: [u8; 3]) -> [UndoFace; 6] {
     let hint = Some(ink);
     [
         with_hint(button_face(ButtonLegend::A), "Done", hint, false),
@@ -1100,6 +1100,7 @@ pub fn clock_legend_faces(ink: [u8; 3]) -> [UndoFace; 5] {
         ),
         with_hint(button_face(ButtonLegend::A), "Change", hint, false),
         with_hint(button_face(ButtonLegend::A), "Select", hint, false),
+        with_hint(button_face(ButtonLegend::B), "Done", hint, true),
     ]
 }
 

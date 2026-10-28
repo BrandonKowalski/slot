@@ -115,6 +115,7 @@ fn nothing_but_the_renderer_takes_a_frame() {
 #[test]
 fn the_core_does_not_run_while_the_cart_is_going_in() {
     let d = common::tmp_root_with_real_carts(&["Emerald"]);
+    common::clocked(d.path());
     let mut p = Pass {
         session: Session::boot(d.path().to_path_buf()),
         now: 0,

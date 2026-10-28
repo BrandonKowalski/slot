@@ -708,8 +708,10 @@ fn fake_faces(a: &mut App) {
             (id(422), 90),
             (id(423), 100),
             (id(424), 100),
+            (id(425), 80),
         ]; 2],
     );
+    a.set_clock_title_face((id(430), 260, 40));
 }
 
 fn label(row: QuickRow, lit: bool) -> usize {
@@ -935,6 +937,26 @@ fn labels_leave_room_for_the_pointer_and_values_end_thirty_two_pixels_in() {
 }
 
 #[test]
+fn only_the_first_boot_clock_says_set_the_clock() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    let (mut first, _) = app_booting_with_clock(d.path());
+    fake_faces(&mut first);
+    assert!(
+        drawn(&frame(&first), 430),
+        "first boot has no SET THE CLOCK"
+    );
+
+    let (_d, mut a, _) = on_carousel();
+    fake_faces(&mut a);
+    open_at(&mut a, QuickRow::DateTime);
+    press(&mut a, Btn::A);
+    assert!(
+        a.picker().is_some() && !drawn(&frame(&a), 430),
+        "the clock from the menu says SET THE CLOCK"
+    );
+}
+
+#[test]
 fn the_clock_offers_b_back_and_never_a_set() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
@@ -943,11 +965,15 @@ fn the_clock_offers_b_back_and_never_a_set() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut first, _) = app_booting_with_clock(d.path());
     fake_faces(&mut first);
-    for (way, app) in [("the menu", &mut a), ("first boot", &mut first)] {
+    for (way, app, back) in [("the menu", &mut a, 400), ("first boot", &mut first, 425)] {
         let out = frame(app);
         assert!(drawn(&out, 423), "{way}: the date does not offer A CHANGE");
         assert!(!drawn(&out, 402), "{way}: the date still says A OPEN");
-        assert!(drawn(&out, 400), "{way}: no B BACK");
+        assert!(drawn(&out, back), "{way}: no B BACK or B DONE");
+        assert!(
+            back == 400 || !drawn(&out, 400),
+            "{way}: says B BACK where B saves and goes on"
+        );
         press(app, Btn::Down);
         press(app, Btn::Down);
         let out = frame(app);

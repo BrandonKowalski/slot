@@ -404,7 +404,8 @@ pub struct App {
     legend_faces: Vec<TexId>,
     undo_face: Option<TexId>,
     clock_faces: Option<ClockFaces>,
-    clock_legends: Option<[[(TexId, u32); 5]; 2]>,
+    clock_legends: Option<[[(TexId, u32); 6]; 2]>,
+    clock_title: Option<(TexId, u32, u32)>,
     quick_menu_faces: Option<QuickMenuFaces>,
     quick_clock_faces: Option<[(TexId, u32, u32); 2]>,
     quick_wallpaper_faces: Option<[(TexId, u32, u32); 2]>,
@@ -615,6 +616,7 @@ impl App {
             undo_face: None,
             clock_faces: None,
             clock_legends: None,
+            clock_title: None,
             quick_menu_faces: None,
             quick_clock_faces: None,
             quick_wallpaper_faces: None,
@@ -1551,8 +1553,12 @@ impl App {
         self.clock_faces = Some(faces);
     }
 
-    pub fn set_clock_legend_faces(&mut self, legends: [[(TexId, u32); 5]; 2]) {
+    pub fn set_clock_legend_faces(&mut self, legends: [[(TexId, u32); 6]; 2]) {
         self.clock_legends = Some(legends);
+    }
+
+    pub fn set_clock_title_face(&mut self, title: (TexId, u32, u32)) {
+        self.clock_title = Some(title);
     }
 
     pub fn set_star_face(&mut self, face: TexId, w: u32, h: u32) {
@@ -4252,17 +4258,20 @@ impl App {
             };
         }
         match &self.phase {
-            Phase::SetClock { picker, .. } => {
+            Phase::SetClock {
+                picker, from_menu, ..
+            } => {
                 ClockScreen {
                     picker,
                     faces: self.clock_faces.as_ref(),
+                    title: self.clock_title.filter(|_| !from_menu),
                     pointer: self.quick_menu_faces.as_ref().map(|q| q.pointer),
                     ground: self.menu_ground(),
                     canvas: self.canvas(),
                 }
                 .draw(out);
                 slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, out);
-                self.draw_clock_legends(picker, out);
+                self.draw_clock_legends(picker, *from_menu, out);
                 return;
             }
             Phase::QuickMenu { row } => QuickMenu {
@@ -4639,7 +4648,7 @@ impl App {
         self.draw_side_legend(right, true, y, out);
     }
 
-    fn draw_clock_legends(&self, picker: &ClockPicker, out: &mut Vec<Draw>) {
+    fn draw_clock_legends(&self, picker: &ClockPicker, from_menu: bool, out: &mut Vec<Draw>) {
         let (Some(faces), Some(clock)) = (&self.quick_menu_faces, self.clock_legends) else {
             return;
         };
@@ -4647,7 +4656,8 @@ impl App {
             true => faces.legend_light,
             false => faces.legend,
         };
-        let [done, turn, page, edit, select] = clock[self.light() as usize];
+        let [done, turn, page, edit, select, finish] = clock[self.light() as usize];
+        let back = if from_menu { back } else { finish };
         let legends = match (picker.highlighted(), picker.editing(), picker.row()) {
             (Some(_), _, _) => vec![back, page, select],
             (None, true, _) => vec![back, turn, done],
