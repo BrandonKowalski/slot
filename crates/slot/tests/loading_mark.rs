@@ -12,7 +12,6 @@ fn seated_in(root: &std::path::Path, stem: &str) {
         &SlotState {
             cart: Some(stem.to_string()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

@@ -21,7 +21,6 @@ fn session_playing() -> (Session, TempDir, Millis) {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

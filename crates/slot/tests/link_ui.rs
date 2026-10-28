@@ -514,7 +514,6 @@ fn session_playing_on_gpsp() -> (Session, TempDir, Millis) {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )
@@ -1383,7 +1382,6 @@ fn session_on_a_real_core() -> Option<(Session, TempDir, Millis)> {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

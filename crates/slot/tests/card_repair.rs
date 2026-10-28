@@ -250,7 +250,6 @@ fn the_prompt_pauses_the_game_and_not_now_runs_it_again() {
         &slot_store::SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

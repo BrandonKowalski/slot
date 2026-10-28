@@ -10,14 +10,14 @@ use slot_store::{format_stamp, BezelPick, Platform as Console};
 use slot_ui::{
     badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
     date_time_text, default_game_bezel_face, delete_legends, footer_ink, game_bezel_face,
-    gb_cart_shadow, hhmm, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
+    gb_cart_shadow, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
     photo_face, prompt_legends, quick_description_face, quick_label_face, quick_legend_faces,
     quick_pointer_face, quick_value_face, quick_warning_value_face, rebuild_count_face,
-    rebuild_title_face, repair_legends, set_clock_hint_face, slot_back, slot_back_light,
-    slot_front, slot_front_light, socket_face, sticker_face, title_face, toast_face,
-    wallpaper_face, word_ink, BezelArt, CartFace, GbShell, Icon, LinkBadge, PowerChoice,
-    QuickMenuFaces, QuickRow, QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX,
-    BOLT_PX, HUD_ICON_PX, HUD_INK, LEGEND,
+    rebuild_title_face, repair_legends, slot_back, slot_back_light, slot_front, slot_front_light,
+    socket_face, sticker_face, time_text, title_face, toast_face, wallpaper_face, word_ink,
+    BezelArt, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces, QuickRow,
+    QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX,
+    HUD_INK, LEGEND,
 };
 
 use crate::app::{App, LinkRow, Phase};
@@ -113,10 +113,9 @@ struct AboutFace {
 
 #[derive(Default)]
 struct Clocks {
-    line: Option<TexId>,
-    hint: Option<TexId>,
+    faces: Vec<[[Option<TexId>; 2]; 2]>,
     shelf: Option<TexId>,
-    picked: Option<String>,
+    picked: Option<slot_ui::ClockPicker>,
     shown: String,
     battery: String,
     battery_tex: Option<TexId>,
@@ -276,11 +275,11 @@ impl Frontend {
             tick.h,
         );
         self.session.app_mut().set_shot_tick_face(tick);
-        let hint = set_clock_hint_face();
-        self.clocks.hint = Some(compositor.create_texture(hint.w, hint.h, &hint.rgba));
-        let back = hint_face("B", "Back");
-        let tex = compositor.create_texture(back.w, back.h, &back.rgba);
-        self.session.app_mut().set_clock_back_face((tex, back.w));
+        let clock_legends = [false, true].map(|light| {
+            slot_ui::clock_legend_faces(footer_ink(light))
+                .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
+        });
+        self.session.app_mut().set_clock_legend_faces(clock_legends);
         let star = slot_ui::star_face(slot_ui::STAR_SCALE, slot_ui::STAR_INK);
         let id = compositor.create_texture_nearest(star.w, star.h, &star.rgba);
         self.session.app_mut().set_star_face(id, star.w, star.h);
@@ -1183,15 +1182,33 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
         clocks.shown.clear();
         clocks.battery.clear();
     }
-    let picked = app.picker().map(|p| p.text());
+    let picked = app.picker().cloned();
     if picked != clocks.picked {
-        clocks.picked = picked;
-        if let (Some(face), Some(hint)) = (app.picker().map(|p| p.face()), clocks.hint) {
-            let line = upload(compositor, &mut clocks.line, face);
-            app.set_clock_faces(line, hint);
+        if let Some(set) = picked.as_ref().map(|p| p.faces()) {
+            let rows = set.rows.len();
+            if clocks.faces.len() < rows {
+                clocks.faces.resize(rows, [[None; 2]; 2]);
+            }
+            let rows = set
+                .rows
+                .into_iter()
+                .zip(clocks.faces.iter_mut())
+                .map(|([[ld, ll], [vd, vl]], [[sld, sll], [svd, svl]])| {
+                    let mut put = |f: slot_ui::UndoFace, id: &mut Option<TexId>| {
+                        let (w, h) = (f.w, f.h);
+                        (upload(compositor, id, f), w, h)
+                    };
+                    [[put(ld, sld), put(ll, sll)], [put(vd, svd), put(vl, svl)]]
+                })
+                .collect();
+            app.set_clock_faces(slot_ui::ClockFaces {
+                rows,
+                caret: set.caret,
+            });
         }
+        clocks.picked = picked;
     }
-    let shown = hhmm(app.wall_secs());
+    let shown = time_text(app.wall_secs(), app.clock_24h());
     if shown != clocks.shown {
         let face = word_ink(&shown, clocks.ink);
         clocks.shown = shown;
@@ -1356,7 +1373,7 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
     if app.quick_menu().is_none() {
         return;
     }
-    let text = date_time_text(app.wall_secs());
+    let text = date_time_text(app.wall_secs(), app.clock_24h());
     if text == state.shown {
         return;
     }

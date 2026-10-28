@@ -127,7 +127,6 @@ fn the_backlight_follows_brightness_from_boot() {
         &SlotState {
             brightness: 3,
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

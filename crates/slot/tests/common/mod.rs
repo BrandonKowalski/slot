@@ -585,7 +585,6 @@ pub fn app_playing_with_volume(root: &Path, volume: u8) -> App {
             cart: Some("Emerald".to_string()),
             volume,
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )
@@ -598,7 +597,6 @@ pub fn app_playing_with(root: &Path, stem: &str, snapshot: Box<dyn Snapshot>) ->
         SlotState {
             cart: Some(stem.to_string()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

@@ -9,7 +9,6 @@ fn seated(cart: &str) -> SlotState {
     SlotState {
         cart: Some(cart.into()),
         clock_set: true,
-        utc_offset_min: 0,
         ..Default::default()
     }
 }
@@ -143,7 +142,6 @@ fn seating_a_cart_preserves_the_levels_already_in_the_file() {
             volume: 35,
             muted: false,
             clock_set: true,
-            utc_offset_min: 0,
             ..SlotState::default()
         },
     )
@@ -167,7 +165,6 @@ fn a_resume_draws_no_shelf_but_a_chosen_insert_does() {
             &SlotState {
                 cart: Some("Emerald".into()),
                 clock_set: true,
-                utc_offset_min: 0,
                 ..Default::default()
             },
         )
@@ -180,7 +177,6 @@ fn a_resume_draws_no_shelf_but_a_chosen_insert_does() {
             d.path(),
             &SlotState {
                 clock_set: true,
-                utc_offset_min: 0,
                 ..Default::default()
             },
         )
@@ -287,7 +283,6 @@ fn resumed(d: &tempfile::TempDir, platform: Option<Platform>) -> App {
             cart: Some("Tetris".into()),
             cart_platform: platform,
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )
@@ -394,7 +389,6 @@ fn a_resumed_cart_starts_seated() {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

@@ -111,7 +111,16 @@ fn settings_written_before_the_move_are_still_read_after_it() {
 
     let s = read_slot_state(d.path());
     assert_eq!(
-        (s.cart.as_deref(), s.volume, s.utc_offset_min),
+        (
+            s.cart.as_deref(),
+            s.volume,
+            s.zone.offset_min(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64
+            )
+        ),
         (Some("Emerald"), 40, -240)
     );
 }

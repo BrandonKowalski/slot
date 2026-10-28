@@ -189,7 +189,6 @@ fn a_resumed_cart_makes_no_sound() {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

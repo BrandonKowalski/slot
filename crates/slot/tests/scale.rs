@@ -37,7 +37,6 @@ fn playing(platform: Platform, panel: (u32, u32), state: SlotState) -> (TempDir,
             cart: Some("Game".into()),
             cart_platform: Some(platform),
             clock_set: true,
-            utc_offset_min: 0,
             ..state
         },
     )

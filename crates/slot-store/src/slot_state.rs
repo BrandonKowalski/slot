@@ -4,13 +4,14 @@ use crate::atomic::atomic_write;
 use crate::core::Core;
 use crate::gb_palette::{GbColors, GbPalette};
 use crate::platform::Platform;
+use crate::zone::Zone;
 
 pub const BRIGHTNESS_MAX: u8 = 9;
 pub const BLUE_LIGHT_MAX: u8 = 9;
 pub const VOLUME_MAX: u8 = 100;
 
-pub const UTC_OFFSET_MIN: i16 = -720;
-pub const UTC_OFFSET_MAX: i16 = 840;
+const UTC_OFFSET_MIN: i16 = -720;
+const UTC_OFFSET_MAX: i16 = 840;
 
 pub const FF_SPEEDS: [u8; 5] = [0, 2, 3, 4, 6];
 
@@ -307,7 +308,8 @@ pub struct SlotState {
     pub muted: bool,
     pub muted_hp: bool,
     pub clock_set: bool,
-    pub utc_offset_min: i16,
+    pub zone: Zone,
+    pub clock_24h: bool,
     pub rumble: bool,
     pub ff_speed: u8,
     pub ff_sound: bool,
@@ -456,7 +458,8 @@ impl Default for SlotState {
             muted: false,
             muted_hp: false,
             clock_set: false,
-            utc_offset_min: 0,
+            zone: Zone::default(),
+            clock_24h: true,
             rumble: true,
             ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
@@ -546,7 +549,7 @@ fn write_list(root: &Path, name: &str, list: &[Recent]) -> std::io::Result<()> {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let mut text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction_gba={}\ncolour_correction_gb={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\n",
+        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nzone={}\nclock_24h={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction_gba={}\ncolour_correction_gb={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
@@ -556,7 +559,8 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.muted as u8,
         s.muted_hp as u8,
         s.clock_set as u8,
-        s.utc_offset_min,
+        s.zone.id(),
+        s.clock_24h as u8,
         s.rumble as u8,
         s.ff_speed,
         s.ff_sound as u8,
@@ -621,6 +625,8 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut muted_hp = None;
     let mut clock_set = None;
     let mut utc_offset_min = None;
+    let mut zone = None;
+    let mut clock_24h = None;
     let mut rumble = None;
     let mut ff_speed = None;
     let mut ff_sound = None;
@@ -672,6 +678,8 @@ fn parse(text: &str) -> Option<SlotState> {
             "muted_hp" => muted_hp = Some(level(value, 1)? == 1),
             "clock_set" => clock_set = Some(level(value, 1)? == 1),
             "utc_offset_min" => utc_offset_min = Some(offset(value)?),
+            "zone" => zone = Zone::parse(value),
+            "clock_24h" => clock_24h = flag(value),
             "rumble" => rumble = flag(value),
             "ff_speed" => ff_speed = ff_speed_value(value),
             "ff_sound" => ff_sound = flag(value),
@@ -723,7 +731,8 @@ fn parse(text: &str) -> Option<SlotState> {
         muted: muted?,
         muted_hp: muted_hp.or(muted)?,
         clock_set: clock_set?,
-        utc_offset_min: utc_offset_min?,
+        zone: zone.or_else(|| utc_offset_min.map(|m| Zone::for_offset(i64::from(m), now())))?,
+        clock_24h: clock_24h.unwrap_or(fallback.clock_24h),
         rumble: rumble.unwrap_or(fallback.rumble),
         ff_speed: ff_speed.unwrap_or(fallback.ff_speed),
         ff_sound: ff_sound.unwrap_or(fallback.ff_sound),
@@ -807,4 +816,10 @@ fn level(value: &str, max: u8) -> Option<u8> {
 
 fn flag(value: &str) -> Option<bool> {
     level(value, 1).map(|n| n == 1)
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }

@@ -153,7 +153,6 @@ fn a_game_left_running_starts_loading_before_the_first_frame() {
             cart: Some("Emerald".into()),
             cart_platform: Some(Platform::Gba),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

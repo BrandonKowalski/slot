@@ -16,7 +16,6 @@ fn the_badge_follows_the_latch_rather_than_the_button() {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

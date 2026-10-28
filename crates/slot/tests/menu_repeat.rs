@@ -82,6 +82,8 @@ fn a_held_up_keeps_turning_the_clock() {
     let (mut a, _) = app_booting_with_clock(d.path());
     assert!(matches!(a.phase(), Phase::SetClock { .. }));
     a.tick_ms(T - 1_000);
+    a.apply_at(Action::GbaDown(Btn::A), T - 900);
+    a.apply_at(Action::GbaUp(Btn::A), T - 800);
     let read = |a: &App| a.picker().expect("on the clock").secs();
     let start = read(&a);
     a.apply_at(Action::GbaDown(Btn::Up), T);

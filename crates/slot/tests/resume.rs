@@ -325,7 +325,6 @@ fn seated_with_named_core(
         &SlotState {
             cart: Some(stem.to_string()),
             clock_set: true,
-            utc_offset_min: 0,
             ..Default::default()
         },
     )

@@ -381,9 +381,9 @@ impl ShotViewer {
         format!("{} of {}", self.index + 1, self.entries.len())
     }
 
-    pub fn title(&self, now: &str) -> String {
+    pub fn title(&self, now: &str, clock_24h: bool) -> String {
         match self.selected() {
-            Some(e) => Polaroids::relative_time(&e.stamp, now),
+            Some(e) => Polaroids::relative_time(&e.stamp, now, clock_24h),
             None => String::new(),
         }
     }

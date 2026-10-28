@@ -8,7 +8,7 @@ use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
 use slot_store::{
     read_slot_state, write_slot_state, Appearance, BezelPick, Blending, GbColors, GbPalette,
-    Platform, Scale, Shader, SlotState, Stretch, WallpaperPick,
+    Platform, Scale, Shader, SlotState, Stretch, WallpaperPick, Zone,
 };
 use slot_ui::{
     Draw, Icon, QuickMenuFaces, QuickRow, QuickValue, TexId, HINT_EDGE, MENU_PAD, MOUTH_H, OUT_H,
@@ -37,6 +37,10 @@ fn on_carousel_with(state: SlotState) -> (TempDir, App, Clock) {
 
 fn on_carousel() -> (TempDir, App, Clock) {
     on_carousel_with(SlotState::default())
+}
+
+fn new_york() -> Zone {
+    Zone::parse("America/New_York").expect("New York is on the list")
 }
 
 fn press(a: &mut App, btn: Btn) {
@@ -577,13 +581,13 @@ fn the_about_footer_puts_restart_on_the_right() {
 #[test]
 fn a_on_date_and_time_opens_the_clock_at_the_time_it_already_has() {
     let (_d, mut a, _) = on_carousel_with(SlotState {
-        utc_offset_min: -300,
+        zone: new_york(),
         ..SlotState::default()
     });
     open_at(&mut a, QuickRow::DateTime);
     press(&mut a, Btn::A);
     let picker = a.picker().expect("A on Date & Time did not open the clock");
-    assert_eq!(picker.offset_min(), -300, "the offset started over");
+    assert_eq!(picker.zone(), new_york(), "the city started over");
     assert_eq!(
         picker.secs(),
         CLOCK_IS_SET - CLOCK_IS_SET % 60,
@@ -592,20 +596,20 @@ fn a_on_date_and_time_opens_the_clock_at_the_time_it_already_has() {
 }
 
 #[test]
-fn confirming_the_clock_from_the_menu_sets_it_and_comes_back_to_the_menu() {
+fn b_on_the_clock_from_the_menu_saves_it_and_comes_back_to_the_menu() {
     let (d, mut a, clock) = on_carousel_with(SlotState {
-        utc_offset_min: -300,
+        zone: new_york(),
         ..SlotState::default()
     });
     open_at(&mut a, QuickRow::DateTime);
     press(&mut a, Btn::A);
-    press(&mut a, Btn::Up);
-    for _ in 0..5 {
-        press(&mut a, Btn::Right);
-    }
     press(&mut a, Btn::Down);
-    let changed = a.picker().expect("not on the clock").secs() - (CLOCK_IS_SET - CLOCK_IS_SET % 60);
+    press(&mut a, Btn::Down);
     press(&mut a, Btn::A);
+    press(&mut a, Btn::Down);
+    press(&mut a, Btn::A);
+    let changed = a.picker().expect("not on the clock").secs() - (CLOCK_IS_SET - CLOCK_IS_SET % 60);
+    press(&mut a, Btn::B);
     assert_eq!(a.quick_menu(), Some(QuickRow::DateTime), "{:?}", a.phase());
     assert_eq!(
         clock.get(),
@@ -613,43 +617,22 @@ fn confirming_the_clock_from_the_menu_sets_it_and_comes_back_to_the_menu() {
         "the platform clock was not set"
     );
     let s = read_slot_state(d.path());
-    assert_eq!(s.utc_offset_min, -330, "the offset was not saved");
+    assert_eq!(s.zone, new_york().east(), "the city was not saved");
     assert!(s.clock_set);
 }
 
 #[test]
-fn b_on_the_clock_from_the_menu_comes_back_without_changing_anything() {
-    let (d, mut a, clock) = on_carousel_with(SlotState {
-        utc_offset_min: -300,
-        ..SlotState::default()
-    });
-    open_at(&mut a, QuickRow::DateTime);
-    press(&mut a, Btn::A);
-    press(&mut a, Btn::Up);
-    for _ in 0..5 {
-        press(&mut a, Btn::Right);
-    }
-    press(&mut a, Btn::Down);
-    press(&mut a, Btn::B);
-    assert_eq!(a.quick_menu(), Some(QuickRow::DateTime), "{:?}", a.phase());
-    assert_eq!(clock.get(), CLOCK_IS_SET, "B set the clock");
-    assert_eq!(
-        read_slot_state(d.path()).utc_offset_min,
-        -300,
-        "B saved the offset"
-    );
-}
-
-#[test]
-fn the_first_boot_clock_still_has_no_way_back() {
+fn b_on_the_first_boot_clock_saves_it_and_goes_on() {
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut a, _) = app_booting_with_clock(d.path());
     press(&mut a, Btn::B);
-    a.apply(Action::QuickMenu);
     assert!(
-        matches!(a.phase(), Phase::SetClock { .. }),
-        "left the first boot clock: {:?}",
-        a.phase()
+        !matches!(a.phase(), Phase::SetClock { .. }),
+        "B did not leave the first boot clock"
+    );
+    assert!(
+        read_slot_state(d.path()).clock_set,
+        "B did not save the clock"
     );
 }
 
@@ -716,6 +699,15 @@ fn fake_faces(a: &mut App) {
         descriptions: [(id(410), 300, 44), (id(411), 340, 44)],
     });
     a.set_quick_clock_faces((id(500), 150, 40), (id(501), 150, 40));
+    a.set_clock_legend_faces(
+        [[
+            (id(420), 80),
+            (id(421), 110),
+            (id(422), 90),
+            (id(423), 100),
+            (id(424), 100),
+        ]; 2],
+    );
 }
 
 fn label(row: QuickRow, lit: bool) -> usize {
@@ -941,31 +933,36 @@ fn labels_leave_room_for_the_pointer_and_values_end_thirty_two_pixels_in() {
 }
 
 #[test]
-fn only_the_clock_from_the_menu_offers_b_back() {
+fn the_clock_offers_b_back_and_never_a_set() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
-    a.set_clock_faces(TexId::from_raw(600), TexId::from_raw(601));
-    a.set_clock_back_face((TexId::from_raw(602), 40));
     open_at(&mut a, QuickRow::DateTime);
     press(&mut a, Btn::A);
-    let out = frame(&a);
-    assert!(drawn(&out, 601), "the clock lost its own key");
-    assert!(
-        drawn(&out, 602),
-        "the clock from the menu does not offer B BACK"
-    );
-
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     let (mut first, _) = app_booting_with_clock(d.path());
     fake_faces(&mut first);
-    first.set_clock_faces(TexId::from_raw(600), TexId::from_raw(601));
-    first.set_clock_back_face((TexId::from_raw(602), 40));
-    let out = frame(&first);
-    assert!(drawn(&out, 601), "the first boot clock lost its key");
-    assert!(
-        !drawn(&out, 602),
-        "the first boot clock offers a way back it does not have"
-    );
+    for (way, app) in [("the menu", &mut a), ("first boot", &mut first)] {
+        let out = frame(app);
+        assert!(drawn(&out, 423), "{way}: the date does not offer A CHANGE");
+        assert!(!drawn(&out, 402), "{way}: the date still says A OPEN");
+        assert!(drawn(&out, 400), "{way}: no B BACK");
+        press(app, Btn::Down);
+        press(app, Btn::Down);
+        let out = frame(app);
+        assert!(drawn(&out, 402), "{way}: the city lost A OPEN");
+        press(app, Btn::A);
+        let out = frame(app);
+        assert!(
+            drawn(&out, 424),
+            "{way}: the city list does not offer A SELECT"
+        );
+        assert!(!drawn(&out, 420), "{way}: the city list still says A DONE");
+        press(app, Btn::B);
+        assert!(!drawn(&out, 405), "{way}: the city still offers A SET");
+        press(app, Btn::Down);
+        let out = frame(app);
+        assert!(drawn(&out, 401), "{way}: the 12/24 row lost CHANGE");
+    }
 }
 
 #[test]

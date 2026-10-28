@@ -20,6 +20,7 @@ mod scan;
 mod shots;
 mod slot_state;
 mod stamp;
+mod zone;
 
 pub use atomic::{atomic_write, sweep_temps};
 pub use bindings::{
@@ -41,8 +42,9 @@ pub use shots::{shot_stamp, ShotDir, ShotEntry, SCREENSHOTS_DIR};
 pub use slot_state::{
     read_slot_state, write_slot_state, Appearance, BezelPick, Blending, Recent, Scale, Shader,
     SlotState, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,
-    FF_SPEED_DEFAULT, LID_OFF_MIN, RECENTS_MAX, UTC_OFFSET_MAX, UTC_OFFSET_MIN, VOLUME_MAX,
+    FF_SPEED_DEFAULT, LID_OFF_MIN, RECENTS_MAX, VOLUME_MAX,
 };
 pub use stamp::{
     civil_from_days, days_from_civil, days_in_month, format_stamp, parse_stamp, stamp_now,
 };
+pub use zone::Zone;

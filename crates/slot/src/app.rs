@@ -15,11 +15,11 @@ use slot_store::{
 use slot_ui::{
     board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_sticker, ease,
     footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap, shelf_cart_at, BezelArt,
-    ClockPicker, Draw, FfState, GbShell, Hud, HudKind, Icon, LinkBadge, Millis, Placed, Polaroids,
-    PowerChoice, QuickMenu, QuickMenuFaces, QuickRow, QuickValue, Refusal, Shelf, ShotMode,
-    ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H, CHIP_U, CHIP_V, CHIP_W, HINT_EDGE,
-    HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W,
-    TURN_PAD,
+    ClockFaces, ClockPicker, ClockRow, ClockScreen, Draw, FfState, GbShell, Hud, HudKind, Icon,
+    LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
+    QuickValue, Refusal, Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H,
+    CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W,
+    SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
 };
 
 use crate::audio::Sfx;
@@ -403,8 +403,8 @@ pub struct App {
     pending: Option<(PendingUndo, Millis)>,
     legend_faces: Vec<TexId>,
     undo_face: Option<TexId>,
-    clock_faces: Option<(TexId, TexId)>,
-    clock_back: Option<(TexId, u32)>,
+    clock_faces: Option<ClockFaces>,
+    clock_legends: Option<[[(TexId, u32); 5]; 2]>,
     quick_menu_faces: Option<QuickMenuFaces>,
     quick_clock_faces: Option<[(TexId, u32, u32); 2]>,
     quick_wallpaper_faces: Option<[(TexId, u32, u32); 2]>,
@@ -614,7 +614,7 @@ impl App {
             legend_faces: Vec::new(),
             undo_face: None,
             clock_faces: None,
-            clock_back: None,
+            clock_legends: None,
             quick_menu_faces: None,
             quick_clock_faces: None,
             quick_wallpaper_faces: None,
@@ -700,7 +700,7 @@ impl App {
         if app.state.clock_set {
             app.start();
         } else {
-            app.phase = clock_screen(system_secs(), 0, false);
+            app.phase = clock_screen(system_secs(), &app.state, false);
         }
         app
     }
@@ -954,12 +954,18 @@ impl App {
         else {
             return;
         };
-        let (moved, offset, from_menu) = (picker.secs() - *seed, picker.offset_min(), *from_menu);
+        let (moved, zone, clock_24h, from_menu) = (
+            picker.secs() - *seed,
+            picker.zone(),
+            picker.clock_24h(),
+            *from_menu,
+        );
         let utc = self.utc_secs() + moved;
         if let Some(power) = &mut self.power {
             power.set_clock(utc);
         }
-        self.state.utc_offset_min = offset as i16;
+        self.state.zone = zone;
+        self.state.clock_24h = clock_24h;
         self.state.clock_set = true;
         self.persist();
         if from_menu {
@@ -976,7 +982,11 @@ impl App {
     }
 
     pub fn wall_secs(&self) -> i64 {
-        self.utc_secs() + i64::from(self.state.utc_offset_min) * 60
+        self.state.zone.local(self.utc_secs())
+    }
+
+    pub fn clock_24h(&self) -> bool {
+        self.state.clock_24h
     }
 
     fn utc_secs(&self) -> i64 {
@@ -1537,12 +1547,12 @@ impl App {
         self.sticker_face = Some(face);
     }
 
-    pub fn set_clock_faces(&mut self, line: TexId, hint: TexId) {
-        self.clock_faces = Some((line, hint));
+    pub fn set_clock_faces(&mut self, faces: ClockFaces) {
+        self.clock_faces = Some(faces);
     }
 
-    pub fn set_clock_back_face(&mut self, back: (TexId, u32)) {
-        self.clock_back = Some(back);
+    pub fn set_clock_legend_faces(&mut self, legends: [[(TexId, u32); 5]; 2]) {
+        self.clock_legends = Some(legends);
     }
 
     pub fn set_star_face(&mut self, face: TexId, w: u32, h: u32) {
@@ -2410,7 +2420,7 @@ impl App {
         self.hud.set_headphones(self.headphones);
         let secs = power.now();
         if matches!(self.phase, Phase::SetClock { .. }) || secs < CLOCK_FLOOR {
-            self.phase = clock_screen(secs, 0, false);
+            self.phase = clock_screen(secs, &self.state, false);
         }
         self.copy_card_log(&power);
         if let Some(result) = power.take_repair_result() {
@@ -2744,21 +2754,14 @@ impl App {
             Action::PowerOff => return,
             _ => {}
         }
-        if let Phase::SetClock {
-            picker, from_menu, ..
-        } = &mut self.phase
-        {
+        if let Phase::SetClock { picker, .. } = &mut self.phase {
             match action {
                 Action::GbaDown(Btn::Left) | Action::ShelfLeft => picker.left(),
                 Action::GbaDown(Btn::Right) | Action::ShelfRight => picker.right(),
                 Action::GbaDown(Btn::Up) => picker.up(),
                 Action::GbaDown(Btn::Down) => picker.down(),
-                Action::GbaDown(Btn::A) | Action::Insert => self.confirm_clock(),
-                Action::GbaDown(Btn::B) if *from_menu => {
-                    self.phase = Phase::QuickMenu {
-                        row: QuickRow::DateTime,
-                    }
-                }
+                Action::GbaDown(Btn::A) | Action::Insert => picker.a(),
+                Action::GbaDown(Btn::B) if !picker.b() => self.confirm_clock(),
                 _ => {}
             }
             return;
@@ -3012,7 +3015,7 @@ impl App {
     fn open_quick_row(&mut self, row: QuickRow) {
         match row {
             QuickRow::DateTime => {
-                self.phase = clock_screen(self.utc_secs(), self.state.utc_offset_min, true);
+                self.phase = clock_screen(self.utc_secs(), &self.state, true);
             }
             QuickRow::About => self.phase = Phase::About,
             QuickRow::Screen
@@ -4249,15 +4252,17 @@ impl App {
             };
         }
         match &self.phase {
-            Phase::SetClock {
-                picker, from_menu, ..
-            } => {
-                let (line, hint) = match self.clock_faces {
-                    Some((line, hint)) => (Some(line), Some(hint)),
-                    None => (None, None),
-                };
-                let back = self.clock_back.filter(|_| *from_menu);
-                picker.draw(self.canvas(), line, hint, back, out);
+            Phase::SetClock { picker, .. } => {
+                ClockScreen {
+                    picker,
+                    faces: self.clock_faces.as_ref(),
+                    pointer: self.quick_menu_faces.as_ref().map(|q| q.pointer),
+                    ground: self.menu_ground(),
+                    canvas: self.canvas(),
+                }
+                .draw(out);
+                slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, out);
+                self.draw_clock_legends(picker, out);
                 return;
             }
             Phase::QuickMenu { row } => QuickMenu {
@@ -4618,26 +4623,11 @@ impl App {
             false => faces.legend,
         };
         if row.binds() {
-            let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
             let legends = match self.page_is_default(row) {
                 true => vec![back, clear, set],
                 false => vec![back, reset, clear, set],
             };
-            let room = self.canvas().w - 2.0 * LINK_LEGEND_EDGE;
-            let gap = (room - legends.iter().map(|l| seen(l.1)).sum::<f32>())
-                / (legends.len() - 1) as f32;
-            let mut x = LINK_LEGEND_EDGE;
-            for (tex, w) in legends {
-                out.push(Draw::Tex {
-                    x: x.round(),
-                    y,
-                    w: w as f32,
-                    h: MOUTH_H,
-                    tex,
-                    alpha: 1.0,
-                });
-                x += seen(w) + gap;
-            }
+            self.draw_spread_legends(&legends, y, out);
             return;
         }
         let left = match row.page() == QuickRow::PLAY {
@@ -4647,6 +4637,44 @@ impl App {
         self.draw_side_legend(left, false, y, out);
         let right = if row.opens() { open } else { change };
         self.draw_side_legend(right, true, y, out);
+    }
+
+    fn draw_clock_legends(&self, picker: &ClockPicker, out: &mut Vec<Draw>) {
+        let (Some(faces), Some(clock)) = (&self.quick_menu_faces, self.clock_legends) else {
+            return;
+        };
+        let [back, change, open, ..] = match self.light() {
+            true => faces.legend_light,
+            false => faces.legend,
+        };
+        let [done, turn, page, edit, select] = clock[self.light() as usize];
+        let legends = match (picker.highlighted(), picker.editing(), picker.row()) {
+            (Some(_), _, _) => vec![back, page, select],
+            (None, true, _) => vec![back, turn, done],
+            (None, false, ClockRow::Date | ClockRow::Time) => vec![back, edit],
+            (None, false, ClockRow::Zone) => vec![back, open],
+            (None, false, ClockRow::Clock) => vec![back, change],
+        };
+        self.draw_spread_legends(&legends, LINK_LEGEND_Y, out);
+    }
+
+    fn draw_spread_legends(&self, legends: &[(TexId, u32)], y: f32, out: &mut Vec<Draw>) {
+        let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
+        let room = self.canvas().w - 2.0 * LINK_LEGEND_EDGE;
+        let gap =
+            (room - legends.iter().map(|l| seen(l.1)).sum::<f32>()) / (legends.len() - 1) as f32;
+        let mut x = LINK_LEGEND_EDGE;
+        for &(tex, w) in legends {
+            out.push(Draw::Tex {
+                x: x.round(),
+                y,
+                w: w as f32,
+                h: MOUTH_H,
+                tex,
+                alpha: 1.0,
+            });
+            x += seen(w) + gap;
+        }
     }
 
     fn draw_side_legend(&self, face: (TexId, u32), right: bool, y: f32, out: &mut Vec<Draw>) {
@@ -6259,11 +6287,11 @@ impl App {
 
     pub fn polaroid_title(&self, now: &str) -> String {
         if let Some(v) = &self.shot_viewer {
-            return v.title(now);
+            return v.title(now, self.state.clock_24h);
         }
         self.polaroids
             .as_ref()
-            .map_or_else(String::new, |p| p.title(now))
+            .map_or_else(String::new, |p| p.title(now, self.state.clock_24h))
     }
 
     pub fn set_polaroid_title_face(&mut self, face: TexId) {
@@ -6378,9 +6406,9 @@ fn ff_next(from: u8, right: bool) -> u8 {
     }]
 }
 
-fn clock_screen(utc: i64, offset_min: i16, from_menu: bool) -> Phase {
+fn clock_screen(utc: i64, state: &SlotState, from_menu: bool) -> Phase {
     Phase::SetClock {
-        picker: ClockPicker::local(utc, offset_min),
+        picker: ClockPicker::new(utc, state.zone, state.clock_24h),
         seed: utc - utc.rem_euclid(60),
         from_menu,
     }

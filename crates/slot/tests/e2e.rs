@@ -93,7 +93,7 @@ fn the_whole_pass_from_boot_to_resume() {
     let mut p = Pass::boot(root);
 
     assert!(matches!(p.session.app().phase(), Phase::SetClock { .. }));
-    p.tap(Btn::A);
+    p.tap(Btn::B);
 
     assert!(matches!(p.session.app().phase(), Phase::Shelf));
     assert!(!p.session.has_core());

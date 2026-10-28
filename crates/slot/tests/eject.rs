@@ -15,7 +15,6 @@ fn seated(cart: &str) -> SlotState {
     SlotState {
         cart: Some(cart.into()),
         clock_set: true,
-        utc_offset_min: 0,
         ..Default::default()
     }
 }
@@ -123,7 +122,6 @@ fn eject_preserves_the_levels() {
             volume: 35,
             muted: true,
             clock_set: true,
-            utc_offset_min: 0,
             ..SlotState::default()
         },
     )

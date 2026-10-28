@@ -1,7 +1,7 @@
-use slot_store::{parse_stamp, FF_SPEEDS};
+use slot_store::{parse_stamp, Zone, FF_SPEEDS};
 use slot_ui::{
-    date_time_text, quick_label_face, quick_value_face, ClockPicker, QuickRow, QuickValue,
-    UndoFace, MENU_PAD,
+    date_time_text, quick_label_face, quick_value_face, ClockPicker, ClockRow, QuickRow,
+    QuickValue, UndoFace, MENU_PAD,
 };
 
 fn inked(f: &UndoFace, x: u32, y: u32) -> bool {
@@ -272,23 +272,26 @@ fn the_values_read_as_the_menu_prints_them() {
 }
 
 #[test]
-fn the_date_and_time_read_as_a_month_a_day_and_the_carousels_24_hour_clock() {
-    let at = |stamp: &str| date_time_text(parse_stamp(stamp).expect("a stamp"));
-    assert_eq!(at("2026-09-15_16-35-00"), "SEP 15 16:35");
-    assert_eq!(at("2027-01-05_04-07-59"), "JAN 5 04:07");
+fn the_date_and_time_read_as_a_month_a_day_and_the_carousels_clock() {
+    let at = |stamp: &str, h24| date_time_text(parse_stamp(stamp).expect("a stamp"), h24);
+    assert_eq!(at("2026-09-15_16-35-00", true), "SEP 15 16:35");
+    assert_eq!(at("2027-01-05_04-07-59", true), "JAN 5 04:07");
+    assert_eq!(at("2026-09-15_16-35-00", false), "SEP 15 4:35 PM");
 }
 
 #[test]
-fn a_picker_for_a_set_clock_starts_at_the_local_time_and_its_offset() {
+fn a_picker_for_a_set_clock_starts_at_the_local_time_in_its_city() {
     let utc = parse_stamp("2026-09-15_21-35-42").expect("a stamp");
-    let p = ClockPicker::local(utc, -300);
-    assert_eq!(p.offset_min(), -300);
+    let ny = Zone::parse("America/New_York").expect("New York");
+    let p = ClockPicker::new(utc, ny, true);
+    assert_eq!(p.zone(), ny);
     assert_eq!(
         p.secs(),
         utc - 42,
         "the picker does not show the minute it was opened in"
     );
-    assert!(p.text().starts_with("2026-09-15 16:35"), "{}", p.text());
+    assert_eq!(p.value_text(ClockRow::Date), "SEP 15 2026");
+    assert_eq!(p.value_text(ClockRow::Time), "17:35");
 }
 
 #[test]

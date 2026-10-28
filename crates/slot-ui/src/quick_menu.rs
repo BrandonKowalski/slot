@@ -876,17 +876,17 @@ impl QuickValue {
 pub const QUICK_PITCH: f32 = 52.0;
 pub const QUICK_EDGE: f32 = 32.0;
 pub const QUICK_LABEL_X: f32 = 53.0;
-const POINTER_GAP: f32 = 17.0;
+pub(crate) const POINTER_GAP: f32 = 17.0;
 const POINTER_SCALE: usize = 3;
 const POINTER: [&str; 11] = [
     "X.....", "XX....", "XoX...", "XooX..", "XoooX.", "XooooX", "XoooX.", "XooX..", "XoX...",
     "XX....", "X.....",
 ];
-const POINTER_BLEED: u32 = 4;
+pub(crate) const POINTER_BLEED: u32 = 4;
 const GROUND_SCRIM: f32 = 0.65;
-const TYPE_DROP: f32 = 4.0;
-const LEGEND_Y: f32 = 427.0;
-const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
+pub(crate) const TYPE_DROP: f32 = 4.0;
+pub(crate) const LEGEND_Y: f32 = 427.0;
+pub(crate) const DIM_INK: [u8; 3] = [0x9a, 0x9a, 0xa4];
 const DESCRIPTION_PX: f32 = 16.0;
 const DESCRIPTION_GAP: f32 = 8.0;
 const PANEL_GAP: f32 = 12.0;
@@ -1087,6 +1087,22 @@ pub fn link_button_legends(ink: [u8; 3]) -> Vec<UndoFace> {
     ]
 }
 
+pub fn clock_legend_faces(ink: [u8; 3]) -> [UndoFace; 5] {
+    let hint = Some(ink);
+    [
+        with_hint(button_face(ButtonLegend::A), "Done", hint, false),
+        with_hint(up_down_pair(), "Change", hint, false),
+        with_hint(
+            button_pair(ButtonLegend::Left, ButtonLegend::Right),
+            "Page",
+            hint,
+            false,
+        ),
+        with_hint(button_face(ButtonLegend::A), "Change", hint, false),
+        with_hint(button_face(ButtonLegend::A), "Select", hint, false),
+    ]
+}
+
 pub fn repair_legends(ink: [u8; 3]) -> [UndoFace; 2] {
     prompt_legends(ink, "Not now", "Repair")
 }
@@ -1135,9 +1151,74 @@ fn button_face(which: ButtonLegend) -> UndoFace {
     }
 }
 
+const ARROW_EDGE: u32 = 480;
+
+fn up_down_pair() -> UndoFace {
+    let (left, lw, lh) = button_legend(ButtonLegend::Left);
+    let (right, rw, rh) = button_legend(ButtonLegend::Right);
+    join(
+        (&arrow_turned(left, lw, lh), lw, lh),
+        (&arrow_turned(right, rw, rh), rw, rh),
+    )
+}
+
+fn arrow_turned(px: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (w, h) = (w as usize, h as usize);
+    let margin = h / 5;
+    let ink = |x: usize, y: usize| {
+        let at = (y * w + x) * 4;
+        match px[at + 3] {
+            255 => px[at..at + 3].iter().map(|&c| c as u32).sum::<u32>(),
+            _ => u32::MAX,
+        }
+    };
+    let seed = (margin..h - margin)
+        .flat_map(|y| (margin..w - margin).map(move |x| (x, y)))
+        .min_by_key(|&(x, y)| ink(x, y));
+    let mut arrow = Vec::new();
+    let mut seen = vec![false; w * h];
+    let mut todo: Vec<(usize, usize)> = seed.into_iter().collect();
+    while let Some((x, y)) = todo.pop() {
+        if x >= w || y >= h || seen[y * w + x] || ink(x, y) > ARROW_EDGE {
+            continue;
+        }
+        seen[y * w + x] = true;
+        arrow.push((x, y));
+        todo.extend([
+            (x + 1, y),
+            (x.wrapping_sub(1), y),
+            (x, y + 1),
+            (x, y.wrapping_sub(1)),
+        ]);
+    }
+    let mut out = px.to_vec();
+    let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+        arrow.iter().map(|p| p.0).min(),
+        arrow.iter().map(|p| p.0).max(),
+        arrow.iter().map(|p| p.1).min(),
+        arrow.iter().map(|p| p.1).max(),
+    ) else {
+        return out;
+    };
+    let side = (x1 - x0).max(y1 - y0) + 3;
+    let (left, top) = ((x0 + x1 - side) / 2, (y0 + y1 - side) / 2);
+    for y in 0..side {
+        for x in 0..side {
+            let from = ((top + side - 1 - x) * w + left + y) * 4;
+            let to = ((top + y) * w + left + x) * 4;
+            out[to..to + 4].copy_from_slice(&px[from..from + 4]);
+        }
+    }
+    out
+}
+
 fn button_pair(left: ButtonLegend, right: ButtonLegend) -> UndoFace {
     let (a, aw, ah) = button_legend(left);
     let (b, bw, bh) = button_legend(right);
+    join((a, aw, ah), (b, bw, bh))
+}
+
+fn join((a, aw, ah): (&[u8], u32, u32), (b, bw, bh): (&[u8], u32, u32)) -> UndoFace {
     let opaque =
         |px: &[u8], w: u32, h: u32, x: u32| px[(((h / 2) * w + x) * 4 + 3) as usize] == 255;
     let keep_a = (0..aw)
