@@ -821,3 +821,25 @@ fn select_x_in_game_is_the_screenshot_action() {
         }
         && e.action == Action::Screenshot));
 }
+
+#[test]
+fn binding_fast_forward_toggle_to_r2_takes_it_from_fast_forward_without_a_toast() {
+    let d = shelf_card();
+    let (mut s, mut now) = on_shelf(d.path());
+    to_shortcuts(&mut s, &mut now);
+    for _ in 0..QuickRow::ScFastForwardToggle.position(&[]) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
+    assert_eq!(s.app().quick_menu(), Some(QuickRow::ScFastForwardToggle));
+    tap(&mut s, &mut now, Btn::A);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::R2)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::R2)]);
+    assert!(!s.app().capturing());
+    assert_eq!(s.app().toast(), None);
+    let keys = read_shortcuts(d.path());
+    assert_eq!(
+        keys.get(Shortcut::FastForwardToggle),
+        Binding::plain(Device::R2)
+    );
+    assert_eq!(keys.get(Shortcut::FastForward), None);
+}

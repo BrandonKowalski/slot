@@ -29,6 +29,7 @@ pub enum Action {
     RewindStop,
     FfStart,
     FfStop,
+    FfToggle,
     BrightnessUp,
     BrightnessDown,
     BlueLightUp,
@@ -469,6 +470,10 @@ impl Gestures {
                 self.ff_button = Some(b);
                 self.ff_down(now)
             }
+            Action::FfToggle => {
+                self.held.push((b, Release::Nothing));
+                self.ff_toggle()
+            }
             Action::RewindStart => {
                 self.rewind_button = Some(b);
                 self.rewind_start()
@@ -659,6 +664,20 @@ impl Gestures {
             return Vec::new();
         }
         self.ff_on = true;
+        vec![Action::FfStart]
+    }
+
+    fn ff_toggle(&mut self) -> Vec<Action> {
+        if self.rewinding {
+            return Vec::new();
+        }
+        if self.ff_on {
+            self.r2_refused = self.ff_button.is_some_and(|f| self.pressed.contains(&f));
+            return self.ff_clear();
+        }
+        self.ff_on = true;
+        self.ff_latched = true;
+        self.ff_latching_press = false;
         vec![Action::FfStart]
     }
 

@@ -234,3 +234,45 @@ fn a_screenshot_binding_round_trips_through_the_file() {
     let text = std::fs::read_to_string(d.path().join("Config/shortcuts.txt")).unwrap();
     assert!(text.contains("screenshot"), "{text}");
 }
+
+#[test]
+fn fast_forward_toggle_starts_unbound_and_round_trips_through_the_file() {
+    assert_eq!(
+        ShortcutKeys::default().get(Shortcut::FastForwardToggle),
+        None
+    );
+    assert_eq!(Shortcut::FastForwardToggle.label(), "Fast Forward Toggle");
+    let d = card();
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::FastForwardToggle, plain(Device::R1));
+    write_shortcuts(d.path(), &keys).unwrap();
+    assert_eq!(
+        read_shortcuts(d.path()).get(Shortcut::FastForwardToggle),
+        plain(Device::R1)
+    );
+    let text = std::fs::read_to_string(d.path().join("Config/shortcuts.txt")).unwrap();
+    assert!(text.contains("fast_forward_toggle=r1"), "{text}");
+}
+
+#[test]
+fn the_two_fast_forwards_never_share_a_binding() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::FastForwardToggle, plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::FastForwardToggle), plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::FastForward), None);
+    keys.set(Shortcut::FastForward, plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::FastForward), plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::FastForwardToggle), None);
+}
+
+#[test]
+fn other_shortcuts_may_still_share_a_binding() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::Rewind, plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::Rewind), plain(Device::R2));
+    assert_eq!(keys.get(Shortcut::FastForward), plain(Device::R2));
+    keys.set(Shortcut::FastForwardToggle, plain(Device::L1));
+    keys.set(Shortcut::FastForward, plain(Device::L1));
+    keys.set(Shortcut::FastForwardToggle, None);
+    assert_eq!(keys.get(Shortcut::FastForward), plain(Device::L1));
+}

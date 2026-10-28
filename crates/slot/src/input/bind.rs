@@ -55,6 +55,7 @@ pub(super) fn shortcut_action(s: Shortcut) -> Action {
         Shortcut::ShaderNext => Action::ShaderNext,
         Shortcut::ShaderBack => Action::ShaderPrev,
         Shortcut::FastForward => Action::FfStart,
+        Shortcut::FastForwardToggle => Action::FfToggle,
         Shortcut::Rewind => Action::RewindStart,
     }
 }

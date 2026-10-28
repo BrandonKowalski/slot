@@ -1269,6 +1269,7 @@ impl App {
             | QuickRow::ScShaderNext
             | QuickRow::ScShaderBack
             | QuickRow::ScFastForward
+            | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
             | QuickRow::Controls
             | QuickRow::ControlsShelf
@@ -3120,6 +3121,7 @@ impl App {
             | QuickRow::ScShaderNext
             | QuickRow::ScShaderBack
             | QuickRow::ScFastForward
+            | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
             | QuickRow::LidOff => {}
         }
@@ -3359,6 +3361,7 @@ impl App {
             | QuickRow::ScShaderNext
             | QuickRow::ScShaderBack
             | QuickRow::ScFastForward
+            | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
             | QuickRow::Controls
             | QuickRow::ControlsShelf

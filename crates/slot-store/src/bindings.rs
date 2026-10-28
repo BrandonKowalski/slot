@@ -321,11 +321,12 @@ pub enum Shortcut {
     ShaderNext,
     ShaderBack,
     FastForward,
+    FastForwardToggle,
     Rewind,
 }
 
 impl Shortcut {
-    pub const ALL: [Shortcut; 14] = [
+    pub const ALL: [Shortcut; 15] = [
         Shortcut::SaveState,
         Shortcut::LoadState,
         Shortcut::Screenshot,
@@ -339,6 +340,7 @@ impl Shortcut {
         Shortcut::ShaderNext,
         Shortcut::ShaderBack,
         Shortcut::FastForward,
+        Shortcut::FastForwardToggle,
         Shortcut::Rewind,
     ];
 
@@ -357,6 +359,7 @@ impl Shortcut {
             Shortcut::ShaderNext => "Shader Next",
             Shortcut::ShaderBack => "Shader Back",
             Shortcut::FastForward => "Fast Forward",
+            Shortcut::FastForwardToggle => "Fast Forward Toggle",
             Shortcut::Rewind => "Rewind",
         }
     }
@@ -376,6 +379,7 @@ impl Shortcut {
             Shortcut::ShaderNext => "shader_next",
             Shortcut::ShaderBack => "shader_back",
             Shortcut::FastForward => "fast_forward",
+            Shortcut::FastForwardToggle => "fast_forward_toggle",
             Shortcut::Rewind => "rewind",
         }
     }
@@ -396,6 +400,7 @@ impl Shortcut {
             Shortcut::ShaderNext => select(Device::A),
             Shortcut::ShaderBack => select(Device::B),
             Shortcut::FastForward => Binding::plain(Device::R2),
+            Shortcut::FastForwardToggle => None,
             Shortcut::Rewind => Binding::plain(Device::L2),
         }
     }
@@ -450,7 +455,7 @@ impl Controls {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct ShortcutKeys {
-    keys: [Option<Binding>; 14],
+    keys: [Option<Binding>; 15],
 }
 
 impl Default for ShortcutKeys {
@@ -468,6 +473,14 @@ impl ShortcutKeys {
 
     pub fn set(&mut self, shortcut: Shortcut, binding: Option<Binding>) {
         self.keys[shortcut.index()] = binding;
+        let rival = match shortcut {
+            Shortcut::FastForward => Shortcut::FastForwardToggle,
+            Shortcut::FastForwardToggle => Shortcut::FastForward,
+            _ => return,
+        };
+        if binding.is_some() && self.get(rival) == binding {
+            self.keys[rival.index()] = None;
+        }
     }
 }
 
