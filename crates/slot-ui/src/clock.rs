@@ -36,7 +36,14 @@ pub fn time_text(secs: i64, clock_24h: bool) -> String {
 fn hour_minute(hour: i64, minute: i64, clock_24h: bool) -> String {
     match clock_24h {
         true => format!("{hour:02}:{minute:02}"),
-        false => format!("{}:{minute:02} {}", twelve(hour), meridiem(hour)),
+        false => slot_i18n::format(
+            "{hour}:{minute} {period}",
+            &[
+                ("hour", &twelve(hour).to_string()),
+                ("minute", &format!("{minute:02}")),
+                ("period", meridiem(hour)),
+            ],
+        ),
     }
 }
 
@@ -49,9 +56,9 @@ fn twelve(hour: i64) -> i64 {
 
 fn meridiem(hour: i64) -> &'static str {
     if hour < 12 {
-        "AM"
+        slot_i18n::tr("AM")
     } else {
-        "PM"
+        slot_i18n::tr("PM")
     }
 }
 
@@ -60,15 +67,24 @@ const MONTHS: [&str; 12] = [
 ];
 
 fn month_name(month: i64) -> &'static str {
-    MONTHS
-        .get((month - 1) as usize)
-        .copied()
-        .unwrap_or_default()
+    slot_i18n::tr(
+        MONTHS
+            .get((month - 1) as usize)
+            .copied()
+            .unwrap_or_default(),
+    )
 }
 
 pub fn date_time_text(secs: i64, clock_24h: bool) -> String {
     let (_, month, day) = civil_from_days(secs.div_euclid(DAY));
-    format!("{} {day} {}", month_name(month), time_text(secs, clock_24h))
+    slot_i18n::format(
+        "{month} {day} {time}",
+        &[
+            ("month", month_name(month)),
+            ("day", &day.to_string()),
+            ("time", &time_text(secs, clock_24h)),
+        ],
+    )
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -188,6 +204,12 @@ impl ClockPicker {
 
     fn parts(&self) -> &'static [Part] {
         match (self.row(), self.clock_24h) {
+            (ClockRow::Date, _) if slot_i18n::language() == slot_i18n::Language::Japanese => {
+                &[Part::Year, Part::Month, Part::Day]
+            }
+            (ClockRow::Time, false) if slot_i18n::language() == slot_i18n::Language::Japanese => {
+                &[Part::Meridiem, Part::Hour, Part::Minute]
+            }
             (ClockRow::Date, _) => &[Part::Month, Part::Day, Part::Year],
             (ClockRow::Time, true) => &[Part::Hour, Part::Minute],
             (ClockRow::Time, false) => &[Part::Hour, Part::Minute, Part::Meridiem],
@@ -295,6 +317,13 @@ impl ClockPicker {
 
     fn pieces(&self, row: ClockRow) -> Vec<(Option<Part>, String)> {
         match row {
+            ClockRow::Date if slot_i18n::language() == slot_i18n::Language::Japanese => vec![
+                (Some(Part::Year), self.year.to_string()),
+                (None, "年".into()),
+                (Some(Part::Month), month_name(self.month).into()),
+                (Some(Part::Day), self.day.to_string()),
+                (None, "日".into()),
+            ],
             ClockRow::Date => vec![
                 (Some(Part::Month), month_name(self.month).into()),
                 (None, " ".into()),
@@ -313,8 +342,12 @@ impl ClockPicker {
                     (Some(Part::Minute), format!("{:02}", self.minute)),
                 ];
                 if !self.clock_24h {
-                    v.push((None, " ".into()));
-                    v.push((Some(Part::Meridiem), meridiem(self.hour).into()));
+                    if slot_i18n::language() == slot_i18n::Language::Japanese {
+                        v.insert(0, (Some(Part::Meridiem), meridiem(self.hour).into()));
+                    } else {
+                        v.push((None, " ".into()));
+                        v.push((Some(Part::Meridiem), meridiem(self.hour).into()));
+                    }
                 }
                 v
             }

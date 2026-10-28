@@ -219,6 +219,7 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
     assert_eq!(
         read_slot_state(d.path()),
         SlotState {
+            language: slot_i18n::Language::English,
             cart: Some("Emerald".into()),
             cart_platform: None,
             brightness: 3,

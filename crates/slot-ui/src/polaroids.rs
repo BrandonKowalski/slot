@@ -196,13 +196,13 @@ impl Polaroids {
         };
         let delta = parsed - then;
         if delta < 60 {
-            return "just now".into();
+            return slot_i18n::tr("just now").into();
         }
         if delta < 3600 {
-            return format!("{} min ago", delta / 60);
+            return slot_i18n::format("{count} min ago", &[("count", &(delta / 60).to_string())]);
         }
         if delta < RELATIVE_WINDOW {
-            return format!("{} hr ago", delta / 3600);
+            return slot_i18n::format("{count} hr ago", &[("count", &(delta / 3600).to_string())]);
         }
         format!(
             "{} {}",

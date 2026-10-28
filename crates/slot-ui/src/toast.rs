@@ -112,11 +112,15 @@ impl Toast {
 
     pub fn text(self) -> String {
         match self {
-            Toast::Duplicate(row) if row.game_button().is_some() => {
-                format!("Same as Console {}", row.label())
-            }
-            Toast::Duplicate(row) => format!("Same as {}", row.label()),
-            other => other.fixed_text().to_string(),
+            Toast::Duplicate(row) if row.game_button().is_some() => slot_i18n::format(
+                "Same as Console {button}",
+                &[("button", slot_i18n::tr(row.label()))],
+            ),
+            Toast::Duplicate(row) => slot_i18n::format(
+                "Same as {button}",
+                &[("button", slot_i18n::tr(row.label()))],
+            ),
+            other => slot_i18n::tr(other.fixed_text()).to_string(),
         }
     }
 
@@ -237,7 +241,14 @@ pub fn toast_face(toast: Toast) -> CartFace {
         None => (text::coverage(s.w, s.h, &layout), 0..0),
     };
     if let Some(detail) = toast.detail() {
-        let layout = text::fit(font, detail, s.w as f32, 1, DETAIL_PX, DETAIL_PX);
+        let layout = text::fit(
+            font,
+            slot_i18n::tr(detail),
+            s.w as f32,
+            1,
+            DETAIL_PX,
+            DETAIL_PX,
+        );
         cov.extend(text::coverage(s.w, DETAIL_H, &layout));
     }
     if tinted.is_empty() || toast.icon() != Some(Icon::Alert) {

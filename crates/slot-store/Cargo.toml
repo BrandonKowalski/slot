@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+slot-i18n = { path = "../slot-i18n" }
 unicode-normalization.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

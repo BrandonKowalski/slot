@@ -1491,3 +1491,26 @@ fn fit_is_offered_on_both_panels() {
         [Scale::Fit, Scale::Integer, Scale::FullScreen]
     );
 }
+
+#[test]
+fn language_can_be_changed_in_general_and_is_saved() {
+    let (root, mut app, _) = on_carousel();
+    open_at(&mut app, QuickRow::Language);
+    assert_eq!(app.language(), slot_i18n::Language::English);
+    press(&mut app, Btn::Right);
+    assert_eq!(app.language(), slot_i18n::Language::Japanese);
+    assert_eq!(
+        read_slot_state(root.path()).language,
+        slot_i18n::Language::Japanese
+    );
+    assert_eq!(
+        app.quick_value(QuickRow::Language),
+        Some(QuickValue::Language)
+    );
+    press(&mut app, Btn::Left);
+    assert_eq!(app.language(), slot_i18n::Language::English);
+    assert_eq!(
+        read_slot_state(root.path()).language,
+        slot_i18n::Language::English
+    );
+}

@@ -688,6 +688,7 @@ impl App {
         app.root = Some(root.to_path_buf());
         app.loading = loading;
         app.state = read_slot_state(root);
+        slot_i18n::set_language(app.state.language);
         app.carousel = read_carousel(root);
         app.shortcuts = read_shortcuts(root);
         app.controls = read_controls(root);
@@ -1149,6 +1150,7 @@ impl App {
 
     pub fn quick_value(&self, row: QuickRow) -> Option<QuickValue> {
         match row {
+            QuickRow::Language => Some(QuickValue::Language),
             QuickRow::Shader
             | QuickRow::ColourCorrection
             | QuickRow::PlayBrightness
@@ -1635,7 +1637,9 @@ impl App {
     pub fn slot_text(&self) -> Option<String> {
         match self.slot_letter {
             Some(letter) => Some(letter.to_string()),
-            None => self.shelf_platform_name().map(str::to_string),
+            None => self
+                .shelf_platform_name()
+                .map(|name| slot_i18n::tr(name).to_string()),
         }
     }
 
@@ -2230,6 +2234,15 @@ impl App {
 
     pub fn has_binding_face(&self, text: &str) -> bool {
         self.binding_faces.contains_key(text)
+    }
+
+    pub(crate) fn refresh_binding_faces(
+        &mut self,
+        mut render: impl FnMut(&str, &mut [(TexId, u32, u32); 2]),
+    ) {
+        for (text, faces) in &mut self.binding_faces {
+            render(text, faces);
+        }
     }
 
     pub fn add_binding_face(&mut self, text: String, faces: [(TexId, u32, u32); 2]) {
@@ -3121,11 +3134,21 @@ impl App {
             | QuickRow::ScShaderBack
             | QuickRow::ScFastForward
             | QuickRow::ScRewind
+            | QuickRow::Language
             | QuickRow::LidOff => {}
         }
     }
 
+    pub fn language(&self) -> slot_i18n::Language {
+        self.state.language
+    }
+
     fn change_setting(&mut self, row: QuickRow, right: bool) {
+        if row == QuickRow::Language {
+            self.state.language = self.state.language.step(right);
+            self.persist();
+            return;
+        }
         if row == QuickRow::Blending {
             let to = self
                 .blending_in_play()
@@ -3288,7 +3311,8 @@ impl App {
             }
             QuickRow::Theme => s.appearance = s.appearance.toggle(),
             QuickRow::WallpaperTint => s.wallpaper_tint = s.wallpaper_tint.step(right),
-            QuickRow::ScreenGeneral
+            QuickRow::Language
+            | QuickRow::ScreenGeneral
             | QuickRow::Brightness
             | QuickRow::BlueLight
             | QuickRow::PlayBrightness
@@ -6189,7 +6213,7 @@ impl App {
                 "It cannot be brought back.",
             ),
             n => (
-                format!("Delete {n} screenshots?"),
+                slot_i18n::format("Delete {count} screenshots?", &[("count", &n.to_string())]),
                 "They cannot be brought back.",
             ),
         })

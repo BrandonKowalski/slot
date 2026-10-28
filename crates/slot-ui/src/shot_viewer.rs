@@ -376,9 +376,18 @@ impl ShotViewer {
             return String::new();
         }
         if self.selecting {
-            return format!("{} selected", self.ticked_count());
+            return slot_i18n::format(
+                "{count} selected",
+                &[("count", &self.ticked_count().to_string())],
+            );
         }
-        format!("{} of {}", self.index + 1, self.entries.len())
+        slot_i18n::format(
+            "{index} of {total}",
+            &[
+                ("index", &(self.index + 1).to_string()),
+                ("total", &self.entries.len().to_string()),
+            ],
+        )
     }
 
     pub fn title(&self, now: &str, clock_24h: bool) -> String {

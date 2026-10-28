@@ -6,7 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+slot-i18n = { path = "../slot-i18n" }
 fontdue = { workspace = true }
+unicode-normalization.workspace = true
 png = { workspace = true }
 resvg = { workspace = true }
 usvg = { workspace = true }

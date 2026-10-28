@@ -1872,6 +1872,7 @@ dependencies = [
  "lz4_flex",
  "png 0.17.16",
  "slot-gfx",
+ "slot-i18n",
  "slot-input",
  "slot-power",
  "slot-retro",
@@ -1892,6 +1893,10 @@ dependencies = [
  "raw-window-handle",
  "winit",
 ]
+
+[[package]]
+name = "slot-i18n"
+version = "0.1.0"
 
 [[package]]
 name = "slot-input"
@@ -1920,6 +1925,7 @@ name = "slot-store"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "slot-i18n",
  "tempfile",
  "unicode-normalization",
 ]
@@ -1932,9 +1938,11 @@ dependencies = [
  "png 0.17.16",
  "resvg",
  "slot-gfx",
+ "slot-i18n",
  "slot-power",
  "slot-store",
  "tempfile",
+ "unicode-normalization",
  "usvg",
 ]
 

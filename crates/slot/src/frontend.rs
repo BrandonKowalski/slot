@@ -45,6 +45,9 @@ pub struct Frontend {
     cart_faces: CartFaces,
     rebuild: Option<Rebuild>,
     stale_check: Option<std::sync::mpsc::Receiver<Vec<slot_store::Cart>>>,
+    ui_textures: Vec<TexId>,
+    boot_textures: Vec<TexId>,
+    language: slot_i18n::Language,
     ui_faces: Option<std::sync::mpsc::Receiver<UiFaces>>,
     rebuild_faces: RebuildFaces,
     link_art: LinkArtBuilder,
@@ -107,6 +110,7 @@ struct WallpaperSync {
 
 #[derive(Default)]
 struct AboutFace {
+    language: Option<slot_i18n::Language>,
     tex: Option<TexId>,
     battery: Option<u8>,
 }
@@ -182,6 +186,9 @@ impl Frontend {
             cart_faces,
             rebuild: None,
             stale_check,
+            ui_textures: Vec::new(),
+            boot_textures: Vec::new(),
+            language: slot_i18n::language(),
             ui_faces: None,
             rebuild_faces: RebuildFaces::default(),
             link_art: LinkArtBuilder::spawn(),
@@ -255,36 +262,7 @@ impl Frontend {
         let alert = icon_face(Icon::Alert, ALERT_PX, ALERT_INK);
         let alert = compositor.create_texture(alert.w, alert.h, &alert.rgba);
         self.session.app_mut().set_alert_face(alert);
-        let legend = legend_faces(compositor, &LEGEND);
-        self.session.app_mut().set_legend_faces(legend);
-        let shot_hints = slot_ui::SHOT_HINTS
-            .iter()
-            .map(|&(key, label)| {
-                let f = match key == slot_ui::PAN_KEY {
-                    true => slot_ui::pad_hint_face(label),
-                    false => hint_face(key, label),
-                };
-                compositor.create_texture(f.w, f.h, &f.rgba)
-            })
-            .collect();
-        self.session.app_mut().set_shot_hint_faces(shot_hints);
-        let tick = slot_ui::tick_cap_face();
-        let tick = (
-            compositor.create_texture(tick.w, tick.h, &tick.rgba),
-            tick.w,
-            tick.h,
-        );
-        self.session.app_mut().set_shot_tick_face(tick);
-        let clock_legends = [false, true].map(|light| {
-            slot_ui::clock_legend_faces(footer_ink(light))
-                .map(|f| (compositor.create_texture(f.w, f.h, &f.rgba), f.w))
-        });
-        self.session.app_mut().set_clock_legend_faces(clock_legends);
-        let title = menu_face("Set the clock");
-        let tex = compositor.create_texture(title.w, title.h, &title.rgba);
-        self.session
-            .app_mut()
-            .set_clock_title_face((tex, title.w, title.h));
+        self.upload_localized_boot(compositor);
         let star = slot_ui::star_face(slot_ui::STAR_SCALE, slot_ui::STAR_INK);
         let id = compositor.create_texture_nearest(star.w, star.h, &star.rgba);
         self.session.app_mut().set_star_face(id, star.w, star.h);
@@ -339,6 +317,78 @@ impl Frontend {
         self.apply_look();
         crate::boot_time::mark("shelf faces");
         self.upload_ground(compositor);
+    }
+
+    fn upload_localized_boot(&mut self, compositor: &mut Compositor) {
+        let mut index = 0;
+        let mut put = |w, h, rgba: &[u8]| {
+            let id = reuse_texture(compositor, &mut self.boot_textures, index, w, h, rgba);
+            index += 1;
+            id
+        };
+        let legend = LEGEND
+            .iter()
+            .map(|(key, label)| {
+                let f = hint_face(key, label);
+                put(f.w, f.h, &f.rgba)
+            })
+            .collect();
+        self.session.app_mut().set_legend_faces(legend);
+        let shot_hints = slot_ui::SHOT_HINTS
+            .iter()
+            .map(|&(key, label)| {
+                let f = match key == slot_ui::PAN_KEY {
+                    true => slot_ui::pad_hint_face(label),
+                    false => hint_face(key, label),
+                };
+                put(f.w, f.h, &f.rgba)
+            })
+            .collect();
+        self.session.app_mut().set_shot_hint_faces(shot_hints);
+        let tick = slot_ui::tick_cap_face();
+        let tick = (put(tick.w, tick.h, &tick.rgba), tick.w, tick.h);
+        self.session.app_mut().set_shot_tick_face(tick);
+        let clock_legends = [false, true].map(|light| {
+            slot_ui::clock_legend_faces(footer_ink(light)).map(|f| (put(f.w, f.h, &f.rgba), f.w))
+        });
+        self.session.app_mut().set_clock_legend_faces(clock_legends);
+        let title = menu_face("Set the clock");
+        let tex = put(title.w, title.h, &title.rgba);
+        self.session
+            .app_mut()
+            .set_clock_title_face((tex, title.w, title.h));
+    }
+
+    fn sync_language(&mut self, compositor: &mut Compositor) {
+        let language = self.session.app().language();
+        if language == self.language {
+            return;
+        }
+        // A worker must finish using the old catalog before the active language changes.
+        if let Some(rx) = self.ui_faces.take() {
+            let _ = rx.recv();
+        }
+        slot_i18n::set_language(language);
+        self.language = language;
+        self.clocks.picked = None;
+        self.clocks.shown.clear();
+        self.clocks.platform.clear();
+        self.quick_clock.shown.clear();
+        self.quick_palette.shown = "";
+        self.wallpaper.label.clear();
+        self.game_bezel.labels = Default::default();
+        self.switcher.titled = None;
+        self.switcher.prompted = None;
+        self.switcher.counted = None;
+        self.session.app_mut().refresh_binding_faces(|text, faces| {
+            for (lit, (id, w, h)) in [false, true].into_iter().zip(faces.iter_mut()) {
+                let face = binding_face(text, lit);
+                compositor.update_texture(*id, face.w, face.h, &face.rgba);
+                (*w, *h) = (face.w, face.h);
+            }
+        });
+        self.upload_localized_boot(compositor);
+        self.place_ui_faces(compositor, UiFaces::build());
     }
 
     fn upload_ground(&mut self, compositor: &mut Compositor) {
@@ -410,14 +460,20 @@ impl Frontend {
     }
 
     fn place_ui_faces(&mut self, compositor: &mut Compositor, faces: UiFaces) {
-        let mut cart = |f: CartFace| compositor.create_texture(f.w, f.h, &f.rgba);
+        let mut index = 0;
+        let mut put = |w, h, rgba: &[u8]| {
+            let id = reuse_texture(compositor, &mut self.ui_textures, index, w, h, rgba);
+            index += 1;
+            id
+        };
+        let mut cart = |f: CartFace| put(f.w, f.h, &f.rgba);
         let link_badges = faces.link_badges.into_iter().map(&mut cart).collect();
         let toasts = faces.toasts.into_iter().map(&mut cart).collect();
         let sockets = faces.sockets.into_iter().map(&mut cart).collect();
         let chips = faces.chips.into_iter().map(&mut cart).collect();
         let blank = cart(faces.blank_chip);
         let shadow = cart(faces.chip_shadow);
-        let mut up = |f: UndoFace| (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h);
+        let mut up = |f: UndoFace| (put(f.w, f.h, &f.rgba), f.w, f.h);
         let lines = faces.shutdown.into_iter().map(&mut up).collect();
         let repair = faces.repair.into_iter().map(&mut up).collect();
         let reset = faces.reset.into_iter().map(&mut up).collect();
@@ -559,6 +615,7 @@ impl Frontend {
     }
 
     pub fn compose(&mut self, compositor: &mut Compositor) {
+        self.sync_language(compositor);
         compositor.set_blue_light(self.session.app().blue_light());
         compositor.set_picture(self.session.app().picture_rect());
         compositor.set_screen_effect(match self.session.app().screen_shader() {
@@ -827,16 +884,6 @@ impl Frontend {
 
 fn link_legend_faces(ink: [u8; 3]) -> Vec<UndoFace> {
     link_button_legends(ink)
-}
-
-fn legend_faces(compositor: &mut Compositor, legend: &[(&str, &str)]) -> Vec<TexId> {
-    legend
-        .iter()
-        .map(|(key, label)| {
-            let f = hint_face(key, label);
-            compositor.create_texture(f.w, f.h, &f.rgba)
-        })
-        .collect()
 }
 
 struct UiFaces {
@@ -1170,10 +1217,7 @@ fn sync_binding_faces(app: &mut App, compositor: &mut Compositor) {
             continue;
         }
         let faces = [false, true].map(|lit| {
-            let f = match text.strip_prefix(crate::app::CLASH_MARK) {
-                Some(bare) => quick_warning_value_face(bare, lit),
-                None => quick_value_face(&text, lit),
-            };
+            let f = binding_face(&text, lit);
             (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h)
         });
         app.add_binding_face(text, faces);
@@ -1414,10 +1458,14 @@ fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace)
         return;
     }
     let battery = app.battery().map(|b| b.percent);
-    if state.tex.is_some() && state.battery == battery {
+    if state.tex.is_some()
+        && state.battery == battery
+        && state.language == Some(slot_i18n::language())
+    {
         return;
     }
     state.battery = battery;
+    state.language = Some(slot_i18n::language());
     let build = Build::current();
     let face = sticker_face(&StickerFields {
         battery,
@@ -1508,6 +1556,31 @@ fn upload_rgba(
             *slot = Some(id);
             id
         }
+    }
+}
+
+fn reuse_texture(
+    compositor: &mut Compositor,
+    textures: &mut Vec<TexId>,
+    index: usize,
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+) -> TexId {
+    if let Some(&id) = textures.get(index) {
+        compositor.update_texture(id, w, h, rgba);
+        id
+    } else {
+        let id = compositor.create_texture(w, h, rgba);
+        textures.push(id);
+        id
+    }
+}
+
+fn binding_face(text: &str, lit: bool) -> UndoFace {
+    match text.strip_prefix(crate::app::CLASH_MARK) {
+        Some(bare) => quick_warning_value_face(bare, lit),
+        None => quick_value_face(text, lit),
     }
 }
 

@@ -106,10 +106,11 @@ pub enum QuickRow {
     GbcBlending,
     GbBlending,
     Blending,
+    Language,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 95] = [
+    pub const ALL: [QuickRow; 96] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -205,6 +206,7 @@ impl QuickRow {
         QuickRow::GbcBlending,
         QuickRow::GbBlending,
         QuickRow::Blending,
+        QuickRow::Language,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -215,8 +217,9 @@ impl QuickRow {
         QuickRow::About,
     ];
 
-    pub const GENERAL: [QuickRow; 7] = [
+    pub const GENERAL: [QuickRow; 8] = [
         QuickRow::Theme,
+        QuickRow::Language,
         QuickRow::Wallpaper,
         QuickRow::WallpaperTint,
         QuickRow::Recents,
@@ -382,7 +385,8 @@ impl QuickRow {
             | QuickRow::LeftStick
             | QuickRow::AutoLoad
             | QuickRow::EjectSave => &QuickRow::GAME,
-            QuickRow::Wallpaper
+            QuickRow::Language
+            | QuickRow::Wallpaper
             | QuickRow::WallpaperTint
             | QuickRow::DateTime
             | QuickRow::Theme
@@ -515,6 +519,7 @@ impl QuickRow {
             QuickRow::Rewind => "Rewind",
             QuickRow::GbPalette => "Palette",
             QuickRow::Theme => "Theme",
+            QuickRow::Language => "Language",
             QuickRow::Wallpaper => "Wallpaper",
             QuickRow::Recents => "Recents",
             QuickRow::ShowTitles => "Game Titles",
@@ -720,10 +725,11 @@ pub enum QuickValue {
     FullScreen,
     Mix,
     Ghosting,
+    Language,
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 40] = [
+    pub const ALL: [QuickValue; 41] = [
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -764,6 +770,7 @@ impl QuickValue {
         QuickValue::FullScreen,
         QuickValue::Mix,
         QuickValue::Ghosting,
+        QuickValue::Language,
     ];
 
     pub const LEVELS: [QuickValue; 10] = [
@@ -798,6 +805,7 @@ impl QuickValue {
             QuickValue::Speed3 => "3×",
             QuickValue::Speed4 => "4×",
             QuickValue::Speed6 => "6×",
+            QuickValue::Language => slot_i18n::language().name(),
             QuickValue::On => "On",
             QuickValue::Off => "Off",
             QuickValue::Lcd3x => "LCD3x",
@@ -978,6 +986,7 @@ pub fn quick_warning_value_face(text: &str, lit: bool) -> UndoFace {
 }
 
 fn quick_text_face(label: &str, colour: [u8; 3]) -> UndoFace {
+    let label = slot_i18n::tr(label);
     let Some(font) = text::label_font() else {
         return UndoFace {
             rgba: Vec::new(),
@@ -1028,7 +1037,14 @@ pub fn quick_description_face(lines: &[&str]) -> UndoFace {
     let faces: Vec<(Vec<u8>, u32)> = lines
         .iter()
         .map(|line| {
-            let layout = text::fit(font, line, OUT_W as f32, 1, DESCRIPTION_PX, DESCRIPTION_PX);
+            let layout = text::fit(
+                font,
+                slot_i18n::tr(line),
+                OUT_W as f32,
+                1,
+                DESCRIPTION_PX,
+                DESCRIPTION_PX,
+            );
             let w = text::line_width(font, &layout.lines[0], layout.px, layout.tracking).ceil()
                 as u32
                 + 2;
