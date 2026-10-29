@@ -47,7 +47,7 @@ See [The Screen](screen.md) for what Scale, Stretch and Frame Blending do.
 
 | Setting | Choices | Default | Does |
 | --- | --- | --- | --- |
-| Fast Forward | Off, 2x, 3x, 4x, 6x | 6x | The top speed when fast-forwarding |
+| Fast Forward | Off, 1.5x, 2x, 3x, 4x, 6x | 6x | The top speed when fast-forwarding |
 | Fast Forward Sound | On, Off | Off | Sound while fast-forwarding |
 | Rewind | On, Off | On | Hold <kbd>L2</kbd> to go back |
 | Turbo Buttons | On, Off | On | Turbo A and Turbo B |

@@ -6,7 +6,9 @@ Hold <kbd>R2</kbd> to fast-forward.
 
 Double tap <kbd>R2</kbd> to lock it on. Press it again to unlock.
 
-Settings → Gameplay → Fast Forward sets the cap: 2x, 3x, 4x or 6x. Off turns fast-forward off.
+If you'd rather toggle it with one press, bind Fast Forward Toggle in [Shortcuts](controls.md). Fast Forward and Fast Forward Toggle can't share a button, so binding one clears the other.
+
+Settings → Gameplay → Fast Forward sets the cap: 1.5x, 2x, 3x, 4x or 6x. Off turns fast-forward off.
 
 Some games are heavier than others, and slot runs as fast as it can up to the cap. mGBA uses more system resources than gpSP and will have a slower top fast forward speed.
 
