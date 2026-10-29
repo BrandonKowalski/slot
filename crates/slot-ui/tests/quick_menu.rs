@@ -55,23 +55,25 @@ fn a_long_label_is_set_as_large_as_a_short_one() {
 }
 
 #[test]
-fn the_fast_forward_row_offers_off_and_the_four_ceilings_the_card_can_hold() {
-    assert_eq!(FF_SPEEDS, [0, 2, 3, 4, 6]);
+fn the_fast_forward_row_offers_off_a_slow_speed_and_the_four_ceilings() {
+    assert_eq!(FF_SPEEDS, [0, 6, 8, 12, 16, 24]);
     assert_eq!(
         FF_SPEEDS.map(QuickValue::speed),
         [
             Some(QuickValue::Off),
+            Some(QuickValue::Speed1_5),
             Some(QuickValue::Speed2),
             Some(QuickValue::Speed3),
             Some(QuickValue::Speed4),
             Some(QuickValue::Speed6),
         ]
     );
-    for other in [1, 5, 7, 9, 16, 28, 255] {
+    assert_eq!(QuickValue::Speed1_5.text(), "1.5×");
+    for other in [1, 2, 3, 4, 5, 7, 9, 28, 255] {
         assert_eq!(
             QuickValue::speed(other),
             None,
-            "{other}x is not a value the row has"
+            "{other} quarters is not a value the row has"
         );
     }
 }
@@ -225,6 +227,7 @@ fn the_values_read_as_the_menu_prints_them() {
     assert_eq!(
         QuickValue::ALL.map(QuickValue::text),
         [
+            "1.5×",
             "2×",
             "3×",
             "4×",

@@ -156,7 +156,7 @@ fn the_fast_forward_settings_reach_the_emulator() {
         &SlotState {
             cart: Some("Emerald".into()),
             clock_set: true,
-            ff_speed: 2,
+            ff_speed: 6,
             ff_sound: true,
             ..Default::default()
         },
@@ -174,8 +174,8 @@ fn the_fast_forward_settings_reach_the_emulator() {
 
     let emu = s.emu().expect("a seated cart has a core");
     assert_eq!(
-        emu.fast_steps(),
-        2,
+        emu.fast_quarters(),
+        6,
         "the chosen speed never reached the core"
     );
     assert!(emu.ff_sound(), "fast forward sound never reached the core");

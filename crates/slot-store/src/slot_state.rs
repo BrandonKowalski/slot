@@ -13,11 +13,13 @@ pub const VOLUME_MAX: u8 = 100;
 const UTC_OFFSET_MIN: i16 = -720;
 const UTC_OFFSET_MAX: i16 = 840;
 
-pub const FF_SPEEDS: [u8; 5] = [0, 2, 3, 4, 6];
+pub const FF_SPEEDS: [u8; 6] = [0, 6, 8, 12, 16, 24];
+
+const FF_SPEED_TEXT: [&str; 6] = ["0", "1.5", "2", "3", "4", "6"];
 
 pub const LID_OFF_MIN: [u8; 6] = [1, 3, 5, 10, 15, 30];
 
-pub const FF_SPEED_DEFAULT: u8 = 6;
+pub const FF_SPEED_DEFAULT: u8 = 24;
 
 pub const RECENTS_MAX: usize = 10;
 
@@ -562,7 +564,7 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.zone.id(),
         s.clock_24h as u8,
         s.rumble as u8,
-        s.ff_speed,
+        ff_speed_text(s.ff_speed),
         s.ff_sound as u8,
         s.colour_correction_gba as u8,
         s.colour_correction_gb as u8,
@@ -807,7 +809,15 @@ fn offset(value: &str) -> Option<i16> {
 }
 
 fn ff_speed_value(value: &str) -> Option<u8> {
-    value.parse().ok().filter(|n| FF_SPEEDS.contains(n))
+    FF_SPEED_TEXT
+        .iter()
+        .position(|t| *t == value)
+        .map(|i| FF_SPEEDS[i])
+}
+
+fn ff_speed_text(speed: u8) -> &'static str {
+    let at = |speed| FF_SPEEDS.iter().position(|s| *s == speed);
+    FF_SPEED_TEXT[at(speed).or(at(FF_SPEED_DEFAULT)).unwrap_or(0)]
 }
 
 fn level(value: &str, max: u8) -> Option<u8> {

@@ -685,6 +685,7 @@ impl QuickRow {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QuickValue {
+    Speed1_5,
     Speed2,
     Speed3,
     Speed4,
@@ -728,7 +729,8 @@ pub enum QuickValue {
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 40] = [
+    pub const ALL: [QuickValue; 41] = [
+        QuickValue::Speed1_5,
         QuickValue::Speed2,
         QuickValue::Speed3,
         QuickValue::Speed4,
@@ -799,6 +801,7 @@ impl QuickValue {
 
     pub fn text(self) -> &'static str {
         match self {
+            QuickValue::Speed1_5 => "1.5×",
             QuickValue::Speed2 => "2×",
             QuickValue::Speed3 => "3×",
             QuickValue::Speed4 => "4×",
@@ -846,13 +849,14 @@ impl QuickValue {
         QuickValue::LEVELS[usize::from(n).min(QuickValue::LEVELS.len() - 1)]
     }
 
-    pub fn speed(frames: u8) -> Option<QuickValue> {
-        match frames {
+    pub fn speed(quarters: u8) -> Option<QuickValue> {
+        match quarters {
             0 => Some(QuickValue::Off),
-            2 => Some(QuickValue::Speed2),
-            3 => Some(QuickValue::Speed3),
-            4 => Some(QuickValue::Speed4),
-            6 => Some(QuickValue::Speed6),
+            6 => Some(QuickValue::Speed1_5),
+            8 => Some(QuickValue::Speed2),
+            12 => Some(QuickValue::Speed3),
+            16 => Some(QuickValue::Speed4),
+            24 => Some(QuickValue::Speed6),
             _ => None,
         }
     }

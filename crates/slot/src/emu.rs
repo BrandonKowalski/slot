@@ -98,7 +98,7 @@ struct Shared {
     recording: AtomicBool,
     stop: AtomicBool,
     volume: AtomicU8,
-    fast_steps: AtomicU32,
+    fast_quarters: AtomicU32,
     ff_sound: AtomicBool,
     published: AtomicU64,
     resume_refused: AtomicBool,
@@ -173,7 +173,7 @@ impl EmuHandle {
             recording: AtomicBool::new(true),
             stop: AtomicBool::new(false),
             volume: AtomicU8::new(100),
-            fast_steps: AtomicU32::new(FAST_STEPS),
+            fast_quarters: AtomicU32::new(FAST_STEPS * 4),
             ff_sound: AtomicBool::new(false),
             published: AtomicU64::new(0),
             resume_refused: AtomicBool::new(false),
@@ -343,14 +343,14 @@ impl EmuHandle {
         self.shared.volume.store(level.min(100), Ordering::Relaxed);
     }
 
-    pub fn set_fast_steps(&self, steps: u32) {
+    pub fn set_fast_quarters(&self, quarters: u32) {
         self.shared
-            .fast_steps
-            .store(steps.clamp(1, FAST_STEPS_MAX), Ordering::Relaxed);
+            .fast_quarters
+            .store(quarters.clamp(4, FAST_STEPS_MAX * 4), Ordering::Relaxed);
     }
 
-    pub fn fast_steps(&self) -> u32 {
-        self.shared.fast_steps.load(Ordering::Relaxed)
+    pub fn fast_quarters(&self) -> u32 {
+        self.shared.fast_quarters.load(Ordering::Relaxed)
     }
 
     pub fn set_ff_sound(&self, on: bool) {
@@ -603,6 +603,7 @@ impl Worker {
         let mut cable_core = Duration::ZERO;
         let mut cable_wait = Duration::ZERO;
         let mut ff = (0u32, 0u32, Duration::ZERO, Instant::now());
+        let mut owed = 0u32;
         while !self.shared.stop.load(Ordering::Relaxed) {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
@@ -678,8 +679,16 @@ impl Worker {
                 Speed::Paused => 0,
                 Speed::Normal if lock && !ticked => 0,
                 Speed::Normal => 1,
-                Speed::Fast => self.shared.fast_steps.load(Ordering::Relaxed),
+                Speed::Fast => {
+                    owed += self.shared.fast_quarters.load(Ordering::Relaxed);
+                    let whole = owed / 4;
+                    owed %= 4;
+                    whole
+                }
             };
+            if speed != Speed::Fast {
+                owed = 0;
+            }
             if rewinding {
                 if let Some(state) = rewind.pop() {
                     if let Err(e) = core.unserialize(&state) {

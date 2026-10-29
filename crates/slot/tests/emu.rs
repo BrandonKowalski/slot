@@ -195,7 +195,7 @@ fn fast_forward_runs_the_chosen_number_of_core_frames_per_present() {
         (FAST_STEPS_MAX, FAST_STEPS_MAX),
         (FAST_STEPS_MAX + 4, FAST_STEPS_MAX),
     ] {
-        emu.set_fast_steps(asked);
+        emu.set_fast_quarters(asked * 4);
         let (frames, presents) = held_counts(&emu);
         emu.set_speed(Speed::Fast);
         std::thread::sleep(Duration::from_millis(150));
@@ -287,10 +287,30 @@ fn spawn_probe(cost: Duration) -> (EmuHandle, Arc<Mutex<Vec<bool>>>) {
 }
 
 #[test]
+fn a_slow_speed_runs_its_fraction_of_a_frame_per_present() {
+    let emu = spawn();
+    std::thread::sleep(Duration::from_millis(300));
+    for quarters in [5u32, 6] {
+        emu.set_fast_quarters(quarters);
+        let (frames, presents) = held_counts(&emu);
+        emu.set_speed(Speed::Fast);
+        std::thread::sleep(Duration::from_millis(400));
+        let (frames_after, presents_after) = held_counts(&emu);
+        let (ran, shown) = (frames_after - frames, presents_after - presents);
+        assert!(shown > 8, "only {shown} presents at {quarters} quarters");
+        let want = shown * u64::from(quarters);
+        assert!(
+            (ran * 4).abs_diff(want) <= 8,
+            "{ran} frames over {shown} presents is not {quarters} quarters of a frame each"
+        );
+    }
+}
+
+#[test]
 fn every_speed_publishes_the_frame_the_core_last_ran() {
     let emu = spawn();
     for ceiling in [2, 3, 4, FAST_STEPS_MAX] {
-        emu.set_fast_steps(ceiling);
+        emu.set_fast_quarters(ceiling * 4);
         emu.set_speed(Speed::Fast);
         std::thread::sleep(Duration::from_millis(120));
         let (frames, _) = held_counts(&emu);
@@ -312,7 +332,7 @@ fn every_speed_publishes_the_frame_the_core_last_ran() {
 fn a_fast_present_draws_only_its_last_frame() {
     let ceiling = 3;
     let (emu, log) = spawn_probe(Duration::ZERO);
-    emu.set_fast_steps(ceiling);
+    emu.set_fast_quarters(ceiling * 4);
     emu.set_speed(Speed::Fast);
     std::thread::sleep(Duration::from_millis(60));
     log.lock().expect("the skip log").clear();
@@ -347,7 +367,7 @@ fn a_fast_present_draws_only_its_last_frame() {
 fn a_present_runs_what_it_can_afford_rather_than_the_whole_ceiling() {
     let cost = Duration::from_millis(8);
     let (emu, log) = spawn_probe(cost);
-    emu.set_fast_steps(FAST_STEPS_MAX);
+    emu.set_fast_quarters(FAST_STEPS_MAX * 4);
     held_counts(&emu);
     log.lock().expect("the skip log").clear();
     emu.set_speed(Speed::Fast);
@@ -438,7 +458,7 @@ fn fast_forward_sound_plays_sped_up_in_real_time() {
     emu.set_ff_sound(true);
     let real_time = 32_768.0 / 60.0;
     for steps in [2, 4] {
-        emu.set_fast_steps(steps);
+        emu.set_fast_quarters(steps * 4);
         emu.set_speed(Speed::Fast);
         std::thread::sleep(Duration::from_millis(50));
         assert!(!sink.muted(), "fast forward muted with its sound on");
