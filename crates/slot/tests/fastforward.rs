@@ -90,6 +90,65 @@ fn fast_forward_toggle_on_r2_stays_on_after_the_release_until_the_next_press() {
 }
 
 #[test]
+fn a_frame_is_late_only_when_the_core_paces_it_and_misses() {
+    let d = common::tmp_root_with_carts(&["Emerald"]);
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            cart: Some("Emerald".into()),
+            clock_set: true,
+            ..Default::default()
+        },
+    )
+    .expect("write slot.state");
+    let mut s = Session::boot(d.path().to_path_buf());
+    let mut now: Millis = 0;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(s.app().phase(), Phase::Playing { .. }) {
+        assert!(Instant::now() < deadline, "the cart never seated");
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    s.set_driven(true);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !s.emu().expect("a seated cart has a core").locked() {
+        assert!(
+            Instant::now() < deadline,
+            "the core never locked to the screen"
+        );
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    for _ in 0..30 {
+        assert!(
+            !s.step_emulator(Duration::from_millis(16), Duration::from_millis(100)),
+            "a frame the core delivered in time counted as late"
+        );
+        step(&mut s, &mut now, None);
+    }
+
+    step(&mut s, &mut now, Some(RawEvent::Down(Btn::R2)));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while s.emu().expect("a seated cart has a core").locked() {
+        assert!(
+            Instant::now() < deadline,
+            "fast forward never unlocked the core"
+        );
+        step(&mut s, &mut now, None);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    for _ in 0..30 {
+        assert!(
+            !s.step_emulator(Duration::from_millis(16), Duration::from_millis(12)),
+            "a frame the core was never asked to pace counted as late"
+        );
+        step(&mut s, &mut now, None);
+    }
+}
+
+#[test]
 fn the_fast_forward_settings_reach_the_emulator() {
     let d = common::tmp_root_with_carts(&["Emerald"]);
     write_slot_state(

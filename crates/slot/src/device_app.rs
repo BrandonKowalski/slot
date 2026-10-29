@@ -171,7 +171,7 @@ pub fn run() {
             frontend.stop();
             return;
         }
-        let fresh = frontend.step_emulator(pacer.period, STEP_TIMEOUT);
+        let late = frontend.step_emulator(pacer.period, STEP_TIMEOUT);
         frontend.render(&mut compositor, window);
         let swap = Instant::now();
         let work = swap - began;
@@ -187,7 +187,7 @@ pub fn run() {
             frames += 1;
             missed += u32::from(dropped);
             early += u32::from(swap_took > pacer.period / 2);
-            stale += u32::from(!fresh);
+            stale += u32::from(late);
             if frames == 600 {
                 eprintln!(
                     "slot: pace: 600 frames, {missed} missed a latch, {early} drawn early, {stale} stale, work {:.1} ms, period {:.2} ms",

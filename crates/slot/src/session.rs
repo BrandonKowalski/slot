@@ -134,7 +134,7 @@ impl Session {
     pub fn step_emulator(&self, present: Duration, timeout: Duration) -> bool {
         self.emu.as_ref().is_some_and(|emu| {
             emu.tick(present);
-            emu.wait_frame(timeout)
+            !emu.wait_frame(timeout) && emu.locked()
         })
     }
 
