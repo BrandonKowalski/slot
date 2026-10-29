@@ -260,3 +260,14 @@ fn hushing_drops_the_toast_but_keeps_the_alarm() {
     assert_eq!(h.said(20), None);
     assert!(h.alarmed());
 }
+
+#[test]
+fn the_sunlight_bar_has_its_own_icon_and_fills_to_ten() {
+    assert_eq!(HudKind::Sunlight.icon(0, false, false), Icon::Sunlight);
+    assert_ne!(Icon::Sunlight.glyph(), Icon::Brightness.glyph());
+    assert_eq!(fill(HudKind::Sunlight, 10), fill(HudKind::Brightness, 9));
+    assert_eq!(
+        fill(HudKind::Sunlight, 5) * 2.0,
+        fill(HudKind::Sunlight, 10)
+    );
+}

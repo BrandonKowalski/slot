@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.12.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.12.0)
+
+- Boktai's solar sensor works on mGBA. The sun follows the clock: none at night, brightest at noon. Sunlight Up and Sunlight Down are new shortcuts to set it by hand until the game is closed. They're unbound by default. ([#42](https://github.com/BrandonKowalski/slot/issues/42))
+
 ## [1.11.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.11.0)
 
 - Headphones no longer buzz a few seconds after the sound stops. slot keeps the audio device open while headphones are in. ([#163](https://github.com/BrandonKowalski/slot/issues/163))

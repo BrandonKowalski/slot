@@ -5,7 +5,12 @@ use slot_store::{Blending, Core, GbColors, Platform};
 
 use crate::root;
 
+pub use slot_store::SUNLIGHT_MAX;
+
 const CORE_ENV: &str = "SLOT_CORE";
+
+pub const SUNLIGHT_OPTION: &str = "mgba_solar_sensor_level";
+const SUNLIGHT_NOON: i64 = 8;
 
 pub fn dylib_name(core: Core) -> String {
     format!(
@@ -208,6 +213,11 @@ pub fn apply_game_boy_player(
         let on = game_boy_player(platform, rom);
         core.set_option("mgba_force_gbp", if on { "ON" } else { "OFF" });
     }
+}
+
+pub fn sunlight_at(local_secs: i64) -> u8 {
+    let from_noon = (local_secs.rem_euclid(86_400) / 60 - 720).abs();
+    (SUNLIGHT_NOON * (360 - from_noon) / 360).max(0) as u8
 }
 
 pub fn blend_option(which: Core, blending: Blending) -> (&'static str, &'static str) {

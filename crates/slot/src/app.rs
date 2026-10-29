@@ -10,7 +10,7 @@ use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Blending, Cart,
     Core, GbColors, Platform, Recent, Scale, Shader, ShotDir, ShotEntry, SlotState, StateEntry,
     StateRing, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,
-    RING_MAX, VOLUME_MAX,
+    RING_MAX, SUNLIGHT_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_sticker, ease,
@@ -393,6 +393,7 @@ pub struct App {
     blending_pending: Option<Blending>,
     palette_live: bool,
     palette_pending: Option<GbColors>,
+    sunlight_manual: Option<u8>,
     link_player: Option<u8>,
     platform: Platform,
     named_core: bool,
@@ -604,6 +605,7 @@ impl App {
             blending_pending: None,
             palette_live: false,
             palette_pending: None,
+            sunlight_manual: None,
             link_player: None,
             platform: Platform::default(),
             named_core: false,
@@ -1271,6 +1273,8 @@ impl App {
             | QuickRow::ScFastForward
             | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
+            | QuickRow::ScSunlightUp
+            | QuickRow::ScSunlightDown
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame => None,
@@ -2646,6 +2650,35 @@ impl App {
         self.blending_pending.take()
     }
 
+    pub fn sunlight(&self) -> Option<u8> {
+        if self.core != Core::Mgba
+            || self.seated_cart().is_none()
+            || self.playing_platform() != Platform::Gba
+        {
+            return None;
+        }
+        Some(
+            self.sunlight_manual
+                .unwrap_or_else(|| crate::core::sunlight_at(self.wall_secs())),
+        )
+    }
+
+    fn step_sunlight(&mut self, brighter: bool) {
+        if self.seated_cart().is_none() || self.playing_platform() != Platform::Gba {
+            return;
+        }
+        let Some(now) = self.sunlight() else {
+            self.hud.toast(Toast::NeedsMgba, self.now());
+            return;
+        };
+        let to = match brighter {
+            true => up(now, 1, SUNLIGHT_MAX),
+            false => now.saturating_sub(1),
+        };
+        self.sunlight_manual = Some(to);
+        self.hud.show(HudKind::Sunlight, to, false, self.now());
+    }
+
     pub fn gb_colors(&self) -> GbColors {
         self.state.gb_colors()
     }
@@ -3123,6 +3156,8 @@ impl App {
             | QuickRow::ScFastForward
             | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
+            | QuickRow::ScSunlightUp
+            | QuickRow::ScSunlightDown
             | QuickRow::LidOff => {}
         }
     }
@@ -3363,6 +3398,8 @@ impl App {
             | QuickRow::ScFastForward
             | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
+            | QuickRow::ScSunlightUp
+            | QuickRow::ScSunlightDown
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame
@@ -3445,6 +3482,10 @@ impl App {
             self.hud.toast(said, self.now());
             return true;
         }
+        if let Action::SunlightUp | Action::SunlightDown = action {
+            self.step_sunlight(action == Action::SunlightUp);
+            return true;
+        }
         let s = &self.state;
         let (kind, value) = match action {
             Action::BrightnessUp => (HudKind::Brightness, up(s.brightness, 1, BRIGHTNESS_MAX)),
@@ -3474,7 +3515,7 @@ impl App {
             HudKind::BlueLight => &mut self.state.blue_light,
             HudKind::Volume if self.headphones => &mut self.state.volume_hp,
             HudKind::Volume => &mut self.state.volume,
-            HudKind::Rewind => return false,
+            HudKind::Rewind | HudKind::Sunlight => return false,
         };
         let moved = *level != value;
         *level = value;
@@ -5154,6 +5195,7 @@ impl App {
         self.play_held = None;
         self.refusal = None;
         self.refused_from = None;
+        self.sunlight_manual = None;
         if let Some(mark) = &self.loading {
             mark.set(&cart);
             self.marked = true;

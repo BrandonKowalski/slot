@@ -83,6 +83,8 @@ pub enum QuickRow {
     ScFastForward,
     ScFastForwardToggle,
     ScRewind,
+    ScSunlightUp,
+    ScSunlightDown,
     LidOff,
     Controls,
     ControlsShelf,
@@ -110,7 +112,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 96] = [
+    pub const ALL: [QuickRow; 98] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -183,6 +185,8 @@ impl QuickRow {
         QuickRow::ScFastForward,
         QuickRow::ScFastForwardToggle,
         QuickRow::ScRewind,
+        QuickRow::ScSunlightUp,
+        QuickRow::ScSunlightDown,
         QuickRow::LidOff,
         QuickRow::Controls,
         QuickRow::ControlsShelf,
@@ -254,7 +258,7 @@ impl QuickRow {
         QuickRow::GameTurboB,
     ];
 
-    pub const SHORTCUTS: [QuickRow; 15] = [
+    pub const SHORTCUTS: [QuickRow; 17] = [
         QuickRow::ScSave,
         QuickRow::ScLoad,
         QuickRow::ScScreenshot,
@@ -270,6 +274,8 @@ impl QuickRow {
         QuickRow::ScFastForward,
         QuickRow::ScFastForwardToggle,
         QuickRow::ScRewind,
+        QuickRow::ScSunlightUp,
+        QuickRow::ScSunlightDown,
     ];
 
     pub const SCREEN: [QuickRow; 4] = [
@@ -562,7 +568,9 @@ impl QuickRow {
             | QuickRow::ScShaderBack
             | QuickRow::ScFastForward
             | QuickRow::ScFastForwardToggle
-            | QuickRow::ScRewind => self.shortcut().map_or("", Shortcut::label),
+            | QuickRow::ScRewind
+            | QuickRow::ScSunlightUp
+            | QuickRow::ScSunlightDown => self.shortcut().map_or("", Shortcut::label),
             QuickRow::ShelfPrev | QuickRow::ShelfNext | QuickRow::ShelfFavorite => {
                 self.carousel_action().map_or("", CarouselAction::label)
             }
@@ -653,6 +661,8 @@ impl QuickRow {
             QuickRow::ScFastForward => Shortcut::FastForward,
             QuickRow::ScFastForwardToggle => Shortcut::FastForwardToggle,
             QuickRow::ScRewind => Shortcut::Rewind,
+            QuickRow::ScSunlightUp => Shortcut::SunlightUp,
+            QuickRow::ScSunlightDown => Shortcut::SunlightDown,
             _ => return None,
         })
     }

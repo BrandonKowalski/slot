@@ -426,15 +426,7 @@ fn frames_with_mix_set_at(which: Core, at: Option<usize>) -> Vec<Vec<u8>> {
     let rom = d.path().join("blend.gba");
     std::fs::write(&rom, flicker_rom()).expect("write the test rom");
     let mut core = LibretroCore::open(&dylib_for(which)).expect("open core");
-    slot::core::apply_core_options(
-        &mut core,
-        which,
-        Platform::Gba,
-        "auto",
-        false,
-        false,
-        None,
-    );
+    slot::core::apply_core_options(&mut core, which, Platform::Gba, "auto", false, false, None);
     let ring = std::sync::Arc::new(Ring::new(1 << 16));
     let emu = EmuHandle::spawn(Box::new(core), rom, ring, None, None);
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -508,5 +500,42 @@ fn a_frame_blending_change_reaches_a_running_core_without_a_reload() {
                 px0(&mixed[i])
             );
         }
+    }
+}
+
+#[test]
+fn the_sunlight_follows_the_clock_dark_at_night_and_brightest_at_noon() {
+    let at = |h: i64, m: i64| slot::core::sunlight_at(h * 3600 + m * 60);
+    assert_eq!(at(0, 0), 0);
+    assert_eq!(at(5, 59), 0);
+    assert_eq!(at(6, 0), 0);
+    assert_eq!(at(9, 0), 4);
+    assert_eq!(at(12, 0), 8);
+    assert_eq!(at(15, 0), 4);
+    assert_eq!(at(18, 0), 0);
+    assert_eq!(at(23, 59), 0);
+    assert_eq!(slot::core::sunlight_at(3 * 86_400 + 12 * 3600), 8);
+    assert_eq!(slot::core::sunlight_at(-12 * 3600), 8);
+}
+
+#[test]
+fn mgba_takes_every_sunlight_level_slot_can_send() {
+    let _g = common::core_lock();
+    let path = dylib_for(Core::Mgba);
+    if !path.exists() {
+        eprintln!("no mgba dylib on this host, skipping");
+        return;
+    }
+    let core = LibretroCore::open(&path).expect("open core");
+    let levels = core
+        .declared_options()
+        .get(slot::core::SUNLIGHT_OPTION)
+        .cloned()
+        .expect("mgba declares no solar sensor option");
+    for level in 0..=slot::core::SUNLIGHT_MAX {
+        assert!(
+            levels.contains(&level.to_string()),
+            "mgba has no sunlight level {level} in {levels:?}"
+        );
     }
 }

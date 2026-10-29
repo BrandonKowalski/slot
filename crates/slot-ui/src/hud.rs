@@ -1,5 +1,5 @@
 use slot_gfx::{Canvas, Draw, TexId, OUT_H};
-use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, VOLUME_MAX};
+use slot_store::{BLUE_LIGHT_MAX, BRIGHTNESS_MAX, SUNLIGHT_MAX, VOLUME_MAX};
 
 use crate::icon::icon_box;
 use crate::toast::toast_rect;
@@ -56,6 +56,7 @@ pub enum HudKind {
     BlueLight,
     Volume,
     Rewind,
+    Sunlight,
 }
 
 impl HudKind {
@@ -69,6 +70,7 @@ impl HudKind {
             HudKind::Volume if value == 0 => Icon::VolumeZero,
             HudKind::Volume => Icon::Volume,
             HudKind::Rewind => Icon::Rewind,
+            HudKind::Sunlight => Icon::Sunlight,
         }
     }
 
@@ -78,6 +80,7 @@ impl HudKind {
             HudKind::BlueLight => BLUE_LIGHT_MAX,
             HudKind::Volume => VOLUME_MAX,
             HudKind::Rewind => 100,
+            HudKind::Sunlight => SUNLIGHT_MAX,
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::zone::Zone;
 
 pub const BRIGHTNESS_MAX: u8 = 9;
 pub const BLUE_LIGHT_MAX: u8 = 9;
+pub const SUNLIGHT_MAX: u8 = 10;
 pub const VOLUME_MAX: u8 = 100;
 
 const UTC_OFFSET_MIN: i16 = -720;
