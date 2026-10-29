@@ -6,7 +6,7 @@ Hold <kbd>R2</kbd> to fast-forward.
 
 Double tap <kbd>R2</kbd> to lock it on. Press it again to unlock.
 
-If you'd rather toggle it with one press, bind Fast Forward Toggle in [Shortcuts](controls.md). Fast Forward and Fast Forward Toggle can't share a button, so binding one clears the other.
+If you'd rather toggle it with one press, bind FF Toggle in [Shortcuts](controls.md). Fast Forward and FF Toggle can't share a button, so binding one clears the other.
 
 Settings → Gameplay → Fast Forward sets the cap: 1.5x, 2x, 3x, 4x or 6x. Off turns fast-forward off.
 

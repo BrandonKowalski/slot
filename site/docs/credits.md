@@ -42,6 +42,9 @@ Dot shader
 Simpletex shader
 :   A port of simpletex_lcd by jdgleaver, using the line weighting of zfast_lcd_standard by Greg Hogan, from the libretro shader collection
 
+Shimmerless shader
+:   Based on [Sharp Shimmerless](https://github.com/Woohyun-Kang/Sharp-Shimmerless-Shader) by Woohyun Kang, under CC0
+
 640x480 bezel
 :   "Perfect GBA SP" by [mugwomp93](https://github.com/mugwomp93/Knulli_Customization), from [knulli-bezels](https://github.com/chrizzo-hb/knulli-bezels), under CC BY-SA 4.0
 

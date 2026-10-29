@@ -13,6 +13,7 @@ Shaders make the picture look more like a real handheld screen.
 | LCD3x          | LCD3x                       |
 | Grid (default) | Grid                        |
 | Dot            | Simpletex (default)         |
+| Shimmerless    | Shimmerless                 |
 
 <kbd>SELECT</kbd> + <kbd>A</kbd> and <kbd>SELECT</kbd> + <kbd>B</kbd> step through them while you play.
 
@@ -93,9 +94,9 @@ enough to blur that into a steady image. On a modern screen you see the flicker.
 |----------------|-------------------------------------------------------------|
 | Off            | Shows every frame as it is (default)                        |
 | Mix            | Blends each frame with the one before                       |
-| LCD Ghosting   | Leaves a fading trail, like the original screens. mGBA only |
+| Ghosting       | Leaves a fading trail, like the original screens. mGBA only |
 
-A game on gpSP set to LCD Ghosting gets Mix.
+A game on gpSP set to Ghosting gets Mix.
 
 ## Bezels
 
@@ -121,3 +122,8 @@ These work on the shelf and in game. They're also rows in Settings → Screen �
 
 Blue light warms the picture up for playing in the dark. Every brightness step keeps the backlight on, so the lowest one
 is still readable in the dark.
+
+## Saturation and contrast
+
+You can adjust saturation and contrast in two places. Settings → Screen → General if on the shelf and at the end of the in-game
+Screen page. Both go from Off to 9 and are applied globally.
