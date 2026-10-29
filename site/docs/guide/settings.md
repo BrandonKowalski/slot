@@ -38,7 +38,7 @@ Each system has its own page.
 | Shader | GBA: Off, LCD3x, Grid, Dot, Shimmerless. GB and GBC: Off, LCD3x, Grid, Simpletex, Shimmerless | Grid on GBA, Simpletex on GB and GBC |
 | Color Correction | On, Off | Off |
 | Palette | Game Boy only. Auto, then 48 palettes | Auto |
-| Scale | GBA: Fit, Integer, Full Screen. GB and GBC: SP Frame, Integer, Fit | Fit on GBA, SP Frame on GB and GBC |
+| Scale | GBA: Fit, Integer, Full Screen. GB and GBC: SP Screen, Integer, Fit | Fit on GBA, SP Screen on GB and GBC |
 | Stretch | GB and GBC only. Classic, Full Screen | Classic |
 | Frame Blending | Off, Mix, Ghosting | Off |
 | Bezel | None, Default, AGS-102, your own | AGS-102 on 640×480 devices, None elsewhere |

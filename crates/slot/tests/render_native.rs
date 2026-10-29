@@ -206,11 +206,23 @@ fn a_panel_sized_wallpaper_lands_pixel_for_pixel_on_a_4_by_3_panel() {
     }
 }
 
+type Paint = fn(usize, usize, usize, usize) -> [u8; 4];
+
+fn edges(x: usize, y: usize, w: usize, h: usize) -> [u8; 4] {
+    match (x, y) {
+        (0..=1, _) => [255, 0, 0, 255],
+        (x, _) if x >= w - 2 => [0, 0, 255, 255],
+        (_, 0..=1) => [0, 255, 0, 255],
+        (_, y) if y >= h - 2 => [255, 255, 0, 255],
+        _ => [0, 0, 0, 0],
+    }
+}
+
 fn bezel_on_a_4_by_3_panel(
     platform: slot_store::Platform,
     name: &str,
     pick: slot_store::BezelPick,
-    file: Option<(usize, usize)>,
+    file: Option<(usize, usize, Paint)>,
 ) -> Option<Vec<u8>> {
     let surface = HeadlessSurface::new().ok()?;
     let mut c = Compositor::new(&surface).ok()?;
@@ -219,17 +231,10 @@ fn bezel_on_a_4_by_3_panel(
         _ => common::tmp_root_with_gb_carts(&["Tetris"]),
     };
     clocked(d.path());
-    if let Some((w, h)) = file {
+    if let Some((w, h, paint)) = file {
         let mut bezel = vec![0u8; w * h * 4];
         for (i, px) in bezel.chunks_mut(4).enumerate() {
-            let colour = match (i % w, i / w) {
-                (0..=1, _) => [255, 0, 0, 255],
-                (x, _) if x >= w - 2 => [0, 0, 255, 255],
-                (_, 0..=1) => [0, 255, 0, 255],
-                (_, y) if y >= h - 2 => [255, 255, 0, 255],
-                _ => [0, 0, 0, 0],
-            };
-            px.copy_from_slice(&colour);
+            px.copy_from_slice(&paint(i % w, i / w, w, h));
         }
         let dir = d.path().join("Bezels").join(platform.dir_name());
         let file = std::fs::File::create(dir.join("edges.png")).unwrap();
@@ -283,7 +288,7 @@ fn a_panel_sized_bezel_lands_pixel_for_pixel_on_a_4_by_3_panel() {
         slot_store::Platform::Gb,
         "native-bezel-panel",
         slot_store::BezelPick::File("edges.png".into()),
-        Some((640, 480)),
+        Some((640, 480, edges)),
     ) else {
         return;
     };
@@ -309,7 +314,7 @@ fn a_bezel_the_size_of_the_game_area_sits_on_it_on_a_4_by_3_panel() {
         slot_store::Platform::Gb,
         "native-bezel-edges",
         slot_store::BezelPick::File("edges.png".into()),
-        Some((640, 427)),
+        Some((640, 427, edges)),
     ) else {
         return;
     };
@@ -470,7 +475,7 @@ fn a_gba_bezel_from_the_card_frames_the_game_on_a_4_by_3_panel() {
         slot_store::Platform::Gba,
         "native-bezel-gba",
         slot_store::BezelPick::File("edges.png".into()),
-        Some((640, 480)),
+        Some((640, 480, edges)),
     ) else {
         return;
     };
@@ -481,6 +486,57 @@ fn a_gba_bezel_from_the_card_frames_the_game_on_a_4_by_3_panel() {
     assert_eq!(at(320, 479), [255, 255, 0], "bottom edge");
     assert_eq!(at(320, 10), [0, 0, 0], "above the game area");
     assert_eq!(at(320, 470), [0, 0, 0], "below the game area");
+}
+
+fn hole_on_top(_: usize, y: usize, _: usize, _: usize) -> [u8; 4] {
+    match y {
+        0..=426 => [0, 0, 0, 0],
+        _ => [255, 0, 255, 255],
+    }
+}
+
+#[test]
+fn a_gba_bezel_with_its_hole_at_the_top_puts_the_game_at_the_top() {
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gba,
+        "native-bezel-gba-top",
+        slot_store::BezelPick::File("edges.png".into()),
+        Some((640, 480, hole_on_top)),
+    ) else {
+        return;
+    };
+    let at = |x, y| panel_at(&panel, x, y);
+    for y in [0, 13, 26, 426] {
+        assert_ne!(at(320, y), [0, 0, 0], "no game at row {y}");
+        assert_ne!(at(320, y), [255, 0, 255], "bezel at row {y}");
+    }
+    assert_eq!(at(320, 427), [255, 0, 255], "the bezel under the game");
+    assert_eq!(at(320, 479), [255, 0, 255], "the bezel's bottom row");
+}
+
+fn gb_chin(_: usize, y: usize, _: usize, _: usize) -> [u8; 4] {
+    match y {
+        0..=404 => [0, 0, 0, 0],
+        _ => [255, 0, 255, 255],
+    }
+}
+
+#[test]
+fn a_game_boy_bezel_with_its_hole_at_the_top_lifts_the_game() {
+    let Some(panel) = bezel_on_a_4_by_3_panel(
+        slot_store::Platform::Gb,
+        "native-bezel-gb-top",
+        slot_store::BezelPick::File("edges.png".into()),
+        Some((640, 480, gb_chin)),
+    ) else {
+        return;
+    };
+    let at = |x, y| panel_at(&panel, x, y);
+    for y in [21, 30, 404] {
+        assert_ne!(at(320, y), [0, 0, 0], "no game at row {y}");
+        assert_ne!(at(320, y), [255, 0, 255], "bezel at row {y}");
+    }
+    assert_eq!(at(320, 405), [255, 0, 255], "the bezel under the game");
 }
 
 fn game_boy_page_on(panel: (u32, u32)) -> Option<(Vec<u8>, Vec<QuickRow>)> {
@@ -766,4 +822,110 @@ fn long_menu_values_keep_clear_of_their_labels_on_a_4_by_3_panel() {
     tap(&mut f, &mut input, Btn::A);
     check(&mut f, &mut c, &mut input, QuickRow::ScColour);
     check(&mut f, &mut c, &mut input, QuickRow::ScFastForwardToggle);
+}
+
+fn gb_with_bezel_files(
+    name: &str,
+    scale: slot_store::Scale,
+    picked: &str,
+    files: &[(&str, [u8; 4])],
+) -> Option<Vec<u8>> {
+    let surface = HeadlessSurface::new().ok()?;
+    let mut c = Compositor::new(&surface).ok()?;
+    let d = common::tmp_root_with_gb_carts(&["Tetris"]);
+    clocked(d.path());
+    let dir = d.path().join("Bezels").join("GB");
+    for (file, colour) in files {
+        let mut rgba = vec![0u8; 640 * 480 * 4];
+        for (i, px) in rgba.chunks_mut(4).enumerate() {
+            if i % 640 < 20 {
+                px.copy_from_slice(colour);
+            }
+        }
+        let out = std::fs::File::create(dir.join(file)).unwrap();
+        let mut e = png::Encoder::new(std::io::BufWriter::new(out), 640, 480);
+        e.set_color(png::ColorType::Rgba);
+        e.set_depth(png::BitDepth::Eight);
+        e.write_header().unwrap().write_image_data(&rgba).unwrap();
+    }
+    let state = slot_store::read_slot_state(d.path());
+    slot_store::write_slot_state(
+        d.path(),
+        &slot_store::SlotState {
+            bezel_gb: slot_store::BezelPick::File(picked.into()),
+            scale_gb: scale,
+            ..state
+        },
+    )
+    .unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    f.upload_faces(&mut c);
+    f.upload_bezel(&mut c, (640, 480));
+    c.fit((640, 480));
+    let mut input = Script(VecDeque::new());
+    input.0.push_back(vec![RawEvent::Down(Btn::A)]);
+    input.0.push_back(vec![RawEvent::Up(Btn::A)]);
+    run_for(&mut f, &mut input, 3000);
+    f.render(&mut c, (640, 480));
+    f.render(&mut c, (640, 480));
+    let px = c.read_window((640, 480));
+    write_png(name, 640, 480, &px);
+    Some(px)
+}
+
+const WOOD: [u8; 4] = [255, 0, 0, 255];
+const SHELL_FIT: [u8; 4] = [0, 0, 255, 255];
+const SHELL_INTEGER: [u8; 4] = [0, 255, 0, 255];
+const BEZELS: [(&str, [u8; 4]); 3] = [
+    ("Wood.png", WOOD),
+    ("Shell_fit.png", SHELL_FIT),
+    ("Shell_integer.png", SHELL_INTEGER),
+];
+
+#[test]
+fn a_plain_bezel_draws_in_every_scale() {
+    for scale in [
+        slot_store::Scale::SpFrame,
+        slot_store::Scale::Integer,
+        slot_store::Scale::Fit,
+    ] {
+        let Some(px) = gb_with_bezel_files(
+            &format!("native-bezel-plain-{scale:?}"),
+            scale,
+            "Wood.png",
+            &BEZELS,
+        ) else {
+            return;
+        };
+        assert_eq!(panel_at(&px, 5, 240), [255, 0, 0], "{scale:?}");
+    }
+}
+
+#[test]
+fn a_suffixed_bezel_draws_its_file_for_the_scale() {
+    let Some(px) = gb_with_bezel_files(
+        "native-bezel-suffix-integer",
+        slot_store::Scale::Integer,
+        "Shell_fit.png",
+        &BEZELS,
+    ) else {
+        return;
+    };
+    assert_eq!(panel_at(&px, 5, 240), [0, 255, 0]);
+}
+
+#[test]
+fn a_suffixed_bezel_with_no_file_for_the_scale_draws_no_bezel() {
+    let Some(px) = gb_with_bezel_files(
+        "native-bezel-suffix-missing",
+        slot_store::Scale::SpFrame,
+        "Shell_fit.png",
+        &BEZELS,
+    ) else {
+        return;
+    };
+    let edge = panel_at(&px, 5, 240);
+    for colour in [WOOD, SHELL_FIT, SHELL_INTEGER] {
+        assert_ne!(edge, [colour[0], colour[1], colour[2]]);
+    }
 }

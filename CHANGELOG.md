@@ -5,6 +5,9 @@
 - Boktai's solar sensor works on mGBA. The sun follows the clock: none at night, brightest at noon. Sunlight Up and Sunlight Down are new shortcuts to set it by hand for the current session. ([#42](https://github.com/BrandonKowalski/slot/issues/42))
 - Shimmerless is a new shader on every system. It keeps pixels sharp and gives each one the same width, so the picture doesn't shimmer as it scrolls when the screen isn't a whole multiple of the game. ([#99](https://github.com/BrandonKowalski/slot/issues/99))
 - Saturation and Contrast are new rows in Settings → Screen → General and on the in-game Screen page. Both go from Off to 9 and apply to the whole screen. ([#79](https://github.com/BrandonKowalski/slot/issues/79))
+- A bezel can be made for one Scale by ending its name with `_spscreen`, `_integer` or `_fit`. It only shows under Bezel while that Scale is picked, and changing Scale switches to the version with the same name.
+- A bezel that's solid from just under the game to the bottom edge, like AGS-102, now puts the game at the top of the screen on 640×480 devices, for GBA, Game Boy and Game Boy Color. ([#159](https://github.com/BrandonKowalski/slot/issues/159))
+- The Default Game Boy Color bezel in Fit on 640×480 devices shows just the power light, without the cut-off POWER label beside it.
 - Frame Blending's LCD Ghosting is now called Ghosting, and the Fast Forward Toggle shortcut is now FF Toggle, so both fit on 640×480 screens. A long button combo is drawn smaller instead of running into its row's name.
 
 ## [1.11.0](https://github.com/BrandonKowalski/slot/releases/tag/v1.11.0)

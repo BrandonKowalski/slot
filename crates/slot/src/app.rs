@@ -413,6 +413,7 @@ pub struct App {
     quick_palette_faces: Option<[(TexId, u32, u32); 2]>,
     quick_bezel_faces: [Option<[(TexId, u32, u32); 2]>; 3],
     game_bezel: Option<TexId>,
+    bezel_column: Vec<u8>,
     in_game_menu: Option<QuickRow>,
     /// 0 while the pause footer is off the bottom, 1 when it sits in the carousel's place.
     footer: f32,
@@ -625,6 +626,7 @@ impl App {
             quick_palette_faces: None,
             quick_bezel_faces: [None, None, None],
             game_bezel: None,
+            bezel_column: Vec::new(),
             in_game_menu: None,
             footer: 0.0,
             footer_row: None,
@@ -1332,7 +1334,13 @@ impl App {
         if self.framed_panel() {
             choices.push(BezelPick::Ags102);
         }
-        choices.extend(self.bezel_files(platform).into_iter().map(BezelPick::File));
+        let scale = self.resolved_scale(platform);
+        choices.extend(
+            self.bezel_files(platform)
+                .into_iter()
+                .filter(|name| slot_store::bezel_scale(name).is_none_or(|s| s == scale))
+                .map(BezelPick::File),
+        );
         choices
     }
 
@@ -1350,10 +1358,17 @@ impl App {
             Platform::Gb => &self.state.bezel_gb,
             Platform::Gbc => &self.state.bezel_gbc,
         };
-        match self.bezel_choices(platform).contains(pick) {
-            true => pick.clone(),
-            false => BezelPick::None,
+        let choices = self.bezel_choices(platform);
+        if choices.contains(pick) {
+            return pick.clone();
         }
+        let BezelPick::File(name) = pick else {
+            return BezelPick::None;
+        };
+        slot_store::bezel_for_scale(name, self.resolved_scale(platform))
+            .map(BezelPick::File)
+            .filter(|swapped| choices.contains(swapped))
+            .unwrap_or(BezelPick::None)
     }
 
     fn cycle_bezel(&mut self, platform: Platform, right: bool) {
@@ -1374,8 +1389,38 @@ impl App {
             && !self.game_layout().panel
     }
 
+    pub fn picture_on_top(&self) -> bool {
+        if self.sp_frame() {
+            return true;
+        }
+        let layout = self.game_layout();
+        matches!(
+            self.resolved_bezel(self.playing_platform()),
+            BezelPick::File(_)
+        ) && self.shown_game_bezel().is_some()
+            && !layout.panel
+            && slot_gfx::hole_on_top(&self.bezel_column, self.panel, self.picture_in_band(layout))
+    }
+
+    fn picture_in_band(&self, layout: GameLayout) -> (f32, f32) {
+        let [_, y, _, h] = layout.rect;
+        let (top, tall) = match self.source_rect() == WHOLE_TEXTURE {
+            true => {
+                let rows = self.playing_platform().picture().1 as f32;
+                let src = slot_gfx::SRC_H as f32;
+                ((src - rows) / 2.0 / src, rows / src)
+            }
+            false => (0.0, 1.0),
+        };
+        ((y + h * top) / OUT_H as f32, h * tall / OUT_H as f32)
+    }
+
     pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
         self.game_bezel = tex;
+    }
+
+    pub fn set_bezel_column(&mut self, column: Vec<u8>) {
+        self.bezel_column = column;
     }
 
     pub fn shown_game_bezel(&self) -> Option<TexId> {

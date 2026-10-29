@@ -48,11 +48,11 @@ RG35XXSP, RG35XX Plus, RG35XX-H and RG28XX
 
 **Game Boy and Game Boy Color**
 
-| Scale    | Does                                                                       |
-|----------|----------------------------------------------------------------------------|
-| SP Frame | The way a GBA SP shows them: in the middle of a GBA-sized screen (default) |
-| Integer  | The biggest whole-number size                                              |
-| Fit      | As big as the whole picture fits                                           |
+| Scale     | Does                                                                       |
+|-----------|----------------------------------------------------------------------------|
+| SP Screen | The way a GBA SP shows them: in the middle of a GBA-sized screen (default) |
+| Integer   | The biggest whole-number size                                              |
+| Fit       | As big as the whole picture fits                                           |
 
 **GBA**
 

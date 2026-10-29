@@ -1,6 +1,9 @@
 #![cfg(target_os = "macos")]
 
-use slot_gfx::{game_rect, Canvas, Compositor, Draw, HeadlessSurface, ScreenEffect, SRC_H, SRC_W};
+use slot_gfx::{
+    bezel_column, game_rect, hole_on_top, Canvas, Compositor, Draw, HeadlessSurface, ScreenEffect,
+    SRC_H, SRC_W,
+};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 static GL: Mutex<()> = Mutex::new(());
@@ -177,4 +180,52 @@ fn a_frame_reaches_a_4_by_3_panel_one_to_one() {
         panel, canvas,
         "the frame was moved or scaled on its way out"
     );
+}
+
+fn column(paint: impl Fn(usize) -> u8) -> Vec<u8> {
+    (0..480).map(paint).collect()
+}
+
+const GBA: (f32, f32) = (0.0, 1.0);
+const GB: (f32, f32) = (0.05, 0.9);
+
+#[test]
+fn a_bezel_that_would_cover_the_bottom_of_a_centred_game_has_its_hole_on_top() {
+    let ags = column(|y| if y < 427 { 0 } else { 255 });
+    let notched = column(|y| if (27..427).contains(&y) { 0 } else { 255 });
+    let gb_chin = column(|y| if y < 405 { 0 } else { 255 });
+    assert!(hole_on_top(&ags, (640, 480), GBA));
+    assert!(hole_on_top(&notched, (640, 480), GBA));
+    assert!(hole_on_top(&gb_chin, (640, 480), GB));
+}
+
+#[test]
+fn a_bezel_clear_below_a_centred_game_keeps_it_centred() {
+    let framed = column(|y| if (27..454).contains(&y) { 0 } else { 255 });
+    let open = column(|_| 0);
+    let tinted = column(|_| 60);
+    let game_area = column(|y| if (27..454).contains(&y) { 255 } else { 0 });
+    let gb_frame = column(|y| if (48..432).contains(&y) { 0 } else { 255 });
+    assert!(!hole_on_top(&game_area, (640, 480), GBA));
+    assert!(!hole_on_top(&framed, (640, 480), GBA));
+    assert!(!hole_on_top(&open, (640, 480), GBA));
+    assert!(!hole_on_top(&tinted, (640, 480), GBA));
+    assert!(!hole_on_top(&gb_frame, (640, 480), GB));
+}
+
+#[test]
+fn a_bezel_on_a_panel_that_is_not_4_by_3_never_has_its_hole_on_top() {
+    let open = vec![0u8; 480];
+    assert!(!hole_on_top(&open, (720, 480), GBA));
+}
+
+#[test]
+fn a_bezel_column_is_the_alpha_down_the_middle() {
+    let mut rgba = vec![0u8; 640 * 480 * 4];
+    rgba[(479 * 640 + 320) * 4 + 3] = 200;
+    let column = bezel_column(&rgba, (640, 480));
+    assert_eq!(column.len(), 480);
+    assert_eq!(column[479], 200);
+    assert_eq!(column[0], 0);
+    assert!(bezel_column(&rgba, (720, 480)).is_empty());
 }

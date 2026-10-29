@@ -871,7 +871,7 @@ impl QuickValue {
             QuickValue::Level7 => "7",
             QuickValue::Level8 => "8",
             QuickValue::Level9 => "9",
-            QuickValue::SpFrame => "SP Frame",
+            QuickValue::SpFrame => "SP Screen",
             QuickValue::Integer => "Integer",
             QuickValue::Fit => "Fit",
             QuickValue::Classic => "Classic",

@@ -262,7 +262,7 @@ fn the_values_read_as_the_menu_prints_them() {
             "7",
             "8",
             "9",
-            "SP Frame",
+            "SP Screen",
             "Integer",
             "Fit",
             "Classic",

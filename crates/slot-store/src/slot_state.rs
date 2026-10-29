@@ -181,11 +181,15 @@ impl BezelPick {
             BezelPick::None => "None".to_string(),
             BezelPick::Default => "Default".to_string(),
             BezelPick::Ags102 => "AGS-102".to_string(),
-            BezelPick::File(name) => name
-                .rsplit_once('.')
-                .map(|(stem, _)| stem)
-                .unwrap_or(name)
-                .to_string(),
+            BezelPick::File(name) => {
+                let stem = name
+                    .rsplit_once('.')
+                    .map_or(name.as_str(), |(stem, _)| stem);
+                match bezel_scale(name) {
+                    Some(scale) => stem[..stem.len() - scale.bezel_suffix().len()].to_string(),
+                    None => stem.to_string(),
+                }
+            }
         }
     }
 
@@ -208,7 +212,31 @@ pub enum Scale {
     FullScreen,
 }
 
+pub fn bezel_scale(name: &str) -> Option<Scale> {
+    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+    let stem = stem.to_ascii_lowercase();
+    [Scale::SpFrame, Scale::Integer, Scale::Fit]
+        .into_iter()
+        .find(|scale| stem.ends_with(scale.bezel_suffix()))
+}
+
+pub fn bezel_for_scale(name: &str, scale: Scale) -> Option<String> {
+    let from = bezel_scale(name)?;
+    let (stem, ext) = name.rsplit_once('.')?;
+    let base = &stem[..stem.len() - from.bezel_suffix().len()];
+    Some(format!("{base}{}.{ext}", scale.bezel_suffix()))
+}
+
 impl Scale {
+    pub fn bezel_suffix(self) -> &'static str {
+        match self {
+            Scale::SpFrame => "_spscreen",
+            Scale::Integer => "_integer",
+            Scale::Fit => "_fit",
+            Scale::FullScreen => "_fullscreen",
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Scale::SpFrame => "sp-frame",
