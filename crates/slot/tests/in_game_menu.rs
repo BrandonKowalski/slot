@@ -97,6 +97,7 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
         QuickRow::Screenshots,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
+        QuickRow::UndoReset,
     ];
     assert_eq!(
         a.in_game_hidden(),
@@ -399,6 +400,20 @@ fn undo_load_from_the_menu_replaces_undo_save_and_resumes() {
     go_to(&mut a, QuickRow::UndoLoad);
     press(&mut a, Btn::A);
     assert!(matches!(a.phase(), Phase::Playing { .. }));
+    assert_eq!(a.in_game_menu(), None);
+    assert!(!a.undo_available(a.now()));
+}
+
+#[test]
+fn a_reset_puts_undo_reset_under_resume() {
+    let (_d, mut a) = playing();
+    a.apply(Action::Reset);
+    assert!(matches!(a.phase(), Phase::Playing { .. }));
+    a.apply(Action::QuickMenu);
+    assert!(!a.in_game_hidden().contains(&QuickRow::UndoReset));
+    press(&mut a, Btn::Down);
+    assert_eq!(a.in_game_menu(), Some(QuickRow::UndoReset));
+    press(&mut a, Btn::A);
     assert_eq!(a.in_game_menu(), None);
     assert!(!a.undo_available(a.now()));
 }

@@ -10,6 +10,7 @@ use crate::{CartFace, QuickRow};
 pub enum Toast {
     StateSaved,
     StateLoaded,
+    GameReset,
     ShotCaptured,
     ShotFailed,
     NeedsGpsp,
@@ -36,9 +37,10 @@ pub enum Toast {
 }
 
 impl Toast {
-    const FIXED: [Toast; 23] = [
+    const FIXED: [Toast; 24] = [
         Toast::StateSaved,
         Toast::StateLoaded,
+        Toast::GameReset,
         Toast::ShotCaptured,
         Toast::ShotFailed,
         Toast::NeedsGpsp,
@@ -128,6 +130,7 @@ impl Toast {
         match self {
             Toast::StateSaved => "State Saved",
             Toast::StateLoaded => "State Loaded",
+            Toast::GameReset => "Game Reset",
             Toast::ShotCaptured => "Screenshot Captured",
             Toast::ShotFailed => "Screenshot Failed",
             Toast::NeedsGpsp => "Please switch to gpSP",

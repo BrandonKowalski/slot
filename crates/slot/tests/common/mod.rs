@@ -275,6 +275,10 @@ impl Snapshot for CoreSnapshot {
     fn load(&self, state: Vec<u8>) {
         self.with(|c| c.unserialize(&state).expect("unserialize"));
     }
+
+    fn reset(&self) {
+        self.with(|c| c.reset());
+    }
 }
 
 #[derive(Clone, Default)]

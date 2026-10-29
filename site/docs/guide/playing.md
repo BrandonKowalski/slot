@@ -8,6 +8,8 @@ Hold <kbd>A</kbd> to start the game fresh. The game will launch without autoload
 
 If you'd rather always start fresh, turn off Load State on Insert in Settings → Gameplay.
 
+To restart a game while you're playing it, bind Reset Game in [Shortcuts](controls.md). Pressed it by mistake? Open the menu and select `Undo Reset` within 30 seconds.
+
 ## Ejecting
 
 Hold <kbd>MENU</kbd> to eject the cart and go back to the shelf. 

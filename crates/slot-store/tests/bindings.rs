@@ -294,3 +294,19 @@ fn the_sunlight_shortcuts_start_unbound_and_round_trip_through_the_file() {
         assert!(text.contains(key), "{text}");
     }
 }
+
+#[test]
+fn reset_starts_unbound_and_round_trips_through_the_file() {
+    assert_eq!(ShortcutKeys::default().get(Shortcut::Reset), None);
+    assert_eq!(Shortcut::Reset.label(), "Reset Game");
+    let d = card();
+    let mut keys = ShortcutKeys::default();
+    keys.set(Shortcut::Reset, plain(Device::R1));
+    write_shortcuts(d.path(), &keys).unwrap();
+    assert_eq!(
+        read_shortcuts(d.path()).get(Shortcut::Reset),
+        plain(Device::R1)
+    );
+    let text = std::fs::read_to_string(d.path().join("Config/shortcuts.txt")).unwrap();
+    assert!(text.contains("reset=r1"), "{text}");
+}

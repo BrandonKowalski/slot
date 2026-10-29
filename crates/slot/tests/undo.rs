@@ -94,6 +94,36 @@ fn undoing_a_load_returns_the_emulator_to_the_prior_state() {
 }
 
 #[test]
+fn a_reset_starts_the_game_over_and_undoing_it_puts_the_game_back() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let core = CoreSnapshot::new();
+    let mut a = app_playing_with(d.path(), "Emerald", core.boxed());
+    let start = core.bytes();
+    for _ in 0..120 {
+        core.run_frame();
+    }
+    let before = core.bytes();
+    a.apply_at(Action::Reset, 1_000);
+    assert_eq!(core.bytes(), start);
+    assert_eq!(a.undo_label(), Some("undo reset"));
+    a.undo(2_000);
+    assert_eq!(core.bytes(), before);
+}
+
+#[test]
+fn a_reset_is_refused_while_linked() {
+    let d = tmp_root_with_carts(&["Emerald"]);
+    let core = CoreSnapshot::new();
+    let mut a = app_playing_with(d.path(), "Emerald", core.boxed());
+    core.run_frame();
+    let before = core.bytes();
+    a.begin_link(0);
+    a.apply_at(Action::Reset, 1_000);
+    assert_eq!(core.bytes(), before);
+    assert!(!a.undo_available(1_000));
+}
+
+#[test]
 fn undo_is_not_offered_when_nothing_is_undoable() {
     let d = tmp_root_with_carts(&["Emerald"]);
     let a = app_playing_in(d.path(), "Emerald");

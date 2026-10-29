@@ -38,6 +38,7 @@ pub enum QuickRow {
     Screenshots,
     Settings,
     ExitGame,
+    UndoReset,
     PlayScreen,
     PlayGameplay,
     Shader,
@@ -85,6 +86,7 @@ pub enum QuickRow {
     ScRewind,
     ScSunlightUp,
     ScSunlightDown,
+    ScReset,
     LidOff,
     Controls,
     ControlsShelf,
@@ -116,7 +118,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 102] = [
+    pub const ALL: [QuickRow; 104] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -144,6 +146,7 @@ impl QuickRow {
         QuickRow::Screenshots,
         QuickRow::Settings,
         QuickRow::ExitGame,
+        QuickRow::UndoReset,
         QuickRow::PlayScreen,
         QuickRow::PlayGameplay,
         QuickRow::Shader,
@@ -191,6 +194,7 @@ impl QuickRow {
         QuickRow::ScRewind,
         QuickRow::ScSunlightUp,
         QuickRow::ScSunlightDown,
+        QuickRow::ScReset,
         QuickRow::LidOff,
         QuickRow::Controls,
         QuickRow::ControlsShelf,
@@ -266,7 +270,7 @@ impl QuickRow {
         QuickRow::GameTurboB,
     ];
 
-    pub const SHORTCUTS: [QuickRow; 17] = [
+    pub const SHORTCUTS: [QuickRow; 18] = [
         QuickRow::ScSave,
         QuickRow::ScLoad,
         QuickRow::ScScreenshot,
@@ -284,6 +288,7 @@ impl QuickRow {
         QuickRow::ScRewind,
         QuickRow::ScSunlightUp,
         QuickRow::ScSunlightDown,
+        QuickRow::ScReset,
     ];
 
     pub const SCREEN: [QuickRow; 4] = [
@@ -338,10 +343,11 @@ impl QuickRow {
         QuickRow::EjectSave,
     ];
 
-    pub const PLAY: [QuickRow; 7] = [
+    pub const PLAY: [QuickRow; 8] = [
         QuickRow::Resume,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
+        QuickRow::UndoReset,
         QuickRow::States,
         QuickRow::Screenshots,
         QuickRow::Settings,
@@ -425,6 +431,7 @@ impl QuickRow {
             QuickRow::Resume
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
+            | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
             | QuickRow::Settings
@@ -554,6 +561,7 @@ impl QuickRow {
             QuickRow::Resume => "Resume",
             QuickRow::UndoSave => "Undo Save",
             QuickRow::UndoLoad => "Undo Load",
+            QuickRow::UndoReset => "Undo Reset",
             QuickRow::States => "States",
             QuickRow::Screenshots => "Screenshots",
             QuickRow::Settings => "Settings",
@@ -593,7 +601,8 @@ impl QuickRow {
             | QuickRow::ScFastForwardToggle
             | QuickRow::ScRewind
             | QuickRow::ScSunlightUp
-            | QuickRow::ScSunlightDown => self.shortcut().map_or("", Shortcut::label),
+            | QuickRow::ScSunlightDown
+            | QuickRow::ScReset => self.shortcut().map_or("", Shortcut::label),
             QuickRow::ShelfPrev | QuickRow::ShelfNext | QuickRow::ShelfFavorite => {
                 self.carousel_action().map_or("", CarouselAction::label)
             }
@@ -630,6 +639,7 @@ impl QuickRow {
                 | QuickRow::Resume
                 | QuickRow::UndoSave
                 | QuickRow::UndoLoad
+                | QuickRow::UndoReset
                 | QuickRow::States
                 | QuickRow::Screenshots
                 | QuickRow::Settings
@@ -686,6 +696,7 @@ impl QuickRow {
             QuickRow::ScRewind => Shortcut::Rewind,
             QuickRow::ScSunlightUp => Shortcut::SunlightUp,
             QuickRow::ScSunlightDown => Shortcut::SunlightDown,
+            QuickRow::ScReset => Shortcut::Reset,
             _ => return None,
         })
     }

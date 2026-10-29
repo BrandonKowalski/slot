@@ -59,5 +59,6 @@ pub(super) fn shortcut_action(s: Shortcut) -> Action {
         Shortcut::Rewind => Action::RewindStart,
         Shortcut::SunlightUp => Action::SunlightUp,
         Shortcut::SunlightDown => Action::SunlightDown,
+        Shortcut::Reset => Action::Reset,
     }
 }

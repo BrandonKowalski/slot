@@ -85,6 +85,7 @@ enum Cmd {
     BeginCable(u8, Box<dyn LinkChannel>),
     SetOption(String, String),
     Refresh,
+    Reset,
 }
 
 struct Shared {
@@ -434,6 +435,10 @@ impl Snapshot for EmuSnapshot {
 
     fn load(&self, state: Vec<u8>) {
         request(&self.cmds, &self.shared, Cmd::Load(state));
+    }
+
+    fn reset(&self) {
+        request(&self.cmds, &self.shared, Cmd::Reset);
     }
 
     fn resume_trusted(&self) -> bool {
@@ -986,6 +991,7 @@ impl Worker {
             Cmd::SetOption(key, value) => {
                 core.set_option(&key, &value);
             }
+            Cmd::Reset => core.reset(),
             Cmd::EndLink => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);
                 self.shared.peer_ended.store(false, Ordering::Relaxed);

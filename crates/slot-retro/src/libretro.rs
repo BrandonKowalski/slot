@@ -611,6 +611,14 @@ impl RetroCore for LibretroCore {
         unsafe { (self.api.run)() };
     }
 
+    fn reset(&mut self) {
+        if !self.loaded {
+            return;
+        }
+        let _a = Active::bind(&mut self.host);
+        unsafe { (self.api.reset)() };
+    }
+
     fn set_frame_skip(&mut self, skip: bool) {
         let _a = Active::bind(&mut self.host);
         unsafe { report_audio_status(skip) };

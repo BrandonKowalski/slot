@@ -6,14 +6,22 @@ use slot::app::Phase;
 use slot::emu::Speed;
 use slot::session::Session;
 use slot_input::{Btn, Millis, RawEvent};
-use slot_store::{write_slot_state, Core, SlotState};
+use slot_store::{
+    write_shortcuts, write_slot_state, Binding, Core, Device, Modifier, Shortcut, ShortcutKeys,
+    SlotState,
+};
 use slot_ui::QuickRow;
 use tempfile::TempDir;
 
 const BAIL: Duration = Duration::from_secs(5);
 
 fn session_playing() -> (Session, TempDir, Millis) {
+    session_playing_with(&ShortcutKeys::default())
+}
+
+fn session_playing_with(keys: &ShortcutKeys) -> (Session, TempDir, Millis) {
     let d = common::tmp_root_with_carts(&["Emerald", "Fusion"]);
+    write_shortcuts(d.path(), keys).expect("write shortcuts");
     common::write_retail_header(&d, "Emerald", "POKEMON RUBY", "AXVE");
     slot_store::write_selected_core(d.path(), "Emerald", Core::Mgba).expect("write core");
     write_slot_state(
@@ -219,4 +227,28 @@ fn fast_forward_cannot_be_locked_from_inside_the_menu() {
             "R2 pressed in the menu fast forwarded the game on resume"
         );
     }
+}
+
+#[test]
+fn select_and_start_bound_to_reset_offers_undo_reset_in_the_menu() {
+    let mut keys = ShortcutKeys::default();
+    keys.set(
+        Shortcut::Reset,
+        Binding::with(Modifier::Select, Device::Start),
+    );
+    let (mut s, _d, mut now) = session_playing_with(&keys);
+    assert!(
+        runs_at(&mut s, &mut now, Speed::Normal),
+        "the game never ran"
+    );
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Select)]);
+    step(&mut s, &mut now, &[RawEvent::Down(Btn::Start)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Start)]);
+    step(&mut s, &mut now, &[RawEvent::Up(Btn::Select)]);
+    for _ in 0..30 {
+        step(&mut s, &mut now, &[]);
+    }
+    assert_eq!(s.app().undo_label(), Some("undo reset"));
+    open_menu(&mut s, &mut now);
+    assert!(!s.app().in_game_hidden().contains(&QuickRow::UndoReset));
 }

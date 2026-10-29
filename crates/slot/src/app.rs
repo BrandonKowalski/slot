@@ -134,6 +134,9 @@ pub enum PendingUndo {
     Load {
         prior: Vec<u8>,
     },
+    Reset {
+        prior: Vec<u8>,
+    },
 }
 
 struct LinkSession {
@@ -1060,6 +1063,9 @@ impl App {
         if !matches!(offer, Some(PendingUndo::Load { .. })) || !self.may_load_state() {
             hidden.push(QuickRow::UndoLoad);
         }
+        if !matches!(offer, Some(PendingUndo::Reset { .. })) || !self.may_load_state() {
+            hidden.push(QuickRow::UndoReset);
+        }
         hidden
     }
 
@@ -1239,6 +1245,7 @@ impl App {
             | QuickRow::Resume
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
+            | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
             | QuickRow::Settings
@@ -1289,6 +1296,7 @@ impl App {
             | QuickRow::ScRewind
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
+            | QuickRow::ScReset
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame => None,
@@ -2960,6 +2968,7 @@ impl App {
                     self.shot_wanted = true
                 }
                 Action::LoadState => self.load_newest(),
+                Action::Reset => self.reset_game(),
                 Action::RewindStart if !self.may_rewind() => self.refuse(),
                 Action::FfStart if !self.may_fast_forward() => self.refuse(),
                 _ => {}
@@ -3056,7 +3065,7 @@ impl App {
     fn open_in_game_row(&mut self, row: QuickRow) {
         match row {
             QuickRow::Resume => self.in_game_menu = None,
-            QuickRow::UndoSave | QuickRow::UndoLoad => {
+            QuickRow::UndoSave | QuickRow::UndoLoad | QuickRow::UndoReset => {
                 self.in_game_menu = None;
                 self.undo(self.now());
             }
@@ -3162,6 +3171,7 @@ impl App {
             | QuickRow::Resume
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
+            | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
             | QuickRow::Settings
@@ -3219,6 +3229,7 @@ impl App {
             | QuickRow::ScRewind
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
+            | QuickRow::ScReset
             | QuickRow::LidOff => {}
         }
     }
@@ -3417,6 +3428,7 @@ impl App {
             | QuickRow::Resume
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
+            | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
             | QuickRow::Settings
@@ -3477,6 +3489,7 @@ impl App {
             | QuickRow::ScRewind
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
+            | QuickRow::ScReset
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame
@@ -4047,7 +4060,9 @@ impl App {
         if let Some(p) = &mut self.polaroids {
             p.set_undo(offer);
         }
-        if let Some(row @ (QuickRow::UndoSave | QuickRow::UndoLoad)) = self.in_game_menu {
+        if let Some(row @ (QuickRow::UndoSave | QuickRow::UndoLoad | QuickRow::UndoReset)) =
+            self.in_game_menu
+        {
             if self.in_game_hidden().contains(&row) {
                 self.in_game_menu = Some(QuickRow::Resume);
             }
@@ -6167,6 +6182,21 @@ impl App {
         self.load_file(&newest);
     }
 
+    fn reset_game(&mut self) {
+        if !self.may_load_state() {
+            return self.refuse();
+        }
+        let Some(snapshot) = &self.snapshot else {
+            return;
+        };
+        let prior = snapshot.state();
+        snapshot.reset();
+        self.hud.toast(Toast::GameReset, self.now());
+        if let Some(prior) = prior {
+            self.pending = Some((PendingUndo::Reset { prior }, self.now()));
+        }
+    }
+
     fn load_file(&mut self, state: &Path) -> bool {
         if !self.may_load_state() {
             self.refuse();
@@ -6258,6 +6288,7 @@ impl App {
         match self.pending.as_ref()?.0 {
             PendingUndo::Save { .. } => Some("undo save"),
             PendingUndo::Load { .. } => Some("undo load"),
+            PendingUndo::Reset { .. } => Some("undo reset"),
         }
     }
 
@@ -6372,7 +6403,11 @@ impl App {
             self.pending = None;
             return;
         }
-        if matches!(&self.pending, Some((PendingUndo::Load { .. }, _))) && !self.may_load_state() {
+        if matches!(
+            &self.pending,
+            Some((PendingUndo::Load { .. } | PendingUndo::Reset { .. }, _))
+        ) && !self.may_load_state()
+        {
             return self.refuse();
         }
         let Some((what, _)) = self.pending.take() else {
@@ -6380,7 +6415,7 @@ impl App {
         };
         match what {
             PendingUndo::Save { stamp, evicted } => self.undo_save(&stamp, evicted),
-            PendingUndo::Load { prior } => {
+            PendingUndo::Load { prior } | PendingUndo::Reset { prior } => {
                 if let Some(snapshot) = &self.snapshot {
                     snapshot.load(prior);
                 }

@@ -86,6 +86,12 @@ impl RetroCore for MockCore {
         }
     }
 
+    fn reset(&mut self) {
+        self.frame = 0;
+        self.audio.clear();
+        self.render();
+    }
+
     fn set_frame_skip(&mut self, skip: bool) {
         self.skip_next = skip;
     }
