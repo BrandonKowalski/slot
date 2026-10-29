@@ -1,0 +1,12 @@
+--- a/src/gb/video.c
++++ b/src/gb/video.c
+@@ -746,6 +746,9 @@
+ 		}
+ 		video->p->memory.io[GB_REG_STAT] = video->stat;
+ 		video->renderer->writePalette(video->renderer, 0, video->palette[0]);
++		if (video->frameskipCounter < 1) {
++			video->frameskipCounter = 1;
++		}
+ 
+ 		mTimingDeschedule(&video->p->timing, &video->frameEvent);
+ 	}
