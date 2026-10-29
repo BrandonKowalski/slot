@@ -3,7 +3,7 @@
 Three submenus for adjusting controls can be found in Settings → Controls.
 
 - **Shelf**: the keys for getting around the shelf. Previous Shelf, Next Shelf and Favorite.
-- **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, screenshots, fast-forward and rewind.
+- **Shortcuts**: everything you do with a chord in game. Save and load states, brightness, blue light, shaders, palettes, color correction, screenshots, fast-forward, rewind and the [solar sensor](playing.md#solar-sensor).
 - **In-Game**: which console button each button on your device presses. This is where you'd swap A and B, or move Turbo A and Turbo B off X and Y.
 
 All three apply globally. The In-Game page is also in the in-game menu, for on-the-fly remapping.
