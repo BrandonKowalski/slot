@@ -15,8 +15,8 @@ use slot_store::{
 use slot_ui::{
     board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_sticker, ease,
     footer_ink, grown, lid_at, lid_from, lift_of, on_board, repeat_gap, shelf_cart_at, BezelArt,
-    ClockFaces, ClockPicker, ClockRow, ClockScreen, Draw, FfState, GbShell, Hud, HudKind, Icon,
-    LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
+    ClockFaces, ClockPicker, ClockRow, ClockScreen, Draw, FfState, GbShell, Guide, Hud, HudKind,
+    Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
     QuickValue, Refusal, Shelf, ShotMode, ShotViewer, SlotChrome, TexId, Toast, CART_W, CHIP_H,
     CHIP_U, CHIP_V, CHIP_W, HINT_EDGE, HOP_LIFT, MOUTH_H, REPEAT_DELAY_MS, SHADOW_H, SHADOW_W,
     SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
@@ -481,6 +481,10 @@ pub struct App {
     shot_opens: u64,
     shot_tick_face: Option<(TexId, u32, u32)>,
     delete_shot_text: Option<[(TexId, u32, u32); 2]>,
+    has_guide: bool,
+    guide: Option<(Guide, PathBuf)>,
+    guide_hint_faces: Vec<TexId>,
+    guide_help_face: Option<((TexId, u32, u32), TexId)>,
 }
 
 const FACE_AHEAD: i32 = 8;
@@ -545,6 +549,10 @@ impl App {
             shot_viewer: None,
             delete_shot_faces: Vec::new(),
             shot_hint_faces: Vec::new(),
+            has_guide: false,
+            guide: None,
+            guide_hint_faces: Vec::new(),
+            guide_help_face: None,
             shot_opens: 0,
             shot_tick_face: None,
             delete_shot_text: None,
@@ -861,6 +869,7 @@ impl App {
             Phase::SetClock { .. } => true,
             Phase::QuickMenu { .. } => vertical,
             Phase::Shelf => vertical && self.core_picker.is_none(),
+            Phase::Polaroids { .. } if self.guide.is_some() => true,
             Phase::Polaroids { .. } => match self.shot_viewer.as_ref().map(ShotViewer::mode) {
                 Some(ShotMode::Grid) => true,
                 Some(ShotMode::Zoomed) => false,
@@ -1053,6 +1062,9 @@ impl App {
         if !self.has_shots || self.link_active() {
             hidden.push(QuickRow::Screenshots);
         }
+        if !self.has_guide || self.link_active() {
+            hidden.push(QuickRow::Guide);
+        }
         let offer = match self.undo_available(self.now()) {
             true => self.pending.as_ref().map(|(what, _)| what),
             false => None,
@@ -1073,6 +1085,7 @@ impl App {
         self.has_states = !self.entries().is_empty();
         let removing = self.shot_writer.removing();
         self.has_shots = self.shot_dir().is_some_and(|s| s.any(&removing));
+        self.has_guide = self.guide_file().is_some();
     }
 
     fn list_shots_later(&mut self) {
@@ -1248,6 +1261,7 @@ impl App {
             | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
+            | QuickRow::Guide
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -1297,6 +1311,7 @@ impl App {
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
             | QuickRow::ScReset
+            | QuickRow::ScGuide
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame => None,
@@ -2969,10 +2984,12 @@ impl App {
                 }
                 Action::LoadState => self.load_newest(),
                 Action::Reset => self.reset_game(),
+                Action::Guide => self.open_guide(),
                 Action::RewindStart if !self.may_rewind() => self.refuse(),
                 Action::FfStart if !self.may_fast_forward() => self.refuse(),
                 _ => {}
             },
+            Phase::Polaroids { .. } if self.guide.is_some() => self.guide_input(action),
             Phase::Polaroids { .. } if self.shot_viewer.is_some() => self.shot_input(action),
             Phase::Polaroids { .. } => match action {
                 Action::ShelfLeft | Action::GbaDown(Btn::Left) => self.flick(Polaroids::left),
@@ -3071,6 +3088,7 @@ impl App {
             }
             QuickRow::States => self.open_states(),
             QuickRow::Screenshots => self.open_shots(),
+            QuickRow::Guide => self.open_guide(),
             QuickRow::ExitGame => self.eject(),
             _ => {
                 if let Some(child) = row.child() {
@@ -3174,6 +3192,7 @@ impl App {
             | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
+            | QuickRow::Guide
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -3230,6 +3249,7 @@ impl App {
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
             | QuickRow::ScReset
+            | QuickRow::ScGuide
             | QuickRow::LidOff => {}
         }
     }
@@ -3431,6 +3451,7 @@ impl App {
             | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
+            | QuickRow::Guide
             | QuickRow::Settings
             | QuickRow::ExitGame
             | QuickRow::PlayScreen
@@ -3490,6 +3511,7 @@ impl App {
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
             | QuickRow::ScReset
+            | QuickRow::ScGuide
             | QuickRow::Controls
             | QuickRow::ControlsShelf
             | QuickRow::ControlsInGame
@@ -4527,6 +4549,18 @@ impl App {
                 self.chrome(cart, 0.0, out);
             }
             Phase::Playing { .. } => self.push_game(out),
+            Phase::Polaroids { .. } if self.guide.is_some() => {
+                if let Some((g, _)) = &self.guide {
+                    g.draw(
+                        self.canvas(),
+                        self.battery,
+                        self.battery_percent,
+                        self.hud_bolt,
+                        self.shelf_clock,
+                        out,
+                    );
+                }
+            }
             Phase::Polaroids { .. } if self.shot_viewer.is_some() => {
                 if let Some(v) = &self.shot_viewer {
                     v.draw(
@@ -5406,6 +5440,7 @@ impl App {
             _ => None,
         };
         let row = self.album_row();
+        self.shut_guide();
         self.shot_viewer = None;
         if std::mem::take(&mut self.states_from_menu) {
             self.in_game_menu = Some(row);
@@ -5830,6 +5865,7 @@ impl App {
             self.end_link();
         }
         self.close_game_menu();
+        self.save_guide_spot();
         self.remember_shelf();
         self.powering_off = true;
         self.act_at = self.now() + SHUTDOWN_SHOW_MS;
@@ -5992,6 +6028,7 @@ impl App {
         };
         let cart = std::mem::take(cart);
         let row = self.album_row();
+        self.shut_guide();
         self.polaroids = None;
         self.shot_viewer = None;
         self.delete_prompt = false;
@@ -6061,7 +6098,127 @@ impl App {
         }
     }
 
+    fn guide_file(&self) -> Option<PathBuf> {
+        let (Some(root), Some(cart)) = (&self.root, self.seated_cart()) else {
+            return None;
+        };
+        slot_store::find_guide(root, cart.platform, &cart.stem)
+    }
+
+    fn open_guide(&mut self) {
+        if self.link_active() {
+            return self.refuse();
+        }
+        let (Some(root), Some(path)) = (self.root.clone(), self.guide_file()) else {
+            self.has_guide = false;
+            return self.refuse();
+        };
+        let lines = match slot_store::read_guide(&path) {
+            Ok(lines) => lines,
+            Err(e) => {
+                eprintln!("slot: guide: {}: {e}", path.display());
+                return self.refuse();
+            }
+        };
+        let Phase::Playing { cart } = &mut self.phase else {
+            return;
+        };
+        let cart = std::mem::take(cart);
+        self.states_from_menu = self.in_game_menu.take().is_some();
+        let spot = slot_store::read_guide_spot(&root, &path);
+        let mut guide = Guide::new(lines, spot, self.canvas());
+        guide.set_hint_faces(self.guide_hint_faces.clone());
+        if let Some((face, title)) = self.guide_help_face {
+            guide.set_help_face(face, title);
+        }
+        self.guide = Some((guide, path));
+        self.phase = Phase::Polaroids { cart };
+    }
+
+    fn shut_guide(&mut self) {
+        self.save_guide_spot();
+        self.guide = None;
+    }
+
+    fn save_guide_spot(&self) {
+        let (Some((guide, path)), Some(root)) = (&self.guide, &self.root) else {
+            return;
+        };
+        if let Err(e) = slot_store::write_guide_spot(root, path, guide.spot()) {
+            eprintln!("slot: guide: {}: {e}", path.display());
+        }
+    }
+
+    fn guide_input(&mut self, action: Action) {
+        let canvas = self.canvas();
+        if action == Action::Guide {
+            return self.close_polaroids();
+        }
+        let Some((g, _)) = &mut self.guide else {
+            return;
+        };
+        let pressed = match action {
+            Action::QuickMenu => return g.toggle_help(),
+            Action::GbaDown(b) => b,
+            _ => return,
+        };
+        if g.help() {
+            if pressed == Btn::B {
+                g.toggle_help();
+            }
+            return;
+        }
+        match pressed {
+            Btn::Up => g.scroll(-1, canvas),
+            Btn::Down => g.scroll(1, canvas),
+            Btn::Left => g.pan(-1, canvas),
+            Btn::Right => g.pan(1, canvas),
+            Btn::L1 => g.page(-1, canvas),
+            Btn::R1 => g.page(1, canvas),
+            Btn::A => {
+                g.zoom_by(1, canvas);
+            }
+            Btn::Y => {
+                g.zoom_by(-1, canvas);
+            }
+            Btn::B => self.close_polaroids(),
+            _ => {}
+        }
+    }
+
+    pub fn guide(&self) -> Option<&Guide> {
+        self.guide.as_ref().map(|(g, _)| g)
+    }
+
+    pub fn guide_title(&self) -> Option<&str> {
+        self.guide.as_ref()?;
+        self.seated_cart().map(|c| c.title.as_str())
+    }
+
+    pub fn set_guide_title_face(&mut self, face: TexId) {
+        if let Some((g, _)) = &mut self.guide {
+            g.set_title_face(Some(face));
+        }
+    }
+
+    pub fn set_guide_page_face(&mut self, tex: TexId, view: slot_ui::GuideView) {
+        if let Some((g, _)) = &mut self.guide {
+            g.set_page_face(tex, view);
+        }
+    }
+
+    pub fn set_guide_hint_faces(&mut self, faces: Vec<TexId>) {
+        self.guide_hint_faces = faces;
+    }
+
+    pub fn set_guide_help_face(&mut self, face: (TexId, u32, u32), title: TexId) {
+        self.guide_help_face = Some((face, title));
+    }
+
     fn album_row(&self) -> QuickRow {
+        if self.guide.is_some() {
+            return QuickRow::Guide;
+        }
         match self.shot_viewer {
             Some(_) => QuickRow::Screenshots,
             None => QuickRow::States,

@@ -13,6 +13,7 @@ mod core;
 pub mod gb;
 mod gb_palette;
 mod gba;
+mod guides;
 pub mod ini;
 mod platform;
 mod ring;
@@ -35,6 +36,10 @@ pub use core::{
 };
 pub use gb_palette::{GbColors, GbPalette};
 pub use gba::{header_clean, header_code, header_title, header_title_code};
+pub use guides::{
+    decode_guide, find_guide, read_guide, read_guide_spot, write_guide_spot, GuideSpot, GUIDES_DIR,
+    GUIDE_SPOTS_FILE,
+};
 pub use platform::Platform;
 pub use ring::{StateEntry, StateRing, RING_MAX};
 pub use scan::{initial, is_hidden, listing, scan, sort_key, Cart, StoreError};

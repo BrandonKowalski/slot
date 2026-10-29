@@ -186,6 +186,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
             QuickRow::ScreenGeneral,
             QuickRow::UndoSave,
             QuickRow::UndoLoad,
+            QuickRow::Guide
         ]
     );
     for page in [
@@ -354,6 +355,7 @@ fn the_in_game_pages_hold_their_rows_in_order() {
             QuickRow::UndoReset,
             QuickRow::States,
             QuickRow::Screenshots,
+            QuickRow::Guide,
             QuickRow::Settings,
             QuickRow::ExitGame
         ]

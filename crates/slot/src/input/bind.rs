@@ -60,5 +60,6 @@ pub(super) fn shortcut_action(s: Shortcut) -> Action {
         Shortcut::SunlightUp => Action::SunlightUp,
         Shortcut::SunlightDown => Action::SunlightDown,
         Shortcut::Reset => Action::Reset,
+        Shortcut::Guide => Action::Guide,
     }
 }

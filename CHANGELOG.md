@@ -9,6 +9,7 @@
 - A bezel that's solid from just under the game to the bottom edge, like AGS-102, now puts the game at the top of the screen on 640×480 devices, for GBA, Game Boy and Game Boy Color. ([#159](https://github.com/BrandonKowalski/slot/issues/159))
 - The Default Game Boy Color bezel in Fit on 640×480 devices shows just the power light, without the cut-off POWER label beside it.
 - Reset Game is a new shortcut that starts the game over from power on. ([#168](https://github.com/BrandonKowalski/slot/issues/168))
+- Game guides: put a `.txt` with the game's name in `Guides/GBA`, `Guides/GB` or `Guides/GBC`, and Guide shows up in the in-game menu. ([#167](https://github.com/BrandonKowalski/slot/issues/167))
 - Game Boy and Game Boy Color games on mGBA no longer flash a frame of stray tiles and sprites when the screen comes back on, as in Pokémon Pinball when the ball moves between the top and bottom of the table. ([#169](https://github.com/BrandonKowalski/slot/issues/169))
 - Frame Blending's LCD Ghosting is now called Ghosting, and the Fast Forward Toggle shortcut is now FF Toggle, so both fit on 640×480 screens. A long button combo is drawn smaller instead of running into its row's name.
 

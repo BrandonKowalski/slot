@@ -54,6 +54,7 @@ pub struct Frontend {
     core_built: Option<String>,
     undo_tex: Option<TexId>,
     switcher: Switcher,
+    guide_page: GuidePage,
     clocks: Clocks,
     about: AboutFace,
     quick_clock: QuickClock,
@@ -191,6 +192,7 @@ impl Frontend {
             core_built: None,
             undo_tex: None,
             switcher: Switcher::default(),
+            guide_page: GuidePage::default(),
             clocks: Clocks::default(),
             about: AboutFace::default(),
             quick_clock: QuickClock::default(),
@@ -268,6 +270,26 @@ impl Frontend {
             })
             .collect();
         self.session.app_mut().set_shot_hint_faces(shot_hints);
+        let guide_hints = slot_ui::GUIDE_HINTS
+            .iter()
+            .map(|&(key, label)| {
+                let f = match key == slot_ui::PAN_KEY {
+                    true => slot_ui::pad_hint_face(label),
+                    false => hint_face(key, label),
+                };
+                compositor.create_texture(f.w, f.h, &f.rgba)
+            })
+            .collect();
+        self.session.app_mut().set_guide_hint_faces(guide_hints);
+        let help = slot_ui::guide_help_face();
+        let help = (
+            compositor.create_texture(help.w, help.h, &help.rgba),
+            help.w,
+            help.h,
+        );
+        let title = title_face(slot_ui::GUIDE_HELP_TITLE);
+        let title = compositor.create_texture(title.w, title.h, &title.rgba);
+        self.session.app_mut().set_guide_help_face(help, title);
         let tick = slot_ui::tick_cap_face();
         let tick = (
             compositor.create_texture(tick.w, tick.h, &tick.rgba),
@@ -653,6 +675,7 @@ impl Frontend {
             },
             &mut self.switcher,
         );
+        sync_guide(self.session.app_mut(), compositor, &mut self.guide_page);
         self.draws.clear();
         self.session.app().draw(&mut self.draws);
         compositor.draw_list(&self.draws);
@@ -1019,6 +1042,37 @@ fn sync_switcher(app: &mut App, compositor: &mut Compositor, texes: Faces, state
         app.set_polaroid_title_face(id);
     }
     sync_gallery(app, compositor, state);
+}
+
+#[derive(Default)]
+struct GuidePage {
+    tex: Option<TexId>,
+    title: Option<TexId>,
+    shown: Option<slot_ui::GuideView>,
+    titled: bool,
+    glyphs: slot_ui::GuideGlyphs,
+}
+
+fn sync_guide(app: &mut App, compositor: &mut Compositor, state: &mut GuidePage) {
+    let canvas = app.canvas();
+    let Some(guide) = app.guide() else {
+        state.shown = None;
+        state.titled = false;
+        return;
+    };
+    let view = guide.view(canvas);
+    if state.shown != Some(view) {
+        let face = guide.render(canvas, &mut state.glyphs);
+        let tex = upload(compositor, &mut state.tex, face);
+        state.shown = Some(view);
+        app.set_guide_page_face(tex, view);
+    }
+    if !state.titled {
+        let title = title_face(app.guide_title().unwrap_or_default());
+        let tex = upload(compositor, &mut state.title, title);
+        state.titled = true;
+        app.set_guide_title_face(tex);
+    }
 }
 
 fn close_gallery(app: &mut App, state: &mut Switcher) {

@@ -115,10 +115,12 @@ pub enum QuickRow {
     GbcBlending,
     GbBlending,
     Blending,
+    Guide,
+    ScGuide,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 104] = [
+    pub const ALL: [QuickRow; 106] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -223,6 +225,8 @@ impl QuickRow {
         QuickRow::GbcBlending,
         QuickRow::GbBlending,
         QuickRow::Blending,
+        QuickRow::Guide,
+        QuickRow::ScGuide,
     ];
 
     pub const MAIN: [QuickRow; 5] = [
@@ -270,7 +274,7 @@ impl QuickRow {
         QuickRow::GameTurboB,
     ];
 
-    pub const SHORTCUTS: [QuickRow; 18] = [
+    pub const SHORTCUTS: [QuickRow; 19] = [
         QuickRow::ScSave,
         QuickRow::ScLoad,
         QuickRow::ScScreenshot,
@@ -289,6 +293,7 @@ impl QuickRow {
         QuickRow::ScSunlightUp,
         QuickRow::ScSunlightDown,
         QuickRow::ScReset,
+        QuickRow::ScGuide,
     ];
 
     pub const SCREEN: [QuickRow; 4] = [
@@ -343,13 +348,14 @@ impl QuickRow {
         QuickRow::EjectSave,
     ];
 
-    pub const PLAY: [QuickRow; 8] = [
+    pub const PLAY: [QuickRow; 9] = [
         QuickRow::Resume,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
         QuickRow::UndoReset,
         QuickRow::States,
         QuickRow::Screenshots,
+        QuickRow::Guide,
         QuickRow::Settings,
         QuickRow::ExitGame,
     ];
@@ -434,6 +440,7 @@ impl QuickRow {
             | QuickRow::UndoReset
             | QuickRow::States
             | QuickRow::Screenshots
+            | QuickRow::Guide
             | QuickRow::Settings
             | QuickRow::ExitGame => &QuickRow::PLAY,
             QuickRow::PlayScreen | QuickRow::PlayGameplay | QuickRow::PlayControls => {
@@ -564,6 +571,7 @@ impl QuickRow {
             QuickRow::UndoReset => "Undo Reset",
             QuickRow::States => "States",
             QuickRow::Screenshots => "Screenshots",
+            QuickRow::Guide => "Guide",
             QuickRow::Settings => "Settings",
             QuickRow::ExitGame => "Exit Game",
             QuickRow::General => "General",
@@ -602,7 +610,8 @@ impl QuickRow {
             | QuickRow::ScRewind
             | QuickRow::ScSunlightUp
             | QuickRow::ScSunlightDown
-            | QuickRow::ScReset => self.shortcut().map_or("", Shortcut::label),
+            | QuickRow::ScReset
+            | QuickRow::ScGuide => self.shortcut().map_or("", Shortcut::label),
             QuickRow::ShelfPrev | QuickRow::ShelfNext | QuickRow::ShelfFavorite => {
                 self.carousel_action().map_or("", CarouselAction::label)
             }
@@ -642,6 +651,7 @@ impl QuickRow {
                 | QuickRow::UndoReset
                 | QuickRow::States
                 | QuickRow::Screenshots
+                | QuickRow::Guide
                 | QuickRow::Settings
                 | QuickRow::ExitGame
                 | QuickRow::PlayScreen
@@ -697,6 +707,7 @@ impl QuickRow {
             QuickRow::ScSunlightUp => Shortcut::SunlightUp,
             QuickRow::ScSunlightDown => Shortcut::SunlightDown,
             QuickRow::ScReset => Shortcut::Reset,
+            QuickRow::ScGuide => Shortcut::Guide,
             _ => return None,
         })
     }
@@ -1035,7 +1046,7 @@ pub fn quick_warning_value_face(text: &str, lit: bool) -> UndoFace {
     UndoFace { rgba, w, h }
 }
 
-fn quick_text_face(label: &str, colour: [u8; 3]) -> UndoFace {
+pub(crate) fn quick_text_face(label: &str, colour: [u8; 3]) -> UndoFace {
     let Some(font) = text::label_font() else {
         return UndoFace {
             rgba: Vec::new(),
@@ -1201,7 +1212,7 @@ fn with_hint(button: UndoFace, label: &str, ink: Option<[u8; 3]>, hint_on_right:
     UndoFace { rgba, w, h }
 }
 
-fn button_face(which: ButtonLegend) -> UndoFace {
+pub(crate) fn button_face(which: ButtonLegend) -> UndoFace {
     let (rgba, w, h) = button_legend(which);
     UndoFace {
         rgba: rgba.to_vec(),
@@ -1212,7 +1223,7 @@ fn button_face(which: ButtonLegend) -> UndoFace {
 
 const ARROW_EDGE: u32 = 480;
 
-fn up_down_pair() -> UndoFace {
+pub(crate) fn up_down_pair() -> UndoFace {
     let (left, lw, lh) = button_legend(ButtonLegend::Left);
     let (right, rw, rh) = button_legend(ButtonLegend::Right);
     join(
@@ -1271,7 +1282,7 @@ fn arrow_turned(px: &[u8], w: u32, h: u32) -> Vec<u8> {
     out
 }
 
-fn button_pair(left: ButtonLegend, right: ButtonLegend) -> UndoFace {
+pub(crate) fn button_pair(left: ButtonLegend, right: ButtonLegend) -> UndoFace {
     let (a, aw, ah) = button_legend(left);
     let (b, bw, bh) = button_legend(right);
     join((a, aw, ah), (b, bw, bh))

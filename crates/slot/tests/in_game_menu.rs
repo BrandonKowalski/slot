@@ -95,6 +95,7 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
     let empty = [
         QuickRow::States,
         QuickRow::Screenshots,
+        QuickRow::Guide,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
         QuickRow::UndoReset,

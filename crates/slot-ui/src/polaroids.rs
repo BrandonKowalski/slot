@@ -212,7 +212,7 @@ impl Polaroids {
     }
 }
 
-fn plate(canvas: Canvas, y: f32) -> Draw {
+pub(crate) fn plate(canvas: Canvas, y: f32) -> Draw {
     Draw::Rect {
         x: 0.0,
         y,
