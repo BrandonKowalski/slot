@@ -363,7 +363,7 @@ impl Shortcut {
             Shortcut::ShaderNext => "Shader Next",
             Shortcut::ShaderBack => "Shader Back",
             Shortcut::FastForward => "Fast Forward",
-            Shortcut::FastForwardToggle => "Fast Forward Toggle",
+            Shortcut::FastForwardToggle => "FF Toggle",
             Shortcut::Rewind => "Rewind",
             Shortcut::SunlightUp => "Sunlight Up",
             Shortcut::SunlightDown => "Sunlight Down",

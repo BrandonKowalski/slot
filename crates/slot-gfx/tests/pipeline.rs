@@ -1,6 +1,7 @@
 use slot_gfx::{
-    blue_light_gain, canvas_size, game_layout, lcd3x_factors, lcd3x_mask, Compositor, Draw,
-    GameLayout, HeadlessSurface, ScreenEffect, Sizing, OUT_H, OUT_W, SRC_H, SRC_W,
+    blue_light_gain, canvas_size, contrast_boost, game_layout, lcd3x_factors, lcd3x_mask,
+    saturation_boost, Compositor, Draw, GameLayout, HeadlessSurface, ScreenEffect, Sizing, OUT_H,
+    OUT_W, SRC_H, SRC_W,
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
@@ -761,6 +762,195 @@ fn simpletex_shows_a_grey_paper_as_grey() {
     assert!(
         got.iter().all(|ch| ch.abs_diff(0x60) <= 2),
         "white through a 0x60 paper came out {got:?}"
+    );
+}
+
+fn every_fourth_column_lit() -> Vec<u8> {
+    let mut buf = Vec::with_capacity((SRC_W * SRC_H * 4) as usize);
+    for _ in 0..SRC_H {
+        for x in 0..SRC_W {
+            let v = if x % 4 == 0 { 255 } else { 0 };
+            buf.extend_from_slice(&[v, v, v, 0]);
+        }
+    }
+    buf
+}
+
+fn column_widths(c: &mut Compositor, effect: ScreenEffect) -> Vec<f32> {
+    c.fit((640, 480));
+    c.set_game_source_rect(WHOLE);
+    c.set_screen_effect(effect);
+    c.set_screen_power(1.0);
+    c.begin_frame();
+    c.upload_game(&every_fourth_column_lit());
+    c.draw_game();
+    let (w, h) = c.frame_size();
+    let frame = c.read_frame();
+    let row = h as usize / 2;
+    let lit = |x: usize| frame[(row * w as usize + x) * 4 + 1] as f32 / 255.0;
+    let span = w as f32 / SRC_W as f32;
+    (4..SRC_W as usize - 4)
+        .step_by(4)
+        .map(|k| {
+            let from = ((k - 1) as f32 * span) as usize;
+            let to = ((k + 2) as f32 * span).ceil() as usize;
+            (from..to).map(lit).sum()
+        })
+        .collect()
+}
+
+#[test]
+fn shimmerless_gives_every_game_column_the_same_width_on_a_4_by_3_panel() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let spread = |widths: &[f32]| {
+        let (lo, hi) = widths
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(lo, hi), w| (lo.min(*w), hi.max(*w)));
+        hi - lo
+    };
+    let sharp = column_widths(&mut c, ScreenEffect::None);
+    assert!(
+        spread(&sharp) > 0.9,
+        "plain columns were already even: {sharp:?}"
+    );
+    let even = column_widths(&mut c, ScreenEffect::Shimmerless);
+    assert!(spread(&even) < 0.03, "shimmerless columns: {even:?}");
+    let want = 640.0 / SRC_W as f32;
+    assert!(
+        even.iter().all(|w| (w - want).abs() < 0.03),
+        "each column should cover {want} pixels: {even:?}"
+    );
+}
+
+#[test]
+fn shimmerless_never_blends_the_margin_into_the_picture() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let inside = [0x40, 0x80, 0xc0];
+    let margin = [255, 0, 255];
+    c.set_game_layout(game_layout((640, 480), (160, 144), Sizing::Fit));
+    c.fit((640, 480));
+    c.set_picture([
+        GB_RECT[0],
+        GB_RECT[1],
+        GB_RECT[0] + GB_RECT[2],
+        GB_RECT[1] + GB_RECT[3],
+    ]);
+    c.set_screen_effect(ScreenEffect::Shimmerless);
+    c.set_screen_power(1.0);
+    for drift in [0.0f32, 0.15, 0.4] {
+        c.set_game_source_rect([
+            GB_RECT[0] + drift / SRC_W as f32,
+            GB_RECT[1] + drift / SRC_H as f32,
+            GB_RECT[2],
+            GB_RECT[3],
+        ]);
+        c.begin_frame();
+        c.upload_game(&gb_shaped(|_, _| inside, margin));
+        c.draw_game();
+        let frame = c.read_frame();
+        let near = |p: [u8; 3], w: [u8; 3]| p.iter().zip(w).all(|(g, w)| g.abs_diff(w) <= 1);
+        for y in 0..480 {
+            for x in 53..53 + 533 {
+                let got = at(&frame, 640, x, y);
+                assert!(
+                    near(got, inside) || near(got, margin),
+                    "drift {drift}: ({x}, {y}) is a blend, {got:?}"
+                );
+            }
+        }
+    }
+}
+
+fn graded(c: &mut Compositor, rgb: [u8; 3], saturation: u8, contrast: u8) -> [u8; 3] {
+    c.fit((OUT_W, OUT_H));
+    c.set_game_source_rect(WHOLE);
+    c.set_screen_effect(ScreenEffect::None);
+    c.set_screen_power(1.0);
+    c.set_saturation(saturation);
+    c.set_contrast(contrast);
+    c.begin_frame();
+    c.upload_game(&flat_shot([rgb[2], rgb[1], rgb[0]]));
+    c.draw_game();
+    let frame = c.read_window((OUT_W, OUT_H));
+    px(&frame, OUT_W as usize / 2, OUT_H as usize / 2)
+}
+
+#[test]
+fn saturation_and_contrast_off_leave_the_screen_untouched() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    for rgb in [
+        [0x80, 0x60, 0x40],
+        [0, 0, 0],
+        [255, 255, 255],
+        [0x20, 0xc0, 0x90],
+    ] {
+        let got = graded(&mut c, rgb, 0, 0);
+        assert!(
+            got.iter().zip(rgb).all(|(g, w)| g.abs_diff(w) <= 1),
+            "{rgb:?} came out {got:?}"
+        );
+    }
+}
+
+#[test]
+fn saturation_spreads_a_muted_colour_and_leaves_every_grey_alone() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let muted = [0x90, 0x70, 0x50];
+    let spread = |p: [u8; 3]| p[0] as i32 - p[2] as i32;
+    let mut last = spread(muted);
+    for step in 1..=9 {
+        let got = graded(&mut c, muted, step, 0);
+        assert!(spread(got) > last, "step {step}: {got:?} is no richer");
+        last = spread(got);
+    }
+    for grey in [0x30, 0x80, 0xd0] {
+        let got = graded(&mut c, [grey; 3], 9, 0);
+        assert!(
+            got.iter().all(|ch| ch.abs_diff(grey) <= 1),
+            "grey {grey:#x} came out {got:?}"
+        );
+    }
+    assert_eq!(saturation_boost(0), 0.0);
+    assert_eq!(
+        saturation_boost(200),
+        saturation_boost(9),
+        "step must clamp, not wrap"
+    );
+}
+
+#[test]
+fn contrast_pushes_dark_and_light_away_from_mid_grey() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        return;
+    };
+    let (mut dark, mut light) = (0x40, 0xc0);
+    for step in 1..=9 {
+        let d = graded(&mut c, [0x40; 3], 0, step)[1];
+        let l = graded(&mut c, [0xc0; 3], 0, step)[1];
+        assert!(d < dark, "step {step}: dark grey went to {d:#x}");
+        assert!(l > light, "step {step}: light grey went to {l:#x}");
+        (dark, light) = (d, l);
+    }
+    let mid = graded(&mut c, [0x80; 3], 0, 9);
+    assert!(
+        mid.iter().all(|ch| ch.abs_diff(0x80) <= 1),
+        "mid grey came out {mid:?}"
+    );
+    let colour = graded(&mut c, [0xa0, 0x40, 0x40], 0, 9);
+    assert_eq!(colour[1], colour[2], "contrast tinted {colour:?}");
+    assert_eq!(contrast_boost(0), 0.0);
+    assert_eq!(
+        contrast_boost(200),
+        contrast_boost(9),
+        "step must clamp, not wrap"
     );
 }
 

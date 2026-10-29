@@ -93,8 +93,12 @@ pub enum QuickRow {
     ScreenGeneral,
     Brightness,
     BlueLight,
+    Saturation,
+    Contrast,
     PlayBrightness,
     PlayBlueLight,
+    PlaySaturation,
+    PlayContrast,
     AutoLoad,
     UndoSave,
     UndoLoad,
@@ -112,7 +116,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 98] = [
+    pub const ALL: [QuickRow; 102] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -195,8 +199,12 @@ impl QuickRow {
         QuickRow::ScreenGeneral,
         QuickRow::Brightness,
         QuickRow::BlueLight,
+        QuickRow::Saturation,
+        QuickRow::Contrast,
         QuickRow::PlayBrightness,
         QuickRow::PlayBlueLight,
+        QuickRow::PlaySaturation,
+        QuickRow::PlayContrast,
         QuickRow::AutoLoad,
         QuickRow::UndoSave,
         QuickRow::UndoLoad,
@@ -285,7 +293,12 @@ impl QuickRow {
         QuickRow::ScreenGb,
     ];
 
-    pub const SCREEN_GENERAL: [QuickRow; 2] = [QuickRow::Brightness, QuickRow::BlueLight];
+    pub const SCREEN_GENERAL: [QuickRow; 4] = [
+        QuickRow::Brightness,
+        QuickRow::BlueLight,
+        QuickRow::Saturation,
+        QuickRow::Contrast,
+    ];
 
     pub const SCREEN_GBA: [QuickRow; 5] = [
         QuickRow::GbaShader,
@@ -341,7 +354,7 @@ impl QuickRow {
         QuickRow::PlayControls,
     ];
 
-    pub const PLAY_SCREEN: [QuickRow; 9] = [
+    pub const PLAY_SCREEN: [QuickRow; 11] = [
         QuickRow::Shader,
         QuickRow::Bezel,
         QuickRow::Scale,
@@ -351,6 +364,8 @@ impl QuickRow {
         QuickRow::Blending,
         QuickRow::PlayBrightness,
         QuickRow::PlayBlueLight,
+        QuickRow::PlaySaturation,
+        QuickRow::PlayContrast,
     ];
 
     pub fn index(self) -> usize {
@@ -363,8 +378,14 @@ impl QuickRow {
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb => &QuickRow::SCREEN,
-            QuickRow::Brightness | QuickRow::BlueLight => &QuickRow::SCREEN_GENERAL,
-            QuickRow::PlayBrightness | QuickRow::PlayBlueLight => &QuickRow::PLAY_SCREEN,
+            QuickRow::Brightness
+            | QuickRow::BlueLight
+            | QuickRow::Saturation
+            | QuickRow::Contrast => &QuickRow::SCREEN_GENERAL,
+            QuickRow::PlayBrightness
+            | QuickRow::PlayBlueLight
+            | QuickRow::PlaySaturation
+            | QuickRow::PlayContrast => &QuickRow::PLAY_SCREEN,
             QuickRow::GbaShader
             | QuickRow::GbaColourCorrection
             | QuickRow::GbaBlending
@@ -509,6 +530,8 @@ impl QuickRow {
             QuickRow::ScreenGeneral => "General",
             QuickRow::Brightness | QuickRow::PlayBrightness => "Brightness",
             QuickRow::BlueLight | QuickRow::PlayBlueLight => "Blue Light",
+            QuickRow::Saturation | QuickRow::PlaySaturation => "Saturation",
+            QuickRow::Contrast | QuickRow::PlayContrast => "Contrast",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
             QuickRow::GbaShader => "Shader",
@@ -706,6 +729,7 @@ pub enum QuickValue {
     Grid,
     Dot,
     Simpletex,
+    Shimmerless,
     Dark,
     Light,
     Show,
@@ -739,7 +763,7 @@ pub enum QuickValue {
 }
 
 impl QuickValue {
-    pub const ALL: [QuickValue; 41] = [
+    pub const ALL: [QuickValue; 42] = [
         QuickValue::Speed1_5,
         QuickValue::Speed2,
         QuickValue::Speed3,
@@ -751,6 +775,7 @@ impl QuickValue {
         QuickValue::Grid,
         QuickValue::Dot,
         QuickValue::Simpletex,
+        QuickValue::Shimmerless,
         QuickValue::Dark,
         QuickValue::Light,
         QuickValue::Show,
@@ -822,6 +847,7 @@ impl QuickValue {
             QuickValue::Grid => "Grid",
             QuickValue::Dot => "Dot",
             QuickValue::Simpletex => "Simpletex",
+            QuickValue::Shimmerless => "Shimmerless",
             QuickValue::Dark => "Dark",
             QuickValue::Light => "Light",
             QuickValue::Show => "Show",
@@ -851,7 +877,7 @@ impl QuickValue {
             QuickValue::Classic => "Classic",
             QuickValue::FullScreen => "Full Screen",
             QuickValue::Mix => "Mix",
-            QuickValue::Ghosting => "LCD Ghosting",
+            QuickValue::Ghosting => "Ghosting",
         }
     }
 
@@ -895,6 +921,8 @@ impl QuickValue {
 pub const QUICK_PITCH: f32 = 52.0;
 pub const QUICK_EDGE: f32 = 32.0;
 pub const QUICK_LABEL_X: f32 = 53.0;
+pub const QUICK_VALUE_GAP: f32 = 24.0;
+const VALUE_MIN_SCALE: f32 = 0.6;
 pub(crate) const POINTER_GAP: f32 = 17.0;
 const POINTER_SCALE: usize = 3;
 const POINTER: [&str; 11] = [
@@ -1335,11 +1363,13 @@ impl QuickMenu<'_> {
         for row in shown.into_iter().skip(start).take(len) {
             let y = quick_row_top_at(row, self.row, self.hidden) + TYPE_DROP;
             let lit = row == self.row;
+            let mut label_end = QUICK_LABEL_X;
             if let Some(&(tex, w, h)) = faces.labels.get(row.index()).map(|l| &l[lit as usize]) {
                 let x = match row.centred() {
                     true => self.canvas.centred(main_w as f32),
                     false => QUICK_LABEL_X - pad,
                 };
+                label_end = x + w as f32 - pad;
                 push(out, tex, x, y, w, h);
                 if lit {
                     let (tex, pw, ph) = faces.pointer;
@@ -1366,7 +1396,17 @@ impl QuickMenu<'_> {
             let Some((tex, w, h)) = value else {
                 continue;
             };
-            push(out, tex, right + pad - w as f32, y, w, h);
+            let room = right - label_end - QUICK_VALUE_GAP;
+            let s = (room / (w as f32 - 2.0 * pad)).clamp(VALUE_MIN_SCALE, 1.0);
+            let (sw, sh) = (w as f32 * s, h as f32 * s);
+            out.push(Draw::Tex {
+                x: (right - (w as f32 - pad) * s).round(),
+                y: (y + (h as f32 - sh) / 2.0).round(),
+                w: sw,
+                h: sh,
+                tex,
+                alpha: 1.0,
+            });
         }
         if let Some(bar) = quick_scroll(self.row, self.hidden) {
             let x = self.canvas.w - SCROLL_INSET - SCROLL_W;

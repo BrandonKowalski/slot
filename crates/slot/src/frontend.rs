@@ -560,6 +560,8 @@ impl Frontend {
 
     pub fn compose(&mut self, compositor: &mut Compositor) {
         compositor.set_blue_light(self.session.app().blue_light());
+        compositor.set_saturation(self.session.app().saturation());
+        compositor.set_contrast(self.session.app().contrast());
         compositor.set_picture(self.session.app().picture_rect());
         compositor.set_screen_effect(match self.session.app().screen_shader() {
             slot_store::Shader::Off => ScreenEffect::None,
@@ -567,6 +569,7 @@ impl Frontend {
             slot_store::Shader::Grid => ScreenEffect::Grid,
             slot_store::Shader::Dot => ScreenEffect::Dot,
             slot_store::Shader::Simpletex => ScreenEffect::Simpletex,
+            slot_store::Shader::Shimmerless => ScreenEffect::Shimmerless,
         });
         compositor.set_shake(self.session.app().screen_shake());
         compositor.set_screen_power(self.session.app().screen_power());

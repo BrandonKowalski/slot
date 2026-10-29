@@ -9,8 +9,8 @@ use slot_retro::LinkChannel;
 use slot_store::{
     format_stamp, parse_stamp, read_slot_state, scan, write_slot_state, BezelPick, Blending, Cart,
     Core, GbColors, Platform, Recent, Scale, Shader, ShotDir, ShotEntry, SlotState, StateEntry,
-    StateRing, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,
-    RING_MAX, SUNLIGHT_MAX, VOLUME_MAX,
+    StateRing, Stretch, WallpaperPick, WallpaperTint, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, CONTRAST_MAX,
+    FF_SPEEDS, RING_MAX, SATURATION_MAX, SUNLIGHT_MAX, VOLUME_MAX,
 };
 use slot_ui::{
     board_from, board_zoom, draw_empty_slot, draw_footer, draw_ground, draw_sticker, ease,
@@ -1145,6 +1145,8 @@ impl App {
             (QuickRow::Stretch, Platform::Gbc) => QuickRow::GbcStretch,
             (QuickRow::PlayBrightness, _) => QuickRow::Brightness,
             (QuickRow::PlayBlueLight, _) => QuickRow::BlueLight,
+            (QuickRow::PlaySaturation, _) => QuickRow::Saturation,
+            (QuickRow::PlayContrast, _) => QuickRow::Contrast,
             (row, _) => row,
         }
     }
@@ -1155,6 +1157,8 @@ impl App {
             | QuickRow::ColourCorrection
             | QuickRow::PlayBrightness
             | QuickRow::PlayBlueLight
+            | QuickRow::PlaySaturation
+            | QuickRow::PlayContrast
             | QuickRow::Scale => self.quick_value(self.playing_row(row)),
             QuickRow::Stretch => match self.playing_row(row) {
                 QuickRow::Stretch => None,
@@ -1171,6 +1175,14 @@ impl App {
             QuickRow::Blending => Some(blending_value(self.blending_in_play())),
             QuickRow::Brightness => Some(QuickValue::level(self.state.brightness)),
             QuickRow::BlueLight => Some(match self.state.blue_light {
+                0 => QuickValue::Off,
+                n => QuickValue::level(n),
+            }),
+            QuickRow::Saturation => Some(match self.state.saturation {
+                0 => QuickValue::Off,
+                n => QuickValue::level(n),
+            }),
+            QuickRow::Contrast => Some(match self.state.contrast {
                 0 => QuickValue::Off,
                 n => QuickValue::level(n),
             }),
@@ -3076,8 +3088,12 @@ impl App {
             }
             QuickRow::Brightness
             | QuickRow::BlueLight
+            | QuickRow::Saturation
+            | QuickRow::Contrast
             | QuickRow::PlayBrightness
             | QuickRow::PlayBlueLight
+            | QuickRow::PlaySaturation
+            | QuickRow::PlayContrast
             | QuickRow::AutoLoad
             | QuickRow::EjectSave
             | QuickRow::Turbo
@@ -3177,6 +3193,18 @@ impl App {
             return;
         }
         let row = self.playing_row(row);
+        if let QuickRow::Saturation | QuickRow::Contrast = row {
+            let (level, max) = match row {
+                QuickRow::Saturation => (&mut self.state.saturation, SATURATION_MAX),
+                _ => (&mut self.state.contrast, CONTRAST_MAX),
+            };
+            *level = match right {
+                true => up(*level, 1, max),
+                false => level.saturating_sub(1),
+            };
+            self.persist_soon();
+            return;
+        }
         if let QuickRow::Brightness | QuickRow::BlueLight = row {
             let (kind, now, max) = match row {
                 QuickRow::Brightness => {
@@ -3328,8 +3356,12 @@ impl App {
             QuickRow::ScreenGeneral
             | QuickRow::Brightness
             | QuickRow::BlueLight
+            | QuickRow::Saturation
+            | QuickRow::Contrast
             | QuickRow::PlayBrightness
             | QuickRow::PlayBlueLight
+            | QuickRow::PlaySaturation
+            | QuickRow::PlayContrast
             | QuickRow::Wallpaper
             | QuickRow::Recents
             | QuickRow::ShowTitles
@@ -3429,6 +3461,7 @@ impl App {
             Shader::Grid => Toast::ShaderGrid,
             Shader::Dot => Toast::ShaderDot,
             Shader::Simpletex => Toast::ShaderSimpletex,
+            Shader::Shimmerless => Toast::ShaderShimmerless,
         };
         self.persist();
         self.hud.toast(said, self.now());
@@ -3581,6 +3614,14 @@ impl App {
 
     pub fn blue_light(&self) -> u8 {
         self.state.blue_light
+    }
+
+    pub fn saturation(&self) -> u8 {
+        self.state.saturation
+    }
+
+    pub fn contrast(&self) -> u8 {
+        self.state.contrast
     }
 
     pub fn brightness(&self) -> u8 {
@@ -6443,6 +6484,7 @@ fn shader_value(shader: Shader) -> QuickValue {
         Shader::Grid => QuickValue::Grid,
         Shader::Dot => QuickValue::Dot,
         Shader::Simpletex => QuickValue::Simpletex,
+        Shader::Shimmerless => QuickValue::Shimmerless,
     }
 }
 

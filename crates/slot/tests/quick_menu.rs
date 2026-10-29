@@ -466,7 +466,9 @@ fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     );
     for (btn, want, shown) in [
         (Btn::Right, Shader::Dot, QuickValue::Dot),
+        (Btn::Right, Shader::Shimmerless, QuickValue::Shimmerless),
         (Btn::Right, Shader::Off, QuickValue::Off),
+        (Btn::Left, Shader::Shimmerless, QuickValue::Shimmerless),
         (Btn::Left, Shader::Dot, QuickValue::Dot),
         (Btn::Left, Shader::Grid, QuickValue::Grid),
         (Btn::Left, Shader::Lcd3x, QuickValue::Lcd3x),
@@ -500,7 +502,7 @@ fn each_platform_keeps_its_own_shader_wraps_and_starts_on_grid_and_simpletex() {
     let s = read_slot_state(d.path());
     assert_eq!(
         (s.shader_gba, s.shader_gb, s.shader_gbc),
-        (Shader::Off, Shader::Grid, Shader::Off)
+        (Shader::Off, Shader::Grid, Shader::Shimmerless)
     );
 }
 
@@ -1039,6 +1041,51 @@ fn blue_light_steps_off_to_nine() {
         press(&mut a, Btn::Right);
     }
     assert_eq!(a.blue_light(), 9);
+}
+
+#[test]
+fn saturation_steps_off_to_nine_and_reaches_the_card() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::Saturation);
+    assert_eq!(a.saturation(), 0);
+    assert_eq!(a.quick_value(QuickRow::Saturation), Some(QuickValue::Off));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.saturation(), 1);
+    assert_eq!(
+        a.quick_value(QuickRow::Saturation),
+        Some(QuickValue::Level1)
+    );
+    press(&mut a, Btn::Left);
+    press(&mut a, Btn::Left);
+    assert_eq!(a.saturation(), 0);
+    for _ in 0..12 {
+        press(&mut a, Btn::Right);
+    }
+    assert_eq!(a.saturation(), 9);
+    a.flush_state();
+    assert_eq!(read_slot_state(d.path()).saturation, 9);
+}
+
+#[test]
+fn contrast_steps_off_to_nine_on_its_own_and_reaches_the_card() {
+    let (d, mut a, _) = on_carousel();
+    open_at(&mut a, QuickRow::Contrast);
+    assert_eq!(a.contrast(), 0);
+    assert_eq!(a.quick_value(QuickRow::Contrast), Some(QuickValue::Off));
+    press(&mut a, Btn::Right);
+    assert_eq!(a.contrast(), 1);
+    assert_eq!(a.quick_value(QuickRow::Contrast), Some(QuickValue::Level1));
+    press(&mut a, Btn::Left);
+    press(&mut a, Btn::Left);
+    assert_eq!(a.contrast(), 0);
+    for _ in 0..12 {
+        press(&mut a, Btn::Right);
+    }
+    assert_eq!(a.contrast(), 9);
+    assert_eq!(a.saturation(), 0, "contrast moved saturation");
+    a.flush_state();
+    let s = read_slot_state(d.path());
+    assert_eq!((s.contrast, s.saturation), (9, 0));
 }
 
 #[test]

@@ -683,3 +683,87 @@ fn the_change_legend_clears_the_cart_slot_on_a_4_by_3_panel() {
         "Change starts at {word}, the slot ends at {bay_right}"
     );
 }
+
+fn tap(f: &mut Frontend, input: &mut Script, btn: Btn) {
+    input.0.push_back(vec![RawEvent::Down(btn)]);
+    f.advance(input);
+    input.0.push_back(vec![RawEvent::Up(btn)]);
+    f.advance(input);
+}
+
+fn row_gap(frame: &[u8], row: QuickRow, hidden: &[QuickRow]) -> (usize, usize) {
+    let top = slot_ui::quick_row_top_at(row, row, hidden) as usize;
+    let at = |x: usize, y: usize| {
+        let o = (y * 640 + x) * 4;
+        frame[o..o + 3].iter().all(|c| *c > 0x80)
+    };
+    let ink: Vec<usize> = (40..640)
+        .filter(|&x| (top + 8..top + 44).any(|y| at(x, y)))
+        .collect();
+    let gap = ink.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+    (gap, *ink.last().unwrap_or(&0))
+}
+
+fn down_to(f: &mut Frontend, input: &mut Script, row: QuickRow) {
+    for _ in 0..120 {
+        if f.app().quick_menu() == Some(row) {
+            return;
+        }
+        tap(f, input, Btn::Down);
+    }
+    panic!("never reached {row:?}, stuck on {:?}", f.app().quick_menu());
+}
+
+fn check(f: &mut Frontend, c: &mut Compositor, input: &mut Script, row: QuickRow) {
+    let hidden = f.app().hidden_rows();
+    down_to(f, input, row);
+    f.render(c, (640, 480));
+    let frame = c.read_frame();
+    write_png(&format!("native-{row:?}"), 640, 480, &frame);
+    let (gap, last) = row_gap(&frame, row, &hidden);
+    assert!(gap >= 22, "{row:?}: label and value {gap} px apart");
+    assert!(last >= 600, "{row:?}: the value ends at x {last}");
+}
+
+#[test]
+fn long_menu_values_keep_clear_of_their_labels_on_a_4_by_3_panel() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let mut s = slot_store::read_slot_state(d.path());
+    s.blending_gba = slot_store::Blending::Ghosting;
+    slot_store::write_slot_state(d.path(), &s).unwrap();
+    std::fs::write(
+        d.path().join("Config/shortcuts.txt"),
+        "fast_forward_toggle=start+right\ncolor_correction=start+right\n",
+    )
+    .unwrap();
+    let open = |c: &mut Compositor| {
+        let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+        f.upload_faces(c);
+        f.upload_bezel(c, (640, 480));
+        f.render(c, (640, 480));
+        f
+    };
+    let mut input = Script(VecDeque::new());
+    let mut f = open(&mut c);
+    tap(&mut f, &mut input, Btn::Menu);
+    down_to(&mut f, &mut input, QuickRow::Screen);
+    tap(&mut f, &mut input, Btn::A);
+    tap(&mut f, &mut input, Btn::Down);
+    tap(&mut f, &mut input, Btn::A);
+    check(&mut f, &mut c, &mut input, QuickRow::GbaBlending);
+    let mut f = open(&mut c);
+    tap(&mut f, &mut input, Btn::Menu);
+    down_to(&mut f, &mut input, QuickRow::Controls);
+    tap(&mut f, &mut input, Btn::A);
+    tap(&mut f, &mut input, Btn::Down);
+    tap(&mut f, &mut input, Btn::A);
+    check(&mut f, &mut c, &mut input, QuickRow::ScColour);
+    check(&mut f, &mut c, &mut input, QuickRow::ScFastForwardToggle);
+}

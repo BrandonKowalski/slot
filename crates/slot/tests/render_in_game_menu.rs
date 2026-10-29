@@ -175,7 +175,12 @@ fn the_brightness_rows_render_on_the_screen_page() {
     }
     run_for(&mut f, &mut input, 0.3);
     let hidden = f.app().in_game_hidden();
-    for row in [QuickRow::PlayBrightness, QuickRow::PlayBlueLight] {
+    for row in [
+        QuickRow::PlayBrightness,
+        QuickRow::PlayBlueLight,
+        QuickRow::PlaySaturation,
+        QuickRow::PlayContrast,
+    ] {
         if f.app().in_game_menu() != Some(row) {
             tap(&mut f, &mut input, Btn::Down);
             run_for(&mut f, &mut input, 0.2);

@@ -241,7 +241,7 @@ fn fast_forward_toggle_starts_unbound_and_round_trips_through_the_file() {
         ShortcutKeys::default().get(Shortcut::FastForwardToggle),
         None
     );
-    assert_eq!(Shortcut::FastForwardToggle.label(), "Fast Forward Toggle");
+    assert_eq!(Shortcut::FastForwardToggle.label(), "FF Toggle");
     let d = card();
     let mut keys = ShortcutKeys::default();
     keys.set(Shortcut::FastForwardToggle, plain(Device::R1));

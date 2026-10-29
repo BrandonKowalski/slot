@@ -1,5 +1,5 @@
 use crate::draw::{Draw, Sprites, TexId};
-use crate::grade::blue_light_gain;
+use crate::grade::{blue_light_gain, contrast_boost, saturation_boost};
 use crate::pipeline::GamePass;
 use crate::quad::Quad;
 use crate::shaders::{BLIT_FRAG, BLIT_VERT, TURN_VERT};
@@ -22,8 +22,12 @@ pub struct Compositor {
     size: (u32, u32),
     blit: gl::types::GLuint,
     u_gain: gl::types::GLint,
+    u_saturation: gl::types::GLint,
+    u_contrast: gl::types::GLint,
     u_blit_uv: gl::types::GLint,
     gain: [f32; 3],
+    saturation: f32,
+    contrast: f32,
     shake: f32,
     window: (u32, u32),
     screen: f32,
@@ -64,6 +68,8 @@ impl Compositor {
             gl::UseProgram(blit);
             gl::Uniform1i(crate::gl::uniform_location(blit, "u_tex"), 0);
             let u_gain = crate::gl::uniform_location(blit, "u_gain");
+            let u_saturation = crate::gl::uniform_location(blit, "u_saturation");
+            let u_contrast = crate::gl::uniform_location(blit, "u_contrast");
             let u_blit_uv = crate::gl::uniform_location(blit, "u_uv");
             gl::Uniform4f(u_blit_uv, 0.0, 0.0, 1.0, 1.0);
 
@@ -73,8 +79,12 @@ impl Compositor {
                 size: (OUT_W, OUT_H),
                 blit,
                 u_gain,
+                u_saturation,
+                u_contrast,
                 u_blit_uv,
                 gain: blue_light_gain(0),
+                saturation: saturation_boost(0),
+                contrast: contrast_boost(0),
                 shake: 0.0,
                 window: (OUT_W, OUT_H),
                 screen: 0.0,
@@ -167,6 +177,14 @@ impl Compositor {
 
     pub fn set_blue_light(&mut self, step: u8) {
         self.gain = blue_light_gain(step);
+    }
+
+    pub fn set_saturation(&mut self, step: u8) {
+        self.saturation = saturation_boost(step);
+    }
+
+    pub fn set_contrast(&mut self, step: u8) {
+        self.contrast = contrast_boost(step);
     }
 
     pub fn set_screen_effect(&mut self, effect: crate::ScreenEffect) {
@@ -415,6 +433,8 @@ impl Compositor {
             gl::UseProgram(self.blit);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::Uniform3f(self.u_gain, self.gain[0], self.gain[1], self.gain[2]);
+            gl::Uniform1f(self.u_saturation, self.saturation);
+            gl::Uniform1f(self.u_contrast, self.contrast);
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
         }
         if self.native() {

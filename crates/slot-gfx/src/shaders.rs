@@ -78,6 +78,18 @@ void main() {
     vec3 c = texture2D(u_game, uv).rgb;
     bool inside = all(greaterThanEqual(uv, u_pic.xy)) && all(lessThan(uv, u_pic.zw));
     if (!inside) {
+    } else if (u_mode > 4.5) {
+        vec2 hp = 0.5 * u_uv.zw * u_src / (u_rect.zw * u_fbo);
+        vec2 p = uv * u_src;
+        vec2 b = floor(p + hp);
+        vec2 t = clamp((p + hp - b) / (2.0 * hp), 0.0, 1.0);
+        vec2 lo = u_pic.xy * u_src + 0.5;
+        vec2 hi = u_pic.zw * u_src - 0.5;
+        vec2 a0 = clamp(b - 0.5, lo, hi) / u_src;
+        vec2 a1 = clamp(b + 0.5, lo, hi) / u_src;
+        vec3 top = mix(texture2D(u_game, a0).rgb, texture2D(u_game, vec2(a1.x, a0.y)).rgb, t.x);
+        vec3 bottom = mix(texture2D(u_game, vec2(a0.x, a1.y)).rgb, texture2D(u_game, a1).rgb, t.x);
+        c = mix(top, bottom, t.y);
     } else if (u_mode > 3.5) {
         c = pow(c, vec3(1.05));
         vec2 d = abs(f - 0.5);
@@ -151,8 +163,13 @@ pub const BLIT_FRAG: &str = r#"
 precision mediump float;
 uniform sampler2D u_tex;
 uniform vec3 u_gain;
+uniform float u_saturation;
+uniform float u_contrast;
 varying vec2 v_uv;
 void main() {
-    FRAG_COLOR = vec4(texture2D(u_tex, v_uv).rgb * u_gain, 1.0);
+    vec3 c = texture2D(u_tex, v_uv).rgb;
+    c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.0 + u_saturation);
+    c = (c - 0.5) * (1.0 + u_contrast) + 0.5;
+    FRAG_COLOR = vec4(clamp(c, 0.0, 1.0) * u_gain, 1.0);
 }
 "#;
