@@ -57,7 +57,7 @@ fn footer_legends_keep_the_hint_on_the_inner_side() {
         hint_is_beside(&link[2], false),
         "Swap sits to the left of the d-pad"
     );
-    let core = core_button_legends();
+    let core = core_button_legends(footer_ink(false));
     assert!(core.iter().all(|f| f.h == MOUTH_H as u32));
     assert!(
         hint_is_beside(&core[0], true),

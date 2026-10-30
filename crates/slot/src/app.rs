@@ -103,8 +103,6 @@ const SLOT_NAME_HOLD_MS: Millis = 1200;
 const SLOT_NAME_OUT_MS: Millis = 800;
 const SLOT_NAME_ALPHA: f32 = 1.0;
 const CORE_PICKER_DIM: f32 = 0.25 / (1.0 - CORE_PICKER_RECEDE);
-const CORE_LEGEND_Y: f32 = OUT_H as f32 - MOUTH_H * 2.0;
-const CORE_LEGEND_GAP: f32 = 24.0;
 const LINK_TEXT_Y: f32 = 44.0;
 const LINK_LEGEND_Y: f32 = OUT_H as f32 - MOUTH_H;
 pub const LINK_SCRIM: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
@@ -431,7 +429,7 @@ pub struct App {
     core_chip_faces: Vec<TexId>,
     core_blank_chip_face: Option<TexId>,
     core_chip_shadow_face: Option<TexId>,
-    core_legend_faces: Vec<(TexId, u32)>,
+    core_legend_faces: [Vec<(TexId, u32)>; 2],
     game_menu: Option<GameMenu>,
     link_sprites: Option<LinkSprites>,
     link_shot: Option<TexId>,
@@ -677,7 +675,7 @@ impl App {
             core_chip_faces: Vec::new(),
             core_blank_chip_face: None,
             core_chip_shadow_face: None,
-            core_legend_faces: Vec::new(),
+            core_legend_faces: [Vec::new(), Vec::new()],
             game_menu: None,
             link_sprites: None,
             link_shot: None,
@@ -4557,7 +4555,7 @@ impl App {
                     canvas: self.canvas(),
                 }
                 .draw(out);
-                slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, out);
+                slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, 1.0, out);
                 self.draw_clock_legends(picker, *from_menu, out);
                 return;
             }
@@ -4624,6 +4622,10 @@ impl App {
                     footer_ink(self.light()),
                     out,
                 );
+                if let Some(picker) = self.core_picker_shown() {
+                    let lift = lift_of(picker.openness(self.now()));
+                    slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, lift, out);
+                }
             }
             Phase::About => {
                 slot_ui::draw_menu_ground(self.canvas(), self.menu_ground(), out);
@@ -4807,7 +4809,7 @@ impl App {
             Phase::Playing { cart } if self.footer > 0.0 => {
                 let row = self.in_game_menu_shown().or(self.footer_row);
                 match row.is_some_and(QuickRow::binds) {
-                    true => slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, out),
+                    true => slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, 1.0, out),
                     false => self.draw_seated_mouth(cart, out),
                 }
                 row
@@ -4815,7 +4817,7 @@ impl App {
             // The carousel menu is not a game, so the mouth stays empty, in the
             // same place the shelf already had it.
             Phase::QuickMenu { row } if row.binds() => {
-                slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, out);
+                slot_ui::draw_plugged_slot(self.canvas(), self.plugged_face, 1.0, out);
                 Some(*row)
             }
             Phase::QuickMenu { row } => {
@@ -4938,7 +4940,7 @@ impl App {
                 true => vec![back, clear, set],
                 false => vec![back, reset, clear, set],
             };
-            self.draw_spread_legends(&legends, y, out);
+            self.draw_spread_legends(&legends, y, 1.0, out);
             return;
         }
         let left = match row.page() == QuickRow::PLAY {
@@ -4967,10 +4969,16 @@ impl App {
             (None, false, ClockRow::Zone) => vec![back, open],
             (None, false, ClockRow::Clock) => vec![back, change],
         };
-        self.draw_spread_legends(&legends, LINK_LEGEND_Y, out);
+        self.draw_spread_legends(&legends, LINK_LEGEND_Y, 1.0, out);
     }
 
-    fn draw_spread_legends(&self, legends: &[(TexId, u32)], y: f32, out: &mut Vec<Draw>) {
+    fn draw_spread_legends(
+        &self,
+        legends: &[(TexId, u32)],
+        y: f32,
+        alpha: f32,
+        out: &mut Vec<Draw>,
+    ) {
         let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
         let room = self.canvas().w - 2.0 * LINK_LEGEND_EDGE;
         let gap =
@@ -4983,7 +4991,7 @@ impl App {
                 w: w as f32,
                 h: MOUTH_H,
                 tex,
-                alpha: 1.0,
+                alpha,
             });
             x += seen(w) + gap;
         }
@@ -5099,8 +5107,12 @@ impl App {
         self.core_chip_shadow_face = Some(shadow);
     }
 
-    pub fn set_core_legend_faces(&mut self, faces: Vec<(TexId, u32)>) {
-        self.core_legend_faces = faces;
+    pub fn set_core_legend_faces(
+        &mut self,
+        dark: Vec<(TexId, u32)>,
+        light: Vec<(TexId, u32)>,
+    ) {
+        self.core_legend_faces = [dark, light];
     }
 
     pub fn set_link_menu_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
@@ -5299,27 +5311,9 @@ impl App {
             });
         }
 
-        if let [cancel, swap, choose] = self.core_legend_faces.as_slice() {
-            let seen = |w: u32| w.saturating_sub(HINT_EDGE) as f32;
-            let swap_x = self.canvas().centred(seen(swap.1));
-            for (tex, w, x) in [
-                (
-                    cancel.0,
-                    cancel.1,
-                    swap_x - CORE_LEGEND_GAP - seen(cancel.1),
-                ),
-                (swap.0, swap.1, swap_x),
-                (choose.0, choose.1, swap_x + seen(swap.1) + CORE_LEGEND_GAP),
-            ] {
-                out.push(Draw::Tex {
-                    x: x.round(),
-                    y: CORE_LEGEND_Y,
-                    w: w as f32,
-                    h: MOUTH_H,
-                    tex,
-                    alpha: lift,
-                });
-            }
+        let legends = &self.core_legend_faces[self.light() as usize];
+        if !legends.is_empty() {
+            self.draw_spread_legends(legends, LINK_LEGEND_Y, lift, out);
         }
     }
 

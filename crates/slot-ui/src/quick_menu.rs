@@ -1124,16 +1124,17 @@ pub fn quick_description_face(lines: &[&str]) -> UndoFace {
 }
 
 /// Cancel, Swap, Choose. Swap keeps the button before the word, the way the old arrows did.
-pub fn core_button_legends() -> Vec<UndoFace> {
+pub fn core_button_legends(ink: [u8; 3]) -> Vec<UndoFace> {
+    let hint = Some(ink);
     vec![
-        with_hint(button_face(ButtonLegend::B), "Cancel", None, true),
+        with_hint(button_face(ButtonLegend::B), "Cancel", hint, true),
         with_hint(
             button_pair(ButtonLegend::Left, ButtonLegend::Right),
             "Swap",
-            None,
+            hint,
             true,
         ),
-        with_hint(button_face(ButtonLegend::A), "Choose", None, false),
+        with_hint(button_face(ButtonLegend::A), "Choose", hint, false),
     ]
 }
 

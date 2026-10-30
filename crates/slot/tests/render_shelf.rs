@@ -7,10 +7,10 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use slot::app::App;
 use slot_gfx::{Compositor, HeadlessSurface, TexId, OUT_H, OUT_W};
 use slot_input::{Action, Btn};
-use slot_store::{write_slot_state, Core, Platform, SlotState};
+use slot_store::{write_slot_state, Appearance, Core, Platform, SlotState};
 use slot_ui::{
-    arrows_hint_face, board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, edge,
-    gb_cart_shadow, hint_face, housing, opening, padded, recess, socket_face, GbShell, TURN_PAD,
+    board_face, cart_face, cart_shadow, chip_face, chip_shadow_face, edge, gb_cart_shadow, housing,
+    opening, padded, recess, socket_face, GbShell, TURN_PAD,
 };
 use tempfile::TempDir;
 
@@ -65,15 +65,17 @@ fn upload_faces(app: &mut App, c: &mut Compositor) {
     let chip_shadow = tex(c, chip_shadow.w, chip_shadow.h, &chip_shadow.rgba);
     app.set_core_part_faces(sockets, chips, blank, chip_shadow);
 
-    let legend = [
-        hint_face("B", "Cancel"),
-        arrows_hint_face("Swap"),
-        hint_face("A", "Choose"),
-    ]
-    .into_iter()
-    .map(|f| (tex(c, f.w, f.h, &f.rgba), f.w))
-    .collect();
-    app.set_core_legend_faces(legend);
+    let legend = slot_ui::core_button_legends(slot_ui::footer_ink(app.light()))
+        .into_iter()
+        .map(|f| (tex(c, f.w, f.h, &f.rgba), f.w))
+        .collect::<Vec<_>>();
+    app.set_core_legend_faces(legend.clone(), legend);
+    let strip = match app.light() {
+        true => slot_ui::slot_plugged_light(),
+        false => slot_ui::slot_plugged(),
+    };
+    let plugged = tex(c, slot_ui::SLOT_W, slot_ui::SLOT_H, strip);
+    app.set_plugged_face(plugged);
 
     let highlighted = app.selected_stem().map(str::to_string);
     let Some(cart) = app
@@ -91,10 +93,15 @@ fn upload_faces(app: &mut App, c: &mut Compositor) {
 }
 
 fn shelf(d: &TempDir, c: &mut Compositor) -> App {
+    shelf_in(d, c, Appearance::Dark)
+}
+
+fn shelf_in(d: &TempDir, c: &mut Compositor, appearance: Appearance) -> App {
     write_slot_state(
         d.path(),
         &SlotState {
             clock_set: true,
+            appearance,
             ..Default::default()
         },
     )
@@ -172,6 +179,31 @@ fn start_draws_the_plain_shelf_on_a_game_boy_cart() {
     assert!(
         after != plain,
         "the picker opened and the panel showed the same shelf"
+    );
+    let_it_hop(&mut pressed);
+    let open = shot(&pressed, &mut c, "gba-open");
+    assert!(open != after, "the picker did not finish opening");
+}
+
+#[test]
+fn the_open_picker_footer_reads_in_light_mode() {
+    let Some((_g, _s, mut c)) = compositor() else {
+        eprintln!("no GL on this host, skipping");
+        return;
+    };
+    let d = common::tmp_root_with_carts(&["Emerald", "Zzz"]);
+    let mut app = shelf_in(&d, &mut c, Appearance::Light);
+    assert!(app.light());
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_hop(&mut app);
+    shot(&app, &mut c, "gba-light-opening");
+    let_it_hop(&mut app);
+    let px = shot(&app, &mut c, "gba-light-open");
+    let y = OUT_H as usize - 20;
+    let row = &px[y * OUT_W as usize * 4..(y + 1) * OUT_W as usize * 4];
+    assert!(
+        row.chunks(4).any(|p| p[0] < 90),
+        "the light footer shows no dark ink"
     );
 }
 

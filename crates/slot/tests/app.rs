@@ -1092,7 +1092,7 @@ fn fake_boot_faces(app: &mut App) -> PickerFaces {
         legend: [(id(908), 60), (id(909), 90), (id(910), 80)],
     };
     app.set_core_part_faces(f.sockets.to_vec(), f.chips.to_vec(), f.blank, f.shadow);
-    app.set_core_legend_faces(f.legend.to_vec());
+    app.set_core_legend_faces(f.legend.to_vec(), f.legend.to_vec());
     f
 }
 
@@ -1339,24 +1339,40 @@ fn the_open_cart_rests_over_the_shelf_with_its_lid_turned() {
     let [cancel, swap, choose] = f.legend;
     let at = |tex| tex_at(&out, tex).expect("a legend hint is missing").1;
     let seen = |w: u32| (w - HINT_EDGE) as f32;
-    let y = OUT_H as f32 - MOUTH_H * 2.0;
-    assert_eq!(at(cancel.0), [234.0, y, cancel.1 as f32, MOUTH_H]);
+    let y = OUT_H as f32 - MOUTH_H;
+    assert_eq!((at(cancel.0)[1], at(swap.0)[1], at(choose.0)[1]), (y, y, y));
     assert_eq!(
-        at(swap.0)[0] + seen(swap.1) / 2.0,
-        OUT_W as f32 / 2.0,
-        "Swap is off the panel's centre"
+        at(choose.0)[0] + seen(choose.1),
+        OUT_W as f32 - at(cancel.0)[0],
+        "Cancel and Choose do not hold the footer's two edges"
     );
-    assert_eq!(
-        at(choose.0)[0],
-        at(swap.0)[0] + seen(swap.1) + 24.0,
-        "Choose is not beside Swap"
-    );
-    assert_eq!(
-        at(cancel.0)[0] + seen(cancel.1) + 24.0,
-        at(swap.0)[0],
-        "Cancel is not beside Swap"
-    );
-    assert_eq!((at(swap.0)[1], at(choose.0)[1]), (y, y));
+    let left = at(swap.0)[0] - at(cancel.0)[0] - seen(cancel.1);
+    let right = at(choose.0)[0] - at(swap.0)[0] - seen(swap.1);
+    assert!((left - right).abs() <= 1.0, "Swap is not spread: {left} {right}");
+}
+
+#[test]
+fn the_core_picker_plugs_the_slot_over_the_footer() {
+    let (_d, mut app) = on_shelf(&["Emerald", "Zzz"]);
+    let f = fake_picker_faces(&mut app);
+    let plugged = TexId::from_raw(950);
+    app.set_plugged_face(plugged);
+    let plug = |out: &[Draw]| {
+        out.iter().find_map(|d| match *d {
+            Draw::Part { tex, alpha, .. } if tex == plugged => Some(alpha),
+            _ => None,
+        })
+    };
+    assert_eq!(plug(&frame(&app)), None, "the shelf's slot is plugged");
+    app.apply(Action::GbaDown(Btn::Start));
+    let_it_open(&mut app);
+    let out = frame(&app);
+    assert_eq!(plug(&out), Some(1.0), "the open picker left the slot empty");
+    let (legend, _) = tex_at(&out, f.legend[0].0).expect("no legend");
+    let strip = out
+        .iter()
+        .position(|d| matches!(*d, Draw::Part { tex, .. } if tex == plugged));
+    assert!(strip < Some(legend), "the plug is drawn over the legends");
 }
 
 #[test]

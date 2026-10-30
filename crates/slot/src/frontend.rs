@@ -488,14 +488,6 @@ impl Frontend {
         };
         let legend = pack_legend(faces.quick_legend);
         let legend_light = pack_legend(faces.quick_legend_light);
-        let core_legend = faces
-            .core_legend
-            .into_iter()
-            .map(|f| {
-                let (tex, w, _) = up(f);
-                (tex, w)
-            })
-            .collect();
         let roles = faces.link_roles.into_iter().map(&mut up).collect();
         let linked = up(faces.linked);
         let mut pack = |faces: Vec<UndoFace>| -> Vec<(TexId, u32)> {
@@ -510,6 +502,8 @@ impl Frontend {
         let update = pack(faces.update_legends.into());
         let link_legend = pack(faces.link_legend);
         let link_legend_light = pack(faces.link_legend_light);
+        let core_legend = pack(faces.core_legend);
+        let core_legend_light = pack(faces.core_legend_light);
         let steps = faces.link_steps.into_iter().map(&mut up).collect();
         let fails = faces.link_fails.into_iter().map(&mut up).collect();
         if let Some(look) = &mut self.look {
@@ -535,7 +529,7 @@ impl Frontend {
             descriptions,
         });
         app.set_core_part_faces(sockets, chips, blank, shadow);
-        app.set_core_legend_faces(core_legend);
+        app.set_core_legend_faces(core_legend, core_legend_light);
         app.set_link_menu_faces(roles);
         app.set_link_linked_face(linked);
         app.set_link_legend_faces(link_legend);
@@ -920,6 +914,7 @@ struct UiFaces {
     blank_chip: CartFace,
     chip_shadow: CartFace,
     core_legend: Vec<UndoFace>,
+    core_legend_light: Vec<UndoFace>,
     link_roles: Vec<UndoFace>,
     linked: UndoFace,
     link_legend: Vec<UndoFace>,
@@ -982,7 +977,8 @@ impl UiFaces {
                 .collect(),
             blank_chip: chip_face(None),
             chip_shadow: chip_shadow_face(),
-            core_legend: core_button_legends(),
+            core_legend: core_button_legends(footer_ink(false)),
+            core_legend_light: core_button_legends(footer_ink(true)),
             link_roles: LinkRow::ALL.iter().map(|r| menu_face(r.text())).collect(),
             linked: menu_face("Linked"),
             link_legend: link_legend_faces(footer_ink(false)),
