@@ -38,6 +38,19 @@ jobs:
 
       - run: zensical build --clean --strict -f site/zensical.toml
 
+      - name: Publish versions.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh release view --repo "$GITHUB_REPOSITORY" --json tagName,assets | jq '{
+            stable: (.tagName as $t | ($t | ltrimstr("v")) as $v
+              | first(.assets[] | select(.name == "slot-\($t)-h700.zip"))
+              | {version: $v, tag: $t, zip: .name, size: .size, sha256: (.digest | ltrimstr("sha256:"))})
+          }' > site/public/versions.json
+          jq -e '.stable.sha256 | test("^[0-9a-f]{64}$")' site/public/versions.json
+          cat site/public/versions.json
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/public
