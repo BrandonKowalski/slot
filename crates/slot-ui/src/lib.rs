@@ -76,10 +76,10 @@ pub use link_art::{
     PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
 };
 pub use plate::{
-    arrows_hint_coloured, arrows_hint_face, arrows_hint_width, cap_width, centred_hints,
+    arrows_hint_coloured, arrows_hint_face, arrows_hint_width, cap_width,
     hint_coloured, hint_face, hint_quad, hint_row, hint_width, pad_hint_face, pad_hint_width,
     tick_cap_face, title_face, title_line_face, word_face, word_ink, word_width, Hint, UndoFace,
-    ARROW_GAP, CAP, CAP_GAP, HINT_EDGE, HINT_GAP, HINT_H, LEGEND_GAP, TITLE_H, TITLE_LINE_H,
+    ARROW_GAP, CAP, CAP_GAP, HINT_EDGE, HINT_GAP, HINT_H, TITLE_H, TITLE_LINE_H,
     TITLE_W,
 };
 pub use polaroids::{

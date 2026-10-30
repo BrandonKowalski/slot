@@ -4575,7 +4575,6 @@ impl App {
                 gbc_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gbc)],
                 bezel: None,
                 over_game: false,
-                footer_legends: true,
                 footer_top: OUT_H as f32,
                 canvas: self.canvas(),
             }
@@ -4745,7 +4744,6 @@ impl App {
                 gbc_bezel: None,
                 bezel: self.quick_bezel_faces[bezel_slot(self.playing_platform())],
                 over_game: true,
-                footer_legends: false,
                 footer_top: OUT_H as f32 - MOUTH_H + self.menu_footer_offset(),
                 canvas: self.canvas(),
             }
