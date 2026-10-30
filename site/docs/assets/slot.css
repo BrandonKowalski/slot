@@ -660,7 +660,8 @@ kbd{
   color:var(--ink);
 }
 .foot-brand p{margin:10px 0 18px;max-width:30ch;font-size:16px;line-height:1.55}
-.foot-gh{display:inline-flex;align-items:center;gap:8px;font-size:15px}
+.foot-gh{display:flex;width:fit-content;align-items:center;gap:8px;font-size:15px}
+.foot-gh + .foot-gh{margin-top:10px}
 .foot-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px}
 .foot-col h2{
   margin:6px 0 14px;

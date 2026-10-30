@@ -6,7 +6,8 @@
 <a href="https://github.com/BrandonKowalski/slot/stargazers"><img src="https://img.shields.io/github/stars/BrandonKowalski/slot?style=for-the-badge&labelColor=242429&color=4d4d57" height="36" alt="Stars"></a>
 <a href="https://github.com/BrandonKowalski/slot/releases"><img src="https://img.shields.io/github/downloads/BrandonKowalski/slot/total?style=for-the-badge&labelColor=242429&color=4d4d57" height="36" alt="Downloads"></a>
 <a href="https://slot-cfw.fyi"><img src="https://img.shields.io/badge/Guide-slot--cfw.fyi-4d4d57?style=for-the-badge&labelColor=242429" height="36" alt="Guide"></a>
-<a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-4d4d57?style=for-the-badge&labelColor=242429" height="36" alt="Changelog"></a>
+<a href="https://discord.gg/NYRWsSuPUu"><img src="https://img.shields.io/badge/Discord-4d4d57?style=for-the-badge&labelColor=242429&logo=discord&logoColor=white" height="36" alt="Discord"></a>
+<a href="https://slot-cfw.fyi/changelog"><img src="https://img.shields.io/badge/Changelog-4d4d57?style=for-the-badge&labelColor=242429" height="36" alt="Changelog"></a>
 
 </div>
 
@@ -23,7 +24,9 @@ Has support for GBA, GBC, and GB titles only.
 
 A full user guide can be found at [slot-cfw.fyi](https://slot-cfw.fyi).
 
-Release notes can be found in the [changelog](CHANGELOG.md).
+Release notes can be found in the [changelog](https://slot-cfw.fyi/changelog).
+
+Come hang out on [Discord](https://discord.gg/NYRWsSuPUu).
 
 ---
 
@@ -74,6 +77,16 @@ I understand if my use of AI is a dealbreaker for you. Just know it's the least 
 what's here.
 
 Figured I should share the end result of all the wasted water. ✌🏻
+
+---
+
+# Discord Community
+
+slot has a [Discord server](https://discord.gg/NYRWsSuPUu) for questions, sharing setups, and talking about the project.
+
+It is open to everyone in the slot universe. That includes folks running or building forks of slot.
+
+There is no reason for this community to be fragmented so long as we are having fun!
 
 ---
 

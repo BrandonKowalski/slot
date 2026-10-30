@@ -6,6 +6,8 @@ Thank you for even considering contributing to slot!
 
 I am not opposed to accepting pull requests. I just ask that you come discuss planned work in an issue on GitHub ahead of time.
 
+You can also find me on the [slot Discord](https://discord.gg/NYRWsSuPUu).
+
 slot is intentionally light on features. I am not looking to add the kitchen sink. If this form of collaboration doesn't appeal to you, several individuals have forked slot and gone off to make it their own.
 
 If you have an idea that you feel fits the vision of the project and are fine with this form of collaborate please make an issue. I'd love to chat!
