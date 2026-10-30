@@ -42,7 +42,22 @@ pub fn rom_marking(stem: &str) -> Vec<String> {
 }
 
 pub fn rom_marking_face(stem: &str) -> CartFace {
-    let title = rom_marking(stem);
+    marking_face(&rom_marking(stem))
+}
+
+pub fn bare_board_face() -> CartFace {
+    bitmap_face(bitmaps::board(), BOARD_W, BOARD_H)
+}
+
+pub fn update_cart_face() -> CartFace {
+    bitmap_face(bitmaps::update_cart(), CART_W, CART_H)
+}
+
+pub fn baseos_cart_face() -> CartFace {
+    bitmap_face(bitmaps::baseos_cart(), CART_W, CART_H)
+}
+
+fn marking_face(title: &[String]) -> CartFace {
     let mut face = CartFace {
         rgba: vec![0; (ROM_W * ROM_H * 4) as usize],
         w: ROM_W,
@@ -54,7 +69,7 @@ pub fn rom_marking_face(stem: &str) -> CartFace {
     let max_w = (ROM_W - 2 * MARK_PAD) as f32;
     let line_h = (MARK_PX * 1.25).ceil() as u32;
     let mut top = ROM_H.saturating_sub(line_h * title.len() as u32) / 2;
-    for line in &title {
+    for line in title {
         let layout = text::fit(font, line, max_w, 1, MARK_PX, MARK_MIN_PX);
         ink_band(&mut face, top, line_h, &layout, MARK_INK, 1.0);
         top += line_h;
@@ -147,6 +162,43 @@ pub fn slide_of(progress: f32) -> f32 {
 pub fn lift_of(progress: f32) -> f32 {
     ease(((progress - SLIDE_SHARE) / (1.0 - SLIDE_SHARE)).clamp(0.0, 1.0))
 }
+
+pub const FINGERS: [(f32, f32); 32] = [
+    (35.0, 43.0),
+    (46.0, 52.0),
+    (55.0, 61.0),
+    (64.0, 70.0),
+    (73.0, 79.0),
+    (82.0, 88.0),
+    (91.0, 97.0),
+    (100.0, 106.0),
+    (109.0, 115.0),
+    (118.0, 124.0),
+    (127.0, 133.0),
+    (136.0, 142.0),
+    (145.0, 151.0),
+    (154.0, 160.0),
+    (163.0, 169.0),
+    (172.0, 178.0),
+    (181.0, 187.0),
+    (190.0, 196.0),
+    (199.0, 205.0),
+    (208.0, 214.0),
+    (217.0, 223.0),
+    (226.0, 232.0),
+    (235.0, 241.0),
+    (244.0, 250.0),
+    (253.0, 259.0),
+    (262.0, 268.0),
+    (271.0, 277.0),
+    (280.0, 286.0),
+    (289.0, 295.0),
+    (298.0, 304.0),
+    (307.0, 313.0),
+    (316.0, 324.0),
+];
+pub const FINGER_Y: f32 = 167.0;
+pub const FINGER_H: f32 = 28.0;
 
 pub const SOCKET_U: [f32; 2] = [99.5, 171.5];
 pub const SOCKET_V: f32 = 59.1;
@@ -277,16 +329,27 @@ pub fn padded(face: &CartFace, pad: u32) -> CartFace {
 }
 
 pub fn socket_face(core: Core) -> CartFace {
+    socket_face_text(core.text())
+}
+
+pub fn socket_face_text(name: &str) -> CartFace {
     let mut face = bitmap_face(bitmaps::socket(), SOCKET_W, SOCKET_H);
-    if let Some(layout) = name_layout(core, (SOCKET_W - 12) as f32) {
+    if let Some(layout) = name_layout(name, (SOCKET_W - 12) as f32) {
         ink_band(&mut face, 4, 37, &layout, SOCKET_INK, 0.5);
     }
     face
 }
 
 pub fn chip_face(core: Option<Core>) -> CartFace {
+    match core {
+        Some(core) => chip_face_text(core.text()),
+        None => padded(&bitmap_face(bitmaps::chip(), CHIP_W, CHIP_H), TURN_PAD),
+    }
+}
+
+pub fn chip_face_text(name: &str) -> CartFace {
     let mut face = bitmap_face(bitmaps::chip(), CHIP_W, CHIP_H);
-    if let Some(layout) = core.and_then(|c| name_layout(c, (CHIP_W - 8) as f32)) {
+    if let Some(layout) = name_layout(name, (CHIP_W - 8) as f32) {
         ink_band(&mut face, 4, 34, &layout, CHIP_INK, 1.0);
     }
     padded(&face, TURN_PAD)
@@ -306,15 +369,15 @@ pub fn chip_shadow_face() -> CartFace {
     CartFace { rgba, w, h }
 }
 
-fn name_layout(core: Core, max_w: f32) -> Option<text::Layout> {
+fn name_layout(name: &str, max_w: f32) -> Option<text::Layout> {
     let font = text::label_font()?;
     let tracking = |px: f32| (px * 0.10).round();
     let mut px = NAME_PX;
-    while px > NAME_MIN_PX && text::line_width(font, core.text(), px, tracking(px)) > max_w {
+    while px > NAME_MIN_PX && text::line_width(font, name, px, tracking(px)) > max_w {
         px -= 1.0;
     }
     Some(text::Layout {
-        lines: vec![core.text().to_string()],
+        lines: vec![name.to_string()],
         px,
         tracking: tracking(px),
     })

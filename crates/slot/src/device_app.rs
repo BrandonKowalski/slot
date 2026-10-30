@@ -159,6 +159,10 @@ pub fn run() {
         if frontend.restarting() {
             frontend.restart();
         }
+        if frontend.relaunching() {
+            frontend.relaunch();
+            return;
+        }
         if frontend.repairing() {
             frontend.repair();
         }

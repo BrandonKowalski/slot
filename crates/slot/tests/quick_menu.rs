@@ -556,32 +556,28 @@ fn a_on_about_opens_the_label_and_b_comes_back_to_the_menu() {
 }
 
 #[test]
-fn x_on_about_restarts() {
+fn restart_on_about_is_select_start_not_x() {
     let (_d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::About);
     press(&mut a, Btn::A);
     assert!(!a.restarting(), "opening About restarted");
     press(&mut a, Btn::X);
+    assert!(!a.restarting(), "X on About restarted");
+    assert!(a.restart_chord());
+    a.apply(Action::Restart);
     assert!(a.restarting() && !a.powering_off());
 }
 
 #[test]
-fn the_about_footer_puts_restart_on_the_right() {
+fn the_about_footer_shows_back_and_hides_restart() {
     let (_d, mut a, _) = on_carousel();
     fake_faces(&mut a);
     open_at(&mut a, QuickRow::About);
-    assert!(!drawn(&frame(&a), 404), "Restart is on the menu");
     press(&mut a, Btn::A);
     let out = frame(&a);
-    let (lx, ly, _) = legend_box(&out, 400);
-    let (rx, ry, rw) = legend_box(&out, 404);
-    assert_eq!(ly, ry);
+    let (lx, _, _) = legend_box(&out, 400);
     assert!(lx.abs() < 1.0, "Back is not on the left: {lx}");
-    let right = rx + rw - HINT_EDGE as f32;
-    assert!(
-        (right - OUT_W as f32).abs() < 1.0,
-        "Restart is not on the right: {right}"
-    );
+    assert!(!drawn(&out, 404), "Restart has a legend on About");
 }
 
 #[test]

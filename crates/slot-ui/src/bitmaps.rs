@@ -40,6 +40,8 @@ const GB_INTERIOR_PNG: &[u8] = include_bytes!("../../../assets/gb_interior.png")
 const GBC_INTERIOR_PNG: &[u8] = include_bytes!("../../../assets/gbc_interior.png");
 const GB_BOARD_PNG: &[u8] = include_bytes!("../../../assets/gb_board.png");
 const BOARD_PNG: &[u8] = include_bytes!("../../../assets/board.png");
+const UPDATE_CART_PNG: &[u8] = include_bytes!("../../../assets/update_cart.png");
+const BASEOS_CART_PNG: &[u8] = include_bytes!("../../../assets/baseos_cart.png");
 const SOCKET_PNG: &[u8] = include_bytes!("../../../assets/socket.png");
 const CHIP_PNG: &[u8] = include_bytes!("../../../assets/chip.png");
 const SLOT_BACK_DARK_PNG: &[u8] = include_bytes!("../../../assets/slot_back_dark.png");
@@ -158,6 +160,16 @@ pub fn gbc_interior() -> &'static [u8] {
 pub fn gb_board() -> &'static [u8] {
     static P: OnceLock<Vec<u8>> = OnceLock::new();
     load(GB_BOARD_PNG, GB_CART_W, GB_CART_H, &P)
+}
+
+pub fn update_cart() -> &'static [u8] {
+    static P: OnceLock<Vec<u8>> = OnceLock::new();
+    load(UPDATE_CART_PNG, BOARD_W, BOARD_H, &P)
+}
+
+pub fn baseos_cart() -> &'static [u8] {
+    static P: OnceLock<Vec<u8>> = OnceLock::new();
+    load(BASEOS_CART_PNG, BOARD_W, BOARD_H, &P)
 }
 
 pub fn board() -> &'static [u8] {

@@ -39,6 +39,8 @@ reset() {
 	make_fake ip "$TMP/ip.log"
 	make_fake insmod "$TMP/mod.log"
 	make_fake legacy "$TMP/legacy.log"
+	make_fake udhcpc "$TMP/dhcp.log"
+	printf 'network={\n\tssid="Home"\n\tpsk="hunter22"\n}\n' > "$TMP/wifi.conf"
 }
 
 run() {
@@ -47,7 +49,8 @@ run() {
 		AGS_MODULES="$TMP/modules" AGS_NET_SYS="$TMP/net" AGS_RUN="$TMP/run" \
 		AGS_CTRL_DIR="$TMP/ctrl" AGS_PROC_MODULES="$TMP/proc-modules" \
 		AGS_WPA_SUPPLICANT="$TMP/bin/wpa_supplicant" AGS_WPA_CLI="$TMP/bin/wpa_cli" \
-		AGS_IP="$TMP/bin/ip" AGS_INSMOD="$TMP/bin/insmod" \
+		AGS_IP="$TMP/bin/ip" AGS_INSMOD="$TMP/bin/insmod" AGS_UDHCPC="$TMP/bin/udhcpc" \
+		AGS_UPDATE_WAIT_S="${WAIT_S:-1}" \
 		AGS_LINK_WAIT_S="${WAIT_S:-1}" AGS_LINK_PIN_WAIT_S="${WAIT_S:-1}" \
 		sh "$SCRIPT" "$@"
 }
@@ -105,6 +108,43 @@ run absent link join >/dev/null && rc=0 || rc=$?
 t1=$(date +%s)
 [ "$rc" = 3 ] || fail "slow join exited $rc, want 3"
 [ $((t1 - t0)) -le 4 ] || fail "a 2 s join took $((t1 - t0)) s with a slow wpa_cli"
+
+reset yes
+run absent update up "$TMP/wifi.conf" && rc=0 || rc=$?
+[ "$rc" = 0 ] || fail "update up exited $rc"
+grep -q -- "-i wlan0 -c $TMP/run/slotupdate.conf" "$TMP/sup.log" || fail "update up did not start the supplicant on its conf"
+head -1 "$TMP/run/slotupdate.conf" | grep -q '^ctrl_interface=' || fail "update conf has no ctrl_interface first"
+grep -q 'ssid="Home"' "$TMP/run/slotupdate.conf" || fail "update conf lost the player's network"
+grep -q -- '-i wlan0' "$TMP/dhcp.log" || fail "update up asked for no lease"
+
+reset yes
+export FAKE_STATE=SCANNING
+run absent update up "$TMP/wifi.conf" && rc=0 || rc=$?
+unset FAKE_STATE
+[ "$rc" = 3 ] || fail "update up with no network exited $rc, want 3"
+grep -q terminate "$TMP/cli.log" || fail "update up with no network left the supplicant running"
+[ ! -e "$TMP/run/slotupdate.conf" ] || fail "update up with no network left its conf"
+[ ! -e "$TMP/dhcp.log" ] || fail "update up asked for a lease with no network"
+
+reset yes
+make_fake udhcpc "$TMP/dhcp.log" 'exit 1'
+run absent update up "$TMP/wifi.conf" && rc=0 || rc=$?
+[ "$rc" = 4 ] || fail "update up with no lease exited $rc, want 4"
+grep -q terminate "$TMP/cli.log" || fail "update up with no lease left the supplicant running"
+[ ! -e "$TMP/run/slotupdate.conf" ] || fail "update up with no lease left its conf"
+
+reset yes
+run absent update up "$TMP/no-such.conf" && rc=0 || rc=$?
+[ "$rc" = 3 ] || fail "update up with no conf exited $rc, want 3"
+[ ! -e "$TMP/sup.log" ] || fail "update up with no conf started the supplicant"
+
+reset yes
+run absent update up "$TMP/wifi.conf" >/dev/null
+run absent update down && rc=0 || rc=$?
+[ "$rc" = 0 ] || fail "update down exited $rc"
+grep -q terminate "$TMP/cli.log" || fail "update down left the supplicant running"
+grep -q 'addr flush dev wlan0' "$TMP/ip.log" || fail "update down kept wlan0's address"
+[ ! -e "$TMP/run/slotupdate.conf" ] || fail "update down left its conf"
 
 reset yes
 run absent link sideways 2>/dev/null && rc=0 || rc=$?

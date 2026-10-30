@@ -57,6 +57,7 @@ pub enum Action {
     MenuChordDown(Btn),
     MenuChordUp(Btn),
     RepairCard,
+    Restart,
     PreviousShelf,
     NextShelf,
     Favorite,

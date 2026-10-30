@@ -15,10 +15,13 @@ LINK_RESCAN="${AGS_LINK_RESCAN:-2}"
 LINK_AP_GLOBAL="${AGS_LINK_AP_GLOBAL:-}"
 LINK_TRACE="${AGS_LINK_TRACE:-}"
 LINK_MARK="$RUN/slotlink.session"
+UPDATE_WAIT_S="${AGS_UPDATE_WAIT_S:-20}"
+UPDATE_CONF="$RUN/slotupdate.conf"
 
 WPA_SUPPLICANT="${AGS_WPA_SUPPLICANT:-wpa_supplicant}"
 WPA_CLI="${AGS_WPA_CLI:-wpa_cli}"
 IP="${AGS_IP:-ip}"
+UDHCPC="${AGS_UDHCPC:-udhcpc}"
 UPTIME="${AGS_UPTIME:-/proc/uptime}"
 CTRL_DIR="${AGS_CTRL_DIR:-/var/run/wpa_supplicant}"
 
@@ -194,14 +197,45 @@ link_warm() {
 	wait_dev wlan1 4
 }
 
+update_up() {
+	trace "update: up"
+	[ -f "${1:-}" ] || return 3
+	{
+		echo "ctrl_interface=$CTRL_DIR"
+		grep -v '^[[:space:]]*ctrl_interface=' "$1"
+	} > "$UPDATE_CONF"
+	/bin/chmod 600 "$UPDATE_CONF"
+	wifi_up
+	[ -d "$NET/wlan0" ] || { update_down; return 3; }
+	/bin/mkdir -p "$CTRL_DIR"
+	supplicant_stop "$CTRL_DIR" wlan0
+	$WPA_SUPPLICANT -B -i wlan0 -c "$UPDATE_CONF" -Dnl80211 >/dev/null 2>&1 \
+		|| { update_down; return 3; }
+	link_wait "$CTRL_DIR" wlan0 "$UPDATE_WAIT_S" 0 "" || { update_down; return 3; }
+	trace "update: joined"
+	$UDHCPC -i wlan0 -n -q -t 5 >/dev/null 2>&1 || { update_down; return 4; }
+	trace "update: leased"
+	return 0
+}
+
+update_down() {
+	trace "update: down"
+	supplicant_stop "$CTRL_DIR" wlan0
+	$IP addr flush dev wlan0 2>/dev/null || true
+	/bin/rm -f "$UPDATE_CONF"
+	return 0
+}
+
 case "${1:-} ${2:-}" in
 "link host") link_host ;;
 "link join") link_join ;;
 "link down") link_down ;;
 "link warm") link_warm ;;
 "link cool") exit 0 ;;
+"update up") update_up "${3:-}" ;;
+"update down") update_down ;;
 *)
-	echo "usage: slotlink.sh link [host|join|down|warm|cool]" >&2
+	echo "usage: slotlink.sh link [host|join|down|warm|cool] | update [up CONF|down]" >&2
 	exit 2
 	;;
 esac

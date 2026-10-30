@@ -181,6 +181,19 @@ impl Session {
         let latched = self.gestures.ff_latched();
         self.gestures.set_context(self.app.input_context());
         let mut entries = self.app.binding_table().entries();
+        if self.app.restart_chord() {
+            entries.insert(
+                0,
+                Entry {
+                    chord: Chord {
+                        modifier: Some(Mod::Select),
+                        button: Btn::Start,
+                    },
+                    action: Action::Restart,
+                    contexts: Contexts::ALL,
+                },
+            );
+        }
         if self.app.repair_offered() {
             let chord = Chord {
                 modifier: Some(Mod::Select),

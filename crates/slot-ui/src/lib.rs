@@ -40,11 +40,13 @@ pub use backdrop::{
 pub use barcode::{code39, CODE39_NARROW, CODE39_WIDE};
 pub use battery::{draw_gauge, BOLT_PX, GAUGE_H, GAUGE_W, WALL};
 pub use board::{
-    board_at, board_face, board_from, board_in, board_x, board_zoom, chip_face, chip_shadow_face,
-    grown, lid_at, lid_from, lift_of, on_board, padded, rom_marking, rom_marking_face, shelf_cart,
-    shelf_cart_at, slide_of, socket_face, Placed, BOARD_H, BOARD_W, BOARD_Y, CHIP_H, CHIP_TIP,
-    CHIP_U, CHIP_V, CHIP_W, HOP_LIFT, LID_TURN, ROM_H, ROM_W, ROM_X, ROM_Y, SHADOW_H, SHADOW_W,
-    SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V, SOCKET_W, TURN_PAD,
+    bare_board_face, baseos_cart_face, board_at, board_face, board_from, board_in, board_x,
+    board_zoom, chip_face, chip_face_text, chip_shadow_face, grown, lid_at, lid_from, lift_of,
+    on_board, padded, rom_marking, rom_marking_face, shelf_cart, shelf_cart_at, slide_of,
+    socket_face, socket_face_text, update_cart_face, Placed, BOARD_H, BOARD_W, BOARD_Y, CHIP_H,
+    CHIP_TIP, CHIP_U, CHIP_V, CHIP_W, FINGERS, FINGER_H, FINGER_Y, HOP_LIFT, LID_TURN, ROM_H,
+    ROM_W, ROM_X, ROM_Y, SHADOW_H, SHADOW_W, SLIDE_SHARE, SLIDE_UP, SOCKET_H, SOCKET_U, SOCKET_V,
+    SOCKET_W, TURN_PAD,
 };
 pub use cart::{
     cart_backing, cart_box, cart_face, cart_face_with, cart_interior, cart_shadow, clean_label,
@@ -54,8 +56,8 @@ pub use cart::{
     GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_WELL, LABEL_X, LABEL_Y,
 };
 pub use clock::{
-    clock_label, date_time_text, hhmm, time_text, ClockFaceSet, ClockFaces,
-    ClockPicker, ClockRow, ClockScreen, Part,
+    clock_label, date_time_text, hhmm, time_text, ClockFaceSet, ClockFaces, ClockPicker, ClockRow,
+    ClockScreen, Part,
 };
 pub use draw::{Canvas, Draw, TexId, OUT_H, OUT_W};
 pub use footer::{draw_corners, draw_footer, Printed, FOOTER_Y};
@@ -88,10 +90,11 @@ pub use quick_menu::{
     clock_legend_faces, core_button_legends, delete_legends, draw_menu_ground, link_button_legends,
     prompt_legends, quick_description_face, quick_label_face, quick_legend_faces,
     quick_pointer_face, quick_row_top, quick_row_top_at, quick_scroll, quick_value_face,
-    quick_warning_value_face, quick_window, repair_legends, QuickMenu, QuickMenuFaces, QuickRow,
-    QuickScroll, QuickValue, QUICK_EDGE, QUICK_LABEL_X, QUICK_PITCH, QUICK_VISIBLE,
+    quick_warning_value_face, quick_window, repair_legends, update_legends, QuickMenu,
+    QuickMenuFaces, QuickRow, QuickScroll, QuickValue, QUICK_EDGE, QUICK_LABEL_X, QUICK_PITCH,
+    QUICK_VISIBLE,
 };
-pub use rebuild::{rebuild_count_face, rebuild_title_face, RebuildScreen};
+pub use rebuild::{headline_face, rebuild_count_face, rebuild_title_face, RebuildScreen};
 pub use refusal::Refusal;
 pub use shelf::{foot_y, repeat_gap, rest_y, Shelf, REPEAT_DELAY_MS, STAR_INK, STAR_SCALE};
 pub use shell::{
@@ -105,8 +108,8 @@ pub use shot_viewer::{
 };
 pub use silhouette::{gb_silhouette, silhouette, GbShell};
 pub use slot_chrome::{
-    draw_empty_slot, draw_plugged_slot, draw_slot_title, ease, edge, housing, opening, recess,
-    slot_name_y, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
+    draw_empty_slot, draw_plugged_slot, draw_slot_back, draw_slot_front, draw_slot_title, ease,
+    edge, housing, opening, recess, slot_name_y, SlotChrome, ALERT_PX, LIP_H, MOUTH_H, MOUTH_W,
 };
 pub use sticker::{
     draw_sticker, head_rows, sticker_face, sticker_lines, sticker_rect, StickerFields, COPYRIGHT,

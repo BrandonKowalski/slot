@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use slot_store::Cart;
 use slot_ui::{cover, label_size};
 
-const DIR: &str = "System/Cache/Labels";
+const DIR: &str = "Cache/Labels";
 const HEAD: usize = 24;
 const STALL: Duration = Duration::from_secs(20);
 

@@ -1177,6 +1177,17 @@ pub fn repair_legends(ink: [u8; 3]) -> [UndoFace; 2] {
     prompt_legends(ink, "Not now", "Repair")
 }
 
+pub fn update_legends(ink: [u8; 3], light_ink: [u8; 3]) -> [UndoFace; 5] {
+    let [cancel, install] = prompt_legends(ink, "Cancel", "Install");
+    [
+        with_hint(button_face(ButtonLegend::X), "OTA", Some(ink), false),
+        with_hint(button_face(ButtonLegend::X), "OTA", Some(light_ink), false),
+        cancel,
+        install,
+        with_hint(button_face(ButtonLegend::B), "Back", Some(ink), true),
+    ]
+}
+
 pub fn delete_legends(ink: [u8; 3]) -> [UndoFace; 2] {
     let hint = Some(ink);
     [

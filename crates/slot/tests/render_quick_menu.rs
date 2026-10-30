@@ -608,3 +608,153 @@ fn a_duplicate_binding_shows_a_warning_naming_the_other_row() {
         "no amber triangle marks the clashing rows"
     );
 }
+
+#[derive(Clone, Default)]
+struct Answers(std::sync::Arc<std::sync::Mutex<VecDeque<slot::update::UpdateEvent>>>);
+
+impl slot::update::UpdateJobs for Answers {
+    fn ask(&mut self, _job: slot::update::UpdateJob) {}
+
+    fn take(&mut self) -> Option<slot::update::UpdateEvent> {
+        self.0.lock().unwrap().pop_front()
+    }
+}
+
+fn wait(f: &mut Frontend, input: &mut Script, ms: u64) {
+    let mut now = f.app().now();
+    for _ in 0..ms / 50 {
+        now += 50;
+        f.advance_at(input, now, 0.05);
+    }
+}
+
+fn slot_release() -> slot::update::Release {
+    slot::update::Release {
+        kind: slot::update::Kind::Slot,
+        running: "1.12.0".into(),
+        version: "1.13.0".into(),
+        url: String::new(),
+        sha256: [0; 32],
+        size: 1000,
+    }
+}
+
+fn baseos_release() -> slot::update::Release {
+    slot::update::Release {
+        kind: slot::update::Kind::BaseOs,
+        running: "1.3.0".into(),
+        version: "1.4.0".into(),
+        url: String::new(),
+        sha256: [0; 32],
+        size: 1000,
+    }
+}
+
+#[test]
+fn the_baseos_update_scene_renders_beside_slot() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    std::fs::write(d.path().join("Config/wifi.conf"), b"network={}\n").unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    let answers = Answers::default();
+    f.set_update_jobs(Box::new(answers.clone()));
+    let say = |e| answers.0.lock().unwrap().push_back(e);
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::Menu);
+    for _ in 0..QuickRow::About.position(&[]) {
+        tap(&mut f, &mut input, Btn::Down);
+    }
+    tap(&mut f, &mut input, Btn::A);
+    tap(&mut f, &mut input, Btn::X);
+    say(slot::update::UpdateEvent::Available(vec![
+        slot_release(),
+        baseos_release(),
+    ]));
+    wait(&mut f, &mut input, 800);
+    composed(&mut f, &mut c, "update-both-slot");
+    tap(&mut f, &mut input, Btn::Right);
+    wait(&mut f, &mut input, 700);
+    composed(&mut f, &mut c, "update-both-baseos");
+    tap(&mut f, &mut input, Btn::A);
+    say(slot::update::UpdateEvent::Progress(470));
+    wait(&mut f, &mut input, 1900);
+    assert_eq!(f.app().update_progress(), Some(0.47));
+    let downloading = composed(&mut f, &mut c, "update-baseos-downloading");
+    let [r, g, b] = at(&downloading, 196, 250);
+    assert!(
+        r < 60 && g < 60 && b < 60,
+        "the open cart's back is not black: {r},{g},{b}"
+    );
+    say(slot::update::UpdateEvent::Staged);
+    wait(&mut f, &mut input, 1300);
+    composed(&mut f, &mut c, "update-baseos-seated");
+    wait(&mut f, &mut input, 1000);
+    assert!(f.app().restarting(), "a BaseOS update did not reboot");
+}
+
+#[test]
+fn the_update_scene_renders_each_moment() {
+    let Ok(surface) = HeadlessSurface::new() else {
+        return;
+    };
+    let Ok(mut c) = Compositor::new(&surface) else {
+        return;
+    };
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    std::fs::write(d.path().join("Config/wifi.conf"), b"network={}\n").unwrap();
+    let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
+    let answers = Answers::default();
+    f.set_update_jobs(Box::new(answers.clone()));
+    let say = |e| answers.0.lock().unwrap().push_back(e);
+    f.upload_faces(&mut c);
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::Menu);
+    for _ in 0..QuickRow::About.position(&[]) {
+        tap(&mut f, &mut input, Btn::Down);
+    }
+    tap(&mut f, &mut input, Btn::A);
+    assert!(f.app().update_offered());
+    let about = composed(&mut f, &mut c, "about-update");
+    tap(&mut f, &mut input, Btn::X);
+    wait(&mut f, &mut input, 400);
+    let checking = composed(&mut f, &mut c, "update-checking");
+    assert_ne!(checking, about, "checking drew nothing new");
+    say(slot::update::UpdateEvent::Available(vec![slot_release()]));
+    wait(&mut f, &mut input, 800);
+    composed(&mut f, &mut c, "update-available");
+    tap(&mut f, &mut input, Btn::A);
+    say(slot::update::UpdateEvent::Progress(470));
+    wait(&mut f, &mut input, 250);
+    composed(&mut f, &mut c, "update-opening-cart");
+    wait(&mut f, &mut input, 1250);
+    composed(&mut f, &mut c, "update-hopping");
+    wait(&mut f, &mut input, 400);
+    assert_eq!(f.app().update_progress(), Some(0.47));
+    let downloading = composed(&mut f, &mut c, "update-downloading");
+    let [r, g, b] = at(&downloading, 196, 250);
+    assert!(
+        b > g + 30 && r > g,
+        "the open cart's back is not the shell's purple: {r},{g},{b}"
+    );
+    say(slot::update::UpdateEvent::Staged);
+    wait(&mut f, &mut input, 150);
+    composed(&mut f, &mut c, "update-closing");
+    wait(&mut f, &mut input, 450);
+    composed(&mut f, &mut c, "update-seating");
+    wait(&mut f, &mut input, 300);
+    assert!(!f.app().restarting(), "restarted before the cart seated");
+    composed(&mut f, &mut c, "update-seated");
+    wait(&mut f, &mut input, 250);
+    composed(&mut f, &mut c, "update-opening");
+    wait(&mut f, &mut input, 150);
+    assert!(!f.app().relaunching(), "relaunched before the logo held");
+    composed(&mut f, &mut c, "update-logo");
+}

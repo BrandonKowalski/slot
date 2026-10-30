@@ -50,5 +50,6 @@ pub mod shot_loader;
 pub mod shot_writer;
 pub mod state_writer;
 pub mod thumb;
+pub mod update;
 pub mod video_mode;
 pub mod wallpaper;

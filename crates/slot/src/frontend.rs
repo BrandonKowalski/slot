@@ -8,19 +8,21 @@ use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::{format_stamp, BezelPick, Platform as Console};
 use slot_ui::{
-    badge_face, bezel_face, cart_shadow, chip_face, chip_shadow_face, core_button_legends,
-    date_time_text, default_game_bezel_face, delete_legends, footer_ink, game_bezel_face,
-    gb_cart_shadow, hint_face, icon_face, link_button_legends, menu_detail_face, menu_face,
-    photo_face, prompt_legends, quick_description_face, quick_label_face, quick_legend_faces,
-    quick_pointer_face, quick_value_face, quick_warning_value_face, rebuild_count_face,
-    rebuild_title_face, repair_legends, slot_back, slot_back_light, slot_front, slot_front_light,
-    socket_face, sticker_face, time_text, title_face, toast_face, wallpaper_face, word_ink,
+    badge_face, bare_board_face, bezel_face, cart_shadow, chip_face, chip_face_text,
+    chip_shadow_face, core_button_legends, date_time_text, default_game_bezel_face, delete_legends,
+    footer_ink, game_bezel_face, gb_cart_shadow, hint_face, icon_face, link_button_legends,
+    menu_detail_face, menu_face, padded, photo_face, prompt_legends, quick_description_face,
+    quick_label_face, quick_legend_faces, quick_pointer_face, quick_value_face,
+    quick_warning_value_face, rebuild_count_face, rebuild_title_face, repair_legends, slot_back,
+    slot_back_light, slot_front, slot_front_light, socket_face, socket_face_text, sticker_face,
+    time_text, title_face, toast_face, update_cart_face, update_legends, wallpaper_face, word_ink,
     BezelArt, CartFace, GbShell, Icon, LinkBadge, PowerChoice, QuickMenuFaces, QuickRow,
     QuickValue, RebuildScreen, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX, HUD_ICON_PX,
-    HUD_INK, LEGEND,
+    HUD_INK, LEGEND, TURN_PAD,
 };
 
-use crate::app::{App, LinkRow, Phase};
+use crate::app::{App, LinkRow, Phase, UpdateCart, UpdateScene};
+
 use crate::build_info::Build;
 use crate::cart_faces::CartFaces;
 use crate::face_builder::FaceBuilder;
@@ -57,6 +59,7 @@ pub struct Frontend {
     guide_page: GuidePage,
     clocks: Clocks,
     about: AboutFace,
+    update_text: UpdateText,
     quick_clock: QuickClock,
     quick_palette: QuickPalette,
     wallpaper: WallpaperSync,
@@ -104,6 +107,16 @@ struct WallpaperSync {
     label: String,
     dim: Option<TexId>,
     lit: Option<TexId>,
+}
+
+#[derive(Default)]
+struct UpdateText {
+    shown: Option<(String, String)>,
+    title: Option<TexId>,
+    detail: Option<TexId>,
+    scene: bool,
+    versions: Option<(String, String)>,
+    chips: [Option<TexId>; 4],
 }
 
 #[derive(Default)]
@@ -166,6 +179,15 @@ impl Frontend {
         let now = Instant::now();
         let cart_faces = CartFaces::spawn(platform.root().to_path_buf());
         let mut session = Session::boot_with(platform.root().to_path_buf(), sink);
+        session
+            .app_mut()
+            .set_update_jobs(crate::update::update_jobs(platform.root().to_path_buf()));
+        if let (Some(target), Some(version)) = (
+            crate::baseos::var("BASEOS_TARGET"),
+            crate::baseos::var("BASEOS_VERSION"),
+        ) {
+            crate::update::clean_baseos(platform.root(), &target, &version);
+        }
         crate::boot_time::mark("session");
         let stale_check =
             Self::check_labels(platform.root(), session.app().carts().cloned().collect());
@@ -195,6 +217,7 @@ impl Frontend {
             guide_page: GuidePage::default(),
             clocks: Clocks::default(),
             about: AboutFace::default(),
+            update_text: UpdateText::default(),
             quick_clock: QuickClock::default(),
             quick_palette: QuickPalette::default(),
             wallpaper: WallpaperSync::default(),
@@ -484,6 +507,7 @@ impl Frontend {
                 })
                 .collect()
         };
+        let update = pack(faces.update_legends.into());
         let link_legend = pack(faces.link_legend);
         let link_legend_light = pack(faces.link_legend_light);
         let steps = faces.link_steps.into_iter().map(&mut up).collect();
@@ -496,6 +520,9 @@ impl Frontend {
         app.set_link_badge_faces(link_badges);
         app.set_shutdown_faces(lines);
         app.set_repair_faces(repair);
+        if let Ok(update) = <[(TexId, u32); 5]>::try_from(update) {
+            app.set_update_legends(update);
+        }
         app.set_reset_faces(reset);
         app.set_delete_faces(delete);
         app.set_delete_shot_faces(delete_shot);
@@ -614,6 +641,7 @@ impl Frontend {
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_binding_faces(self.session.app_mut(), compositor);
         sync_about(self.session.app_mut(), compositor, &mut self.about);
+        sync_update(self.session.app_mut(), compositor, &mut self.update_text);
         sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
         sync_quick_palette(self.session.app_mut(), compositor, &mut self.quick_palette);
         sync_wallpaper(self.session.app_mut(), compositor, &mut self.wallpaper);
@@ -800,6 +828,10 @@ impl Frontend {
         self.session.app()
     }
 
+    pub fn set_update_jobs(&mut self, jobs: Box<dyn crate::update::UpdateJobs>) {
+        self.session.app_mut().set_update_jobs(jobs);
+    }
+
     pub fn set_left_stick(&mut self, present: bool) {
         self.session.app_mut().set_left_stick(present);
     }
@@ -829,6 +861,15 @@ impl Frontend {
     pub fn restart(&mut self) {
         self.session.close_audio();
         self.session.app_mut().restart();
+    }
+
+    pub fn relaunching(&self) -> bool {
+        self.session.app().relaunching()
+    }
+
+    pub fn relaunch(&mut self) {
+        self.session.close_audio();
+        self.stop();
     }
 
     pub fn repairing(&self) -> bool {
@@ -890,6 +931,7 @@ struct UiFaces {
     reset: Vec<UndoFace>,
     delete: Vec<UndoFace>,
     delete_shot: Vec<UndoFace>,
+    update_legends: [UndoFace; 5],
 }
 
 impl UiFaces {
@@ -951,6 +993,7 @@ impl UiFaces {
                 .map(|f| menu_face(f.line()))
                 .collect(),
             toasts: Toast::all().into_iter().map(toast_face).collect(),
+            update_legends: update_legends(footer_ink(false), footer_ink(true)),
             repair: {
                 let [not_now, repair] = repair_legends(footer_ink(false));
                 vec![
@@ -1469,6 +1512,98 @@ fn sync_quick_palette(app: &mut App, compositor: &mut Compositor, state: &mut Qu
     let lit = upload(compositor, &mut state.lit, lit);
     app.set_quick_palette_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
     state.shown = text;
+}
+
+const BUNDLED_LOGO: &[u8] = include_bytes!("../../../card/System/bootlogo.bmp");
+
+fn bundled_logo() -> (CartFace, [f32; 4]) {
+    let Some(bmp) = crate::bootlogo::decode(BUNDLED_LOGO) else {
+        let face = CartFace {
+            rgba: Vec::new(),
+            w: 0,
+            h: 0,
+        };
+        return (face, [0.0, 0.0, 0.0, 1.0]);
+    };
+    let ground = bmp.rgb.first().copied().unwrap_or([0, 0, 0]);
+    let rgba = bmp
+        .rgb
+        .iter()
+        .flat_map(|&px| {
+            let [r, g, b] = px;
+            [r, g, b, if px == ground { 0 } else { 0xff }]
+        })
+        .collect();
+    let face = CartFace {
+        rgba,
+        w: bmp.width as u32,
+        h: bmp.height as u32,
+    };
+    let [r, g, b] = ground.map(|c| c as f32 / 255.0);
+    (face, [r, g, b, 1.0])
+}
+
+fn sync_update(app: &mut App, compositor: &mut Compositor, state: &mut UpdateText) {
+    if app.update_shown() && !state.scene {
+        state.scene = true;
+        let (logo, logo_ground) = bundled_logo();
+        let (lw, lh) = (logo.w, logo.h);
+        let mut up = |f: CartFace| compositor.create_texture(f.w, f.h, &f.rgba);
+        let mut cart = |face: fn() -> CartFace, kind: crate::update::Kind| UpdateCart {
+            cart: up(padded(&face(), TURN_PAD)),
+            interior: up(slot_ui::cart_interior(&crate::app::cart_for(kind))),
+            face: up(face()),
+        };
+        let carts = [
+            cart(update_cart_face, crate::update::Kind::Slot),
+            cart(slot_ui::baseos_cart_face, crate::update::Kind::BaseOs),
+        ];
+        app.set_update_scene(UpdateScene {
+            carts,
+            chip: up(chip_face(None)),
+            board: up(bare_board_face()),
+            logo: (up(logo), lw, lh),
+            logo_ground,
+        });
+    }
+    let versions = app.update_versions();
+    if versions.is_some() && versions != state.versions {
+        if let Some((old, new)) = &versions {
+            let faces = [
+                socket_face_text(old),
+                socket_face_text(new),
+                chip_face_text(old),
+                chip_face_text(new),
+            ];
+            let mut texes = Vec::new();
+            for (face, slot) in faces.into_iter().zip(state.chips.iter_mut()) {
+                texes.push(upload_rgba(compositor, slot, face.w, face.h, &face.rgba));
+            }
+            app.set_update_chips(texes[..2].to_vec(), texes[2..].to_vec());
+        }
+        state.versions = versions;
+    }
+    let text = app.update_text();
+    if text == state.shown {
+        return;
+    }
+    state.shown = text.clone();
+    let Some((title, detail)) = text else {
+        app.set_update_faces(Vec::new());
+        return;
+    };
+    let title = match app.update_headline() {
+        true => slot_ui::headline_face(&title),
+        false => menu_face(&title),
+    };
+    let (tw, th) = (title.w, title.h);
+    let mut faces = vec![(upload(compositor, &mut state.title, title), tw, th)];
+    if !detail.is_empty() {
+        let detail = menu_detail_face(&detail);
+        let (dw, dh) = (detail.w, detail.h);
+        faces.push((upload(compositor, &mut state.detail, detail), dw, dh));
+    }
+    app.set_update_faces(faces);
 }
 
 fn sync_about(app: &mut App, compositor: &mut Compositor, state: &mut AboutFace) {
