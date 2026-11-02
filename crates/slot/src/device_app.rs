@@ -3,69 +3,16 @@ use std::time::{Duration, Instant};
 
 use slot::frontend::Frontend;
 use slot::input::DeviceInput;
+use slot::pacing::FramePacer;
 use slot::panel_turn::{panel_turn, PanelTurn};
 use slot_gfx::{Compositor, FbdevSurface, Surface};
 use slot_power::{trace_first_frame, DevicePlatform};
 
 const CARD: &str = "/mnt/sdcard";
 
-const MIN_FRAME: Duration = Duration::from_millis(12);
-
 const STEP_TIMEOUT: Duration = Duration::from_millis(12);
 
-const MARGIN: Duration = Duration::from_micros(1500);
-
 const LOG_SYNC: Duration = Duration::from_secs(1);
-
-struct Pacer {
-    last_return: Option<Instant>,
-    period: Duration,
-    work: Duration,
-    works: [Duration; WORK_WINDOW],
-    next: usize,
-}
-
-const WORK_WINDOW: usize = 32;
-
-impl Pacer {
-    fn new() -> Self {
-        Pacer {
-            last_return: None,
-            period: Duration::from_micros(16_760),
-            work: Duration::from_millis(4),
-            works: [Duration::from_millis(4); WORK_WINDOW],
-            next: 0,
-        }
-    }
-
-    fn wait(&self) {
-        let Some(last) = self.last_return else {
-            return;
-        };
-        let delay = self.period.saturating_sub(self.work + MARGIN);
-        if let Some(left) = (last + delay).checked_duration_since(Instant::now()) {
-            std::thread::sleep(left);
-        }
-    }
-
-    fn swapped(&mut self, work: Duration, blocked: bool) -> bool {
-        let now = Instant::now();
-        let mut missed = false;
-        if let Some(last) = self.last_return {
-            let seen = now - last;
-            missed = seen > self.period.mul_f64(1.5);
-            if blocked && seen > Duration::from_millis(12) && seen < Duration::from_millis(22) {
-                self.period = self.period.mul_f64(0.95) + seen.mul_f64(0.05);
-            }
-        }
-        self.works[self.next] = work;
-        self.next = (self.next + 1) % WORK_WINDOW;
-        self.work = self.works.iter().copied().max().unwrap_or(work);
-        self.last_return = Some(now);
-        missed
-    }
-}
-
 pub fn run() {
     slot::boot_time::mark("start");
     let _ = std::thread::Builder::new()
@@ -149,11 +96,14 @@ pub fn run() {
         .spawn(sync_log_writes);
     let mut drawn = false;
     frontend.drive_emulator();
-    let mut pacer = Pacer::new();
-    let (mut frames, mut missed, mut early) = (0u32, 0u32, 0u32);
+    let mut pacer = FramePacer::new(Instant::now());
+    let (mut frames, mut steps) = (0u32, 0u32);
+    let mut said = Instant::now();
     loop {
-        pacer.wait();
-        let began = Instant::now();
+        let deadline = pacer.deadline(frontend.frame_clock(), Instant::now());
+        if let Some(left) = deadline.checked_duration_since(Instant::now()) {
+            std::thread::sleep(left);
+        }
         input.steer_with_stick(frontend.app().left_stick_dpad());
         frontend.advance(&mut input);
         if frontend.restarting() {
@@ -171,10 +121,19 @@ pub fn run() {
             frontend.stop();
             return;
         }
-        frontend.step_emulator(pacer.period, STEP_TIMEOUT);
+        let due = pacer.due(frontend.frame_clock(), Instant::now());
+        for step in 0..due {
+            if step > 0 {
+                frontend.advance(&mut input);
+            }
+            let completed = frontend.step_emulator(STEP_TIMEOUT);
+            steps += 1;
+            if !pacer.stepped(frontend.frame_clock(), Instant::now()) || !completed {
+                break;
+            }
+        }
         frontend.render(&mut compositor, window);
         let swap = Instant::now();
-        let work = swap - began;
         if let Err(e) = surface.swap() {
             eprintln!("slot: {e}");
             frontend.stop();
@@ -182,27 +141,23 @@ pub fn run() {
         }
         let swap_took = swap.elapsed();
         slot::latency::swapped(swap_took.as_secs_f64() * 1000.0);
-        let dropped = pacer.swapped(work, swap_took > Duration::from_millis(1));
         if slot::latency::tracing() {
             frames += 1;
-            missed += u32::from(dropped);
-            early += u32::from(swap_took > pacer.period / 2);
             if frames == 600 {
                 eprintln!(
-                    "slot: pace: 600 frames, {missed} missed a latch, {early} drawn early, work {:.1} ms, period {:.2} ms",
-                    pacer.work.as_secs_f64() * 1e3,
-                    pacer.period.as_secs_f64() * 1e3
+                    "slot: pace: {frames} presents, {steps} steps, {:.2} presents/s, {:.2} nominal fps, {} missed game periods",
+                    frames as f64 / said.elapsed().as_secs_f64(),
+                    1.0 / frontend.frame_clock().period.as_secs_f64(),
+                    pacer.dropped
                 );
-                (frames, missed, early) = (0, 0, 0);
+                (frames, steps) = (0, 0);
+                said = Instant::now();
             }
         }
         if !drawn {
             drawn = true;
             slot::boot_time::mark("first frame");
             trace_first_frame();
-        }
-        if let Some(left) = MIN_FRAME.checked_sub(began.elapsed()) {
-            std::thread::sleep(left);
         }
     }
 }

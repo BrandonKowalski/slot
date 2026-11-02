@@ -312,6 +312,8 @@ pub struct SlotState {
     pub zone: Zone,
     pub clock_24h: bool,
     pub rumble: bool,
+    /// Home association only; Link holds its own radio lease.
+    pub home_wifi_enabled: bool,
     pub ff_speed: u8,
     pub ff_sound: bool,
     pub colour_correction_gba: bool,
@@ -324,6 +326,7 @@ pub struct SlotState {
     pub eject_save: bool,
     pub turbo: bool,
     pub rewind: bool,
+    pub high_refresh: bool,
     pub gb_palettes: bool,
     pub gb_palette: GbPalette,
     pub appearance: Appearance,
@@ -462,6 +465,7 @@ impl Default for SlotState {
             zone: Zone::default(),
             clock_24h: true,
             rumble: true,
+            home_wifi_enabled: false,
             ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
             colour_correction_gba: false,
@@ -474,6 +478,7 @@ impl Default for SlotState {
             eject_save: true,
             turbo: true,
             rewind: true,
+            high_refresh: true,
             gb_palettes: false,
             gb_palette: GbPalette::DEFAULT,
             appearance: Appearance::Dark,
@@ -551,7 +556,7 @@ fn write_list(root: &Path, name: &str, list: &[Recent]) -> std::io::Result<()> {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let mut text = format!(
-        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nzone={}\nclock_24h={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction_gba={}\ncolour_correction_gb={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\n",
+        "cart={}\ncart_platform={}\nbrightness={}\nblue_light={}\nvolume={}\nvolume_hp={}\nmuted={}\nmuted_hp={}\nclock_set={}\nzone={}\nclock_24h={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction_gba={}\ncolour_correction_gb={}\nshader_gba={}\nshader_gb={}\neject_save={}\nturbo={}\nrewind={}\nhigh_refresh={}\ngb_palettes={}\ngb_palette={}\nappearance={}\nwallpaper={}\nhome_wifi_enabled={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.cart_platform.map_or(String::new(), platform_key),
         s.brightness,
@@ -573,10 +578,12 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.eject_save as u8,
         s.turbo as u8,
         s.rewind as u8,
+        s.high_refresh as u8,
         s.gb_palettes as u8,
         s.gb_palette.core_name(),
         s.appearance.name(),
-        s.wallpaper.key()
+        s.wallpaper.key(),
+        s.home_wifi_enabled as u8
     );
     text.push_str(&format!(
         "colour_correction_gbc={}\n",
@@ -631,6 +638,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut zone = None;
     let mut clock_24h = None;
     let mut rumble = None;
+    let mut home_wifi_enabled = None;
     let mut ff_speed = None;
     let mut ff_sound = None;
     let mut colour_correction = None;
@@ -644,6 +652,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut eject_save = None;
     let mut turbo = None;
     let mut rewind = None;
+    let mut high_refresh = None;
     let mut gb_palettes = None;
     let mut gb_palette = None;
     let mut appearance = None;
@@ -685,6 +694,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "zone" => zone = Zone::parse(value),
             "clock_24h" => clock_24h = flag(value),
             "rumble" => rumble = flag(value),
+            "home_wifi_enabled" => home_wifi_enabled = flag(value),
             "ff_speed" => ff_speed = ff_speed_value(value),
             "ff_sound" => ff_sound = flag(value),
             "colour_correction" => colour_correction = flag(value),
@@ -696,6 +706,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "eject_save" => eject_save = flag(value),
             "turbo" => turbo = flag(value),
             "rewind" => rewind = flag(value),
+            "high_refresh" => high_refresh = Some(flag(value).unwrap_or(false)),
             "gb_palettes" => gb_palettes = flag(value),
             "gb_palette" => gb_palette = GbPalette::parse(value),
             "appearance" => appearance = Appearance::parse(value),
@@ -739,6 +750,7 @@ fn parse(text: &str) -> Option<SlotState> {
         zone: zone.or_else(|| utc_offset_min.map(|m| Zone::for_offset(i64::from(m), now())))?,
         clock_24h: clock_24h.unwrap_or(fallback.clock_24h),
         rumble: rumble.unwrap_or(fallback.rumble),
+        home_wifi_enabled: home_wifi_enabled.unwrap_or(false),
         ff_speed: ff_speed.unwrap_or(fallback.ff_speed),
         ff_sound: ff_sound.unwrap_or(fallback.ff_sound),
         colour_correction_gba: colour_correction_gba
@@ -758,6 +770,7 @@ fn parse(text: &str) -> Option<SlotState> {
         eject_save: eject_save.unwrap_or(fallback.eject_save),
         turbo: turbo.unwrap_or(fallback.turbo),
         rewind: rewind.unwrap_or(fallback.rewind),
+        high_refresh: high_refresh.unwrap_or(fallback.high_refresh),
         gb_palettes: gb_palettes.unwrap_or(fallback.gb_palettes),
         gb_palette: gb_palette.unwrap_or(fallback.gb_palette),
         appearance: appearance.unwrap_or(fallback.appearance),

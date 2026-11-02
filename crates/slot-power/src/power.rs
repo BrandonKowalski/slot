@@ -63,6 +63,18 @@ impl Power {
         self.platform.relink_adb()
     }
 
+    pub fn supports_high_refresh(&self) -> bool {
+        self.platform.supports_high_refresh()
+    }
+
+    pub fn set_high_refresh(&mut self, high: bool) -> bool {
+        self.platform.set_high_refresh(high)
+    }
+
+    pub fn high_refresh_enabled(&self) -> bool {
+        self.platform.high_refresh_enabled()
+    }
+
     pub fn poweroff(&mut self) -> ! {
         self.platform.poweroff()
     }
@@ -99,6 +111,7 @@ impl LidPolicy for Power {
 
     fn on_open(&mut self) {
         self.closed = false;
+        self.platform.resume_display();
         self.platform.set_backlight(self.level);
     }
 

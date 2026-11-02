@@ -16,7 +16,7 @@ const WORKERS: usize = 2;
 type Key = (usize, usize);
 
 /// A cart's face and, for a clear GBA cart, the game-coloured inside it is drawn over.
-type Built = (Key, CartFace, Option<CartFace>);
+type Built = (Key, Cart, CartFace, Option<CartFace>);
 
 #[derive(Default)]
 struct Queue {
@@ -58,8 +58,8 @@ impl CartFaces {
 
     pub fn sync(&mut self, app: &mut App, compositor: &mut Compositor) {
         self.free.extend(app.shed_faces());
-        while let Ok((key, face, interior)) = self.built.try_recv() {
-            self.place(app, compositor, key, face, interior);
+        while let Ok((key, cart, face, interior)) = self.built.try_recv() {
+            self.place(app, compositor, key, &cart, face, interior);
         }
         let wants = app.face_wants();
         if wants != self.asked {
@@ -73,11 +73,11 @@ impl CartFaces {
             .map(|w| (w.shelf, w.index))
             .collect();
         while !waiting.is_empty() {
-            let Ok((key, face, interior)) = self.built.recv() else {
+            let Ok((key, cart, face, interior)) = self.built.recv() else {
                 return;
             };
             waiting.retain(|k| *k != key);
-            self.place(app, compositor, key, face, interior);
+            self.place(app, compositor, key, &cart, face, interior);
         }
     }
 
@@ -115,11 +115,18 @@ impl CartFaces {
         app: &mut App,
         compositor: &mut Compositor,
         key: Key,
+        cart: &Cart,
         face: CartFace,
         interior: Option<CartFace>,
     ) {
         self.pending.remove(&key);
         self.asked.retain(|w| (w.shelf, w.index) != key);
+        if !app
+            .face_cart(key.0, key.1)
+            .is_some_and(|current| current.rom == cart.rom && current.label == cart.label)
+        {
+            return;
+        }
         let tex = self.texture(compositor, &face);
         self.free.extend(app.set_cart_face(key.0, key.1, tex));
         if let Some(interior) = interior {
@@ -154,7 +161,7 @@ fn work(queue: &Shared, outbox: &Sender<Built>, root: &Path) {
         };
         let face = cart_face_with(&cart, label_art(root, &cart));
         let interior = shows_interior(&cart).then(|| cart_interior(&cart));
-        if outbox.send((key, face, interior)).is_err() {
+        if outbox.send((key, cart, face, interior)).is_err() {
             return;
         }
     }

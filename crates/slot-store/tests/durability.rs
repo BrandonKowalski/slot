@@ -206,6 +206,10 @@ fn a_first_boot_rumbles_and_fast_forwards_silently_at_the_default() {
     );
     assert_eq!(s.shader_gba, Shader::Grid);
     assert_eq!(s.shader_gb, Shader::Simpletex);
+    assert!(
+        s.high_refresh,
+        "defaults to high refresh on a supported panel"
+    );
 }
 
 #[test]
@@ -238,6 +242,7 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             ),
             clock_24h: true,
             rumble: true,
+            home_wifi_enabled: false,
             ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
             colour_correction_gba: false,
@@ -250,6 +255,7 @@ fn a_card_from_before_the_settings_keeps_all_its_values() {
             eject_save: true,
             turbo: true,
             rewind: true,
+            high_refresh: true,
             gb_palettes: false,
             gb_palette: GbPalette::DEFAULT,
             appearance: Appearance::Dark,
@@ -294,6 +300,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         eject_save: false,
         turbo: false,
         rewind: false,
+        high_refresh: true,
         gb_palettes: true,
         gb_palette: GbPalette::parse("GBC Dark Green →A").unwrap(),
         wallpaper_tint: WallpaperTint::Medium,
@@ -326,6 +333,7 @@ fn the_quick_menu_settings_round_trip_as_their_own_lines() {
         "eject_save=0",
         "turbo=0",
         "rewind=0",
+        "high_refresh=1",
         "gb_palettes=1",
         "gb_palette=GBC Dark Green →A",
         "appearance=dark",
@@ -361,6 +369,43 @@ fn a_card_that_still_carries_run_ahead_keeps_the_rest_of_its_values() {
         .unwrap()
         .contains("runahead=1"));
     assert_eq!(read_slot_state(d.path()), s);
+}
+
+#[test]
+fn an_old_card_defaults_to_high_refresh() {
+    let d = tmp_root();
+    let state = SlotState {
+        brightness: 7,
+        clock_set: true,
+        rewind: false,
+        ..SlotState::default()
+    };
+    write_slot_state(d.path(), &state).unwrap();
+    let path = d.path().join("Config/slot.state");
+    let old = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("high_refresh=1\n", "");
+    std::fs::write(&path, old).unwrap();
+    let migrated = read_slot_state(d.path());
+    assert!(migrated.high_refresh);
+    assert_eq!(migrated.brightness, 7);
+    assert!(migrated.clock_set);
+    assert!(!migrated.rewind);
+    write_slot_state(d.path(), &migrated).unwrap();
+}
+
+#[test]
+fn an_explicit_refresh_setting_round_trips() {
+    for high_refresh in [false, true] {
+        let d = tmp_root();
+        let state = SlotState {
+            high_refresh,
+            ..SlotState::default()
+        };
+        write_slot_state(d.path(), &state).unwrap();
+        let read = read_slot_state(d.path());
+        assert_eq!(read.high_refresh, high_refresh);
+    }
 }
 
 #[test]
@@ -701,4 +746,24 @@ fn a_frame_blending_the_rows_do_not_offer_reads_as_off() {
         read.clock_set,
         "the rest of the card was thrown away with it"
     );
+}
+
+#[test]
+fn home_wifi_defaults_off_and_malformed_flag_preserves_other_settings() {
+    let d = tmp_root();
+    let state = SlotState {
+        home_wifi_enabled: true,
+        volume: 30,
+        ..SlotState::default()
+    };
+    write_slot_state(d.path(), &state).unwrap();
+    assert_eq!(read_slot_state(d.path()), state);
+    let path = d.path().join("Config/slot.state");
+    let text = std::fs::read_to_string(&path).unwrap();
+    for replacement in ["", "home_wifi_enabled=broken"] {
+        std::fs::write(&path, text.replace("home_wifi_enabled=1", replacement)).unwrap();
+        let restored = read_slot_state(d.path());
+        assert!(!restored.home_wifi_enabled);
+        assert_eq!(restored.volume, 30);
+    }
 }

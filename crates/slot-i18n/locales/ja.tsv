@@ -294,3 +294,7 @@ undo save	保存を取り消す
 {hour}:{minute} {period}	{period}{hour}:{minute}
 {index} of {total}	{total}枚中{index}枚目
 {month} {day} {time}	{month}{day}日 {time}
+
+Home Wi-Fi	ホームWi-Fi
+HOME WI-FI	ホームWi-Fi
+DIRECT LINK	直接リンク

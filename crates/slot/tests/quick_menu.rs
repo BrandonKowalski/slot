@@ -1,11 +1,16 @@
 mod common;
 
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use common::{
     app_booting_at, app_booting_with_clock, app_playing_in, tmp_root_with_carts, Clock,
     CLOCK_IS_SET,
 };
 use slot::app::{App, Phase};
 use slot_input::{Action, Btn};
+use slot_power::{Battery, Charge, LedState, Power};
 use slot_store::{
     read_slot_state, write_slot_state, Appearance, BezelPick, Blending, GbColors, GbPalette,
     Platform, Scale, Shader, SlotState, Stretch, WallpaperPick, Zone,
@@ -270,6 +275,80 @@ fn fast_forward_steps_through_its_speeds_wraps_at_both_ends_and_saves_each_one()
             QuickValue::speed(want)
         );
     }
+}
+
+struct RefreshPanel {
+    root: PathBuf,
+    requests: Arc<Mutex<Vec<bool>>>,
+    supported: bool,
+    high: bool,
+    fail_high: bool,
+}
+
+impl slot_power::Platform for RefreshPanel {
+    fn supports_high_refresh(&self) -> bool {
+        self.supported
+    }
+
+    fn set_high_refresh(&mut self, high: bool) -> bool {
+        self.requests.lock().unwrap().push(high);
+        self.high = high && !self.fail_high;
+        !high || !self.fail_high
+    }
+
+    fn high_refresh_enabled(&self) -> bool {
+        self.high
+    }
+
+    fn set_backlight(&mut self, _: u8) {}
+
+    fn battery(&self) -> Option<Battery> {
+        None
+    }
+
+    fn charge(&self) -> Charge {
+        Charge::Unknown
+    }
+
+    fn set_led(&mut self, _: LedState) {}
+
+    fn poweroff(&mut self) -> ! {
+        panic!("test platform")
+    }
+
+    fn restart(&mut self) -> ! {
+        panic!("test platform")
+    }
+
+    fn root(&self) -> &Path {
+        &self.root
+    }
+
+    fn now(&self) -> i64 {
+        CLOCK_IS_SET
+    }
+
+    fn set_clock(&mut self, _: i64) {}
+
+    fn set_rumble(&mut self, _: u16) {}
+}
+
+fn refresh_panel(
+    a: &mut App,
+    root: &Path,
+    supported: bool,
+    fail_high: bool,
+) -> Arc<Mutex<Vec<bool>>> {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let panel = RefreshPanel {
+        root: root.to_path_buf(),
+        requests: requests.clone(),
+        supported,
+        high: false,
+        fail_high,
+    };
+    a.set_power(Power::new(Box::new(panel), Duration::from_secs(60)));
+    requests
 }
 
 #[test]
@@ -1513,4 +1592,94 @@ fn language_can_be_changed_in_general_and_is_saved() {
         read_slot_state(root.path()).language,
         slot_i18n::Language::English
     );
+}
+
+#[test]
+fn home_wifi_toggle_persists_and_requests_only_home_work() {
+    use slot::link_radio::{RadioJob, RadioJobs};
+    use std::sync::{Arc, Mutex};
+    struct Radio(Arc<Mutex<Vec<RadioJob>>>);
+    impl RadioJobs for Radio {
+        fn ask(&mut self, job: RadioJob) {
+            self.0.lock().unwrap().push(job);
+        }
+        fn warmed(&self) -> bool {
+            false
+        }
+    }
+    let (d, mut app, _) = on_carousel();
+    let jobs = Arc::new(Mutex::new(Vec::new()));
+    app.set_radio_jobs(Box::new(Radio(jobs.clone())));
+    open_at(&mut app, QuickRow::HomeWifi);
+    assert_eq!(app.quick_value(QuickRow::HomeWifi), Some(QuickValue::Off));
+    press(&mut app, Btn::Right);
+    assert!(read_slot_state(d.path()).home_wifi_enabled);
+    press(&mut app, Btn::Left);
+    assert!(!read_slot_state(d.path()).home_wifi_enabled);
+    assert_eq!(
+        *jobs.lock().unwrap(),
+        vec![RadioJob::Home(true), RadioJob::Home(false)]
+    );
+}
+
+#[test]
+fn footer_wifi_requires_enabled_and_observed_home_connection() {
+    use slot::link_radio::{RadioJob, RadioJobs};
+    struct Radio(bool);
+    impl RadioJobs for Radio {
+        fn ask(&mut self, _: RadioJob) {}
+        fn warmed(&self) -> bool {
+            false
+        }
+        fn home_connected(&self) -> bool {
+            self.0
+        }
+    }
+    let texture = TexId::from_raw(9876);
+    for enabled in [false, true] {
+        for connected in [false, true] {
+            let (_d, mut app, _) = on_carousel_with(SlotState {
+                home_wifi_enabled: enabled,
+                ..Default::default()
+            });
+            app.set_radio_jobs(Box::new(Radio(connected)));
+            app.set_wifi_face(texture);
+            let mut draw = Vec::new();
+            app.draw(&mut draw);
+            let icon = draw
+                .iter()
+                .find(|d| matches!(d,Draw::Tex{tex,..} if *tex==texture));
+            assert_eq!(icon.is_some(), enabled && connected);
+            if let Some(Draw::Tex { x, y, .. }) = icon {
+                assert!(*x < 180.0 && *y > 400.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn automatic_refresh_only_requests_supported_panels_and_honours_failure() {
+    for (supported, fail, desired) in [
+        (true, false, true),
+        (false, false, true),
+        (true, true, true),
+        (true, false, false),
+    ] {
+        let (d, mut app, _) = on_carousel_with(SlotState {
+            high_refresh: desired,
+            ..SlotState::default()
+        });
+        let requests = refresh_panel(&mut app, d.path(), supported, fail);
+        assert_eq!(
+            *requests.lock().unwrap(),
+            if supported { vec![desired] } else { vec![] }
+        );
+        // Persist through an unrelated setting, as on device after a failed switch.
+        open_at(&mut app, QuickRow::Rumble);
+        press(&mut app, Btn::Right);
+        assert_eq!(
+            read_slot_state(d.path()).high_refresh,
+            desired && !(supported && fail)
+        );
+    }
 }

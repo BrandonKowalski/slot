@@ -167,7 +167,7 @@ fn main() {
         *frame += 1;
         let now = (*frame as f64 * 1000.0 / FPS) as Millis;
         frontend.advance_at(input, now, (1.0 / FPS) as f32);
-        frontend.step_emulator(present, Duration::from_secs(1));
+        frontend.step_emulator(Duration::from_secs(1));
         frontend.compose(&mut compositor);
         let mut pixels = compositor.read_frame();
         panel(&mut pixels, frontend.app(), lit);

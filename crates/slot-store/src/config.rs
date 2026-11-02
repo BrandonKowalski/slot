@@ -3,7 +3,8 @@ use std::path::Path;
 
 pub const CONFIG_DIR: &str = "Config";
 
-const MOVED: [&str; 4] = [
+const MOVED: [&str; 5] = [
+    "wifi.toml",
     "slot.state",
     "selected_core.ini",
     "video_mode.ini",

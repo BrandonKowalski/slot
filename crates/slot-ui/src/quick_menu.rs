@@ -15,6 +15,7 @@ pub enum QuickRow {
     FastForwardSound,
     Screen,
     Rumble,
+    HomeWifi,
     DateTime,
     About,
     GbaShader,
@@ -110,11 +111,12 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 96] = [
+    pub const ALL: [QuickRow; 97] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
         QuickRow::Rumble,
+        QuickRow::HomeWifi,
         QuickRow::DateTime,
         QuickRow::About,
         QuickRow::GbaShader,
@@ -217,8 +219,9 @@ impl QuickRow {
         QuickRow::About,
     ];
 
-    pub const GENERAL: [QuickRow; 8] = [
+    pub const GENERAL: [QuickRow; 9] = [
         QuickRow::Theme,
+        QuickRow::HomeWifi,
         QuickRow::Language,
         QuickRow::Wallpaper,
         QuickRow::WallpaperTint,
@@ -385,7 +388,8 @@ impl QuickRow {
             | QuickRow::LeftStick
             | QuickRow::AutoLoad
             | QuickRow::EjectSave => &QuickRow::GAME,
-            QuickRow::Language
+            QuickRow::HomeWifi
+            | QuickRow::Language
             | QuickRow::Wallpaper
             | QuickRow::WallpaperTint
             | QuickRow::DateTime
@@ -432,7 +436,7 @@ impl QuickRow {
             QuickRow::Shader => Some(QuickRow::PlayScreen),
             QuickRow::GameUp => Some(QuickRow::ControlsInGame),
             QuickRow::ScSave => Some(QuickRow::Shortcuts),
-            QuickRow::Theme => Some(QuickRow::General),
+            QuickRow::Theme | QuickRow::HomeWifi => Some(QuickRow::General),
             QuickRow::ControlsShelf => Some(QuickRow::Controls),
             QuickRow::ShelfPrev => Some(QuickRow::ControlsShelf),
             _ => None,
@@ -501,6 +505,7 @@ impl QuickRow {
             QuickRow::Screen => "Screen",
             QuickRow::Rumble => "Rumble",
             QuickRow::LeftStick => "Left Stick as D-Pad",
+            QuickRow::HomeWifi => "Home Wi-Fi",
             QuickRow::ScreenGeneral => "General",
             QuickRow::Brightness | QuickRow::PlayBrightness => "Brightness",
             QuickRow::BlueLight | QuickRow::PlayBlueLight => "Blue Light",

@@ -426,15 +426,7 @@ fn frames_with_mix_set_at(which: Core, at: Option<usize>) -> Vec<Vec<u8>> {
     let rom = d.path().join("blend.gba");
     std::fs::write(&rom, flicker_rom()).expect("write the test rom");
     let mut core = LibretroCore::open(&dylib_for(which)).expect("open core");
-    slot::core::apply_core_options(
-        &mut core,
-        which,
-        Platform::Gba,
-        "auto",
-        false,
-        false,
-        None,
-    );
+    slot::core::apply_core_options(&mut core, which, Platform::Gba, "auto", false, false, None);
     let ring = std::sync::Arc::new(Ring::new(1 << 16));
     let emu = EmuHandle::spawn(Box::new(core), rom, ring, None, None);
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -456,7 +448,7 @@ fn frames_with_mix_set_at(which: Core, at: Option<usize>) -> Vec<Vec<u8>> {
             let (key, value) = slot::core::blend_option(which, Blending::Mix);
             emu.set_option(key, value);
         }
-        emu.tick(PANEL);
+        emu.tick();
         assert!(
             emu.wait_frame(Duration::from_secs(2)),
             "a tick's frame never arrived"

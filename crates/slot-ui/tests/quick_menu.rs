@@ -86,6 +86,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
         QuickRow::GENERAL.map(QuickRow::label),
         [
             "Theme",
+            "Home Wi-Fi",
             "Language",
             "Wallpaper",
             "Wallpaper Tint",
@@ -211,12 +212,12 @@ fn a_hidden_row_is_stepped_over_and_takes_no_place() {
     assert_eq!(QuickRow::Wallpaper.down(&hidden), QuickRow::Recents);
     assert_eq!(QuickRow::Recents.up(&hidden), QuickRow::Wallpaper);
     assert_eq!(QuickRow::Theme.up(&hidden), QuickRow::DateTime);
-    assert_eq!(QuickRow::Recents.position(&hidden), 3);
+    assert_eq!(QuickRow::Recents.position(&hidden), 4);
     assert_eq!(QuickRow::Wallpaper.down(&[]), QuickRow::WallpaperTint);
-    assert_eq!(QuickRow::Recents.position(&[]), 4);
+    assert_eq!(QuickRow::Recents.position(&[]), 5);
     assert_eq!(
-        slot_ui::quick_row_top(QuickRow::Recents, &hidden)
-            - slot_ui::quick_row_top(QuickRow::Wallpaper, &hidden),
+        slot_ui::quick_row_top_at(QuickRow::Recents, QuickRow::Recents, &hidden)
+            - slot_ui::quick_row_top_at(QuickRow::Wallpaper, QuickRow::Recents, &hidden),
         slot_ui::QUICK_PITCH
     );
 }

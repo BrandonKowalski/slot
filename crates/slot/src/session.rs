@@ -131,9 +131,16 @@ impl Session {
         }
     }
 
-    pub fn step_emulator(&self, present: Duration, timeout: Duration) -> bool {
+    pub fn frame_clock(&self) -> crate::pacing::FrameClock {
+        self.emu
+            .as_ref()
+            .filter(|emu| emu.locked())
+            .map_or_else(crate::pacing::FrameClock::default, EmuHandle::frame_clock)
+    }
+
+    pub fn step_emulator(&self, timeout: Duration) -> bool {
         self.emu.as_ref().is_some_and(|emu| {
-            emu.tick(present);
+            emu.tick();
             emu.wait_frame(timeout)
         })
     }

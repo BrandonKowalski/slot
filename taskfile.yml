@@ -78,7 +78,7 @@ tasks:
   lint:device:
     desc: Clippy the device build, which the host lint never compiles
     cmds:
-      - cargo clippy -p slot --no-default-features --features device -- -D warnings
+      - cargo clippy -p slot -p slot-services --no-default-features --features slot/device -- -D warnings
 
   check:
     desc: Everything a CI run would do
@@ -159,6 +159,42 @@ tasks:
         mv "$tmp/{{.TTF}}" "{{.ASSETS}}/{{.TTF}}"
         mv "$tmp/LICENSE" "{{.ASSETS}}/{{.TTF}}.LICENSE.txt"
         echo "fetched {{.ASSETS}}/{{.TTF}}"
+
+  labels:index:
+    desc: Rebuild the CRC32 index of LaunchBox cart fronts built into slot-labels
+    cmds:
+      - |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        curl -fsSL -o "$tmp/Metadata.zip" https://gamesdb.launchbox-app.com/Metadata.zip
+        unzip -q "$tmp/Metadata.zip" Metadata.xml -d "$tmp"
+        dat=https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro
+        for p in Game%20Boy Game%20Boy%20Color Game%20Boy%20Advance; do
+          curl -fsSL -o "$tmp/$p.dat" "$dat/Nintendo%20-%20$p.dat"
+        done
+        cargo run --release -q -p slot-labels --example launchbox-index -- "$tmp/Metadata.xml" \
+          "$tmp/Game%20Boy.dat" "$tmp/Game%20Boy%20Color.dat" "$tmp/Game%20Boy%20Advance.dat" \
+          > crates/slot-labels/data/launchbox.tsv
+
+  labels:pack:
+    desc: Build the optional dist-device/Artwork.pack from the LaunchBox index, CACHE keeps downloads
+    vars:
+      CACHE: '{{.CACHE | default "target/artwork-cache"}}'
+    cmds:
+      - |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        mkdir -p dist-device
+        dat=https://raw.githubusercontent.com/libretro/libretro-database/master/metadat/no-intro
+        for p in Game%20Boy Game%20Boy%20Color Game%20Boy%20Advance; do
+          curl -fsSL -o "$tmp/$p.dat" "$dat/Nintendo%20-%20$p.dat"
+        done
+        cargo run --release -q -p slot-labels --example artwork-pack -- \
+          crates/slot-labels/data/launchbox.tsv "{{.CACHE}}" dist-device/Artwork.pack \
+          "$tmp/Game%20Boy.dat" "$tmp/Game%20Boy%20Color.dat" "$tmp/Game%20Boy%20Advance.dat"
+        ls -l dist-device/Artwork.pack
 
   sdcard:
     desc: Create an empty content root, ROOT defaults to ./sdcard
@@ -317,14 +353,26 @@ tasks:
           docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src rust:1-bullseye sh -c '{{.CMD}}'
         fi
 
+  network:tools:
+    desc: Bundle iw and its ARM64 libraries for BaseOS channel queries
+    status:
+      - test -f vendor/slot-net/iw
+      - test -f vendor/slot-net/versions.txt
+      - file vendor/slot-net/iw | grep -q aarch64
+    cmds:
+      - task: device:sh
+        vars:
+          CMD: sh network/build-tools.sh
+
   build:device:
     desc: Build for the H700, in an arm64 container unless this is already one
+    deps: [network:tools]
     cmds:
       - task: device:sh
         vars:
           CMD: >-
             cargo build --profile device --target-dir target-device
-            -p slot --no-default-features --features device
+            -p slot -p slot-services --no-default-features --features slot/device
       - file target-device/device/slot | grep -q aarch64
       - 'echo "built target-device/device/slot"'
 
@@ -350,6 +398,9 @@ tasks:
         vars:
           CMD: ./target-device/device/slot --init-root {{.OUT}}
       - cp target-device/device/slot {{.OUT}}/System/slot
+      - cp target-device/device/slot-services {{.OUT}}/System/
+      - cp network/wifi.toml.example {{.OUT}}/Config/
+      - cp -r vendor/slot-net {{.OUT}}/System/
       - cp -R card/System/* {{.OUT}}/System/
       - for d in Bezels Labels Wallpapers; do cp card/$d/README.txt {{.OUT}}/$d/; done
       - file vendor/mgba_libretro.so | grep -q aarch64
@@ -358,6 +409,8 @@ tasks:
       - cp vendor/gpsp_libretro.so {{.OUT}}/System/
       - cp vendor/fsck.exfat {{.OUT}}/System/
       - cp -r licenses {{.OUT}}/System/licenses
+      - cp -r vendor/slot-net/licenses {{.OUT}}/System/licenses/slot-net
+      - rm -rf {{.OUT}}/System/slot-net/licenses
       - cp vendor/exfatprogs-{{.EXFATPROGS_VERSION}}.tar.gz {{.OUT}}/System/licenses/
       - |
         set -euo pipefail
@@ -406,6 +459,10 @@ tasks:
       - "{{.ADB}} wait-for-device"
       - file vendor/mgba_libretro.so | grep -q aarch64
       - file vendor/gpsp_libretro.so | grep -q aarch64
+      - "{{.ADB}} push target-device/device/slot-services '{{.SD}}/System/'"
+      - "{{.ADB}} push network/wifi.toml.example '{{.SD}}/Config/'"
+      - "{{.ADB}} push vendor/slot-net '{{.SD}}/System/'"
+      - for f in vendor/slot-net/licenses/*; do {{.ADB}} push "$f" '{{.SD}}/System/licenses/'; done
       - "{{.ADB}} push target-device/device/slot '{{.SD}}/System/slot'"
       - for f in card/System/*; do {{.ADB}} push "$f" '{{.SD}}/System/'; done
       - "{{.ADB}} push vendor/mgba_libretro.so '{{.SD}}/System/mgba_libretro.so'"

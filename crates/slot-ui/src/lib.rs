@@ -53,11 +53,11 @@ pub use cart::{
     GB_LABEL_W, GB_LABEL_X, GB_LABEL_Y, LABEL_H, LABEL_W, LABEL_WELL, LABEL_X, LABEL_Y,
 };
 pub use clock::{
-    clock_label, date_time_text, hhmm, time_text, ClockFaceSet, ClockFaces,
-    ClockPicker, ClockRow, ClockScreen, Part,
+    clock_label, date_time_text, hhmm, time_text, ClockFaceSet, ClockFaces, ClockPicker, ClockRow,
+    ClockScreen, Part,
 };
 pub use draw::{Canvas, Draw, TexId, OUT_H, OUT_W};
-pub use footer::{draw_corners, draw_footer, Printed, FOOTER_Y};
+pub use footer::{draw_corners, draw_footer, draw_home_wifi, Printed, FOOTER_Y};
 pub use hud::{
     badge_at, ff_badge, footer_ink, FfState, Hud, HudKind, LinkBadge, Millis, ALARM_BAND_H,
     HUD_ICON_PX, HUD_INK, HUD_MS, LINK_HOST_INK, LINK_JOIN_INK, PLATE_H,
@@ -65,8 +65,8 @@ pub use hud::{
 pub use icon::{badge_face, icon_box, icon_face, star_face, warm_fonts, Badge, Icon};
 pub use link_art::{
     link_art, LinkArt, ADAPTER_BASE_X, ADAPTER_BASE_Y, ADAPTER_H, ADAPTER_W, ARCS, ARROW_H,
-    ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y, PLUG_H,
-    PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
+    ARROW_LEFT_X, ARROW_RIGHT_X, ARROW_W, ARROW_Y, CLICKS_H, CLICKS_W, CLICKS_X, CLICKS_Y, NET_H,
+    NET_W, NET_X, NET_Y, PLUG_H, PLUG_TIP_X, PLUG_W, PORT_H, PORT_W, PORT_Y,
 };
 pub use plate::{
     arrows_hint_coloured, arrows_hint_face, arrows_hint_width, cap_width, centred_hints,

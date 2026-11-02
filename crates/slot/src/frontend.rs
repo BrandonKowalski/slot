@@ -35,6 +35,7 @@ const DOZE_TIMEOUT: Duration = Duration::from_secs(180);
 const ALERT_INK: [u8; 3] = [0xf0, 0xb4, 0x3c];
 
 pub struct Frontend {
+    labels: crate::labels::Labels,
     session: Session,
     start: Instant,
     last: Instant,
@@ -91,10 +92,12 @@ struct QuickPalette {
     shown: &'static str,
 }
 
+type BezelImage = (Console, BezelPick, Option<BezelArt>, (u32, u32));
+
 #[derive(Default)]
 struct BezelSync {
     tex: Option<TexId>,
-    image: Option<(Console, BezelPick, Option<BezelArt>, (u32, u32))>,
+    image: Option<BezelImage>,
     labels: [String; 3],
     faces: [(Option<TexId>, Option<TexId>); 3],
 }
@@ -167,15 +170,17 @@ impl Frontend {
 
     pub fn boot_with(platform: Box<dyn Platform>, sink: Box<dyn crate::audio::AudioSink>) -> Self {
         let now = Instant::now();
-        let cart_faces = CartFaces::spawn(platform.root().to_path_buf());
-        let mut session = Session::boot_with(platform.root().to_path_buf(), sink);
+        let root = platform.root().to_path_buf();
+        let cart_faces = CartFaces::spawn(root.clone());
+        let mut session = Session::boot_with(root.clone(), sink);
         crate::boot_time::mark("session");
-        let stale_check =
-            Self::check_labels(platform.root(), session.app().carts().cloned().collect());
+        let stale_check = Self::check_labels(&root, session.app().carts().cloned().collect());
+        let labels = crate::labels::Labels::spawn(root, session.app().carts().cloned().collect());
         session
             .app_mut()
             .set_power(Power::new(platform, DOZE_TIMEOUT));
         Frontend {
+            labels,
             session,
             start: now,
             last: now,
@@ -549,6 +554,16 @@ impl Frontend {
         app.set_link_step_faces(steps);
         app.set_link_fail_faces(fails);
         app.set_toast_faces(toasts);
+        let wifi = icon_face(Icon::Wifi, 18.0, HUD_INK);
+        let wifi_id = reuse_texture(
+            compositor,
+            &mut self.ui_textures,
+            index,
+            wifi.w,
+            wifi.h,
+            &wifi.rgba,
+        );
+        app.set_wifi_face(wifi_id);
     }
 
     pub fn upload_bezel(&mut self, compositor: &mut Compositor, panel: (u32, u32)) {
@@ -640,8 +655,10 @@ impl Frontend {
             compositor.upload_game(&[b, g, r, 0xff].repeat(px));
         } else if let Some(frame) = self.session.frame() {
             compositor.upload_game(&frame);
+            crate::latency::picture(&frame);
             crate::latency::taken();
         }
+        self.sync_labels(compositor);
         self.cart_faces.sync(self.session.app_mut(), compositor);
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_binding_faces(self.session.app_mut(), compositor);
@@ -691,6 +708,8 @@ impl Frontend {
                     clicks: up(&art.clicks),
                     arrow_left: up(&art.arrow_left),
                     arrow_right: up(&art.arrow_right),
+                    net_home: up(&art.net_home),
+                    net_direct: up(&art.net_direct),
                 };
                 self.session.app_mut().set_link_sprites(sprites);
                 self.link_art_done = true;
@@ -719,8 +738,12 @@ impl Frontend {
         self.session.set_driven(true);
     }
 
-    pub fn step_emulator(&self, present: Duration, timeout: Duration) -> bool {
-        self.session.step_emulator(present, timeout)
+    pub fn frame_clock(&self) -> crate::pacing::FrameClock {
+        self.session.frame_clock()
+    }
+
+    pub fn step_emulator(&self, timeout: Duration) -> bool {
+        self.session.step_emulator(timeout)
     }
 
     pub fn rebuilding_labels(&self) -> bool {
@@ -805,6 +828,26 @@ impl Frontend {
         screen.draw(self.session.app().canvas(), &mut self.draws);
         compositor.draw_list(&self.draws);
         true
+    }
+
+    /// At most one texture upload per frame. The worker already decoded and drew it.
+    fn sync_labels(&mut self, compositor: &mut Compositor) {
+        let Some(ready) = self.labels.take() else {
+            return;
+        };
+        let Some(path) = ready.cart.label else {
+            return;
+        };
+        let app = self.session.app_mut();
+        for tex in app.attach_label(&ready.cart.rom, path) {
+            compositor.update_texture(tex, ready.face.w, ready.face.h, &ready.face.rgba);
+        }
+        if self.core_asked.as_deref() == Some(ready.cart.stem.as_str())
+            || self.core_built.as_deref() == Some(ready.cart.stem.as_str())
+        {
+            self.core_asked = None;
+            self.core_built = None;
+        }
     }
 
     pub fn advance(&mut self, input: &mut dyn InputSource) {
@@ -1506,7 +1549,10 @@ fn sync_core_picker(
     let Some(faces) = builder.take() else {
         return;
     };
-    if highlighted.as_deref() != Some(faces.stem.as_str()) || *built == highlighted {
+    if highlighted.as_deref() != Some(faces.stem.as_str())
+        || *built == highlighted
+        || !app.carts().any(|cart| faces.is_for(cart))
+    {
         return;
     }
     let interior_id = upload_rgba(

@@ -12,6 +12,7 @@ device = ["slot-gfx/device"]
 
 [dependencies]
 slot-i18n = { path = "../slot-i18n" }
+slot-labels = { path = "../slot-labels" }
 slot-gfx = { path = "../slot-gfx", default-features = false }
 slot-input = { path = "../slot-input" }
 slot-power = { path = "../slot-power" }

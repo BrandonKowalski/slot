@@ -27,6 +27,16 @@ Release notes can be found in the [changelog](CHANGELOG.md).
 
 ---
 
+# Features in this fork
+
+- Automatic 120 Hz on supported panels, with native-speed game and audio pacing.
+- Home Wi-Fi, automatic missing-label downloads, and multiplayer over the home LAN.
+- Localisation support, currently with Japanese but will be expanded in the future.
+
+See [setup and imported feature details](FORK_FEATURES.md).
+
+---
+
 # What does it look like?
 
 <p align="center">
