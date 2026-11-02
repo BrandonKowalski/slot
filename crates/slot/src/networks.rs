@@ -37,7 +37,7 @@ pub struct Line {
 }
 
 impl Line {
-    fn plain(label: &str, value: Option<String>) -> Line {
+    pub fn plain(label: &str, value: Option<String>) -> Line {
         Line {
             label: label.to_string(),
             value,
@@ -175,6 +175,8 @@ pub struct NetScreen {
     pub lines: Vec<Line>,
     pub selected: usize,
     pub message: Option<&'static str>,
+    pub first: usize,
+    pub total: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

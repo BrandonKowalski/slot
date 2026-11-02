@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod romm;
+
 use slot_gfx::{Canvas, GameLayout, Sizing, OUT_H, OUT_W, WHOLE_TEXTURE};
 use slot_input::{Action, Btn, RawEvent, MENU_DOUBLE_TAP_MS, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power, RepairResult};
@@ -124,7 +126,12 @@ const WIFI_SETTLE_MS: Millis = 2_000;
 const STUDIO_SLIDE_MS: f32 = 240.0;
 const WIFI_SAMPLE_MS: Millis = 5000;
 const WIFI_RETRY_MS: Millis = 60_000;
-const NET_TOOLS: [QuickRow; 3] = [QuickRow::Server, QuickRow::CheckUpdates, QuickRow::FetchArt];
+const NET_TOOLS: [QuickRow; 4] = [
+    QuickRow::Server,
+    QuickRow::Romm,
+    QuickRow::CheckUpdates,
+    QuickRow::FetchArt,
+];
 const WIFI_PROBE_MS: Millis = 1_000;
 const SUMMARY_WAIT_MS: f64 = 1500.0;
 const SLIP_SHUFFLE_PX: f32 = 28.0;
@@ -332,12 +339,20 @@ pub enum Phase {
         ssid: String,
         row: usize,
     },
+    Romm {
+        view: crate::romm::screen::View,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyboardFor {
     Password { ssid: String, hidden: bool },
     NetworkName,
+    RommServer,
+    RommCode,
+    RommUser,
+    RommPassword,
+    RommSearch,
 }
 
 pub struct NetLegends {
@@ -347,6 +362,10 @@ pub struct NetLegends {
     pub connect: [(TexId, u32); 2],
     pub disconnect: [(TexId, u32); 2],
     pub forget: [(TexId, u32); 2],
+    pub download: [(TexId, u32); 2],
+    pub refresh: [(TexId, u32); 2],
+    pub sign_out: [(TexId, u32); 2],
+    pub trust: [(TexId, u32); 2],
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -401,6 +420,7 @@ enum UpdateState {
 enum NetNotice {
     Password,
     ServerFailed,
+    Romm(crate::romm::RommFail),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -606,6 +626,10 @@ pub struct App {
     radio: Box<dyn RadioJobs>,
     update_jobs: Box<dyn UpdateJobs>,
     art_jobs: Box<dyn ArtJobs>,
+    romm_jobs: Box<dyn crate::romm::jobs::RommJobs>,
+    romm: crate::romm::screen::Romm,
+    romm_return: Option<crate::romm::screen::View>,
+    romm_qr: Option<Vec<Vec<bool>>>,
     fetch_art: Option<FetchArt>,
     wifi_held: bool,
     wifi_boot_blocked: bool,
@@ -775,6 +799,10 @@ impl App {
             radio: radio_jobs(),
             update_jobs: no_update_jobs(),
             art_jobs: no_art_jobs(),
+            romm_jobs: crate::romm::jobs::no_romm_jobs(),
+            romm: crate::romm::screen::Romm::default(),
+            romm_return: None,
+            romm_qr: None,
             fetch_art: None,
             wifi_held: false,
             wifi_boot_blocked: false,
@@ -1588,6 +1616,7 @@ impl App {
             | QuickRow::Networks
             | QuickRow::CheckUpdates
             | QuickRow::Server
+            | QuickRow::Romm
             | QuickRow::About
             | QuickRow::Screen
             | QuickRow::Game
@@ -3462,6 +3491,7 @@ impl App {
             Phase::Networks { .. } => self.networks_input(action),
             Phase::NetworkScan { .. } => self.network_scan_input(action),
             Phase::NetworkPage { .. } => self.network_page_input(action),
+            Phase::Romm { .. } => self.romm_input(action),
             _ => {}
         }
     }
@@ -3597,6 +3627,7 @@ impl App {
             QuickRow::FetchArt => self.open_fetch_missing_art(),
             QuickRow::CheckUpdates => self.open_check_for_updates(),
             QuickRow::Server => self.open_server(),
+            QuickRow::Romm => self.open_romm(),
             QuickRow::WifiPower => self.set_wifi_off(!self.state.wifi_off),
             QuickRow::Networks => self.open_networks(),
             QuickRow::Screen
@@ -3983,7 +4014,8 @@ impl App {
             | QuickRow::WifiPower
             | QuickRow::Networks
             | QuickRow::CheckUpdates
-            | QuickRow::Server => return,
+            | QuickRow::Server
+            | QuickRow::Romm => return,
         }
         self.persist();
     }
@@ -4558,6 +4590,7 @@ impl App {
         self.step_net_time();
         self.take_art_events();
         self.take_update_events();
+        self.take_romm_events();
         self.play_hold();
         self.repeat_held_dir();
         self.take_shot_list();
@@ -5033,7 +5066,10 @@ impl App {
                 self.draw_menu_footer(out);
                 return;
             }
-            Phase::Networks { .. } | Phase::NetworkScan { .. } | Phase::NetworkPage { .. } => {
+            Phase::Networks { .. }
+            | Phase::NetworkScan { .. }
+            | Phase::NetworkPage { .. }
+            | Phase::Romm { .. } => {
                 self.draw_networks(out);
                 return self.hud.draw(self.canvas(), self.now(), out);
             }
@@ -5981,6 +6017,8 @@ impl App {
 
     fn doze(&mut self) {
         self.cancel_fetch_art();
+        self.romm_jobs.cancel();
+        self.romm_return = None;
         self.abandon_server();
         if !self.updating() {
             self.release_radio();
@@ -6340,6 +6378,7 @@ impl App {
                 | Phase::Networks { .. }
                 | Phase::NetworkScan { .. }
                 | Phase::NetworkPage { .. }
+                | Phase::Romm { .. }
         ) && self.seated_cart().is_none()
             && !self.link_active()
             && !self.shutting_down()
@@ -6347,7 +6386,10 @@ impl App {
             && (self.has_saved()
                 || matches!(
                     self.phase,
-                    Phase::Networks { .. } | Phase::NetworkScan { .. } | Phase::NetworkPage { .. }
+                    Phase::Networks { .. }
+                        | Phase::NetworkScan { .. }
+                        | Phase::NetworkPage { .. }
+                        | Phase::Romm { .. }
                 ))
     }
 
@@ -7179,6 +7221,7 @@ impl App {
         if studio.shell != studio.cart.shell {
             self.set_cart_shell(platform, &stem, studio.shell);
         }
+        self.romm_back_from_studio();
     }
 
     fn studio_input(&mut self, action: Action) {
@@ -8226,6 +8269,11 @@ impl App {
         };
         let refuse = |a: &mut App| a.set_update(Some(UpdateState::Notice(NetNotice::Password)));
         match task {
+            KeyboardFor::RommServer
+            | KeyboardFor::RommCode
+            | KeyboardFor::RommUser
+            | KeyboardFor::RommPassword
+            | KeyboardFor::RommSearch => self.romm_keyboard_done(task, text),
             KeyboardFor::NetworkName if text.is_empty() => {}
             KeyboardFor::NetworkName => self.open_keyboard(
                 PASSWORD_TITLE,
@@ -8357,6 +8405,8 @@ impl App {
                     selected: selected(&rows, pick),
                     lines: rows.iter().map(|r| list_line(r, snap)).collect(),
                     message: list_message(off),
+                    first: 0,
+                    total: None,
                 })
             }
             Phase::NetworkScan { pick } => {
@@ -8365,6 +8415,8 @@ impl App {
                     selected: selected(&rows, pick),
                     lines: rows.iter().map(|r| list_line(r, snap)).collect(),
                     message: scan_message(snap),
+                    first: 0,
+                    total: None,
                 })
             }
             Phase::NetworkPage { ssid, row } => {
@@ -8373,8 +8425,11 @@ impl App {
                     selected: (*row).min(rows.len() - 1),
                     lines: rows.iter().map(|r| page_line(*r, snap, ssid, off)).collect(),
                     message: None,
+                    first: 0,
+                    total: None,
                 })
             }
+            Phase::Romm { .. } => self.romm_screen(),
             _ => None,
         }
     }
@@ -8407,11 +8462,15 @@ impl App {
                     PageRow::Forget => Some("Forget"),
                 }
             }
+            Phase::Romm { .. } => self.romm_action(),
             _ => None,
         }
     }
 
     pub fn network_back(&self) -> &'static str {
+        if let Some(back) = self.romm_back() {
+            return back;
+        }
         let scanning = matches!(self.phase, Phase::NetworkScan { .. }) && self.wifi().scan.is_none();
         if scanning {
             "Cancel"
@@ -8467,16 +8526,27 @@ impl App {
             slot_ui::draw_keyboard_legends(self.canvas(), tex, out);
             return;
         }
-        slot_ui::NetworkList {
+        let pairing = matches!(
+            self.phase,
+            Phase::Romm { view: crate::romm::screen::View::Pairing }
+        );
+        let screen = self.network_screen();
+        if pairing {
+            self.draw_romm_pairing(out);
+        } else {
+            slot_ui::NetworkList {
             lines: &self.net_lines,
+            first: screen.as_ref().map_or(0, |s| s.first),
+            total: screen.as_ref().and_then(|s| s.total),
             icons: self.net_icons,
-            selected: self.network_screen().map_or(0, |s| s.selected),
+            selected: screen.as_ref().map_or(0, |s| s.selected),
             message: self.net_message,
             pointer: self.quick_menu_faces.as_ref().map(|f| f.pointer),
-            ground: self.menu_ground(),
-            canvas: self.canvas(),
+                ground: self.menu_ground(),
+                canvas: self.canvas(),
+            }
+            .draw(out);
         }
-        .draw(out);
         draw_empty_slot(self.canvas(), self.slot_faces, out);
         let Some(faces) = &self.quick_menu_faces else {
             return;
@@ -8500,6 +8570,10 @@ impl App {
             Some("Connect") => net.map(|n| n.connect[light as usize]),
             Some("Disconnect") => net.map(|n| n.disconnect[light as usize]),
             Some("Forget") => net.map(|n| n.forget[light as usize]),
+            Some("Download") => net.map(|n| n.download[light as usize]),
+            Some("Refresh") => net.map(|n| n.refresh[light as usize]),
+            Some("Sign Out") => net.map(|n| n.sign_out[light as usize]),
+            Some("Trust") => net.map(|n| n.trust[light as usize]),
             _ => None,
         };
         if let Some(right) = right {
@@ -8562,6 +8636,7 @@ impl App {
             UpdateState::Notice(NetNotice::ServerFailed) => {
                 ("Gamebit failed".into(), "Gamebit has stopped.".into())
             }
+            UpdateState::Notice(NetNotice::Romm(fail)) => App::romm_text(*fail),
             UpdateState::Downloading(..)
             | UpdateState::Cancelling(..)
             | UpdateState::Closing(_) => return None,

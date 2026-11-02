@@ -129,8 +129,10 @@ impl NetworkSync {
     fn load_statics(&mut self, app: &mut App, compositor: &mut Compositor) {
         let mut up = |f: &UndoFace| (compositor.create_texture(f.w, f.h, &f.rgba), f.w, f.h);
         self.messages = [WIFI_OFF_MESSAGE, SCANNING_MESSAGE]
+            .into_iter()
+            .chain(crate::romm::screen::MESSAGES)
             .map(|m| (m, up(&menu_detail_face(m))))
-            .to_vec();
+            .collect();
         app.set_network_icons(NetIcons {
             bars: [0, 1, 2, 3].map(|n| [false, true].map(|l| up(&net_bars_face(n, l)))),
             lock: [false, true].map(|l| up(&net_lock_face(l))),
@@ -154,6 +156,10 @@ impl NetworkSync {
             connect: word("Connect"),
             disconnect: word("Disconnect"),
             forget: word("Forget"),
+            download: word("Download"),
+            refresh: word("Refresh"),
+            sign_out: word("Sign Out"),
+            trust: word("Trust"),
         });
         let [no, yes] = prompt_legends(footer_ink(false), "Cancel", "Forget");
         self.forget = [menu_face("Forget"), no, yes].iter().map(&mut up).collect();

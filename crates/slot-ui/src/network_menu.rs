@@ -29,6 +29,8 @@ pub struct NetIcons {
 
 pub struct NetworkList<'a> {
     pub lines: &'a [NetLine],
+    pub first: usize,
+    pub total: Option<usize>,
     pub icons: Option<NetIcons>,
     pub selected: usize,
     pub message: Option<NetFace>,
@@ -188,11 +190,13 @@ impl NetworkList<'_> {
         draw_menu_ground(self.canvas, self.ground, out);
         let pad = MENU_PAD as f32;
         let right = self.canvas.w - QUICK_EDGE;
-        let count = self.lines.len() + self.message.is_some() as usize;
+        let count = self
+            .total
+            .unwrap_or(self.first + self.lines.len() + self.message.is_some() as usize);
         let (start, len) = net_window(count, self.selected);
         for at in start..start + len {
             let top = net_row_top(count, self.selected, at);
-            let Some(line) = self.lines.get(at) else {
+            let Some(line) = at.checked_sub(self.first).and_then(|i| self.lines.get(i)) else {
                 if let Some(message) = self.message {
                     let y = top + TYPE_DROP + (MENU_H as f32 - message.2 as f32) / 2.0;
                     push(out, message, self.canvas.centred(message.1 as f32), y);

@@ -102,6 +102,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
             "Wi-Fi",
             "Network",
             "Gamebit",
+            "RomM",
             "Fetch Missing Art",
             "Check for Updates"
         ]
@@ -605,7 +606,7 @@ fn fetch_art_sits_above_check_for_updates_on_the_network_page() {
         slot_ui::QuickRow::NETWORK.last(),
         Some(&slot_ui::QuickRow::CheckUpdates)
     );
-    assert_eq!(slot_ui::QuickRow::NETWORK[3], slot_ui::QuickRow::FetchArt);
+    assert_eq!(slot_ui::QuickRow::NETWORK[4], slot_ui::QuickRow::FetchArt);
     assert_eq!(slot_ui::QuickRow::FetchArt.label(), "Fetch Missing Art");
     assert!(slot_ui::QuickRow::FetchArt.opens());
 }
@@ -623,12 +624,21 @@ fn server_sits_last_on_the_network_page() {
     assert!(!QuickRow::MAIN.contains(&QuickRow::Server));
     assert_eq!(QuickRow::Server.parent(), Some(QuickRow::Network));
     assert_eq!(QuickRow::MAIN.len(), 6);
-    assert_eq!(QuickRow::NETWORK.len(), 5);
+    assert_eq!(QuickRow::NETWORK.len(), 6);
     assert_eq!(QuickRow::Server.label(), "Gamebit");
     assert!(QuickRow::Server.opens());
     assert!(QuickRow::Server.page() == QuickRow::NETWORK);
     assert!(QuickRow::ALL.contains(&QuickRow::Server));
     assert_eq!(QuickRow::ALL[QuickRow::Server.index()], QuickRow::Server);
+}
+
+#[test]
+fn romm_sits_after_gamebit_on_the_network_page() {
+    assert_eq!(QuickRow::NETWORK[3], QuickRow::Romm);
+    assert_eq!(QuickRow::Romm.parent(), Some(QuickRow::Network));
+    assert_eq!(QuickRow::Romm.label(), "RomM");
+    assert!(QuickRow::Romm.opens());
+    assert_eq!(QuickRow::ALL[QuickRow::Romm.index()], QuickRow::Romm);
 }
 
 #[test]
