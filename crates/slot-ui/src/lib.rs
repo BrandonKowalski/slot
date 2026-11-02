@@ -41,6 +41,7 @@ pub mod sticker_curl;
 mod toast;
 
 pub use art::decode as decode_png;
+pub use art::decode_png_bytes;
 pub use backdrop::{
     bezel_face, blur_background, default_background, default_game_bezel_face, draw_backdrop,
     draw_ground, game_bezel_face, wallpaper_face, BezelArt,

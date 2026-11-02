@@ -712,7 +712,12 @@ fn forgetting_the_only_network_releases_the_radio_on_the_shelf() {
     assert!(!a.wifi().held);
 }
 
-const TOOLS: [QuickRow; 3] = [QuickRow::Server, QuickRow::CheckUpdates, QuickRow::FetchArt];
+const TOOLS: [QuickRow; 4] = [
+    QuickRow::Server,
+    QuickRow::Romm,
+    QuickRow::CheckUpdates,
+    QuickRow::FetchArt,
+];
 
 #[test]
 fn the_network_tools_show_only_while_connected() {

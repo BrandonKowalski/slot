@@ -488,6 +488,12 @@ impl Frontend {
         session
             .app_mut()
             .set_art_jobs(crate::art::jobs::art_jobs(platform.root().to_path_buf()));
+        session
+            .app_mut()
+            .set_romm_jobs(crate::romm::jobs::device_romm_jobs());
+        session
+            .app_mut()
+            .set_romm_remote_jobs(crate::romm::jobs::device_romm_jobs());
         session.app_mut().set_wifi(wifi_worker(platform.root()));
         #[cfg(feature = "device")]
         session

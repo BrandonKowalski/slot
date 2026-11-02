@@ -33,6 +33,7 @@ sha2 = "0.10"
 flate2 = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 
 [profile.device]
 inherits = "release"

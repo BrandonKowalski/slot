@@ -42,7 +42,7 @@ fn the_link_ending_says_who_ended_it() {
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     let all = Toast::all();
     assert_eq!(
-        all[..26],
+        all[..27],
         [
             Toast::StateSaved,
             Toast::StateLoaded,
@@ -70,18 +70,19 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::CardRepaired,
             Toast::CardRepairFailed,
             Toast::Forgotten,
+            Toast::RommInstalled,
         ],
         "a banner was added or dropped: every face is uploaded by its place in this list"
     );
     let palettes = GbColors::all().count();
     assert_eq!(palettes, 49);
     assert_eq!(
-        all[26..26 + palettes],
+        all[27..27 + palettes],
         GbColors::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
     );
     assert_eq!(
-        all[26 + palettes..],
+        all[27 + palettes..],
         QuickRow::ALL
             .into_iter()
             .filter(|r| r.binds())
@@ -419,4 +420,10 @@ fn the_shot_toast_says_screenshot_captured_beside_a_camera() {
 fn a_failed_shot_says_so_beside_the_alert() {
     assert_eq!(Toast::ShotFailed.text(), "Screenshot Failed");
     assert_eq!(Toast::ShotFailed.icon(), Some(Icon::Alert));
+}
+
+#[test]
+fn a_game_from_romm_has_its_own_banner() {
+    assert_eq!(Toast::RommInstalled.text(), "Added from RomM");
+    assert!(Toast::all().contains(&Toast::RommInstalled));
 }

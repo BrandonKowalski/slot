@@ -704,7 +704,7 @@ fn baseos_status() -> Option<String> {
     None
 }
 
-fn free_space(root: &Path) -> u64 {
+pub(crate) fn free_space(root: &Path) -> u64 {
     use std::os::unix::ffi::OsStrExt;
     let Ok(path) = std::ffi::CString::new(root.as_os_str().as_bytes()) else {
         return 0;
