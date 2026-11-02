@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use slot_store::{Cart, Platform};
 
-use super::api::{self, Game, Pairing, Poll};
+use super::api::{self, Game, Grant, Outcome, Pairing, Poll};
 use super::http::Http;
-use super::install::{install, Installed, Order, Step};
+use super::install::{install, label_placed, place, Installed, Order, Step};
 use super::name::fold;
 use super::tls::Pin;
 use super::{Login, RommFail, Server};
@@ -39,13 +39,28 @@ pub enum Job {
         platform: Platform,
         game: Game,
     },
+    Remote(Server, String, bool),
+    Claim {
+        server: Server,
+        root: PathBuf,
+        device: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Delivered {
+    pub title: String,
+    pub installed: Installed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Library(Result<Library, RommFail>),
     Certificate(Result<Pin, RommFail>),
-    Token(Result<Login, RommFail>),
+    Token(Result<Grant, RommFail>),
+    Remote(Result<bool, RommFail>),
+    Delivered(Delivered),
+    Claimed(Result<usize, RommFail>),
     Pairing(Pairing),
     Step(Step),
     Installed(Result<Installed, RommFail>),
@@ -122,14 +137,25 @@ pub fn run(
             Job::Certificate(_) => Event::Certificate(Err(RommFail::Offline)),
             Job::Exchange(..) | Job::Pair(..) => Event::Token(Err(RommFail::Offline)),
             Job::Install { .. } => Event::Installed(Err(RommFail::Offline)),
+            Job::Remote(..) => Event::Remote(Err(RommFail::Offline)),
+            Job::Claim { .. } => Event::Claimed(Err(RommFail::Offline)),
         });
     }
     match job {
         Job::Library(server) => send(Event::Library(library(http, &server, cancelled))),
         Job::Certificate(server) => send(Event::Certificate(http.certificate(&server.url("/")))),
-        Job::Exchange(server, code) => send(Event::Token(
-            api::exchange_code(http, &server, &code).map(Login::Token),
+        Job::Exchange(server, code) => send(Event::Token(api::exchange_code(http, &server, &code))),
+        Job::Remote(server, device, on) => send(Event::Remote(
+            api::set_remote(http, &server, &device, on).map(|()| on),
         )),
+        Job::Claim {
+            server,
+            root,
+            device,
+        } => {
+            let done = deliver(http, fallback, &server, &root, &device, cancelled, send);
+            send(Event::Claimed(done));
+        }
         Job::Pair(server, device) => pair(http, &server, &device, cancelled, send),
         Job::Install {
             server,
@@ -203,12 +229,156 @@ fn pair(
             return send(Event::Token(Err(RommFail::Expired)));
         }
         match api::poll_pairing(http, server, &pairing) {
-            Ok(Poll::Token(t)) => return send(Event::Token(Ok(Login::Token(t)))),
+            Ok(Poll::Token(grant)) => {
+                if grant.remote() {
+                    let mut signed = server.clone();
+                    signed.login = Some(Login::Token(grant.token.clone()));
+                    let device = grant.device.clone().unwrap_or_default();
+                    let _ = api::set_remote(http, &signed, &device, true);
+                }
+                return send(Event::Token(Ok(grant)));
+            }
             Ok(Poll::Waiting) => {}
             Ok(Poll::SlowDown) => wait += Duration::from_secs(5),
             Err(e) => return send(Event::Token(Err(e))),
         }
     }
+}
+
+fn reason(fail: RommFail) -> String {
+    match fail {
+        RommFail::Space => "Not enough space on the SD card".into(),
+        RommFail::Archive => "slot only unpacks zip files".into(),
+        RommFail::Write => "Could not write to the SD card".into(),
+        RommFail::NotFound => "RomM could not find the game".into(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn retry_later(fail: RommFail) -> bool {
+    matches!(
+        fail,
+        RommFail::Offline
+            | RommFail::Cancelled
+            | RommFail::Clock
+            | RommFail::Certificate
+            | RommFail::Refused
+    )
+}
+
+fn ms(since: Instant) -> u128 {
+    since.elapsed().as_millis()
+}
+
+pub fn deliver(
+    http: &dyn Http,
+    fallback: &FallbackLabel,
+    server: &Server,
+    root: &Path,
+    device: &str,
+    cancelled: &dyn Fn() -> bool,
+    send: &mut dyn FnMut(Event),
+) -> Result<usize, RommFail> {
+    let mut done = 0;
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let asked = Instant::now();
+        let fresh: Vec<api::Claimed> = api::claim(http, server, device)?
+            .into_iter()
+            .filter(|r| seen.insert(r.id.clone()))
+            .collect();
+        if fresh.is_empty() {
+            return Ok(done);
+        }
+        eprintln!(
+            "slot: romm: claimed {} install(s) in {} ms",
+            fresh.len(),
+            ms(asked)
+        );
+        for request in fresh {
+            if cancelled() {
+                return Err(RommFail::Cancelled);
+            }
+            done += deliver_one(
+                http, fallback, server, root, device, &request, cancelled, send,
+            )?;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn deliver_one(
+    http: &dyn Http,
+    fallback: &FallbackLabel,
+    server: &Server,
+    root: &Path,
+    device: &str,
+    request: &api::Claimed,
+    cancelled: &dyn Fn() -> bool,
+    send: &mut dyn FnMut(Event),
+) -> Result<usize, RommFail> {
+    let tell = |outcome: &Outcome| -> Result<(), RommFail> {
+        let at = Instant::now();
+        let told = api::report(http, server, device, &request.id, outcome);
+        eprintln!(
+            "slot: romm: reported {} as {outcome:?} in {} ms",
+            request.id,
+            ms(at)
+        );
+        match told {
+            Err(e) if retry_later(e) => Err(e),
+            _ => Ok(()),
+        }
+    };
+    let (platform, mut game) = match api::rom(http, server, request.rom_id) {
+        Ok(found) => found,
+        Err(e) if retry_later(e) => return Err(e),
+        Err(e) => return tell(&Outcome::Failed(reason(e))).map(|()| 0),
+    };
+    let Some(platform) = platform else {
+        let why = "slot only plays Game Boy, Game Boy Color and Game Boy Advance games";
+        return tell(&Outcome::Failed(why.into())).map(|()| 0);
+    };
+    game.file_ids = request.file_ids.clone();
+    let order = Order {
+        server,
+        root,
+        platform,
+        game: &game,
+    };
+    let fetched = Instant::now();
+    let placed = match place(http, order, cancelled, &mut |_| {}) {
+        Ok(placed) => placed,
+        Err(RommFail::Exists) => return tell(&Outcome::AlreadyInstalled).map(|()| 0),
+        Err(e) if retry_later(e) => return Err(e),
+        Err(e) => return tell(&Outcome::Failed(reason(e))).map(|()| 0),
+    };
+    eprintln!(
+        "slot: romm: {} downloaded in {} ms",
+        game.title(),
+        ms(fetched)
+    );
+    tell(&Outcome::Done)?;
+    let labelling = Instant::now();
+    let mut installed = placed;
+    installed.labelled = label_placed(http, server, root, &installed, &game, &|cart| {
+        fallback(root, cart)
+    });
+    eprintln!(
+        "slot: romm: {} {} in {} ms",
+        game.title(),
+        if installed.labelled {
+            "labelled"
+        } else {
+            "has no label"
+        },
+        ms(labelling)
+    );
+    send(Event::Delivered(Delivered {
+        title: game.title().to_string(),
+        installed,
+    }));
+    Ok(1)
 }
 
 struct NoJobs;

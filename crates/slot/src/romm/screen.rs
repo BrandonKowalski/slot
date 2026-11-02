@@ -47,6 +47,7 @@ pub enum HomeRow {
     Refresh,
     Server,
     Certificate,
+    Remote,
     SignOut,
     SignInQr,
     SignInCode,
@@ -73,6 +74,7 @@ pub struct Romm {
     pub pairing_ends: u64,
     pub installing: Option<(String, Option<Step>)>,
     pub user: Option<String>,
+    pub server_off: bool,
     query: String,
     shown: Vec<(Platform, Vec<usize>)>,
     card: HashSet<(Platform, String)>,
@@ -183,6 +185,7 @@ impl Romm {
                 .chain([
                     HomeRow::Search,
                     HomeRow::Refresh,
+                    HomeRow::Remote,
                     HomeRow::Server,
                     HomeRow::SignOut,
                 ])
@@ -230,6 +233,18 @@ impl Romm {
                     Some(_) => "Pinned".into(),
                     None => "Checked".into(),
                 }),
+            ),
+            HomeRow::Remote => Line::plain(
+                "Remote Install",
+                Some(
+                    match (self.saved.can_remote(), self.saved.remote, self.server_off) {
+                        (false, _, _) => "Needs QR Sign-In",
+                        (true, _, true) => "Off on Server",
+                        (true, true, false) => "On",
+                        (true, false, false) => "Off",
+                    }
+                    .into(),
+                ),
             ),
             HomeRow::SignOut => Line::plain("Sign Out", None),
             HomeRow::SignInQr => Line::plain("Sign In with QR Code", None),

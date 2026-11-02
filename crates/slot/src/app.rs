@@ -630,6 +630,12 @@ pub struct App {
     romm: crate::romm::screen::Romm,
     romm_return: Option<crate::romm::screen::View>,
     romm_qr: Option<Vec<Vec<bool>>>,
+    romm_remote: Box<dyn crate::romm::jobs::RommJobs>,
+    romm_remote_busy: bool,
+    romm_claim_at: Millis,
+    romm_loaded: bool,
+    romm_delivered: Option<String>,
+    romm_remote_why: Option<&'static str>,
     fetch_art: Option<FetchArt>,
     wifi_held: bool,
     wifi_boot_blocked: bool,
@@ -803,6 +809,12 @@ impl App {
             romm: crate::romm::screen::Romm::default(),
             romm_return: None,
             romm_qr: None,
+            romm_remote: crate::romm::jobs::no_romm_jobs(),
+            romm_remote_busy: false,
+            romm_claim_at: 0,
+            romm_loaded: false,
+            romm_delivered: None,
+            romm_remote_why: None,
             fetch_art: None,
             wifi_held: false,
             wifi_boot_blocked: false,
@@ -4591,6 +4603,7 @@ impl App {
         self.take_art_events();
         self.take_update_events();
         self.take_romm_events();
+        self.step_romm_remote();
         self.play_hold();
         self.repeat_held_dir();
         self.take_shot_list();
@@ -6018,6 +6031,7 @@ impl App {
     fn doze(&mut self) {
         self.cancel_fetch_art();
         self.romm_jobs.cancel();
+        self.romm_remote.cancel();
         self.romm_return = None;
         self.abandon_server();
         if !self.updating() {

@@ -7,6 +7,7 @@ use super::http::{ok, Http, Req};
 use super::{RommFail, Server};
 
 pub const SCOPES: [&str; 2] = ["platforms.read", "roms.read"];
+pub const REMOTE_SCOPES: [&str; 3] = ["roms.read", "devices.read", "devices.write"];
 const PAGE: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,43 @@ pub struct Game {
     pub crcs: Vec<u32>,
     pub cart_photo: Option<String>,
     pub missing: bool,
+    pub file_ids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Grant {
+    pub token: String,
+    pub device: Option<String>,
+    pub scopes: Vec<String>,
+}
+
+impl Grant {
+    pub fn remote(&self) -> bool {
+        self.device.is_some()
+            && REMOTE_SCOPES
+                .iter()
+                .all(|s| self.scopes.iter().any(|g| g == s))
+    }
+}
+
+fn parse_grant(v: &Value, key: &str) -> Option<Grant> {
+    let token = v[key].as_str().filter(|t| !t.is_empty())?.to_string();
+    let device = match &v["device_id"] {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    };
+    let scopes = v["scopes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.as_str().map(str::to_string))
+        .collect();
+    Some(Grant {
+        token,
+        device,
+        scopes,
+    })
 }
 
 impl Game {
@@ -129,6 +167,7 @@ pub fn parse_game(v: &Value) -> Option<Game> {
         crcs,
         cart_photo,
         missing: v["missing_from_fs"].as_bool().unwrap_or(false),
+        file_ids: Vec::new(),
     })
 }
 
@@ -145,7 +184,12 @@ pub fn content_url(server: &Server, game: &Game) -> String {
         true => format!("rom-{}", game.id),
         false => escape_path(&game.fs_name),
     };
-    server.url(&format!("/api/roms/{}/content/{file}", game.id))
+    let ids: Vec<String> = game.file_ids.iter().map(u64::to_string).collect();
+    let query = match ids.is_empty() {
+        true => String::new(),
+        false => format!("?file_ids={}", ids.join(",")),
+    };
+    server.url(&format!("/api/roms/{}/content/{file}{query}", game.id))
 }
 
 fn escape_path(s: &str) -> String {
@@ -161,7 +205,7 @@ fn escape_path(s: &str) -> String {
     out
 }
 
-pub fn exchange_code(http: &dyn Http, server: &Server, code: &str) -> Result<String, RommFail> {
+pub fn exchange_code(http: &dyn Http, server: &Server, code: &str) -> Result<Grant, RommFail> {
     let clean: String = code
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
@@ -178,11 +222,7 @@ pub fn exchange_code(http: &dyn Http, server: &Server, code: &str) -> Result<Str
         403 => return Err(RommFail::Denied),
         _ => ok(reply)?,
     };
-    reply.json()?["raw_token"]
-        .as_str()
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .ok_or(RommFail::Bad)
+    parse_grant(&reply.json()?, "raw_token").ok_or(RommFail::Bad)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,7 +245,7 @@ pub fn start_pairing(
         "client": "slot",
         "platform": "Anbernic",
         "client_version": crate::build_info::Build::current().version,
-        "requested_scopes": SCOPES,
+        "requested_scopes": ["platforms.read", "roms.read", "devices.read", "devices.write"],
     })
     .to_string();
     let anonymous = Server {
@@ -246,7 +286,7 @@ pub fn parse_pairing(server: &Server, v: &Value) -> Option<Pairing> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Poll {
-    Token(String),
+    Token(Grant),
     Waiting,
     SlowDown,
 }
@@ -272,10 +312,8 @@ pub fn poll_pairing(http: &dyn Http, server: &Server, pairing: &Pairing) -> Resu
     }
     let v = reply.json().unwrap_or(Value::Null);
     if status == 200 {
-        return v["access_token"]
-            .as_str()
-            .filter(|t| !t.is_empty())
-            .map(|t| Poll::Token(t.to_string()))
+        return parse_grant(&v, "access_token")
+            .map(Poll::Token)
             .ok_or(RommFail::Bad);
     }
     match v["detail"].as_str() {
@@ -285,4 +323,95 @@ pub fn poll_pairing(http: &dyn Http, server: &Server, pairing: &Pairing) -> Resu
         Some("expired_token") => Err(RommFail::Expired),
         _ => Err(RommFail::Http(status)),
     }
+}
+
+fn device_url(server: &Server, device: &str, tail: &str) -> String {
+    server.url(&format!("/api/devices/{}{tail}", escape_path(device)))
+}
+
+pub fn set_remote(
+    http: &dyn Http,
+    server: &Server,
+    device: &str,
+    on: bool,
+) -> Result<(), RommFail> {
+    let body = json!({
+        "capabilities": { "remote_install": on },
+        "client_version": crate::build_info::Build::current().version,
+    })
+    .to_string();
+    let req = Req::put(server, device_url(server, device, ""), body);
+    ok(http.call(&req)?).map(|_| ())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Claimed {
+    pub id: String,
+    pub rom_id: u64,
+    pub file_ids: Vec<u64>,
+}
+
+pub fn claim(http: &dyn Http, server: &Server, device: &str) -> Result<Vec<Claimed>, RommFail> {
+    let req = Req::post(
+        server,
+        device_url(server, device, "/installs/claim"),
+        "{}".into(),
+    );
+    let v = ok(http.call(&req)?)?.json()?;
+    Ok(v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            Some(Claimed {
+                id: r["id"].as_str()?.to_string(),
+                rom_id: r["rom_id"].as_u64()?,
+                file_ids: r["file_ids"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_u64)
+                    .collect(),
+            })
+        })
+        .collect())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    Done,
+    AlreadyInstalled,
+    Failed(String),
+}
+
+pub fn report(
+    http: &dyn Http,
+    server: &Server,
+    device: &str,
+    request: &str,
+    outcome: &Outcome,
+) -> Result<(), RommFail> {
+    let (status, reason) = match outcome {
+        Outcome::Done => ("done", None),
+        Outcome::AlreadyInstalled => ("already_installed", None),
+        Outcome::Failed(why) => ("failed", Some(why.chars().take(500).collect::<String>())),
+    };
+    let body = json!({ "status": status, "reason": reason }).to_string();
+    let tail = format!("/installs/{}", escape_path(request));
+    let reply = http.call(&Req::put(server, device_url(server, device, &tail), body))?;
+    match reply.status {
+        404 => Ok(()),
+        _ => ok(reply).map(|_| ()),
+    }
+}
+
+pub fn rom(
+    http: &dyn Http,
+    server: &Server,
+    id: u64,
+) -> Result<(Option<Platform>, Game), RommFail> {
+    let v = ok(http.call(&Req::get(server, server.url(&format!("/api/roms/{id}"))))?)?.json()?;
+    let platform = ["platform_slug", "platform_fs_slug"]
+        .iter()
+        .find_map(|k| v[k].as_str().and_then(platform_of));
+    Ok((platform, parse_game(&v).ok_or(RommFail::Bad)?))
 }

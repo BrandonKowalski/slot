@@ -55,6 +55,36 @@ pub fn install(
     step: &mut dyn FnMut(Step),
     fallback_label: &dyn Fn(&Cart) -> bool,
 ) -> Result<Installed, RommFail> {
+    let (server, root, game) = (order.server, order.root, order.game);
+    let mut placed = place(http, order, cancelled, step)?;
+    step(Step::Labelling);
+    placed.labelled = label_placed(http, server, root, &placed, game, fallback_label);
+    Ok(placed)
+}
+
+pub fn label_placed(
+    http: &dyn Http,
+    server: &Server,
+    root: &Path,
+    placed: &Installed,
+    game: &Game,
+    fallback_label: &dyn Fn(&Cart) -> bool,
+) -> bool {
+    let cart = slot_store::scan_platform(root, placed.platform)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|c| c.stem == placed.stem);
+    cart.is_some_and(|cart| {
+        romm_label(http, server, root, &cart, game).is_some() || fallback_label(&cart)
+    })
+}
+
+pub fn place(
+    http: &dyn Http,
+    order: Order,
+    cancelled: &dyn Fn() -> bool,
+    step: &mut dyn FnMut(Step),
+) -> Result<Installed, RommFail> {
     let Order {
         server,
         root,
@@ -85,18 +115,10 @@ pub fn install(
     let _ = std::fs::remove_file(&download);
     let _ = std::fs::remove_file(&unpacked);
     result?;
-    step(Step::Labelling);
-    let cart = slot_store::scan_platform(root, platform)
-        .unwrap_or_default()
-        .into_iter()
-        .find(|c| c.stem == stem);
-    let labelled = cart.is_some_and(|cart| {
-        romm_label(http, server, root, &cart, game).is_some() || fallback_label(&cart)
-    });
     Ok(Installed {
         platform,
         stem,
-        labelled,
+        labelled: false,
     })
 }
 

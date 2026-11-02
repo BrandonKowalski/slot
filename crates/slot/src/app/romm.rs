@@ -15,6 +15,7 @@ use crate::romm::screen::{
 use crate::romm::{normalize_url, Login, RommFail};
 
 const PAGE: usize = slot_ui::QUICK_VISIBLE;
+const REMOTE_EVERY_MS: slot_input::Millis = 15_000;
 
 pub fn qr_modules(text: &str) -> Option<Vec<Vec<bool>>> {
     let code =
@@ -203,14 +204,33 @@ impl App {
                 if let Some(root) = self.root.clone() {
                     let _ = login::forget(&root);
                 }
-                self.romm = Romm::new(Saved {
-                    login: None,
-                    ..self.romm.saved.clone()
-                });
+                self.romm_remote.cancel();
+                self.romm = Romm::new(self.romm.saved.signed_out());
                 self.romm_card_changed();
                 self.phase = Phase::Romm {
                     view: View::Home { row: 0 },
                 };
+            }
+            HomeRow::Remote if !self.romm.saved.can_remote() => {
+                if !signing_in {
+                    self.romm_pair();
+                }
+            }
+            HomeRow::Remote => {
+                let Some(server) = self.romm.saved.server() else {
+                    return;
+                };
+                let on = !self.romm.saved.remote;
+                self.romm.saved.remote = on;
+                self.romm.server_off = false;
+                self.romm_save();
+                self.romm_claim_at = 0;
+                if !on {
+                    self.romm_remote.cancel();
+                }
+                let device = self.romm.saved.romm_device.clone().unwrap_or_default();
+                self.hold_wifi();
+                self.romm_jobs.ask(Job::Remote(server, device, on));
             }
             HomeRow::Certificate if self.romm.saved.pin.is_some() => {
                 self.romm_jobs.cancel();
@@ -450,6 +470,111 @@ impl App {
         }
     }
 
+    pub fn set_romm_remote_jobs(&mut self, jobs: Box<dyn crate::romm::jobs::RommJobs>) {
+        self.romm_remote = jobs;
+    }
+
+    pub fn romm_delivered(&self) -> Option<&str> {
+        self.romm_delivered.as_deref()
+    }
+
+    fn romm_remote_blocked(&self) -> Option<&'static str> {
+        let screen = matches!(
+            self.phase,
+            Phase::Shelf | Phase::QuickMenu { .. } | Phase::Romm { .. }
+        );
+        [
+            (!screen, "not on the shelf or a menu"),
+            (self.seated_cart().is_some(), "a game is in"),
+            (self.studio.is_some(), "Cart Studio is open"),
+            (self.fetch_art.is_some(), "art is being fetched"),
+            (self.server.is_some(), "Gamebit is running"),
+            (self.updating(), "an update is running"),
+            (self.link_active(), "a link is up"),
+            (self.powering_off, "powering off"),
+            (!self.wifi_up(), "Wi-Fi is not up"),
+        ]
+        .into_iter()
+        .find_map(|(blocked, why)| blocked.then_some(why))
+    }
+
+    pub(super) fn step_romm_remote(&mut self) {
+        while let Some(event) = self.romm_remote.take() {
+            match event {
+                Event::Delivered(d) => self.romm_remote_landed(d),
+                Event::Claimed(result) => {
+                    self.romm_remote_busy = false;
+                    self.romm.server_off = result == Err(RommFail::NotFound);
+                    if let Err(e) = result {
+                        eprintln!("slot: romm: remote installs paused: {e:?}");
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !self.romm_loaded {
+            if let Some(root) = self.root.clone() {
+                self.romm_loaded = true;
+                if self.romm.saved == Saved::default() {
+                    self.romm = Romm::new(login::load(&root));
+                }
+            }
+        }
+        let blocked = self
+            .romm_remote_blocked()
+            .filter(|_| self.romm.saved.remote_on());
+        if blocked != self.romm_remote_why {
+            match blocked {
+                Some(why) => eprintln!("slot: romm: remote installs wait: {why}"),
+                None if self.romm.saved.remote_on() => {
+                    eprintln!("slot: romm: remote installs resume")
+                }
+                None => {}
+            }
+            self.romm_remote_why = blocked;
+        }
+        let allowed = blocked.is_none();
+        if self.romm_remote_busy {
+            if !allowed {
+                self.romm_remote.cancel();
+            }
+            return;
+        }
+        let now = self.now();
+        if !allowed
+            || !self.romm.saved.remote_on()
+            || self.romm.server_off
+            || now < self.romm_claim_at
+        {
+            return;
+        }
+        let (Some(server), Some(root), Some(device)) = (
+            self.romm.saved.server(),
+            self.root.clone(),
+            self.romm.saved.romm_device.clone(),
+        ) else {
+            return;
+        };
+        self.romm_claim_at = now + REMOTE_EVERY_MS;
+        self.romm_remote_busy = true;
+        self.romm_remote.ask(Job::Claim {
+            server,
+            root,
+            device,
+        });
+    }
+
+    fn romm_remote_landed(&mut self, d: crate::romm::jobs::Delivered) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let carts = slot_store::scan(&root).unwrap_or_default();
+        self.adopt_rescan(carts);
+        self.romm_card_changed();
+        self.romm_delivered = Some(d.title);
+        self.hud.toast(slot_ui::Toast::RommInstalled, self.now());
+    }
+
     pub(super) fn take_romm_events(&mut self) {
         while let Some(event) = self.romm_jobs.take() {
             self.romm_event(event);
@@ -482,10 +607,15 @@ impl App {
                     self.romm_notice(e);
                 }
             }
-            Event::Token(Ok(login)) => {
+            Event::Token(Ok(grant)) => {
                 self.romm.pairing = None;
-                self.romm.saved.login = Some(login);
+                self.romm.saved.remote = grant.remote();
+                self.romm.saved.login = Some(Login::Token(grant.token));
+                self.romm.saved.romm_device = grant.device;
+                self.romm.saved.scopes = grant.scopes;
+                self.romm.server_off = false;
                 self.romm_save();
+                self.romm_claim_at = 0;
                 if on(self, |v| *v == View::Pairing) {
                     self.phase = Phase::Romm {
                         view: View::Home { row: 0 },
@@ -520,6 +650,13 @@ impl App {
                     self.romm_notice(e);
                 }
             }
+            Event::Remote(Ok(_)) => {}
+            Event::Remote(Err(e)) => {
+                if matches!(self.phase, Phase::Romm { .. }) {
+                    self.romm_notice(e);
+                }
+            }
+            Event::Delivered(_) | Event::Claimed(_) => {}
             Event::Pairing(p) => {
                 self.romm_qr = qr_modules(&p.link);
                 self.romm.pairing_ends = self.now() / 1000 + p.expires_in.as_secs();
@@ -634,6 +771,8 @@ impl App {
                     HomeRow::Certificate => "Open",
                     HomeRow::Refresh => "Refresh",
                     HomeRow::SignOut => "Sign Out",
+                    HomeRow::Remote if !self.romm.saved.can_remote() => "Connect",
+                    HomeRow::Remote => "Change",
                     HomeRow::SignInQr | HomeRow::SignInCode | HomeRow::SignInPassword => "Connect",
                 })
             }

@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use slot::romm::api::{
     content_url, exchange_code, games, parse_game, parse_shelves, poll_pairing, shelves,
-    start_pairing, Game, Poll,
+    start_pairing, Game, Grant, Poll,
 };
 use slot::romm::http::{Http, Reply, Req};
 use slot::romm::login::{forget, load, save, Saved};
@@ -224,15 +224,14 @@ fn a_pair_code_is_exchanged_for_a_token() {
         200,
         r#"{"id":1,"name":"slot","raw_token":"rmm_0123"}"#,
     )]);
-    assert_eq!(
-        exchange_code(&fake, &server(None), "mynx-dxcg ").as_deref(),
-        Ok("rmm_0123")
-    );
+    let grant = exchange_code(&fake, &server(None), "mynx-dxcg ").unwrap();
+    assert_eq!(grant.token, "rmm_0123");
+    assert!(!grant.remote());
     assert_eq!(
         fake.seen()[0].json.as_deref(),
         Some(r#"{"code":"MYNXDXCG"}"#)
     );
-    assert!(fake.seen()[0].post);
+    assert_eq!(fake.seen()[0].method, "POST");
 }
 
 #[test]
@@ -269,7 +268,12 @@ fn pairing_starts_without_a_login_and_links_to_the_server() {
     assert_eq!(body["client_device_identifier"], "slot-1");
     assert_eq!(
         body["requested_scopes"],
-        serde_json::json!(["platforms.read", "roms.read"])
+        serde_json::json!([
+            "platforms.read",
+            "roms.read",
+            "devices.read",
+            "devices.write"
+        ])
     );
 }
 
@@ -312,8 +316,17 @@ fn pairing_polls_until_approved() {
     );
     assert_eq!(
         answer(200, r#"{"access_token":"rmm_new","expires_at":null}"#),
-        Ok(Poll::Token("rmm_new".into()))
+        Ok(Poll::Token(Grant {
+            token: "rmm_new".into(),
+            ..Grant::default()
+        }))
     );
+    let full = r#"{"access_token":"rmm_new","device_id":"dev-1","scopes":["platforms.read","roms.read","devices.read","devices.write"]}"#;
+    let Ok(Poll::Token(grant)) = answer(200, full) else {
+        panic!("no token");
+    };
+    assert_eq!(grant.device.as_deref(), Some("dev-1"));
+    assert!(grant.remote());
     assert_eq!(
         poll_pairing(&Fake::new(&[]), &server(None), &p),
         Ok(Poll::Waiting)
@@ -371,19 +384,18 @@ fn logins_survive_a_round_trip_and_can_be_forgotten() {
         }),
         device: Some("slot-abc".into()),
         pin: Some([9; 32]),
+        romm_device: Some("dev-1".into()),
+        scopes: vec!["roms.read".into(), "devices.read".into()],
+        remote: true,
     };
     save(d.path(), &saved).unwrap();
     assert_eq!(load(d.path()), saved);
     assert_eq!(load(d.path()).server().unwrap().base, "https://romm.home");
     assert_eq!(load(d.path()).server().unwrap().pin, Some([9; 32]));
     forget(d.path()).unwrap();
-    assert_eq!(
-        load(d.path()),
-        Saved {
-            login: None,
-            ..saved.clone()
-        }
-    );
+    assert_eq!(load(d.path()), saved.signed_out());
+    assert_eq!(load(d.path()).pin, Some([9; 32]));
+    assert_eq!(load(d.path()).romm_device, None);
     save(
         d.path(),
         &Saved {
@@ -605,5 +617,306 @@ mod install {
         let label = label_from_photo(&png_bytes, Platform::Gba).expect("no label");
         let info = png::Decoder::new(Cursor::new(label)).read_info().unwrap();
         assert_eq!((info.info().width, info.info().height), (1280, 661));
+    }
+}
+
+mod remote {
+    use super::*;
+    use slot::romm::api::{claim, report, rom, set_remote, Outcome};
+    use slot::romm::jobs::{deliver, Event, FallbackLabel};
+    use std::sync::Arc;
+
+    fn signed() -> Server {
+        server(Some(Login::Token("rmm_t".into())))
+    }
+
+    #[test]
+    fn the_device_says_it_takes_remote_installs() {
+        let fake = Fake::new(&[("https://romm.home/api/devices/dev-1", 200, "{}")]);
+        set_remote(&fake, &signed(), "dev-1", true).unwrap();
+        let req = &fake.seen()[0];
+        assert_eq!(req.method, "PUT");
+        assert_eq!(req.auth.as_deref(), Some("Bearer rmm_t"));
+        let body: serde_json::Value = serde_json::from_str(req.json.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            body["capabilities"],
+            serde_json::json!({"remote_install": true})
+        );
+    }
+
+    #[test]
+    fn claims_and_reports_use_the_device_routes() {
+        let fake = Fake::new(&[
+            (
+                "https://romm.home/api/devices/dev-1/installs/claim",
+                200,
+                r#"[{"id":"r-1","rom_id":12,"file_ids":[5,6],"status":"taken"},{"bad":true}]"#,
+            ),
+            (
+                "https://romm.home/api/devices/dev-1/installs/r-1",
+                200,
+                "{}",
+            ),
+            (
+                "https://romm.home/api/devices/dev-1/installs/gone",
+                404,
+                "{}",
+            ),
+        ]);
+        let got = claim(&fake, &signed(), "dev-1").unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            (got[0].id.as_str(), got[0].rom_id, got[0].file_ids.clone()),
+            ("r-1", 12, vec![5, 6])
+        );
+        report(
+            &fake,
+            &signed(),
+            "dev-1",
+            "r-1",
+            &Outcome::Failed("x".repeat(600)),
+        )
+        .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(fake.seen()[1].json.as_deref().unwrap()).unwrap();
+        assert_eq!(body["status"], "failed");
+        assert_eq!(body["reason"].as_str().unwrap().len(), 500);
+        assert_eq!(fake.seen()[1].method, "PUT");
+        assert_eq!(
+            report(&fake, &signed(), "dev-1", "gone", &Outcome::Done),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_rom_knows_its_platform() {
+        let fake = Fake::new(&[(
+            "https://romm.home/api/roms/12",
+            200,
+            r#"{"id":12,"name":"Advance Wars","fs_name":"Advance Wars.gba","platform_slug":"gba"}"#,
+        )]);
+        let (platform, game) = rom(&fake, &signed(), 12).unwrap();
+        assert_eq!(platform, Some(Platform::Gba));
+        assert_eq!(game.name, "Advance Wars");
+        let mut picked = game.clone();
+        picked.file_ids = vec![5, 6];
+        assert_eq!(
+            content_url(&signed(), &picked),
+            "https://romm.home/api/roms/12/content/Advance%20Wars.gba?file_ids=5,6"
+        );
+    }
+
+    struct Queue {
+        reports: Mutex<Vec<(String, String)>>,
+    }
+
+    impl Http for Queue {
+        fn call(&self, req: &Req) -> Result<Reply, RommFail> {
+            let path = req
+                .url
+                .strip_prefix("https://romm.home")
+                .unwrap()
+                .to_string();
+            let reply = |status: u16, body: &[u8]| Reply {
+                status,
+                length: Some(body.len() as u64),
+                body: Box::new(Cursor::new(body.to_vec())),
+            };
+            Ok(match path.as_str() {
+                "/api/devices/dev-1/installs/claim" => reply(
+                    200,
+                    br#"[{"id":"wars","rom_id":12,"file_ids":[]},{"id":"snes","rom_id":13,"file_ids":[]},{"id":"again","rom_id":14,"file_ids":[]}]"#,
+                ),
+                "/api/roms/12" => reply(200, br#"{"id":12,"name":"Advance Wars","fs_name":"Advance Wars.gba","fs_name_no_ext":"Advance Wars","platform_slug":"gba"}"#),
+                "/api/roms/13" => reply(200, br#"{"id":13,"name":"Zelda","platform_slug":"snes"}"#),
+                "/api/roms/14" => reply(200, br#"{"id":14,"name":"Emerald","fs_name":"Emerald.gba","fs_name_no_ext":"Emerald","platform_slug":"gba"}"#),
+                p if p.starts_with("/api/roms/12/content/") => reply(200, b"WARS"),
+                p if p.starts_with("/api/devices/dev-1/installs/") => {
+                    let id = p.rsplit('/').next().unwrap().to_string();
+                    let v: serde_json::Value = serde_json::from_str(req.json.as_deref().unwrap()).unwrap();
+                    self.reports.lock().unwrap().push((id, v["status"].as_str().unwrap().to_string()));
+                    reply(200, b"{}")
+                }
+                _ => reply(404, b"{}"),
+            })
+        }
+    }
+
+    #[test]
+    fn claimed_installs_land_on_the_card_and_are_reported() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("Games/GBA")).unwrap();
+        std::fs::write(d.path().join("Games/GBA/Emerald.gba"), b"mine").unwrap();
+        let http = Queue {
+            reports: Mutex::new(Vec::new()),
+        };
+        let fallback: FallbackLabel = Arc::new(|_, _| false);
+        let mut events = Vec::new();
+        let done = deliver(
+            &http,
+            &fallback,
+            &signed(),
+            d.path(),
+            "dev-1",
+            &|| false,
+            &mut |e| events.push(e),
+        );
+        assert_eq!(done, Ok(1));
+        assert_eq!(
+            std::fs::read(d.path().join("Games/GBA/Advance Wars.gba")).unwrap(),
+            b"WARS"
+        );
+        assert_eq!(
+            *http.reports.lock().unwrap(),
+            [
+                ("wars".to_string(), "done".to_string()),
+                ("snes".to_string(), "failed".to_string()),
+                ("again".to_string(), "already_installed".to_string()),
+            ]
+        );
+        assert!(matches!(&events[..], [Event::Delivered(d)] if d.title == "Advance Wars"));
+    }
+
+    #[test]
+    fn a_dropped_connection_leaves_the_request_for_later() {
+        let d = tempfile::tempdir().unwrap();
+        let fallback: FallbackLabel = Arc::new(|_, _| false);
+        let fake = Fake::new(&[(
+            "https://romm.home/api/devices/dev-1/installs/claim",
+            200,
+            r#"[{"id":"r-1","rom_id":12,"file_ids":[]}]"#,
+        )]);
+        let done = deliver(
+            &fake,
+            &fallback,
+            &signed(),
+            d.path(),
+            "dev-1",
+            &|| false,
+            &mut |_| {},
+        );
+        assert_eq!(done, Err(RommFail::Offline));
+        assert!(fake.seen().iter().all(|r| r.method != "PUT"));
+    }
+}
+
+mod remote_timing {
+    use super::*;
+    use slot::romm::jobs::{deliver, FallbackLabel};
+    use std::sync::Arc;
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    struct Rolling {
+        claims: Mutex<Vec<&'static str>>,
+        log: Log,
+    }
+
+    impl Http for Rolling {
+        fn call(&self, req: &Req) -> Result<Reply, RommFail> {
+            let path = req
+                .url
+                .strip_prefix("https://romm.home")
+                .unwrap()
+                .to_string();
+            let reply = |status: u16, body: Vec<u8>| Reply {
+                status,
+                length: Some(body.len() as u64),
+                body: Box::new(Cursor::new(body)),
+            };
+            Ok(match path.as_str() {
+                "/api/devices/dev-1/installs/claim" => {
+                    let mut claims = self.claims.lock().unwrap();
+                    let next = match claims.len() {
+                        0 => "[]",
+                        _ => claims.remove(0),
+                    };
+                    self.log.lock().unwrap().push("claim".into());
+                    reply(200, next.as_bytes().to_vec())
+                }
+                p if p.starts_with("/api/roms/") && p.contains("/content/") => {
+                    reply(200, b"ROM".to_vec())
+                }
+                p if p.starts_with("/api/roms/") => {
+                    let id: u64 = p.rsplit('/').next().unwrap().parse().unwrap();
+                    let body = format!(
+                        r#"{{"id":{id},"name":"Game {id}","fs_name":"Game {id}.gba","fs_name_no_ext":"Game {id}","platform_slug":"gba"}}"#
+                    );
+                    reply(200, body.into_bytes())
+                }
+                p if p.starts_with("/api/devices/dev-1/installs/") => {
+                    let id = p.rsplit('/').next().unwrap();
+                    self.log.lock().unwrap().push(format!("report {id}"));
+                    reply(200, b"{}".to_vec())
+                }
+                _ => reply(404, b"{}".to_vec()),
+            })
+        }
+    }
+
+    #[test]
+    fn the_device_reports_before_it_labels_and_picks_up_what_was_queued_meanwhile() {
+        let d = tempfile::tempdir().unwrap();
+        let log: Log = Arc::default();
+        let http = Rolling {
+            claims: Mutex::new(vec![
+                r#"[{"id":"a","rom_id":1,"file_ids":[]}]"#,
+                r#"[{"id":"b","rom_id":2,"file_ids":[]}]"#,
+            ]),
+            log: log.clone(),
+        };
+        let labels = log.clone();
+        let fallback: FallbackLabel = Arc::new(move |_, cart| {
+            labels.lock().unwrap().push(format!("label {}", cart.stem));
+            false
+        });
+        let server = server(Some(Login::Token("t".into())));
+        let done = deliver(
+            &http,
+            &fallback,
+            &server,
+            d.path(),
+            "dev-1",
+            &|| false,
+            &mut |_| {},
+        );
+        assert_eq!(done, Ok(2));
+        assert_eq!(
+            *log.lock().unwrap(),
+            [
+                "claim",
+                "report a",
+                "label Game 1",
+                "claim",
+                "report b",
+                "label Game 2",
+                "claim"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_request_that_keeps_coming_back_does_not_loop_forever() {
+        let d = tempfile::tempdir().unwrap();
+        let log: Log = Arc::default();
+        let stuck = r#"[{"id":"a","rom_id":1,"file_ids":[]}]"#;
+        let http = Rolling {
+            claims: Mutex::new(vec![stuck, stuck, stuck]),
+            log: log.clone(),
+        };
+        let fallback: FallbackLabel = Arc::new(|_, _| false);
+        let server = server(Some(Login::Token("t".into())));
+        let done = deliver(
+            &http,
+            &fallback,
+            &server,
+            d.path(),
+            "dev-1",
+            &|| false,
+            &mut |_| {},
+        );
+        assert_eq!(done, Ok(1));
+        let claims = log.lock().unwrap().iter().filter(|l| *l == "claim").count();
+        assert_eq!(claims, 2);
     }
 }

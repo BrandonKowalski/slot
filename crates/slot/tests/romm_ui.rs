@@ -29,6 +29,9 @@ struct Server {
     seen: Mutex<Vec<Req>>,
     password_ok: bool,
     self_signed: bool,
+    queue: Mutex<Vec<(String, u64)>>,
+    reports: Mutex<Vec<(String, String)>>,
+    capability: Mutex<Vec<bool>>,
 }
 
 const PIN: [u8; 32] = [0xAB; 32];
@@ -82,8 +85,40 @@ impl Http for Server {
                 201,
                 br#"{"device_code":"dc","user_code":"K7QF-2MXP","verification_path_complete":"/pair/device?user_code=K7QF-2MXP","expires_in":600,"interval":2}"#.to_vec(),
             ),
-            "/api/auth/device/token" => (200, br#"{"access_token":"rmm_paired"}"#.to_vec()),
+            "/api/auth/device/token" => (
+                200,
+                br#"{"access_token":"rmm_paired","device_id":"dev-1","scopes":["platforms.read","roms.read","devices.read","devices.write"]}"#.to_vec(),
+            ),
             _ if !authed => (401, b"{}".to_vec()),
+            "/api/devices/dev-1" if req.method == "PUT" => {
+                let v: serde_json::Value = serde_json::from_str(req.json.as_deref().unwrap()).unwrap();
+                let on = v["capabilities"]["remote_install"].as_bool().unwrap();
+                self.capability.lock().unwrap().push(on);
+                (200, b"{}".to_vec())
+            }
+            "/api/devices/dev-1/installs/claim" => {
+                let items: Vec<String> = self
+                    .queue
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(id, rom)| format!("{{\"id\":\"{id}\",\"rom_id\":{rom},\"file_ids\":[]}}"))
+                    .collect();
+                (200, format!("[{}]", items.join(",")).into_bytes())
+            }
+            p if p.starts_with("/api/devices/dev-1/installs/") => {
+                let id = p.rsplit('/').next().unwrap().to_string();
+                let v: serde_json::Value = serde_json::from_str(req.json.as_deref().unwrap()).unwrap();
+                self.queue.lock().unwrap().retain(|(q, _)| *q != id);
+                let status = v["status"].as_str().unwrap().to_string();
+                self.reports.lock().unwrap().push((id, status));
+                (200, b"{}".to_vec())
+            }
+            "/api/roms/12" => (
+                200,
+                br#"{"id":12,"name":"Advance Wars","fs_name":"Advance Wars (USA).gba","fs_name_no_ext":"Advance Wars (USA)","platform_slug":"gba"}"#.to_vec(),
+            ),
+            p if p.starts_with("/api/roms/12/content/") => (200, b"WARS".to_vec()),
             "/api/platforms" => (
                 200,
                 br#"[{"id":1,"slug":"gba","name":"Game Boy Advance"},{"id":2,"slug":"gbc","name":"Game Boy Color"}]"#.to_vec(),
@@ -129,7 +164,8 @@ fn booted(server: Server) -> (TempDir, App, Arc<Server>) {
     assert!(a.wifi_up());
     let server = Arc::new(server);
     let http: Arc<dyn Http> = server.clone();
-    a.set_romm_jobs(romm_jobs(http, Arc::new(|_, _| false)));
+    a.set_romm_jobs(romm_jobs(http.clone(), Arc::new(|_, _| false)));
+    a.set_romm_remote_jobs(romm_jobs(http, Arc::new(|_, _| false)));
     (d, a, server)
 }
 
@@ -335,6 +371,7 @@ fn a_pair_code_signs_in_and_loads_the_library() {
             "Game Boy",
             "Search",
             "Refresh Library",
+            "Remote Install",
             "Server",
             "Certificate",
             "Sign Out"
@@ -658,4 +695,89 @@ fn http_servers_have_no_certificate_row() {
     type_text(&mut a, "http://romm.home");
     press(&mut a, Btn::Start);
     assert!(!labels(&a).contains(&"Certificate".to_string()));
+}
+
+fn value_of(a: &App, label: &str) -> Option<String> {
+    a.network_screen()
+        .unwrap()
+        .lines
+        .into_iter()
+        .find(|l| l.label == label)
+        .and_then(|l| l.value)
+}
+
+#[test]
+fn games_queued_in_romm_land_on_the_card_by_themselves() {
+    let _g = serial();
+    let (d, mut a, s) = booted(Server::default());
+    open_romm(&mut a);
+    set_server(&mut a);
+    select(&mut a, "Sign In with QR Code");
+    press(&mut a, Btn::A);
+    wait(&mut a, |a| a.romm().library.is_some());
+    let saved = load(d.path());
+    assert!(saved.remote);
+    assert_eq!(saved.romm_device.as_deref(), Some("dev-1"));
+    assert_eq!(*s.capability.lock().unwrap(), [true]);
+    assert_eq!(value_of(&a, "Remote Install").as_deref(), Some("On"));
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), Some(QuickRow::Romm));
+    s.queue.lock().unwrap().push(("r-1".into(), 12));
+    let t = a.now();
+    a.tick_ms(t + 61_000);
+    wait(&mut a, |_| !s.reports.lock().unwrap().is_empty());
+    wait(&mut a, |a| a.romm_delivered().is_some());
+    assert_eq!(
+        *s.reports.lock().unwrap(),
+        [("r-1".to_string(), "done".to_string())]
+    );
+    assert_eq!(
+        std::fs::read(d.path().join("Games/GBA/Advance Wars (USA).gba")).unwrap(),
+        b"WARS"
+    );
+    assert_eq!(a.romm_delivered(), Some("Advance Wars"));
+}
+
+#[test]
+fn remote_install_can_be_turned_off() {
+    let _g = serial();
+    let (d, mut a, s) = booted(Server::default());
+    open_romm(&mut a);
+    set_server(&mut a);
+    select(&mut a, "Sign In with QR Code");
+    press(&mut a, Btn::A);
+    wait(&mut a, |a| a.romm().library.is_some());
+    select(&mut a, "Remote Install");
+    assert_eq!(a.network_action(), Some("Change"));
+    press(&mut a, Btn::A);
+    assert_eq!(value_of(&a, "Remote Install").as_deref(), Some("Off"));
+    wait(&mut a, |_| s.capability.lock().unwrap().len() == 2);
+    assert_eq!(*s.capability.lock().unwrap(), [true, false]);
+    assert!(!load(d.path()).remote);
+    s.queue.lock().unwrap().push(("r-1".into(), 12));
+    let t = a.now();
+    a.tick_ms(t + 61_000);
+    settle(&mut a);
+    assert!(s.reports.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_pair_code_login_needs_the_qr_code_for_remote_install() {
+    let _g = serial();
+    let (_d, mut a, _s) = booted(Server::default());
+    open_romm(&mut a);
+    sign_in_with_code(&mut a);
+    assert_eq!(
+        value_of(&a, "Remote Install").as_deref(),
+        Some("Needs QR Sign-In")
+    );
+    select(&mut a, "Remote Install");
+    assert_eq!(a.network_action(), Some("Connect"));
+    press(&mut a, Btn::A);
+    assert!(matches!(
+        a.phase(),
+        Phase::Romm {
+            view: View::Pairing
+        }
+    ));
 }

@@ -43,6 +43,7 @@ pub struct NetworkSync {
     pool: Vec<TexId>,
     keys: Option<KeyShape>,
     forgotten: Option<String>,
+    delivered: Option<String>,
 }
 
 fn reuse(compositor: &mut Compositor, spare: &mut Vec<TexId>, face: &UndoFace) -> NetFace {
@@ -65,6 +66,7 @@ impl NetworkSync {
     pub fn sync(&mut self, app: &mut App, compositor: &mut Compositor) {
         self.sync_keyboard(app, compositor);
         self.sync_forgotten(app, compositor);
+        self.sync_delivered(app, compositor);
         let Some(screen) = app.network_screen() else {
             return;
         };
@@ -164,6 +166,19 @@ impl NetworkSync {
         let [no, yes] = prompt_legends(footer_ink(false), "Cancel", "Forget");
         self.forget = [menu_face("Forget"), no, yes].iter().map(&mut up).collect();
         app.set_forget_faces(self.forget.clone());
+    }
+
+    fn sync_delivered(&mut self, app: &App, compositor: &mut Compositor) {
+        let title = app.romm_delivered();
+        if title == self.delivered.as_deref() {
+            return;
+        }
+        self.delivered = title.map(str::to_string);
+        let (Some(title), Some(tex)) = (title, app.toast_tex(Toast::RommInstalled)) else {
+            return;
+        };
+        let face = toast_face_text(Toast::RommInstalled, &format!("{title} added from RomM"));
+        compositor.update_texture(tex, face.w, face.h, &face.rgba);
     }
 
     fn sync_forgotten(&mut self, app: &App, compositor: &mut Compositor) {

@@ -12,7 +12,7 @@ pub const ROM_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Req {
-    pub post: bool,
+    pub method: &'static str,
     pub url: String,
     pub auth: Option<String>,
     pub json: Option<String>,
@@ -23,7 +23,7 @@ pub struct Req {
 impl Req {
     pub fn get(server: &Server, url: String) -> Req {
         Req {
-            post: false,
+            method: "GET",
             auth: server.auth_for(&url),
             pin: server.pin_for(&url),
             url,
@@ -32,9 +32,16 @@ impl Req {
         }
     }
 
+    pub fn put(server: &Server, url: String, json: String) -> Req {
+        Req {
+            method: "PUT",
+            ..Req::post(server, url, json)
+        }
+    }
+
     pub fn post(server: &Server, url: String, json: String) -> Req {
         Req {
-            post: true,
+            method: "POST",
             auth: server.auth_for(&url),
             pin: server.pin_for(&url),
             url,
@@ -122,9 +129,13 @@ impl Http for Ureq {
             Some(pin) => pinned_agent(config, Some(pin), Arc::default()),
             None => config.into(),
         };
-        let sent = match (&req.json, req.post) {
-            (Some(json), true) => {
-                let mut r = agent.post(&req.url).content_type("application/json");
+        let sent = match (&req.json, req.method) {
+            (Some(json), "POST" | "PUT") => {
+                let mut r = match req.method {
+                    "PUT" => agent.put(&req.url),
+                    _ => agent.post(&req.url),
+                }
+                .content_type("application/json");
                 if let Some(a) = &req.auth {
                     r = r.header("Authorization", a);
                 }
